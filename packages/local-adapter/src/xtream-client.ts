@@ -74,6 +74,19 @@ export class XtreamClient {
   }
 
   private async fetchJson<T>(url: string): Promise<T> {
+    // Use Electron's fetch proxy if available (bypasses CORS)
+    if (typeof window !== 'undefined' && window.fetchProxy) {
+      const result = await window.fetchProxy.fetch(url);
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'Fetch failed');
+      }
+      if (!result.data.ok) {
+        throw new Error(`Xtream API error: ${result.data.status} ${result.data.statusText}`);
+      }
+      return JSON.parse(result.data.text);
+    }
+
+    // Fallback to regular fetch (works in Node.js or when CORS is not an issue)
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Xtream API error: ${response.status} ${response.statusText}`);
@@ -264,6 +277,116 @@ export class XtreamClient {
     return data.epg_listings || [];
   }
 
+  // Fetch full XMLTV EPG data
+  async getXmltvEpg(): Promise<XmltvProgram[]> {
+    const url = this.getEpgUrl();
+    console.log('  XMLTV URL:', url);
+
+    // Use fetch proxy if available, otherwise regular fetch
+    let xmlText: string;
+    if (typeof window !== 'undefined' && window.fetchProxy) {
+      const result = await window.fetchProxy.fetch(url);
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'Failed to fetch XMLTV');
+      }
+      xmlText = result.data.text;
+    } else {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch XMLTV: ${response.status}`);
+      }
+      xmlText = await response.text();
+    }
+
+    // Debug: log response size and first bit
+    console.log('  XMLTV response size:', xmlText.length, 'chars');
+    console.log('  XMLTV first 500 chars:', xmlText.substring(0, 500));
+
+    // Debug: check if there are any programme elements
+    const programmeIndex = xmlText.indexOf('<programme');
+    if (programmeIndex === -1) {
+      console.log('  XMLTV: NO <programme> elements found in file!');
+    } else {
+      console.log('  XMLTV: First <programme> at index:', programmeIndex);
+      console.log('  XMLTV: Programme sample:', xmlText.substring(programmeIndex, programmeIndex + 500));
+    }
+
+    // Parse XMLTV
+    return this.parseXmltv(xmlText);
+  }
+
+  private parseXmltv(xml: string): XmltvProgram[] {
+    const programs: XmltvProgram[] = [];
+
+    // More flexible regex - extracts attributes individually since order varies
+    // Matches: <programme ...attributes... >content</programme>
+    const programPattern = /<programme\s+([^>]+)>([\s\S]*?)<\/programme>/gi;
+    const startAttr = /start="([^"]+)"/;
+    const stopAttr = /stop="([^"]+)"/;
+    const channelAttr = /channel="([^"]+)"/;
+    const titlePattern = /<title[^>]*>([^<]*)<\/title>/i;
+    const descPattern = /<desc[^>]*>([^<]*)<\/desc>/i;
+
+    let match;
+    let parseCount = 0;
+    while ((match = programPattern.exec(xml)) !== null) {
+      const [, attrs, content] = match;
+
+      const startMatch = attrs.match(startAttr);
+      const stopMatch = attrs.match(stopAttr);
+      const channelMatch = attrs.match(channelAttr);
+
+      if (!startMatch || !stopMatch || !channelMatch) continue;
+
+      const titleMatch = content.match(titlePattern);
+      const descMatch = content.match(descPattern);
+
+      const title = titleMatch ? this.decodeXmlEntities(titleMatch[1]) : '';
+      const desc = descMatch ? this.decodeXmlEntities(descMatch[1]) : '';
+
+      // Parse XMLTV date format: YYYYMMDDHHmmss +0000
+      const start = this.parseXmltvDate(startMatch[1]);
+      const stop = this.parseXmltvDate(stopMatch[1]);
+
+      if (start && stop && title) {
+        programs.push({
+          channel_id: channelMatch[1],
+          title,
+          description: desc,
+          start,
+          stop,
+        });
+        parseCount++;
+        // Debug: log first few parsed
+        if (parseCount <= 3) {
+          console.log('  Parsed programme:', channelMatch[1], title, start);
+        }
+      }
+    }
+
+    return programs;
+  }
+
+  private parseXmltvDate(dateStr: string): Date | null {
+    // Format: YYYYMMDDHHmmss +0000 or YYYYMMDDHHmmss
+    const match = dateStr.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*([+-]\d{4})?$/);
+    if (!match) return null;
+
+    const [, year, month, day, hour, min, sec, tz] = match;
+    const isoStr = `${year}-${month}-${day}T${hour}:${min}:${sec}${tz ? tz.slice(0, 3) + ':' + tz.slice(3) : 'Z'}`;
+    return new Date(isoStr);
+  }
+
+  private decodeXmlEntities(str: string): string {
+    return str
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
+  }
+
   // ===========================================================================
   // URL Building
   // ===========================================================================
@@ -352,4 +475,13 @@ interface XtreamEpgEntry {
   end: string;
   description: string;
   channel_id: string;
+}
+
+// XMLTV program from parsed EPG data
+export interface XmltvProgram {
+  channel_id: string;
+  title: string;
+  description: string;
+  start: Date;
+  stop: Date;
 }

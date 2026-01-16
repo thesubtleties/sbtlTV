@@ -26,6 +26,7 @@
   border-radius: 0 12px 12px 0;
   padding: 8px;
   gap: 4px;
+  overflow: hidden; /* Prevent highlight from bleeding out */
 }
 
 .nav-item {
@@ -85,4 +86,16 @@
 /* Ensure icons stay crisp */
 .nav-icon svg {
   display: block;
+}
+
+/* Toggle button - smaller, at bottom */
+.nav-toggle {
+  margin-top: 4px;
+  padding: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.nav-toggle .nav-icon {
+  width: 20px;
+  height: 20px;
 }

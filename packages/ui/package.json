@@ -11,6 +11,9 @@
   },
   "dependencies": {
     "@netv/core": "workspace:*",
+    "@netv/local-adapter": "workspace:*",
+    "dexie": "^4.0.0",
+    "dexie-react-hooks": "^1.1.7",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

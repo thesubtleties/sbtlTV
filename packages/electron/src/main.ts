@@ -490,6 +490,32 @@ ipcMain.handle('storage-is-encryption-available', async () => {
   return { success: true, data: storage.isEncryptionAvailable() };
 });
 
+// Fetch proxy - bypasses CORS by making requests from main process
+ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+  try {
+    const response = await fetch(url, {
+      method: options?.method || 'GET',
+      headers: options?.headers,
+      body: options?.body,
+    });
+    const text = await response.text();
+    return {
+      success: true,
+      data: {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        text,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Fetch failed',
+    };
+  }
+});
+
 // App lifecycle
 app.whenReady().then(async () => {
   await createWindow();

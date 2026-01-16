@@ -67,11 +67,23 @@ export interface StorageApi {
   isEncryptionAvailable: () => Promise<StorageResult<boolean>>;
 }
 
+export interface FetchProxyResponse {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  text: string;
+}
+
+export interface FetchProxyApi {
+  fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<StorageResult<FetchProxyResponse>>;
+}
+
 declare global {
   interface Window {
     mpv?: MpvApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
+    fetchProxy?: FetchProxyApi;
   }
 }
 

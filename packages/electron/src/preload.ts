@@ -58,6 +58,18 @@ export interface StorageApi {
   isEncryptionAvailable: () => Promise<StorageResult<boolean>>;
 }
 
+// Fetch proxy response
+export interface FetchProxyResponse {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  text: string;
+}
+
+export interface FetchProxyApi {
+  fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<StorageResult<FetchProxyResponse>>;
+}
+
 // Expose window control API
 contextBridge.exposeInMainWorld('electronWindow', {
   minimize: () => ipcRenderer.invoke('window-minimize'),
@@ -107,3 +119,9 @@ contextBridge.exposeInMainWorld('storage', {
   updateSettings: (settings: Partial<AppSettings>) => ipcRenderer.invoke('storage-update-settings', settings),
   isEncryptionAvailable: () => ipcRenderer.invoke('storage-is-encryption-available'),
 } satisfies StorageApi);
+
+// Expose fetch proxy API - bypasses CORS for API calls
+contextBridge.exposeInMainWorld('fetchProxy', {
+  fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) =>
+    ipcRenderer.invoke('fetch-proxy', url, options),
+} satisfies FetchProxyApi);

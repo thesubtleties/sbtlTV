@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Source } from '../types/electron';
+import { syncAllSources, type SyncResult } from '../db/sync';
+import { useSyncStatus } from '../hooks/useChannels';
 import './Settings.css';
 
 interface SettingsProps {
@@ -31,6 +33,9 @@ export function Settings({ onClose }: SettingsProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<SourceFormData>(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResults, setSyncResults] = useState<Map<string, SyncResult> | null>(null);
+  const syncStatus = useSyncStatus();
 
   // Load sources and check encryption on mount
   useEffect(() => {
@@ -127,6 +132,19 @@ export function Settings({ onClose }: SettingsProps) {
     setError(null);
   }
 
+  async function handleSync() {
+    setSyncing(true);
+    setSyncResults(null);
+    try {
+      const results = await syncAllSources();
+      setSyncResults(results);
+    } catch (err) {
+      console.error('Sync error:', err);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   return (
     <div className="settings-overlay">
       <div className="settings-panel">
@@ -151,8 +169,41 @@ export function Settings({ onClose }: SettingsProps) {
         <div className="settings-section">
           <div className="section-header">
             <h3>Sources</h3>
-            <button className="add-btn" onClick={handleAdd}>+ Add Source</button>
+            <div className="section-actions">
+              <button
+                className="sync-btn"
+                onClick={handleSync}
+                disabled={syncing || sources.length === 0}
+              >
+                {syncing ? 'Syncing...' : 'Sync Channels'}
+              </button>
+              <button className="add-btn" onClick={handleAdd}>+ Add Source</button>
+            </div>
           </div>
+
+          {/* Sync Status */}
+          {syncStatus.length > 0 && (
+            <div className="sync-status">
+              {syncStatus.map((status) => {
+                const source = sources.find((s) => s.id === status.source_id);
+                return (
+                  <div key={status.source_id} className={`sync-status-item ${status.error ? 'error' : 'success'}`}>
+                    <span className="status-name">{source?.name || status.source_id}</span>
+                    {status.error ? (
+                      <span className="status-error">{status.error}</span>
+                    ) : (
+                      <span className="status-count">{status.channel_count} channels</span>
+                    )}
+                    {status.last_synced && (
+                      <span className="status-time">
+                        {new Date(status.last_synced).toLocaleTimeString()}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {sources.length === 0 ? (
             <div className="empty-state">

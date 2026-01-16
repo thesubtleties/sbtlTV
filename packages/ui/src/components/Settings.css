@@ -89,6 +89,32 @@
   color: #aaa;
 }
 
+.section-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sync-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sync-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.sync-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .add-btn {
   background: #00d4ff;
   color: black;
@@ -101,6 +127,52 @@
 
 .add-btn:hover {
   background: #00b8e0;
+}
+
+/* Sync Status */
+.sync-status {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sync-status-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.sync-status-item.success {
+  border-left: 3px solid #2ecc71;
+}
+
+.sync-status-item.error {
+  border-left: 3px solid #e74c3c;
+}
+
+.status-name {
+  font-weight: 500;
+  color: white;
+}
+
+.status-count {
+  color: #2ecc71;
+}
+
+.status-error {
+  color: #e74c3c;
+  flex: 1;
+}
+
+.status-time {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.75rem;
+  margin-left: auto;
 }
 
 /* Empty State */

@@ -9,4 +9,5 @@ export type {
   XtreamServerInfo,
   XtreamUserInfo,
   XtreamAuthResponse,
+  XmltvProgram,
 } from './xtream-client';

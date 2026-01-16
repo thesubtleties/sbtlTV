@@ -2,12 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import type { MpvStatus } from './types/electron';
 import { Settings } from './components/Settings';
 import { Sidebar, type View } from './components/Sidebar';
-
-// Sample streams for testing
-const SAMPLE_STREAMS = [
-  { name: 'Big Buck Bunny', url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' },
-  { name: 'NASA Live', url: 'https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8' },
-];
+import { CategoryStrip } from './components/CategoryStrip';
+import { ChannelPanel } from './components/ChannelPanel';
+import { useSelectedCategory } from './hooks/useChannels';
+import { syncAllSources } from './db/sync';
+import type { StoredChannel } from './db';
 
 function App() {
   // mpv state
@@ -20,12 +19,15 @@ function App() {
 
   // UI state
   const [showControls, setShowControls] = useState(true);
-  const [showChannelInfo, setShowChannelInfo] = useState(false);
-  const [channelIndex, setChannelIndex] = useState(0);
   const [activeView, setActiveView] = useState<View>('none');
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
-  // Custom stream URL input
-  const [customUrl, setCustomUrl] = useState('');
+  // Channel/category state (persisted)
+  const { categoryId, setCategoryId, loading: categoryLoading } = useSelectedCategory();
+
+  // Sync state
+  const [syncing, setSyncing] = useState(false);
 
   // Set up mpv event listeners
   useEffect(() => {
@@ -112,29 +114,42 @@ function App() {
     setCurrentStream(null);
   };
 
-  // Channel navigation
-  const handleChannelUp = useCallback(() => {
-    const newIndex = (channelIndex + 1) % SAMPLE_STREAMS.length;
-    setChannelIndex(newIndex);
-    setShowChannelInfo(true);
-    setTimeout(() => setShowChannelInfo(false), 2000);
-  }, [channelIndex]);
+  // Play a channel
+  const handlePlayChannel = (channel: StoredChannel) => {
+    handleLoadStream(channel.direct_url, channel.name);
+  };
 
-  const handleChannelDown = useCallback(() => {
-    const newIndex = channelIndex === 0 ? SAMPLE_STREAMS.length - 1 : channelIndex - 1;
-    setChannelIndex(newIndex);
-    setShowChannelInfo(true);
-    setTimeout(() => setShowChannelInfo(false), 2000);
-  }, [channelIndex]);
+  // Handle category selection - opens guide if closed
+  const handleSelectCategory = (catId: string | null) => {
+    setCategoryId(catId);
+    // Open guide if it's not already open
+    if (activeView !== 'guide') {
+      setActiveView('guide');
+    }
+  };
 
-  const handlePlaySelectedChannel = useCallback(() => {
-    const stream = SAMPLE_STREAMS[channelIndex];
-    handleLoadStream(stream.url, stream.name);
-  }, [channelIndex]);
+  // Sync sources on app load (if sources exist)
+  useEffect(() => {
+    const doInitialSync = async () => {
+      if (!window.storage) return;
+      const result = await window.storage.getSources();
+      if (result.data && result.data.length > 0) {
+        setSyncing(true);
+        await syncAllSources();
+        setSyncing(false);
+      }
+    };
+    doInitialSync();
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle shortcuts when typing in inputs
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
       switch (e.key) {
         case ' ':
           e.preventDefault();
@@ -143,24 +158,17 @@ function App() {
         case 'm':
           handleToggleMute();
           break;
-        case 'ArrowUp':
-          e.preventDefault();
-          handleChannelUp();
+        case 'g':
+          // Toggle guide
+          setActiveView((v) => (v === 'guide' ? 'none' : 'guide'));
           break;
-        case 'ArrowDown':
-          e.preventDefault();
-          handleChannelDown();
-          break;
-        case 'Enter':
-          if (showChannelInfo) {
-            handlePlaySelectedChannel();
-          }
-          break;
-        case 'i':
-          setShowChannelInfo((prev) => !prev);
+        case 'c':
+          // Toggle categories
+          setCategoriesOpen((open) => !open);
           break;
         case 'Escape':
-          setShowChannelInfo(false);
+          setActiveView('none');
+          setCategoriesOpen(false);
           setShowControls(false);
           break;
       }
@@ -168,7 +176,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleChannelUp, handleChannelDown, handlePlaySelectedChannel, showChannelInfo]);
+  }, []);
 
   // Window control handlers
   const handleMinimize = () => window.electronWindow?.minimize();
@@ -198,7 +206,7 @@ function App() {
         {!currentStream && (
           <div className="placeholder">
             <h1>neTV</h1>
-            <p>Select a stream to begin</p>
+            <p>{syncing ? 'Loading channels...' : 'Select a stream to begin'}</p>
           </div>
         )}
         {currentStream && (
@@ -207,15 +215,6 @@ function App() {
           </div>
         )}
       </div>
-
-      {/* Channel Info Overlay */}
-      {showChannelInfo && (
-        <div className="channel-info">
-          <div className="channel-number">{channelIndex + 1}</div>
-          <div className="channel-name">{SAMPLE_STREAMS[channelIndex].name}</div>
-          <div className="channel-hint">Press Enter to tune</div>
-        </div>
-      )}
 
       {/* Error display */}
       {error && (
@@ -232,42 +231,6 @@ function App() {
           <span className={`indicator ${mpvReady ? 'ready' : 'waiting'}`}>
             {mpvReady ? 'mpv ready' : 'Waiting for mpv...'}
           </span>
-        </div>
-
-        {/* Stream selector */}
-        <div className="stream-selector">
-          <label>Quick Load:</label>
-          {SAMPLE_STREAMS.map((stream, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleLoadStream(stream.url, stream.name)}
-              disabled={!mpvReady}
-              className={currentStream === stream.name ? 'active' : ''}
-            >
-              {stream.name}
-            </button>
-          ))}
-        </div>
-
-        {/* Custom URL input */}
-        <div className="custom-url">
-          <input
-            type="text"
-            placeholder="Or paste stream URL..."
-            value={customUrl}
-            onChange={(e) => setCustomUrl(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && customUrl) {
-                handleLoadStream(customUrl, 'Custom Stream');
-              }
-            }}
-          />
-          <button
-            onClick={() => handleLoadStream(customUrl, 'Custom Stream')}
-            disabled={!mpvReady || !customUrl}
-          >
-            Load
-          </button>
         </div>
 
         {/* Playback controls */}
@@ -299,16 +262,39 @@ function App() {
         <div className="keyboard-hints">
           <span>Space: Play/Pause</span>
           <span>M: Mute</span>
-          <span>↑↓: Browse Channels</span>
-          <span>I: Info</span>
+          <span>G: Guide</span>
+          <span>C: Categories</span>
         </div>
       </div>
 
-      {/* Sidebar Navigation */}
+      {/* Sidebar Navigation - stays visible when any panel is open */}
       <Sidebar
         activeView={activeView}
         onViewChange={setActiveView}
-        visible={showControls}
+        visible={showControls || categoriesOpen || activeView !== 'none'}
+        categoriesOpen={categoriesOpen}
+        onCategoriesToggle={() => setCategoriesOpen((open) => !open)}
+        onCategoriesClose={() => setCategoriesOpen(false)}
+        expanded={sidebarExpanded}
+        onExpandedToggle={() => setSidebarExpanded((exp) => !exp)}
+      />
+
+      {/* Category Strip - slides out from sidebar */}
+      <CategoryStrip
+        selectedCategoryId={categoryId}
+        onSelectCategory={handleSelectCategory}
+        visible={categoriesOpen}
+        sidebarExpanded={sidebarExpanded}
+      />
+
+      {/* Channel Panel - slides out (shifts right if categories open) */}
+      <ChannelPanel
+        categoryId={categoryId}
+        visible={activeView === 'guide'}
+        categoryStripOpen={categoriesOpen}
+        sidebarExpanded={sidebarExpanded}
+        onPlayChannel={handlePlayChannel}
+        onClose={() => setActiveView('none')}
       />
 
       {/* Settings Panel */}

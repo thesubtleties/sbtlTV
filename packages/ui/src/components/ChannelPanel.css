@@ -1,0 +1,313 @@
+/* Full-width EPG-style Guide Panel */
+.guide-panel {
+  position: fixed;
+  left: 0;
+  right: 0; /* Full width to right edge */
+  top: 32px; /* Below title bar */
+  bottom: 0;
+  padding-left: 70px; /* Space for collapsed sidebar */
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(40px);
+  display: flex;
+  flex-direction: column;
+  z-index: 80;
+
+  /* Smooth slide animation */
+  transform: translateY(100%);
+  opacity: 0;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s ease,
+              padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.guide-panel.visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.guide-panel.hidden {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Adjust for sidebar expansion */
+.guide-panel.sidebar-expanded {
+  padding-left: 170px;
+}
+
+/* Adjust for category strip */
+.guide-panel.with-categories {
+  padding-left: 230px;
+}
+
+.guide-panel.sidebar-expanded.with-categories {
+  padding-left: 330px;
+}
+
+/* Header - Time Bar */
+.guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.guide-header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.guide-current-time {
+  font-size: 1.5rem;
+  font-weight: 300;
+  color: #00d4ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.guide-category {
+  font-size: 1rem;
+  font-weight: 500;
+  color: white;
+}
+
+.guide-channel-count {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.guide-header-right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.guide-time-slots {
+  display: flex;
+  gap: 40px;
+}
+
+.time-slot {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.time-slot.current {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.guide-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.guide-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+/* Content Area */
+.guide-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+
+.guide-channels {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Scrollbar */
+.guide-channels::-webkit-scrollbar {
+  width: 6px;
+}
+
+.guide-channels::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.guide-channels::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.guide-channels::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Channel Row */
+.guide-channel-row {
+  display: flex;
+  align-items: stretch;
+  min-height: 56px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.guide-channel-row:hover,
+.guide-channel-row.hovered {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.guide-channel-row:active {
+  background: rgba(0, 212, 255, 0.1);
+}
+
+/* Channel Info (left side) */
+.guide-channel-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  min-width: 280px;
+  max-width: 280px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.guide-channel-number {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.35);
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.guide-channel-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.guide-channel-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.logo-placeholder {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.guide-channel-name {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Program Bar (EPG area) */
+.guide-program-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+}
+
+.guide-program {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  flex: 1;
+}
+
+.guide-program.current {
+  background: rgba(0, 212, 255, 0.08);
+  border-left: 2px solid #00d4ff;
+}
+
+.program-title {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.guide-program.current .program-title {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.program-desc {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-left: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+
+/* Current Time Indicator */
+.guide-time-indicator {
+  position: absolute;
+  top: 80px; /* Below header */
+  bottom: 0;
+  width: 2px;
+  background: #00d4ff;
+  opacity: 0.5;
+  left: calc(56px + 280px + 40px); /* Sidebar + channel info + offset */
+  pointer-events: none;
+  display: none; /* Hidden until EPG data is available */
+}
+
+/* Empty State */
+.guide-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.guide-empty-icon {
+  color: rgba(255, 255, 255, 0.2);
+  margin-bottom: 24px;
+}
+
+.guide-empty h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.guide-empty p {
+  margin: 8px 0 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.guide-empty .hint {
+  margin-top: 16px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.3);
+}
