@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@netv/core": "workspace:*"
+    "@netv/core": "workspace:*",
+    "electron-store": "^8.1.0"
   },
   "devDependencies": {
     "electron": "^28.0.0",

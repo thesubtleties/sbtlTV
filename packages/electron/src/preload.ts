@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import type { Source } from '@netv/core';
 
 // Types for the exposed APIs
 export interface MpvStatus {
@@ -34,6 +35,27 @@ export interface ElectronWindowApi {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
   close: () => Promise<void>;
+}
+
+export interface StorageResult<T = void> {
+  success?: boolean;
+  error?: string;
+  data?: T;
+}
+
+export interface AppSettings {
+  theme: 'dark' | 'light';
+  lastSourceId?: string;
+}
+
+export interface StorageApi {
+  getSources: () => Promise<StorageResult<Source[]>>;
+  getSource: (id: string) => Promise<StorageResult<Source | undefined>>;
+  saveSource: (source: Source) => Promise<StorageResult>;
+  deleteSource: (id: string) => Promise<StorageResult>;
+  getSettings: () => Promise<StorageResult<AppSettings>>;
+  updateSettings: (settings: Partial<AppSettings>) => Promise<StorageResult>;
+  isEncryptionAvailable: () => Promise<StorageResult<boolean>>;
 }
 
 // Expose window control API
@@ -74,3 +96,14 @@ contextBridge.exposeInMainWorld('mpv', {
     ipcRenderer.removeAllListeners('mpv-error');
   },
 } satisfies MpvApi);
+
+// Expose storage API for sources and settings
+contextBridge.exposeInMainWorld('storage', {
+  getSources: () => ipcRenderer.invoke('storage-get-sources'),
+  getSource: (id: string) => ipcRenderer.invoke('storage-get-source', id),
+  saveSource: (source: Source) => ipcRenderer.invoke('storage-save-source', source),
+  deleteSource: (id: string) => ipcRenderer.invoke('storage-delete-source', id),
+  getSettings: () => ipcRenderer.invoke('storage-get-settings'),
+  updateSettings: (settings: Partial<AppSettings>) => ipcRenderer.invoke('storage-update-settings', settings),
+  isEncryptionAvailable: () => ipcRenderer.invoke('storage-is-encryption-available'),
+} satisfies StorageApi);

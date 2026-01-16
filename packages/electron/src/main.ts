@@ -3,6 +3,8 @@ import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import * as net from 'net';
 import * as fs from 'fs';
+import type { Source } from '@netv/core';
+import * as storage from './storage';
 
 let mainWindow: BrowserWindow | null = null;
 let mpvProcess: ChildProcess | null = null;
@@ -431,6 +433,62 @@ ipcMain.handle('mpv-stop', async () => {
 });
 
 ipcMain.handle('mpv-get-status', async () => mpvState);
+
+// IPC Handlers - Storage
+ipcMain.handle('storage-get-sources', async () => {
+  try {
+    return { success: true, data: storage.getSources() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('storage-get-source', async (_event, id: string) => {
+  try {
+    return { success: true, data: storage.getSource(id) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('storage-save-source', async (_event, source: Source) => {
+  try {
+    storage.saveSource(source);
+    return { success: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('storage-delete-source', async (_event, id: string) => {
+  try {
+    storage.deleteSource(id);
+    return { success: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('storage-get-settings', async () => {
+  try {
+    return { success: true, data: storage.getSettings() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<typeof storage.updateSettings>[0]) => {
+  try {
+    storage.updateSettings(settings);
+    return { success: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('storage-is-encryption-available', async () => {
+  return { success: true, data: storage.isEncryptionAvailable() };
+});
 
 // App lifecycle
 app.whenReady().then(async () => {

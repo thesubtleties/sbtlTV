@@ -35,10 +35,43 @@ export interface ElectronWindowApi {
   close: () => Promise<void>;
 }
 
+export interface StorageResult<T = void> {
+  success?: boolean;
+  error?: string;
+  data?: T;
+}
+
+export interface AppSettings {
+  theme: 'dark' | 'light';
+  lastSourceId?: string;
+}
+
+export interface Source {
+  id: string;
+  name: string;
+  type: 'xtream' | 'm3u' | 'epg';
+  url: string;
+  enabled: boolean;
+  epg_url?: string;
+  username?: string;
+  password?: string;
+}
+
+export interface StorageApi {
+  getSources: () => Promise<StorageResult<Source[]>>;
+  getSource: (id: string) => Promise<StorageResult<Source | undefined>>;
+  saveSource: (source: Source) => Promise<StorageResult>;
+  deleteSource: (id: string) => Promise<StorageResult>;
+  getSettings: () => Promise<StorageResult<AppSettings>>;
+  updateSettings: (settings: Partial<AppSettings>) => Promise<StorageResult>;
+  isEncryptionAvailable: () => Promise<StorageResult<boolean>>;
+}
+
 declare global {
   interface Window {
     mpv?: MpvApi;
     electronWindow?: ElectronWindowApi;
+    storage?: StorageApi;
   }
 }
 
