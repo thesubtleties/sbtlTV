@@ -134,6 +134,59 @@ export function useCurrentProgram(streamId: string | null): StoredProgram | null
   return program ?? null;
 }
 
+// Hook to get all programs for channels within a time range (for EPG grid)
+export function useProgramsInRange(
+  streamIds: string[],
+  windowStart: Date,
+  windowEnd: Date
+): Map<string, StoredProgram[]> {
+  const programs = useLiveQuery(
+    async () => {
+      if (streamIds.length === 0) return new Map<string, StoredProgram[]>();
+
+      const result = new Map<string, StoredProgram[]>();
+
+      // Initialize empty arrays for all channels
+      for (const id of streamIds) {
+        result.set(id, []);
+      }
+
+      // Fetch all programs that overlap with the time window
+      // A program overlaps if: program.start < windowEnd AND program.end > windowStart
+      const allPrograms = await db.programs
+        .where('stream_id')
+        .anyOf(streamIds)
+        .filter((p) => {
+          const start = p.start instanceof Date ? p.start : new Date(p.start);
+          const end = p.end instanceof Date ? p.end : new Date(p.end);
+          return start < windowEnd && end > windowStart;
+        })
+        .toArray();
+
+      // Group by stream_id and sort by start time
+      for (const prog of allPrograms) {
+        const existing = result.get(prog.stream_id) ?? [];
+        existing.push(prog);
+        result.set(prog.stream_id, existing);
+      }
+
+      // Sort each channel's programs by start time
+      for (const [, progs] of result) {
+        progs.sort((a, b) => {
+          const aStart = a.start instanceof Date ? a.start.getTime() : new Date(a.start).getTime();
+          const bStart = b.start instanceof Date ? b.start.getTime() : new Date(b.start).getTime();
+          return aStart - bStart;
+        });
+      }
+
+      return result;
+    },
+    [streamIds.join(','), windowStart.getTime(), windowEnd.getTime()]
+  );
+
+  return programs ?? new Map();
+}
+
 // Hook to get programs for a list of channel IDs (queries local DB - EPG is synced upfront)
 export function usePrograms(streamIds: string[]): Map<string, StoredProgram | null> {
   const programs = useLiveQuery(
@@ -141,31 +194,6 @@ export function usePrograms(streamIds: string[]): Map<string, StoredProgram | nu
       if (streamIds.length === 0) return new Map();
       const now = new Date();
       const result = new Map<string, StoredProgram | null>();
-
-      // Debug: check total program count
-      const totalCount = await db.programs.count();
-      if (totalCount === 0) {
-        console.log('EPG Debug: No programs in database');
-      } else {
-        console.log(`EPG Debug: ${totalCount} programs in database`);
-      }
-
-      for (const id of streamIds.slice(0, 5)) { // Debug first 5 only
-        const allForChannel = await db.programs
-          .where('stream_id')
-          .equals(id)
-          .toArray();
-
-        if (allForChannel.length > 0) {
-          console.log(`EPG Debug for ${id}:`, {
-            count: allForChannel.length,
-            first: allForChannel[0],
-            now: now.toISOString(),
-            firstStart: allForChannel[0].start,
-            firstEnd: allForChannel[0].end,
-          });
-        }
-      }
 
       for (const id of streamIds) {
         const program = await db.programs

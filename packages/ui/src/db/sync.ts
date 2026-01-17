@@ -26,15 +26,11 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<nu
   // Clear old EPG data for this source
   await db.programs.where('source_id').equals(source.id).delete();
 
-  console.log('  Fetching XMLTV EPG data...');
-
   try {
     // Fetch full XMLTV data
     const xmltvPrograms = await client.getXmltvEpg();
-    console.log(`  XMLTV parsed: ${xmltvPrograms.length} programs`);
 
     if (xmltvPrograms.length === 0) {
-      console.log('  No EPG data in XMLTV');
       return 0;
     }
 
@@ -45,12 +41,9 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<nu
         channelMap.set(ch.epg_channel_id, ch.stream_id);
       }
     }
-    console.log(`  Channel map: ${channelMap.size} channels with EPG IDs`);
 
     // Convert XMLTV programs to stored format
     const storedPrograms: StoredProgram[] = [];
-    let matched = 0;
-    let unmatched = 0;
 
     for (const prog of xmltvPrograms) {
       const streamId = channelMap.get(prog.channel_id);
@@ -64,26 +57,19 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<nu
           end: prog.stop,
           source_id: source.id,
         });
-        matched++;
-      } else {
-        unmatched++;
       }
     }
-
-    console.log(`  Matched ${matched} programs to channels (${unmatched} unmatched)`);
 
     // Store in batches
     const BATCH_SIZE = 1000;
     for (let i = 0; i < storedPrograms.length; i += BATCH_SIZE) {
       const batch = storedPrograms.slice(i, i + BATCH_SIZE);
       await db.programs.bulkPut(batch);
-      console.log(`  Stored ${Math.min(i + BATCH_SIZE, storedPrograms.length)}/${storedPrograms.length} programs`);
     }
 
-    console.log(`  EPG complete: ${storedPrograms.length} programs stored`);
     return storedPrograms.length;
   } catch (err) {
-    console.error('  EPG fetch failed:', err);
+    console.error('EPG fetch failed:', err);
     return 0;
   }
 }

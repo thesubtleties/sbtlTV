@@ -280,7 +280,6 @@ export class XtreamClient {
   // Fetch full XMLTV EPG data
   async getXmltvEpg(): Promise<XmltvProgram[]> {
     const url = this.getEpgUrl();
-    console.log('  XMLTV URL:', url);
 
     // Use fetch proxy if available, otherwise regular fetch
     let xmlText: string;
@@ -296,19 +295,6 @@ export class XtreamClient {
         throw new Error(`Failed to fetch XMLTV: ${response.status}`);
       }
       xmlText = await response.text();
-    }
-
-    // Debug: log response size and first bit
-    console.log('  XMLTV response size:', xmlText.length, 'chars');
-    console.log('  XMLTV first 500 chars:', xmlText.substring(0, 500));
-
-    // Debug: check if there are any programme elements
-    const programmeIndex = xmlText.indexOf('<programme');
-    if (programmeIndex === -1) {
-      console.log('  XMLTV: NO <programme> elements found in file!');
-    } else {
-      console.log('  XMLTV: First <programme> at index:', programmeIndex);
-      console.log('  XMLTV: Programme sample:', xmlText.substring(programmeIndex, programmeIndex + 500));
     }
 
     // Parse XMLTV
@@ -328,7 +314,6 @@ export class XtreamClient {
     const descPattern = /<desc[^>]*>([^<]*)<\/desc>/i;
 
     let match;
-    let parseCount = 0;
     while ((match = programPattern.exec(xml)) !== null) {
       const [, attrs, content] = match;
 
@@ -356,11 +341,6 @@ export class XtreamClient {
           start,
           stop,
         });
-        parseCount++;
-        // Debug: log first few parsed
-        if (parseCount <= 3) {
-          console.log('  Parsed programme:', channelMatch[1], title, start);
-        }
       }
     }
 
