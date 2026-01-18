@@ -3,8 +3,13 @@ import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import * as net from 'net';
 import * as fs from 'fs';
+import { fileURLToPath } from 'url';
 import type { Source } from '@sbtltv/core';
-import * as storage from './storage';
+import * as storage from './storage.js';
+
+// ESM equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Minimum window dimensions
 const MIN_WIDTH = 640;
@@ -56,7 +61,7 @@ async function createWindow(): Promise<void> {
     frame: !isWindows, // Frameless on Windows (required for transparency)
     resizable: true, // Explicit for Electron 40
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },

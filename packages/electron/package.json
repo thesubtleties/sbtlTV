@@ -2,6 +2,7 @@
   "name": "@sbtltv/electron",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "main": "./dist/main.js",
   "scripts": {
     "build": "tsc",
@@ -11,7 +12,7 @@
   },
   "dependencies": {
     "@sbtltv/core": "workspace:*",
-    "electron-store": "^8.1.0"
+    "electron-store": "^11.0.2"
   },
   "devDependencies": {
     "electron": "^40.0.0",
