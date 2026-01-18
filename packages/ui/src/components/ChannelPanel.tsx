@@ -229,8 +229,8 @@ export function ChannelPanel({
         <div className="guide-time-header-grid">
           {timeSlots.map((slot, i) => {
             const position = getTimeSlotPosition(slot);
-            // Only show if position is within visible area
-            if (position < -50 || position > availableWidth) return null;
+            // Hide if marker would be cut off at left edge or beyond right edge
+            if (position < 0 || position > availableWidth) return null;
             return (
               <span
                 key={i}
