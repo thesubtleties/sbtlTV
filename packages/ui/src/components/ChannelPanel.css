@@ -256,8 +256,8 @@
 .guide-channel-number {
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.35);
-  min-width: 28px;
-  text-align: right;
+  min-width: 14px;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
