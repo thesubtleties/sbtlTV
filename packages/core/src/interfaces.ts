@@ -1,10 +1,10 @@
 /**
- * Service interfaces for neTV Desktop
+ * Service interfaces for sbtlTV
  *
  * These interfaces define the contract between the UI layer and the data layer.
  * Different adapters can implement these:
  * - LocalAdapter: Parses M3U/Xtream locally
- * - ServerAdapter: Fetches from neTV backend API
+ * - ServerAdapter: Fetches from backend API
  */
 
 import type {

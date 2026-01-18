@@ -1,5 +1,5 @@
 {
-  "name": "@netv/ui",
+  "name": "@sbtltv/ui",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@netv/core": "workspace:*",
-    "@netv/local-adapter": "workspace:*",
+    "@sbtltv/core": "workspace:*",
+    "@sbtltv/local-adapter": "workspace:*",
     "dexie": "^4.0.0",
     "dexie-react-hooks": "^1.1.7",
     "react": "^18.2.0",

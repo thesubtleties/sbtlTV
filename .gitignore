@@ -38,3 +38,7 @@ coverage/
 # Cache
 .cache/
 .parcel-cache/
+
+# Local tooling
+.tldr/
+.tldrignore

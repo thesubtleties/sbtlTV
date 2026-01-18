@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
-import type { Source } from '@netv/core';
+import type { Source } from '@sbtltv/core';
 
 // Types for the exposed APIs
 export interface MpvStatus {

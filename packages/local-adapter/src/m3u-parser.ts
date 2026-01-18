@@ -2,7 +2,7 @@
  * M3U Playlist Parser
  *
  * Parses M3U/M3U8 playlists with EXTINF metadata.
- * Based on netv-src/m3u.py implementation.
+ * M3U playlist parser for IPTV channel lists.
  *
  * M3U Format:
  * #EXTM3U url-tvg="http://epg.url/xmltv.xml"
@@ -10,7 +10,7 @@
  * http://stream.url/live/123.ts
  */
 
-import type { Channel, Category } from '@netv/core';
+import type { Channel, Category } from '@sbtltv/core';
 
 export interface M3UParseResult {
   channels: Channel[];

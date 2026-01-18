@@ -187,7 +187,7 @@ function App() {
     <div className="app" onMouseMove={handleMouseMove}>
       {/* Custom title bar for frameless window */}
       <div className="title-bar">
-        <span className="title-bar-title">neTV</span>
+        <span className="title-bar-title">sbtlTV</span>
         <div className="window-controls">
           <button onClick={handleMinimize} title="Minimize">
             ─
@@ -205,7 +205,7 @@ function App() {
       <div className="video-background">
         {!currentStream && (
           <div className="placeholder">
-            <h1>neTV</h1>
+            <h1>sbtlTV</h1>
             <p>{syncing ? 'Loading channels...' : 'Select a stream to begin'}</p>
           </div>
         )}

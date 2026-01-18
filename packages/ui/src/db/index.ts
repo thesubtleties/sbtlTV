@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Channel, Category } from '@netv/core';
+import type { Channel, Category } from '@sbtltv/core';
 
 // Extended channel with local metadata
 export interface StoredChannel extends Channel {
@@ -39,7 +39,7 @@ export interface StoredProgram {
   source_id: string;
 }
 
-class NetvDatabase extends Dexie {
+class SbtltvDatabase extends Dexie {
   channels!: Table<StoredChannel, string>;
   categories!: Table<StoredCategory, string>;
   sourcesMeta!: Table<SourceMeta, string>;
@@ -47,7 +47,7 @@ class NetvDatabase extends Dexie {
   programs!: Table<StoredProgram, string>;
 
   constructor() {
-    super('netv');
+    super('sbtltv');
 
     this.version(1).stores({
       // Primary key is stream_id, indexed by source_id and category_ids
@@ -71,7 +71,7 @@ class NetvDatabase extends Dexie {
   }
 }
 
-export const db = new NetvDatabase();
+export const db = new SbtltvDatabase();
 
 // Helper to clear all data for a source (before re-sync)
 export async function clearSourceData(sourceId: string): Promise<void> {

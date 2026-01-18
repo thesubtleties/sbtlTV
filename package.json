@@ -1,10 +1,10 @@
 {
-  "name": "netv-desktop",
+  "name": "sbtltv",
   "version": "0.1.0",
   "private": true,
   "description": "Desktop IPTV player with mpv",
   "scripts": {
-    "dev": "pnpm --filter @netv/electron dev",
+    "dev": "pnpm --filter @sbtltv/electron dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck"
   },

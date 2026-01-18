@@ -1,6 +1,6 @@
 import Store from 'electron-store';
 import { safeStorage } from 'electron';
-import type { Source } from '@netv/core';
+import type { Source } from '@sbtltv/core';
 
 // Store schema - passwords stored as encrypted buffers
 interface StoreSchema {
@@ -27,7 +27,7 @@ interface AppSettings {
 }
 
 const store = new Store<StoreSchema>({
-  name: 'netv-config',
+  name: 'sbtltv-config',
   defaults: {
     sources: [],
     settings: {

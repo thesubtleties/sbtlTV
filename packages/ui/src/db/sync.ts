@@ -1,6 +1,6 @@
 import { db, clearSourceData, type SourceMeta, type StoredProgram } from './index';
-import { fetchAndParseM3U, XtreamClient } from '@netv/local-adapter';
-import type { Source, Channel, Category } from '@netv/core';
+import { fetchAndParseM3U, XtreamClient } from '@sbtltv/local-adapter';
+import type { Source, Channel, Category } from '@sbtltv/core';
 
 export interface SyncResult {
   success: boolean;

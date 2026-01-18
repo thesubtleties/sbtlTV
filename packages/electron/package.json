@@ -1,5 +1,5 @@
 {
-  "name": "@netv/electron",
+  "name": "@sbtltv/electron",
   "version": "0.1.0",
   "private": true,
   "main": "./dist/main.js",
@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@netv/core": "workspace:*",
+    "@sbtltv/core": "workspace:*",
     "electron-store": "^8.1.0"
   },
   "devDependencies": {

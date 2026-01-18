@@ -1,6 +1,6 @@
 /**
- * Core data types for neTV Desktop
- * Based on analysis of netv-src/m3u.py, xtream.py, epg.py
+ * Core data types for sbtlTV
+ * Types based on Xtream Codes API standard
  */
 
 // =============================================================================

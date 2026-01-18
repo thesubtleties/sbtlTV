@@ -2,7 +2,7 @@
  * Xtream Codes API Client
  *
  * Implements the Xtream Codes player_api.php interface.
- * Based on netv-src/xtream.py implementation.
+ * Client for Xtream Codes API.
  *
  * API Reference:
  * - Base: http://server/player_api.php?username=X&password=Y
@@ -10,7 +10,7 @@
  * - Stream URLs: http://server/live/username/password/stream_id.ts
  */
 
-import type { Channel, Category, Movie, Series, Season } from '@netv/core';
+import type { Channel, Category, Movie, Series, Season } from '@sbtltv/core';
 
 export interface XtreamConfig {
   baseUrl: string;

@@ -1,5 +1,5 @@
 {
-  "name": "@netv/local-adapter",
+  "name": "@sbtltv/local-adapter",
   "version": "0.1.0",
   "private": true,
   "main": "./src/index.ts",
@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@netv/core": "workspace:*",
+    "@sbtltv/core": "workspace:*",
     "dexie": "^4.0.0"
   },
   "devDependencies": {

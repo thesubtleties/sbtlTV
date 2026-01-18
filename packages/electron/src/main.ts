@@ -3,7 +3,7 @@ import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import * as net from 'net';
 import * as fs from 'fs';
-import type { Source } from '@netv/core';
+import type { Source } from '@sbtltv/core';
 import * as storage from './storage';
 
 let mainWindow: BrowserWindow | null = null;
