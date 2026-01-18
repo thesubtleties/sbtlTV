@@ -37,7 +37,7 @@
 }
 
 .guide-panel.sidebar-expanded {
-  padding-left: 170px;
+  padding-left: 150px;
 }
 
 .guide-panel.with-categories {
@@ -45,7 +45,7 @@
 }
 
 .guide-panel.sidebar-expanded.with-categories {
-  padding-left: 330px;
+  padding-left: 320px;
 }
 
 /* Header */

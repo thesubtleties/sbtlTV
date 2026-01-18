@@ -75,6 +75,7 @@
 .sidebar.expanded .nav-label {
   opacity: 1;
   width: auto;
+  margin-left: 10px;
   padding-right: 8px;
 }
 

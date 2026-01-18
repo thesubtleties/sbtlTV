@@ -24,8 +24,8 @@
 
 /* Shift right when sidebar is expanded */
 .category-strip.sidebar-expanded {
-  width: 300px; /* 140px expanded sidebar + 160px content */
-  padding-left: 140px;
+  width: 320px; /* 160px expanded sidebar + 160px content */
+  padding-left: 160px;
 }
 
 .category-strip.visible {
