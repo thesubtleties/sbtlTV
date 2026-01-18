@@ -393,3 +393,32 @@
   align-items: center;
   gap: 5px;
 }
+
+/* Resize grip for frameless window */
+.resize-grip {
+  position: fixed;
+  bottom: 4px;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+  cursor: nwse-resize;
+  z-index: 9999;
+  -webkit-app-region: no-drag;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: auto;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Show when app is being interacted with (same as title-bar) */
+.app:hover .resize-grip {
+  opacity: 0.5;
+}
+
+.resize-grip:hover {
+  opacity: 1;
+}
+
+.resize-grip svg {
+  display: block;
+}

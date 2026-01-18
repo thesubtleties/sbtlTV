@@ -42,3 +42,6 @@ coverage/
 # Local tooling
 .tldr/
 .tldrignore
+
+# Development notes
+thoughts/

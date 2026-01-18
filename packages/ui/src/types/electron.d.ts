@@ -33,6 +33,8 @@ export interface ElectronWindowApi {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
   close: () => Promise<void>;
+  getSize: () => Promise<[number, number]>;
+  setSize: (width: number, height: number) => Promise<void>;
 }
 
 export interface StorageResult<T = void> {
@@ -78,12 +80,19 @@ export interface FetchProxyApi {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<StorageResult<FetchProxyResponse>>;
 }
 
+export interface PlatformApi {
+  isWindows: boolean;
+  isMac: boolean;
+  isLinux: boolean;
+}
+
 declare global {
   interface Window {
     mpv?: MpvApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
     fetchProxy?: FetchProxyApi;
+    platform?: PlatformApi;
   }
 }
 

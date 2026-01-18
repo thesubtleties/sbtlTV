@@ -1,10 +1,14 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import * as net from 'net';
 import * as fs from 'fs';
 import type { Source } from '@sbtltv/core';
 import * as storage from './storage';
+
+// Minimum window dimensions
+const MIN_WIDTH = 640;
+const MIN_HEIGHT = 480;
 
 let mainWindow: BrowserWindow | null = null;
 let mpvProcess: ChildProcess | null = null;
@@ -45,9 +49,12 @@ async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
+    minWidth: MIN_WIDTH,
+    minHeight: MIN_HEIGHT,
     backgroundColor: isWindows ? '#00000000' : '#000000',
     transparent: isWindows, // Transparent on Windows so mpv shows through
     frame: !isWindows, // Frameless on Windows (required for transparency)
+    resizable: true, // Explicit for Electron 40
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -351,6 +358,18 @@ ipcMain.handle('window-maximize', () => {
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
 
+// Window resize for frameless windows
+ipcMain.handle('window-get-size', () => mainWindow?.getSize());
+ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
+  if (!mainWindow) return;
+  const newW = Math.max(MIN_WIDTH, Math.round(width));
+  const newH = Math.max(MIN_HEIGHT, Math.round(height));
+  // setSize doesn't work for shrinking on transparent windows in Electron 40
+  // Use setBounds which seems to work in both directions
+  const bounds = mainWindow.getBounds();
+  mainWindow.setBounds({ x: bounds.x, y: bounds.y, width: newW, height: newH });
+});
+
 // IPC Handlers - mpv control
 ipcMain.handle('mpv-load', async (_event, url: string) => {
   if (!mpvSocket) return { error: 'mpv not initialized' };
@@ -493,7 +512,7 @@ ipcMain.handle('storage-is-encryption-available', async () => {
 // Fetch proxy - bypasses CORS by making requests from main process
 ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => {
   try {
-    const response = await fetch(url, {
+    const response = await electronNet.fetch(url, {
       method: options?.method || 'GET',
       headers: options?.headers,
       body: options?.body,

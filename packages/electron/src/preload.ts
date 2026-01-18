@@ -35,6 +35,8 @@ export interface ElectronWindowApi {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
   close: () => Promise<void>;
+  getSize: () => Promise<[number, number]>;
+  setSize: (width: number, height: number) => Promise<void>;
 }
 
 export interface StorageResult<T = void> {
@@ -75,6 +77,8 @@ contextBridge.exposeInMainWorld('electronWindow', {
   minimize: () => ipcRenderer.invoke('window-minimize'),
   maximize: () => ipcRenderer.invoke('window-maximize'),
   close: () => ipcRenderer.invoke('window-close'),
+  getSize: () => ipcRenderer.invoke('window-get-size'),
+  setSize: (width: number, height: number) => ipcRenderer.invoke('window-set-size', width, height),
 } satisfies ElectronWindowApi);
 
 // Expose mpv API to the renderer process
@@ -125,3 +129,10 @@ contextBridge.exposeInMainWorld('fetchProxy', {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) =>
     ipcRenderer.invoke('fetch-proxy', url, options),
 } satisfies FetchProxyApi);
+
+// Expose platform info for conditional UI (e.g., resize grip on Windows only)
+contextBridge.exposeInMainWorld('platform', {
+  isWindows: process.platform === 'win32',
+  isMac: process.platform === 'darwin',
+  isLinux: process.platform === 'linux',
+});

@@ -299,6 +299,60 @@ function App() {
 
       {/* Settings Panel */}
       {activeView === 'settings' && <Settings onClose={() => setActiveView('none')} />}
+
+      {/* Resize grip for frameless window (Windows only - frameless windows lack native resize) */}
+      {window.platform?.isWindows && (
+      <div
+        className="resize-grip"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (!window.electronWindow) return;
+
+          const startX = e.screenX;
+          const startY = e.screenY;
+          let startWidth = window.innerWidth;
+          let startHeight = window.innerHeight;
+          let rafId: number | null = null;
+          let pendingWidth = startWidth;
+          let pendingHeight = startHeight;
+
+          window.electronWindow.getSize().then(([w, h]) => {
+            startWidth = w;
+            startHeight = h;
+          });
+
+          const onMouseMove = (moveEvent: MouseEvent) => {
+            pendingWidth = startWidth + (moveEvent.screenX - startX);
+            pendingHeight = startHeight + (moveEvent.screenY - startY);
+
+            // Throttle with RAF for smoother resize
+            if (rafId === null) {
+              rafId = requestAnimationFrame(() => {
+                window.electronWindow?.setSize(pendingWidth, pendingHeight);
+                rafId = null;
+              });
+            }
+          };
+
+          const onMouseUp = () => {
+            if (rafId !== null) cancelAnimationFrame(rafId);
+            // Final update to ensure we hit the exact position
+            window.electronWindow?.setSize(pendingWidth, pendingHeight);
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+          };
+
+          document.addEventListener('mousemove', onMouseMove);
+          document.addEventListener('mouseup', onMouseUp);
+        }}
+      >
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+          <path d="M11 21L21 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M15 21L21 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M19 21L21 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </div>
+      )}
     </div>
   );
 }
