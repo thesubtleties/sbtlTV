@@ -129,3 +129,10 @@ contextBridge.exposeInMainWorld('fetchProxy', {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) =>
     ipcRenderer.invoke('fetch-proxy', url, options),
 } satisfies FetchProxyApi);
+
+// Expose platform info for conditional UI (e.g., resize grip on Windows only)
+contextBridge.exposeInMainWorld('platform', {
+  isWindows: process.platform === 'win32',
+  isMac: process.platform === 'darwin',
+  isLinux: process.platform === 'linux',
+});

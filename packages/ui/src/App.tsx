@@ -300,7 +300,8 @@ function App() {
       {/* Settings Panel */}
       {activeView === 'settings' && <Settings onClose={() => setActiveView('none')} />}
 
-      {/* Resize grip for frameless window (Windows only) */}
+      {/* Resize grip for frameless window (Windows only - frameless windows lack native resize) */}
+      {window.platform?.isWindows && (
       <div
         className="resize-grip"
         onMouseDown={(e) => {
@@ -351,6 +352,7 @@ function App() {
           <path d="M19 21L21 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       </div>
+      )}
     </div>
   );
 }
