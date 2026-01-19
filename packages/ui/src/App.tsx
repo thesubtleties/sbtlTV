@@ -20,6 +20,7 @@ function App() {
 
   // UI state
   const [showControls, setShowControls] = useState(true);
+  const [lastActivity, setLastActivity] = useState(Date.now());
   const [activeView, setActiveView] = useState<View>('none');
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
@@ -32,6 +33,9 @@ function App() {
 
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
+
+  // Track if mouse is hovering over controls (prevents auto-hide)
+  const controlsHoveredRef = useRef(false);
 
   // Set up mpv event listeners
   useEffect(() => {
@@ -66,20 +70,23 @@ function App() {
 
   // Auto-hide controls after 3 seconds of no activity
   useEffect(() => {
-    if (!showControls) return;
+    // Don't auto-hide if not playing or if panels are open
+    if (!playing || activeView !== 'none' || categoriesOpen) return;
 
     const timer = setTimeout(() => {
-      if (playing) {
+      // Don't hide if mouse is hovering over controls
+      if (!controlsHoveredRef.current) {
         setShowControls(false);
       }
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [showControls, playing]);
+  }, [lastActivity, playing, activeView, categoriesOpen]);
 
-  // Show controls on mouse move
+  // Show controls on mouse move and reset hide timer
   const handleMouseMove = useCallback(() => {
     setShowControls(true);
+    setLastActivity(Date.now()); // Always new value = resets timer
   }, []);
 
   // Control handlers
@@ -240,6 +247,8 @@ function App() {
         onVolumeChange={handleVolumeChange}
         onVolumeDragStart={() => { volumeDraggingRef.current = true; }}
         onVolumeDragEnd={() => { volumeDraggingRef.current = false; }}
+        onMouseEnter={() => { controlsHoveredRef.current = true; }}
+        onMouseLeave={() => { controlsHoveredRef.current = false; }}
       />
 
       {/* Sidebar Navigation - stays visible when any panel is open */}

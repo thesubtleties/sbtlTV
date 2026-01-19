@@ -16,6 +16,8 @@ interface NowPlayingBarProps {
   onVolumeChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onVolumeDragStart?: () => void;
   onVolumeDragEnd?: () => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
 export function NowPlayingBar({
@@ -31,6 +33,8 @@ export function NowPlayingBar({
   onVolumeChange,
   onVolumeDragStart,
   onVolumeDragEnd,
+  onMouseEnter,
+  onMouseLeave,
 }: NowPlayingBarProps) {
   const canControl = mpvReady && channel !== null;
   const currentProgram = useCurrentProgram(channel?.stream_id ?? null);
@@ -74,7 +78,11 @@ export function NowPlayingBar({
   }, [currentProgram]);
 
   return (
-    <div className={`now-playing-bar ${visible ? 'visible' : 'hidden'}`}>
+    <div
+      className={`now-playing-bar ${visible ? 'visible' : 'hidden'}`}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
       {channel ? (
         <>
           {/* Row 1: Channel info with description */}
