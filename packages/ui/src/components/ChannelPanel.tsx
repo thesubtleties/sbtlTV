@@ -200,11 +200,14 @@ export function ChannelPanel({
                 <path d="M15 18l-6-6 6-6" />
               </svg>
             </button>
-            {!isAtNow && (
-              <button className="guide-now-btn" onClick={goToNow} title="Go to now">
-                Now
-              </button>
-            )}
+            <button
+              className={`guide-now-btn ${isAtNow ? 'inactive' : ''}`}
+              onClick={goToNow}
+              disabled={isAtNow}
+              title="Go to now"
+            >
+              Now
+            </button>
             <button className="guide-nav-btn" onClick={goForward} title="Next hour (→)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M9 18l6-6-6-6" />
@@ -226,8 +229,8 @@ export function ChannelPanel({
         <div className="guide-time-header-grid">
           {timeSlots.map((slot, i) => {
             const position = getTimeSlotPosition(slot);
-            // Only show if position is within visible area
-            if (position < -50 || position > availableWidth) return null;
+            // Hide if marker would be cut off at left edge or beyond right edge
+            if (position < 0 || position > availableWidth) return null;
             return (
               <span
                 key={i}

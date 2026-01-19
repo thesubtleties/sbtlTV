@@ -37,7 +37,7 @@
 }
 
 .guide-panel.sidebar-expanded {
-  padding-left: 170px;
+  padding-left: 150px;
 }
 
 .guide-panel.with-categories {
@@ -45,7 +45,7 @@
 }
 
 .guide-panel.sidebar-expanded.with-categories {
-  padding-left: 330px;
+  padding-left: 320px;
 }
 
 /* Header */
@@ -92,60 +92,72 @@
 .guide-nav {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .guide-nav-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.6);
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
-  border-radius: 6px;
-  transition: background 0.15s ease, color 0.15s ease;
+  border-radius: 4px;
+  transition: all 0.15s ease;
 }
 
 .guide-nav-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.05);
   color: white;
 }
 
 .guide-now-btn {
-  padding: 6px 14px;
-  border: none;
+  padding: 4px 12px;
+  border: 1px solid rgba(0, 212, 255, 0.4);
   background: rgba(0, 212, 255, 0.15);
   color: #00d4ff;
   cursor: pointer;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: background 0.15s ease;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  transition: all 0.15s ease;
 }
 
-.guide-now-btn:hover {
+.guide-now-btn:hover:not(:disabled) {
   background: rgba(0, 212, 255, 0.25);
+  border-color: rgba(0, 212, 255, 0.6);
+}
+
+.guide-now-btn.inactive {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: default;
 }
 
 .guide-close {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.6);
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
-  border-radius: 8px;
-  transition: background 0.15s ease, color 0.15s ease;
+  border-radius: 4px;
+  transition: all 0.15s ease;
 }
 
 .guide-close:hover {
-  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.05);
   color: white;
 }
 
@@ -256,8 +268,8 @@
 .guide-channel-number {
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.35);
-  min-width: 28px;
-  text-align: right;
+  min-width: 14px;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 

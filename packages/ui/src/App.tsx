@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { MpvStatus } from './types/electron';
 import { Settings } from './components/Settings';
 import { Sidebar, type View } from './components/Sidebar';
+import { NowPlayingBar } from './components/NowPlayingBar';
 import { CategoryStrip } from './components/CategoryStrip';
 import { ChannelPanel } from './components/ChannelPanel';
 import { useSelectedCategory } from './hooks/useChannels';
@@ -15,10 +16,11 @@ function App() {
   const [volume, setVolume] = useState(100);
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentStream, setCurrentStream] = useState<string | null>(null);
+  const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
 
   // UI state
   const [showControls, setShowControls] = useState(true);
+  const [lastActivity, setLastActivity] = useState(Date.now());
   const [activeView, setActiveView] = useState<View>('none');
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
@@ -28,6 +30,12 @@ function App() {
 
   // Sync state
   const [syncing, setSyncing] = useState(false);
+
+  // Track volume slider dragging to ignore mpv updates during drag
+  const volumeDraggingRef = useRef(false);
+
+  // Track if mouse is hovering over controls (prevents auto-hide)
+  const controlsHoveredRef = useRef(false);
 
   // Set up mpv event listeners
   useEffect(() => {
@@ -43,7 +51,10 @@ function App() {
 
     window.mpv.onStatus((status: MpvStatus) => {
       if (status.playing !== undefined) setPlaying(status.playing);
-      if (status.volume !== undefined) setVolume(status.volume);
+      // Skip volume updates while user is dragging the slider
+      if (status.volume !== undefined && !volumeDraggingRef.current) {
+        setVolume(status.volume);
+      }
       if (status.muted !== undefined) setMuted(status.muted);
     });
 
@@ -59,31 +70,34 @@ function App() {
 
   // Auto-hide controls after 3 seconds of no activity
   useEffect(() => {
-    if (!showControls) return;
+    // Don't auto-hide if not playing or if panels are open
+    if (!playing || activeView !== 'none' || categoriesOpen) return;
 
     const timer = setTimeout(() => {
-      if (playing) {
+      // Don't hide if mouse is hovering over controls
+      if (!controlsHoveredRef.current) {
         setShowControls(false);
       }
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [showControls, playing]);
+  }, [lastActivity, playing, activeView, categoriesOpen]);
 
-  // Show controls on mouse move
+  // Show controls on mouse move and reset hide timer
   const handleMouseMove = useCallback(() => {
     setShowControls(true);
+    setLastActivity(Date.now()); // Always new value = resets timer
   }, []);
 
   // Control handlers
-  const handleLoadStream = async (url: string, name?: string) => {
+  const handleLoadStream = async (channel: StoredChannel) => {
     if (!window.mpv) return;
     setError(null);
-    const result = await window.mpv.load(url);
+    const result = await window.mpv.load(channel.direct_url);
     if (result.error) {
       setError(result.error);
     } else {
-      setCurrentStream(name || url);
+      setCurrentChannel(channel);
       setPlaying(true);
     }
   };
@@ -111,12 +125,12 @@ function App() {
     if (!window.mpv) return;
     await window.mpv.stop();
     setPlaying(false);
-    setCurrentStream(null);
+    setCurrentChannel(null);
   };
 
   // Play a channel
   const handlePlayChannel = (channel: StoredChannel) => {
-    handleLoadStream(channel.direct_url, channel.name);
+    handleLoadStream(channel);
   };
 
   // Handle category selection - opens guide if closed
@@ -203,15 +217,10 @@ function App() {
 
       {/* Background - transparent over mpv */}
       <div className="video-background">
-        {!currentStream && (
+        {!currentChannel && (
           <div className="placeholder">
             <h1>sbtlTV</h1>
-            <p>{syncing ? 'Loading channels...' : 'Select a stream to begin'}</p>
-          </div>
-        )}
-        {currentStream && (
-          <div className="now-playing">
-            <p>Now playing: {currentStream}</p>
+            <p>{syncing ? 'Loading channels...' : 'Select a channel to begin'}</p>
           </div>
         )}
       </div>
@@ -224,48 +233,23 @@ function App() {
         </div>
       )}
 
-      {/* Control Bar */}
-      <div className={`control-bar ${showControls ? 'visible' : 'hidden'}`}>
-        {/* Status indicator */}
-        <div className="status">
-          <span className={`indicator ${mpvReady ? 'ready' : 'waiting'}`}>
-            {mpvReady ? 'mpv ready' : 'Waiting for mpv...'}
-          </span>
-        </div>
-
-        {/* Playback controls */}
-        <div className="playback-controls">
-          <button onClick={handleTogglePlay} disabled={!mpvReady || !currentStream}>
-            {playing ? '⏸ Pause' : '▶ Play'}
-          </button>
-          <button onClick={handleStop} disabled={!mpvReady || !currentStream}>
-            ⏹ Stop
-          </button>
-
-          <div className="volume-control">
-            <button onClick={handleToggleMute} disabled={!mpvReady}>
-              {muted ? '🔇' : volume > 50 ? '🔊' : '🔉'}
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={volume}
-              onChange={handleVolumeChange}
-              disabled={!mpvReady}
-            />
-            <span>{volume}%</span>
-          </div>
-        </div>
-
-        {/* Keyboard hints */}
-        <div className="keyboard-hints">
-          <span>Space: Play/Pause</span>
-          <span>M: Mute</span>
-          <span>G: Guide</span>
-          <span>C: Categories</span>
-        </div>
-      </div>
+      {/* Now Playing Bar */}
+      <NowPlayingBar
+        visible={showControls}
+        channel={currentChannel}
+        playing={playing}
+        muted={muted}
+        volume={volume}
+        mpvReady={mpvReady}
+        onTogglePlay={handleTogglePlay}
+        onStop={handleStop}
+        onToggleMute={handleToggleMute}
+        onVolumeChange={handleVolumeChange}
+        onVolumeDragStart={() => { volumeDraggingRef.current = true; }}
+        onVolumeDragEnd={() => { volumeDraggingRef.current = false; }}
+        onMouseEnter={() => { controlsHoveredRef.current = true; }}
+        onMouseLeave={() => { controlsHoveredRef.current = false; }}
+      />
 
       {/* Sidebar Navigation - stays visible when any panel is open */}
       <Sidebar

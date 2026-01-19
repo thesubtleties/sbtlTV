@@ -4,7 +4,7 @@
   top: 32px; /* Below title bar */
   bottom: 0;
   width: 230px; /* 70px sidebar + 160px content */
-  padding-left: 70px; /* Space for collapsed sidebar */
+  padding-left: 60px; /* Space for collapsed sidebar */
   box-sizing: border-box;
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(20px);
@@ -24,8 +24,8 @@
 
 /* Shift right when sidebar is expanded */
 .category-strip.sidebar-expanded {
-  width: 330px; /* 170px expanded sidebar + 160px content */
-  padding-left: 170px;
+  width: 320px; /* 160px expanded sidebar + 160px content */
+  padding-left: 160px;
 }
 
 .category-strip.visible {
