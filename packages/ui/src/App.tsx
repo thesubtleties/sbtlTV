@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { MpvStatus } from './types/electron';
 import { Settings } from './components/Settings';
 import { Sidebar, type View } from './components/Sidebar';
@@ -30,6 +30,9 @@ function App() {
   // Sync state
   const [syncing, setSyncing] = useState(false);
 
+  // Track volume slider dragging to ignore mpv updates during drag
+  const volumeDraggingRef = useRef(false);
+
   // Set up mpv event listeners
   useEffect(() => {
     if (!window.mpv) {
@@ -44,7 +47,10 @@ function App() {
 
     window.mpv.onStatus((status: MpvStatus) => {
       if (status.playing !== undefined) setPlaying(status.playing);
-      if (status.volume !== undefined) setVolume(status.volume);
+      // Skip volume updates while user is dragging the slider
+      if (status.volume !== undefined && !volumeDraggingRef.current) {
+        setVolume(status.volume);
+      }
       if (status.muted !== undefined) setMuted(status.muted);
     });
 
@@ -232,6 +238,8 @@ function App() {
         onStop={handleStop}
         onToggleMute={handleToggleMute}
         onVolumeChange={handleVolumeChange}
+        onVolumeDragStart={() => { volumeDraggingRef.current = true; }}
+        onVolumeDragEnd={() => { volumeDraggingRef.current = false; }}
       />
 
       {/* Sidebar Navigation - stays visible when any panel is open */}

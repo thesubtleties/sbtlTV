@@ -14,6 +14,8 @@ interface NowPlayingBarProps {
   onStop: () => void;
   onToggleMute: () => void;
   onVolumeChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  onVolumeDragStart?: () => void;
+  onVolumeDragEnd?: () => void;
 }
 
 export function NowPlayingBar({
@@ -27,6 +29,8 @@ export function NowPlayingBar({
   onStop,
   onToggleMute,
   onVolumeChange,
+  onVolumeDragStart,
+  onVolumeDragEnd,
 }: NowPlayingBarProps) {
   const canControl = mpvReady && channel !== null;
   const currentProgram = useCurrentProgram(channel?.stream_id ?? null);
@@ -164,6 +168,10 @@ export function NowPlayingBar({
                 max="100"
                 value={volume}
                 onChange={onVolumeChange}
+                onMouseDown={onVolumeDragStart}
+                onMouseUp={onVolumeDragEnd}
+                onTouchStart={onVolumeDragStart}
+                onTouchEnd={onVolumeDragEnd}
                 disabled={!mpvReady}
               />
               <span className="npb-volume-value">{volume}</span>
