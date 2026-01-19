@@ -117,8 +117,8 @@ function App() {
 
   const handleToggleMute = async () => {
     if (!window.mpv) return;
-    await window.mpv.mute(!muted);
-    setMuted(!muted);
+    await window.mpv.toggleMute();
+    // UI state updated via mpv status callback
   };
 
   const handleStop = async () => {

@@ -426,10 +426,10 @@ ipcMain.handle('mpv-volume', async (_event, volume: number) => {
   }
 });
 
-ipcMain.handle('mpv-mute', async (_event, mute: boolean) => {
+ipcMain.handle('mpv-toggle-mute', async () => {
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
-    await sendMpvCommand('set_property', ['mute', mute ? 'yes' : 'no']);
+    await sendMpvCommand('cycle', ['mute']);
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };

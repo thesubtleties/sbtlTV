@@ -22,7 +22,7 @@ export interface MpvApi {
   togglePause: () => Promise<MpvResult>;
   stop: () => Promise<MpvResult>;
   setVolume: (volume: number) => Promise<MpvResult>;
-  mute: (mute: boolean) => Promise<MpvResult>;
+  toggleMute: () => Promise<MpvResult>;
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
   onReady: (callback: (ready: boolean) => void) => void;
@@ -90,7 +90,7 @@ contextBridge.exposeInMainWorld('mpv', {
   togglePause: () => ipcRenderer.invoke('mpv-toggle-pause'),
   stop: () => ipcRenderer.invoke('mpv-stop'),
   setVolume: (volume: number) => ipcRenderer.invoke('mpv-volume', volume),
-  mute: (mute: boolean) => ipcRenderer.invoke('mpv-mute', mute),
+  toggleMute: () => ipcRenderer.invoke('mpv-toggle-mute'),
   seek: (seconds: number) => ipcRenderer.invoke('mpv-seek', seconds),
   getStatus: () => ipcRenderer.invoke('mpv-get-status'),
 
