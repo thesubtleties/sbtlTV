@@ -20,7 +20,7 @@ export interface MpvApi {
   togglePause: () => Promise<MpvResult>;
   stop: () => Promise<MpvResult>;
   setVolume: (volume: number) => Promise<MpvResult>;
-  mute: (mute: boolean) => Promise<MpvResult>;
+  toggleMute: () => Promise<MpvResult>;
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
   onReady: (callback: (ready: boolean) => void) => void;
