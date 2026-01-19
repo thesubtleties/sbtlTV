@@ -1,0 +1,277 @@
+/* Now Playing Bar - cable box style, two-row layout */
+.now-playing-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(10, 10, 10, 0.92);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  z-index: 50;
+}
+
+.now-playing-bar.hidden {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.now-playing-bar.visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* Row container */
+.npb-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Row 1: Info row */
+.npb-info-row {
+  gap: 10px;
+}
+
+.npb-channel-logo {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.npb-text-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0; /* Allow text truncation */
+  flex: 1;
+}
+
+.npb-channel-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  cursor: default;
+}
+
+.npb-program-title {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  cursor: default;
+}
+
+.npb-program-desc {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  cursor: default;
+}
+
+.npb-no-program {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.3);
+  font-style: italic;
+}
+
+/* Row 2: Controls row */
+.npb-controls-row {
+  gap: 16px;
+}
+
+/* Progress section - takes remaining space */
+.npb-progress-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.npb-progress-bar {
+  flex: 1;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.npb-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00d4ff, #00a8cc);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.npb-time-remaining {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  min-width: 65px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Playback controls */
+.npb-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.npb-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.npb-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.npb-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.npb-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Volume controls */
+.npb-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.npb-volume-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.npb-volume-slider {
+  width: 70px;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.npb-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  background: white;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.npb-volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.npb-volume-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  background: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.npb-volume-slider:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.npb-volume-value {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  min-width: 22px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Empty state */
+.npb-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.npb-empty-state span {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .now-playing-bar {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+
+  .npb-channel-logo {
+    width: 30px;
+    height: 30px;
+  }
+
+  .npb-program-desc {
+    display: none;
+  }
+
+  .npb-volume-slider {
+    width: 50px;
+  }
+
+  .npb-volume-value {
+    display: none;
+  }
+}
+
+@media (max-width: 400px) {
+  .npb-channel-logo {
+    display: none;
+  }
+
+  .npb-time-remaining {
+    display: none;
+  }
+}

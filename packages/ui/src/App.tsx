@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { MpvStatus } from './types/electron';
 import { Settings } from './components/Settings';
 import { Sidebar, type View } from './components/Sidebar';
+import { NowPlayingBar } from './components/NowPlayingBar';
 import { CategoryStrip } from './components/CategoryStrip';
 import { ChannelPanel } from './components/ChannelPanel';
 import { useSelectedCategory } from './hooks/useChannels';
@@ -15,7 +16,7 @@ function App() {
   const [volume, setVolume] = useState(100);
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentStream, setCurrentStream] = useState<string | null>(null);
+  const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
 
   // UI state
   const [showControls, setShowControls] = useState(true);
@@ -76,14 +77,14 @@ function App() {
   }, []);
 
   // Control handlers
-  const handleLoadStream = async (url: string, name?: string) => {
+  const handleLoadStream = async (channel: StoredChannel) => {
     if (!window.mpv) return;
     setError(null);
-    const result = await window.mpv.load(url);
+    const result = await window.mpv.load(channel.direct_url);
     if (result.error) {
       setError(result.error);
     } else {
-      setCurrentStream(name || url);
+      setCurrentChannel(channel);
       setPlaying(true);
     }
   };
@@ -111,12 +112,12 @@ function App() {
     if (!window.mpv) return;
     await window.mpv.stop();
     setPlaying(false);
-    setCurrentStream(null);
+    setCurrentChannel(null);
   };
 
   // Play a channel
   const handlePlayChannel = (channel: StoredChannel) => {
-    handleLoadStream(channel.direct_url, channel.name);
+    handleLoadStream(channel);
   };
 
   // Handle category selection - opens guide if closed
@@ -203,19 +204,12 @@ function App() {
 
       {/* Background - transparent over mpv */}
       <div className="video-background">
-        {!currentStream && (
+        {!currentChannel && (
           <div className="placeholder">
             <h1>sbtlTV</h1>
-            <p>{syncing ? 'Loading channels...' : 'Select a stream to begin'}</p>
+            <p>{syncing ? 'Loading channels...' : 'Select a channel to begin'}</p>
           </div>
         )}
-        {/* TODO: Revisit "Now playing" indicator - either remove or redesign to fit UI
-        {currentStream && (
-          <div className="now-playing">
-            <p>Now playing: {currentStream}</p>
-          </div>
-        )}
-        */}
       </div>
 
       {/* Error display */}
@@ -226,48 +220,19 @@ function App() {
         </div>
       )}
 
-      {/* Control Bar */}
-      <div className={`control-bar ${showControls ? 'visible' : 'hidden'}`}>
-        {/* Status indicator */}
-        <div className="status">
-          <span className={`indicator ${mpvReady ? 'ready' : 'waiting'}`}>
-            {mpvReady ? 'mpv ready' : 'Waiting for mpv...'}
-          </span>
-        </div>
-
-        {/* Playback controls */}
-        <div className="playback-controls">
-          <button onClick={handleTogglePlay} disabled={!mpvReady || !currentStream}>
-            {playing ? '⏸ Pause' : '▶ Play'}
-          </button>
-          <button onClick={handleStop} disabled={!mpvReady || !currentStream}>
-            ⏹ Stop
-          </button>
-
-          <div className="volume-control">
-            <button onClick={handleToggleMute} disabled={!mpvReady}>
-              {muted ? '🔇' : volume > 50 ? '🔊' : '🔉'}
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={volume}
-              onChange={handleVolumeChange}
-              disabled={!mpvReady}
-            />
-            <span>{volume}%</span>
-          </div>
-        </div>
-
-        {/* Keyboard hints */}
-        <div className="keyboard-hints">
-          <span>Space: Play/Pause</span>
-          <span>M: Mute</span>
-          <span>G: Guide</span>
-          <span>C: Categories</span>
-        </div>
-      </div>
+      {/* Now Playing Bar */}
+      <NowPlayingBar
+        visible={showControls}
+        channel={currentChannel}
+        playing={playing}
+        muted={muted}
+        volume={volume}
+        mpvReady={mpvReady}
+        onTogglePlay={handleTogglePlay}
+        onStop={handleStop}
+        onToggleMute={handleToggleMute}
+        onVolumeChange={handleVolumeChange}
+      />
 
       {/* Sidebar Navigation - stays visible when any panel is open */}
       <Sidebar
