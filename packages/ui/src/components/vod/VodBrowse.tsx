@@ -155,12 +155,6 @@ export function VodBrowse({
 
   return (
     <div className="vod-browse">
-      <header className="vod-browse__header">
-        <span className="vod-browse__count">
-          {items.length}{hasMore ? '+' : ''} {type}
-        </span>
-      </header>
-
       <VirtuosoGrid
         ref={virtuosoRef}
         className="vod-browse__grid"
@@ -184,6 +178,7 @@ export function VodBrowse({
           currentLetter={currentLetter}
           availableLetters={availableLetters}
           onLetterSelect={handleLetterSelect}
+          count={items.length}
         />
       )}
     </div>

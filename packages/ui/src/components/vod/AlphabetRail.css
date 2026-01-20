@@ -89,6 +89,24 @@
   }
 }
 
+/* Count indicator above letters */
+.alphabet-rail__count {
+  padding: 4px 6px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* Separator line between count and letters */
+.alphabet-rail__separator {
+  width: 20px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 4px 0 6px;
+}
+
 /* Responsive - hide on small screens */
 @media (max-width: 768px) {
   .alphabet-rail {
