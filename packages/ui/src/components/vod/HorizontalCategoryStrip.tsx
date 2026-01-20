@@ -8,7 +8,7 @@
  * - Mouse wheel horizontal scroll support
  */
 
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import './HorizontalCategoryStrip.css';
 
 interface Category {
@@ -49,6 +49,18 @@ export function HorizontalCategoryStrip({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+
+  // Process categories: strip prefixes and sort alphabetically
+  const processedCategories = useMemo(() => {
+    return categories
+      .map((cat) => ({
+        ...cat,
+        displayName: cat.name
+          .replace(/^(Series|Movies|Movie)-/i, '')
+          .trim(),
+      }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [categories]);
 
   // Check scroll state
   const updateScrollState = useCallback(() => {
@@ -146,13 +158,13 @@ export function HorizontalCategoryStrip({
           </button>
 
           {/* Category pills */}
-          {categories.map((cat) => (
+          {processedCategories.map((cat) => (
             <button
               key={cat.id}
               className={`h-category-strip__pill ${selectedId === cat.id ? 'active' : ''}`}
               onClick={() => onSelect(cat.id)}
             >
-              {cat.name}
+              {cat.displayName}
             </button>
           ))}
         </div>
