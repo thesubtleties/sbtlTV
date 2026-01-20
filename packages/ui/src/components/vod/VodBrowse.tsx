@@ -5,7 +5,7 @@
  * and alphabet quick-nav rail.
  */
 
-import { useState, useCallback, useMemo, useRef, forwardRef } from 'react';
+import { useState, useCallback, useMemo, useRef, forwardRef, useEffect } from 'react';
 import { VirtuosoGrid, VirtuosoGridHandle } from 'react-virtuoso';
 import { MediaCard } from './MediaCard';
 import { AlphabetRail } from './AlphabetRail';
@@ -59,6 +59,13 @@ export function VodBrowse({
 }: VodBrowseProps) {
   const virtuosoRef = useRef<VirtuosoGridHandle>(null);
   const [visibleRange, setVisibleRange] = useState({ startIndex: 0, endIndex: 0 });
+
+  // Scroll to top when category changes
+  useEffect(() => {
+    if (virtuosoRef.current) {
+      virtuosoRef.current.scrollToIndex({ index: 0, align: 'start' });
+    }
+  }, [categoryId]);
 
   // Get paginated data
   const moviesData = usePaginatedMovies(type === 'movies' ? categoryId : null, search);
