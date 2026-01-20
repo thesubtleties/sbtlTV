@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
+import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useSeriesDetails } from '../../hooks/useVod';
 import type { StoredSeries, StoredEpisode } from '../../db';
 import './SeriesDetail.css';
@@ -57,8 +58,9 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
     [series.name, onPlayEpisode]
   );
 
-  // Lazy-load backdrop from TMDB if available
+  // Lazy-load backdrop and plot from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(series, apiKey);
+  const lazyPlot = useLazyPlot(series, apiKey);
 
   // Get images - use TMDB backdrop if available, fallback to cover
   const backdropUrl = tmdbBackdropUrl || series.cover;
@@ -143,8 +145,8 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
               </div>
             )}
 
-            {series.plot && (
-              <p className="series-detail__description">{series.plot}</p>
+            {(series.plot || lazyPlot) && (
+              <p className="series-detail__description">{series.plot || lazyPlot}</p>
             )}
 
             {/* Credits */}

@@ -8,6 +8,7 @@
 import { useEffect, useCallback } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
+import { useLazyPlot } from '../../hooks/useLazyPlot';
 import type { StoredMovie } from '../../db';
 import './MovieDetail.css';
 
@@ -35,8 +36,9 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
     onPlay?.(movie);
   }, [movie, onPlay]);
 
-  // Lazy-load backdrop from TMDB if available
+  // Lazy-load backdrop and plot from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(movie, apiKey);
+  const lazyPlot = useLazyPlot(movie, apiKey);
 
   // Get images - use TMDB backdrop if available, fallback to stream_icon
   const backdropUrl = tmdbBackdropUrl || movie.stream_icon;
@@ -119,8 +121,8 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
               </div>
             )}
 
-            {movie.plot && (
-              <p className="movie-detail__description">{movie.plot}</p>
+            {(movie.plot || lazyPlot) && (
+              <p className="movie-detail__description">{movie.plot || lazyPlot}</p>
             )}
 
             {/* Actions */}

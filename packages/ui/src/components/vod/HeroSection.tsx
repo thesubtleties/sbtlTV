@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { StoredMovie, StoredSeries } from '../../db';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
+import { useLazyPlot } from '../../hooks/useLazyPlot';
 import './HeroSection.css';
 
 export interface HeroSectionProps {
@@ -27,8 +28,9 @@ export function HeroSection({
 
   const currentItem = items[currentIndex];
 
-  // Lazy-load backdrop from TMDB if available
+  // Lazy-load backdrop and plot from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(currentItem, apiKey);
+  const lazyPlot = useLazyPlot(currentItem, apiKey);
 
   // Auto-rotate through items
   useEffect(() => {
@@ -112,8 +114,8 @@ export function HeroSection({
             )}
           </div>
 
-          {currentItem.plot && (
-            <p className="hero__description">{currentItem.plot}</p>
+          {(currentItem.plot || lazyPlot) && (
+            <p className="hero__description">{currentItem.plot || lazyPlot}</p>
           )}
 
           <div className="hero__actions">
