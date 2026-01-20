@@ -72,16 +72,6 @@ export function MoviesPage({ onPlay, onClose }: MoviesPageProps) {
     setSelectedMovie(null);
   }, []);
 
-  // Handle search Enter - switch to All tab if on Home
-  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && searchQuery.trim()) {
-      // If on Home, switch to All to show search results
-      if (selectedCategoryId === null) {
-        setSelectedCategoryId('all');
-      }
-    }
-  }, [searchQuery, selectedCategoryId, setSelectedCategoryId]);
-
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {
     setSelectedCategoryId(id);
@@ -124,43 +114,20 @@ export function MoviesPage({ onPlay, onClose }: MoviesPageProps) {
 
   return (
     <div className="movies-page">
-      {/* Header with search */}
-      <header className="movies-page__header">
-        <button className="movies-page__close" onClick={onClose} aria-label="Close">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
-
-        <h1 className="movies-page__title">Movies</h1>
-
-        <div className="movies-page__search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.35-4.35" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search movies..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} aria-label="Clear search">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* Category strip */}
+      {/* Unified header: back + categories + search */}
       <HorizontalCategoryStrip
         categories={categories.map(c => ({ id: c.category_id, name: c.name }))}
         selectedId={selectedCategoryId}
         onSelect={handleCategorySelect}
+        type="movie"
+        onBack={onClose}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onSearchSubmit={() => {
+          if (searchQuery.trim() && selectedCategoryId === null) {
+            setSelectedCategoryId('all');
+          }
+        }}
       />
 
       {/* Main content */}

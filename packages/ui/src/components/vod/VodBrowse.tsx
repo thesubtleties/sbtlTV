@@ -156,7 +156,6 @@ export function VodBrowse({
   return (
     <div className="vod-browse">
       <header className="vod-browse__header">
-        <h2 className="vod-browse__title">{categoryName}</h2>
         <span className="vod-browse__count">
           {items.length}{hasMore ? '+' : ''} {type}
         </span>
