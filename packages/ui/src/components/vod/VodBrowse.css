@@ -1,0 +1,163 @@
+.vod-browse {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0; /* Critical for nested flex */
+  background: #0d0d0d;
+}
+
+/* Dark scrollbar styling - matches EPG */
+.vod-browse ::-webkit-scrollbar {
+  width: 6px;
+}
+
+.vod-browse ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vod-browse ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.vod-browse ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox */
+.vod-browse {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.vod-browse__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vod-browse__title {
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: #fff;
+  margin: 0;
+}
+
+.vod-browse__count {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Virtuoso Grid */
+.vod-browse__grid {
+  flex: 1;
+  min-height: 0; /* Allow flex shrink */
+}
+
+.vod-browse__grid-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 24px 48px 24px 75px;
+}
+
+.vod-browse__grid-item {
+  /* VirtuosoGrid positions items - just set dimensions */
+  width: 160px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+/* Loading indicator */
+.vod-browse__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+}
+
+.vod-browse__spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Empty state */
+.vod-browse__empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 48px;
+  text-align: center;
+}
+
+.vod-browse__empty-state svg {
+  width: 64px;
+  height: 64px;
+  color: rgba(255, 255, 255, 0.2);
+  margin-bottom: 16px;
+}
+
+.vod-browse__empty-state h3 {
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: #fff;
+  margin: 0 0 8px 0;
+}
+
+.vod-browse__empty-state p {
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* Responsive item sizes */
+@media (min-width: 1200px) {
+  .vod-browse__grid-item {
+    width: 180px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .vod-browse__grid-item {
+    width: 200px;
+  }
+}
+
+@media (max-width: 768px) {
+  .vod-browse__grid-list {
+    gap: 12px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+
+  .vod-browse__grid-item {
+    width: 130px;
+    padding: 4px;
+  }
+
+  .vod-browse__header {
+    padding: 12px 16px;
+  }
+
+  .vod-browse__title {
+    font-size: 1.1rem;
+  }
+}

@@ -1,0 +1,161 @@
+/**
+ * VodBrowse - Virtualized gallery grid with A-Z navigation
+ *
+ * Shows category-filtered content in a grid with infinite scroll
+ * and alphabet quick-nav rail.
+ */
+
+import { useState, useCallback, useMemo, useRef } from 'react';
+import { VirtuosoGrid, VirtuosoGridHandle } from 'react-virtuoso';
+import { MediaCard } from './MediaCard';
+import { AlphabetRail } from './AlphabetRail';
+import type { StoredMovie, StoredSeries } from '../../db';
+import {
+  usePaginatedMovies,
+  usePaginatedSeries,
+  useAlphabetIndex,
+  useCurrentLetter,
+} from '../../hooks/useVod';
+import './VodBrowse.css';
+
+export interface VodBrowseProps {
+  type: 'movies' | 'series';
+  categoryId: string | null;  // null = all items
+  categoryName: string;
+  search?: string;
+  onItemClick: (item: StoredMovie | StoredSeries) => void;
+}
+
+export function VodBrowse({
+  type,
+  categoryId,
+  categoryName,
+  search,
+  onItemClick,
+}: VodBrowseProps) {
+  const virtuosoRef = useRef<VirtuosoGridHandle>(null);
+  const [visibleRange, setVisibleRange] = useState({ startIndex: 0, endIndex: 0 });
+
+  // Get paginated data
+  const moviesData = usePaginatedMovies(type === 'movies' ? categoryId : null, search);
+  const seriesData = usePaginatedSeries(type === 'series' ? categoryId : null, search);
+
+  const { items, loading, hasMore, loadMore } = type === 'movies' ? moviesData : seriesData;
+
+  // Alphabet navigation
+  const alphabetIndex = useAlphabetIndex(items);
+  const currentLetter = useCurrentLetter(items, visibleRange.startIndex);
+
+  // Available letters (ones that have content)
+  const availableLetters = useMemo(() => {
+    return new Set(alphabetIndex.keys());
+  }, [alphabetIndex]);
+
+  // Handle letter selection from rail
+  const handleLetterSelect = useCallback((letter: string) => {
+    const index = alphabetIndex.get(letter);
+    if (index !== undefined && virtuosoRef.current) {
+      virtuosoRef.current.scrollToIndex({
+        index,
+        align: 'start',
+        behavior: 'smooth',
+      });
+    }
+  }, [alphabetIndex]);
+
+  // Handle range change for current letter tracking
+  const handleRangeChange = useCallback((range: { startIndex: number; endIndex: number }) => {
+    setVisibleRange(range);
+  }, []);
+
+  // Handle end reached for infinite scroll
+  const handleEndReached = useCallback(() => {
+    if (hasMore && !loading) {
+      loadMore();
+    }
+  }, [hasMore, loading, loadMore]);
+
+  // Grid item renderer
+  const ItemContent = useCallback(
+    (index: number) => {
+      const item = items[index];
+      if (!item) return null;
+
+      return (
+        <MediaCard
+          item={item}
+          type={type === 'movies' ? 'movie' : 'series'}
+          onClick={onItemClick}
+          size="medium"
+        />
+      );
+    },
+    [items, type, onItemClick]
+  );
+
+  // Loading footer
+  const Footer = useCallback(() => {
+    if (!loading) return null;
+    return (
+      <div className="vod-browse__loading">
+        <div className="vod-browse__spinner" />
+        <span>Loading more...</span>
+      </div>
+    );
+  }, [loading]);
+
+  // Empty state
+  if (!loading && items.length === 0) {
+    return (
+      <div className="vod-browse vod-browse--empty">
+        <div className="vod-browse__empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <h3>No {type} found</h3>
+          <p>
+            {search
+              ? `No results for "${search}" in ${categoryName}`
+              : `No ${type} available in ${categoryName}`}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="vod-browse">
+      <header className="vod-browse__header">
+        <h2 className="vod-browse__title">{categoryName}</h2>
+        <span className="vod-browse__count">
+          {items.length}{hasMore ? '+' : ''} {type}
+        </span>
+      </header>
+
+      <VirtuosoGrid
+        ref={virtuosoRef}
+        className="vod-browse__grid"
+        totalCount={items.length}
+        itemContent={ItemContent}
+        rangeChanged={handleRangeChange}
+        endReached={handleEndReached}
+        overscan={200}
+        listClassName="vod-browse__grid-list"
+        itemClassName="vod-browse__grid-item"
+        components={{
+          Footer,
+        }}
+      />
+
+      {items.length > 0 && (
+        <AlphabetRail
+          currentLetter={currentLetter}
+          availableLetters={availableLetters}
+          onLetterSelect={handleLetterSelect}
+        />
+      )}
+    </div>
+  );
+}
+
+export default VodBrowse;
