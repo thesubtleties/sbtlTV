@@ -89,7 +89,7 @@ export function VodBrowse({
       virtuosoRef.current.scrollToIndex({
         index,
         align: 'start',
-        behavior: 'smooth',
+        // Instant scroll for letter jumps - smooth would load everything in between
       });
     }
   }, [alphabetIndex]);
