@@ -46,6 +46,7 @@ export interface StorageResult<T = void> {
 export interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
+  tmdbApiKey?: string;
 }
 
 export interface Source {
@@ -78,6 +79,7 @@ export interface FetchProxyResponse {
 
 export interface FetchProxyApi {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<StorageResult<FetchProxyResponse>>;
+  fetchBinary: (url: string) => Promise<StorageResult<string>>; // Returns base64-encoded data
 }
 
 export interface PlatformApi {

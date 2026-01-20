@@ -540,6 +540,30 @@ ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: s
   }
 });
 
+// Fetch binary - for gzipped/binary content, returns base64
+ipcMain.handle('fetch-binary', async (_event, url: string) => {
+  try {
+    const response = await electronNet.fetch(url);
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `HTTP ${response.status}: ${response.statusText}`,
+      };
+    }
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    return {
+      success: true,
+      data: base64,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Fetch failed',
+    };
+  }
+});
+
 // App lifecycle
 app.whenReady().then(async () => {
   await createWindow();
