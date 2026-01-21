@@ -1,6 +1,7 @@
-import { db, clearSourceData, type SourceMeta, type StoredProgram } from './index';
+import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory } from './index';
 import { fetchAndParseM3U, XtreamClient } from '@sbtltv/local-adapter';
-import type { Source, Channel, Category } from '@sbtltv/core';
+import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
+import { getMovieExports, getTvExports, findBestMatch } from '../services/tmdb-exports';
 
 export interface SyncResult {
   success: boolean;
@@ -8,6 +9,15 @@ export interface SyncResult {
   categoryCount: number;
   programCount: number;
   epgUrl?: string;
+  error?: string;
+}
+
+export interface VodSyncResult {
+  success: boolean;
+  movieCount: number;
+  seriesCount: number;
+  movieCategoryCount: number;
+  seriesCategoryCount: number;
   error?: string;
 }
 
@@ -219,4 +229,331 @@ export async function syncAllSources(): Promise<Map<string, SyncResult>> {
 // Get sync status for all sources
 export async function getSyncStatus(): Promise<SourceMeta[]> {
   return db.sourcesMeta.toArray();
+}
+
+// ===========================================================================
+// VOD Sync Functions
+// ===========================================================================
+
+// Sync VOD movies for a single Xtream source
+export async function syncVodMovies(source: Source): Promise<{ count: number; categoryCount: number }> {
+  if (source.type !== 'xtream' || !source.username || !source.password) {
+    return { count: 0, categoryCount: 0 };
+  }
+
+  const client = new XtreamClient(
+    { baseUrl: source.url, username: source.username, password: source.password },
+    source.id
+  );
+
+  // Fetch categories and movies
+  const categories = await client.getVodCategories();
+  const movies = await client.getVodStreams();
+
+  // Convert categories to VodCategory format
+  const vodCategories: VodCategory[] = categories.map(cat => ({
+    category_id: cat.category_id,
+    source_id: source.id,
+    name: cat.category_name,
+    type: 'movie' as const,
+  }));
+
+  // Convert movies to StoredMovie format
+  const storedMovies: StoredMovie[] = movies.map(movie => ({
+    ...movie,
+    added: new Date(),
+  }));
+
+  // Store in batches
+  const BATCH_SIZE = 500;
+
+  await db.transaction('rw', [db.vodMovies, db.vodCategories], async () => {
+    // Clear existing movies for this source
+    await db.vodMovies.where('source_id').equals(source.id).delete();
+    await db.vodCategories.where('source_id').equals(source.id).filter(c => c.type === 'movie').delete();
+
+    // Store categories
+    if (vodCategories.length > 0) {
+      await db.vodCategories.bulkPut(vodCategories);
+    }
+
+    // Store movies in batches
+    for (let i = 0; i < storedMovies.length; i += BATCH_SIZE) {
+      const batch = storedMovies.slice(i, i + BATCH_SIZE);
+      await db.vodMovies.bulkPut(batch);
+    }
+  });
+
+  return { count: storedMovies.length, categoryCount: vodCategories.length };
+}
+
+// Sync VOD series for a single Xtream source
+export async function syncVodSeries(source: Source): Promise<{ count: number; categoryCount: number }> {
+  if (source.type !== 'xtream' || !source.username || !source.password) {
+    return { count: 0, categoryCount: 0 };
+  }
+
+  const client = new XtreamClient(
+    { baseUrl: source.url, username: source.username, password: source.password },
+    source.id
+  );
+
+  // Fetch categories and series
+  const categories = await client.getSeriesCategories();
+  const series = await client.getSeries();
+
+  // Convert categories to VodCategory format
+  const vodCategories: VodCategory[] = categories.map(cat => ({
+    category_id: cat.category_id,
+    source_id: source.id,
+    name: cat.category_name,
+    type: 'series' as const,
+  }));
+
+  // Convert series to StoredSeries format
+  const storedSeries: StoredSeries[] = series.map(s => ({
+    ...s,
+    added: new Date(),
+  }));
+
+  // Store in batches
+  const BATCH_SIZE = 500;
+
+  await db.transaction('rw', [db.vodSeries, db.vodCategories], async () => {
+    // Clear existing series for this source
+    await db.vodSeries.where('source_id').equals(source.id).delete();
+    await db.vodCategories.where('source_id').equals(source.id).filter(c => c.type === 'series').delete();
+
+    // Store categories
+    if (vodCategories.length > 0) {
+      await db.vodCategories.bulkPut(vodCategories);
+    }
+
+    // Store series in batches
+    for (let i = 0; i < storedSeries.length; i += BATCH_SIZE) {
+      const batch = storedSeries.slice(i, i + BATCH_SIZE);
+      await db.vodSeries.bulkPut(batch);
+    }
+  });
+
+  return { count: storedSeries.length, categoryCount: vodCategories.length };
+}
+
+// Sync episodes for a specific series (on-demand when user views series details)
+export async function syncSeriesEpisodes(source: Source, seriesId: string): Promise<number> {
+  if (source.type !== 'xtream' || !source.username || !source.password) {
+    return 0;
+  }
+
+  const client = new XtreamClient(
+    { baseUrl: source.url, username: source.username, password: source.password },
+    source.id
+  );
+
+  const seasons = await client.getSeriesInfo(seriesId);
+
+  // Flatten episodes from all seasons
+  const storedEpisodes: StoredEpisode[] = [];
+  for (const season of seasons) {
+    for (const ep of season.episodes) {
+      storedEpisodes.push({
+        ...ep,
+        series_id: seriesId,
+      });
+    }
+  }
+
+  // Store episodes
+  await db.transaction('rw', [db.vodEpisodes], async () => {
+    // Clear existing episodes for this series
+    await db.vodEpisodes.where('series_id').equals(seriesId).delete();
+
+    if (storedEpisodes.length > 0) {
+      await db.vodEpisodes.bulkPut(storedEpisodes);
+    }
+  });
+
+  return storedEpisodes.length;
+}
+
+// Match movies against TMDB exports (no API calls!)
+async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
+  try {
+    console.log('[TMDB Match] Starting movie matching...');
+    const exports = await getMovieExports();
+
+    // Get all movies without tmdb_id for this source
+    const movies = await db.vodMovies
+      .where('source_id')
+      .equals(sourceId)
+      .filter(m => !m.tmdb_id)
+      .toArray();
+
+    console.log(`[TMDB Match] Matching ${movies.length} movies...`);
+
+    let matched = 0;
+    const BATCH_SIZE = 500;
+
+    for (let i = 0; i < movies.length; i += BATCH_SIZE) {
+      const batch = movies.slice(i, i + BATCH_SIZE);
+      const updates: { key: string; changes: Partial<StoredMovie> }[] = [];
+
+      for (const movie of batch) {
+        const match = findBestMatch(exports, movie.name);
+        if (match) {
+          updates.push({
+            key: movie.stream_id,
+            changes: {
+              tmdb_id: match.id,
+              popularity: match.popularity,
+            },
+          });
+          matched++;
+        }
+      }
+
+      // Batch update
+      if (updates.length > 0) {
+        await db.transaction('rw', db.vodMovies, async () => {
+          for (const { key, changes } of updates) {
+            await db.vodMovies.update(key, changes);
+          }
+        });
+      }
+
+      console.log(`[TMDB Match] Progress: ${Math.min(i + BATCH_SIZE, movies.length)}/${movies.length}`);
+    }
+
+    console.log(`[TMDB Match] Matched ${matched}/${movies.length} movies`);
+    return matched;
+  } catch (error) {
+    console.error('[TMDB Match] Movie matching failed:', error);
+    return 0;
+  }
+}
+
+// Match series against TMDB exports (no API calls!)
+async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
+  try {
+    console.log('[TMDB Match] Starting series matching...');
+    const exports = await getTvExports();
+
+    // Get all series without tmdb_id for this source
+    const series = await db.vodSeries
+      .where('source_id')
+      .equals(sourceId)
+      .filter(s => !s.tmdb_id)
+      .toArray();
+
+    console.log(`[TMDB Match] Matching ${series.length} series...`);
+
+    let matched = 0;
+    const BATCH_SIZE = 500;
+
+    for (let i = 0; i < series.length; i += BATCH_SIZE) {
+      const batch = series.slice(i, i + BATCH_SIZE);
+      const updates: { key: string; changes: Partial<StoredSeries> }[] = [];
+
+      for (const s of batch) {
+        const match = findBestMatch(exports, s.name);
+        if (match) {
+          updates.push({
+            key: s.series_id,
+            changes: {
+              tmdb_id: match.id,
+              popularity: match.popularity,
+            },
+          });
+          matched++;
+        }
+      }
+
+      // Batch update
+      if (updates.length > 0) {
+        await db.transaction('rw', db.vodSeries, async () => {
+          for (const { key, changes } of updates) {
+            await db.vodSeries.update(key, changes);
+          }
+        });
+      }
+
+      console.log(`[TMDB Match] Progress: ${Math.min(i + BATCH_SIZE, series.length)}/${series.length}`);
+    }
+
+    console.log(`[TMDB Match] Matched ${matched}/${series.length} series`);
+    return matched;
+  } catch (error) {
+    console.error('[TMDB Match] Series matching failed:', error);
+    return 0;
+  }
+}
+
+// Sync all VOD content for a source
+export async function syncVodForSource(source: Source): Promise<VodSyncResult> {
+  try {
+    const [moviesResult, seriesResult] = await Promise.all([
+      syncVodMovies(source),
+      syncVodSeries(source),
+    ]);
+
+    // Update source meta with VOD counts
+    const meta = await db.sourcesMeta.get(source.id);
+    if (meta) {
+      await db.sourcesMeta.update(source.id, {
+        vod_movie_count: moviesResult.count,
+        vod_series_count: seriesResult.count,
+      });
+    }
+
+    // Match against TMDB exports (runs in background, no API calls)
+    // This enriches movies/series with tmdb_id for the curated lists
+    matchMoviesWithTmdb(source.id).catch(console.error);
+    matchSeriesWithTmdb(source.id).catch(console.error);
+
+    return {
+      success: true,
+      movieCount: moviesResult.count,
+      seriesCount: seriesResult.count,
+      movieCategoryCount: moviesResult.categoryCount,
+      seriesCategoryCount: seriesResult.categoryCount,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    return {
+      success: false,
+      movieCount: 0,
+      seriesCount: 0,
+      movieCategoryCount: 0,
+      seriesCategoryCount: 0,
+      error: errorMsg,
+    };
+  }
+}
+
+// Sync VOD for all Xtream sources
+export async function syncAllVod(): Promise<Map<string, VodSyncResult>> {
+  const results = new Map<string, VodSyncResult>();
+
+  if (!window.storage) {
+    console.error('Storage API not available');
+    return results;
+  }
+
+  const sourcesResult = await window.storage.getSources();
+  if (!sourcesResult.data) {
+    console.error('Failed to get sources:', sourcesResult.error);
+    return results;
+  }
+
+  // Sync VOD for each enabled Xtream source
+  for (const source of sourcesResult.data) {
+    if (source.enabled && source.type === 'xtream') {
+      console.log(`Syncing VOD for source: ${source.name}`);
+      const result = await syncVodForSource(source);
+      results.set(source.id, result);
+      console.log(`  → ${result.success ? 'OK' : 'FAILED'}: ${result.movieCount} movies, ${result.seriesCount} series`);
+    }
+  }
+
+  return results;
 }

@@ -5,8 +5,10 @@ import { Sidebar, type View } from './components/Sidebar';
 import { NowPlayingBar } from './components/NowPlayingBar';
 import { CategoryStrip } from './components/CategoryStrip';
 import { ChannelPanel } from './components/ChannelPanel';
+import { MoviesPage } from './components/MoviesPage';
+import { SeriesPage } from './components/SeriesPage';
 import { useSelectedCategory } from './hooks/useChannels';
-import { syncAllSources } from './db/sync';
+import { syncAllSources, syncAllVod } from './db/sync';
 import type { StoredChannel } from './db';
 
 function App() {
@@ -133,6 +135,30 @@ function App() {
     handleLoadStream(channel);
   };
 
+  // Play VOD content (movies/series)
+  const handlePlayVod = async (url: string, title: string) => {
+    if (!window.mpv) return;
+    setError(null);
+    const result = await window.mpv.load(url);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      // Create a pseudo-channel for the now playing bar
+      setCurrentChannel({
+        stream_id: 'vod',
+        name: title,
+        stream_icon: '',
+        epg_channel_id: '',
+        category_ids: [],
+        direct_url: url,
+        source_id: 'vod',
+      });
+      setPlaying(true);
+      // Close VOD pages when playing
+      setActiveView('none');
+    }
+  };
+
   // Handle category selection - opens guide if closed
   const handleSelectCategory = (catId: string | null) => {
     setCategoryId(catId);
@@ -150,6 +176,11 @@ function App() {
       if (result.data && result.data.length > 0) {
         setSyncing(true);
         await syncAllSources();
+        // Also sync VOD for Xtream sources
+        const hasXtream = result.data.some(s => s.type === 'xtream' && s.enabled);
+        if (hasXtream) {
+          await syncAllVod();
+        }
         setSyncing(false);
       }
     };
@@ -283,6 +314,22 @@ function App() {
 
       {/* Settings Panel */}
       {activeView === 'settings' && <Settings onClose={() => setActiveView('none')} />}
+
+      {/* Movies Page */}
+      {activeView === 'movies' && (
+        <MoviesPage
+          onPlay={handlePlayVod}
+          onClose={() => setActiveView('none')}
+        />
+      )}
+
+      {/* Series Page */}
+      {activeView === 'series' && (
+        <SeriesPage
+          onPlay={handlePlayVod}
+          onClose={() => setActiveView('none')}
+        />
+      )}
 
       {/* Resize grip for frameless window (Windows only - frameless windows lack native resize) */}
       {window.platform?.isWindows && (

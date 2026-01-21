@@ -70,6 +70,7 @@ export interface FetchProxyResponse {
 
 export interface FetchProxyApi {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<StorageResult<FetchProxyResponse>>;
+  fetchBinary: (url: string) => Promise<StorageResult<string>>; // Returns base64-encoded data
 }
 
 // Expose window control API
@@ -128,6 +129,8 @@ contextBridge.exposeInMainWorld('storage', {
 contextBridge.exposeInMainWorld('fetchProxy', {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) =>
     ipcRenderer.invoke('fetch-proxy', url, options),
+  fetchBinary: (url: string) =>
+    ipcRenderer.invoke('fetch-binary', url),
 } satisfies FetchProxyApi);
 
 // Expose platform info for conditional UI (e.g., resize grip on Windows only)

@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Channel, Category } from '@sbtltv/core';
+import type { Channel, Category, Movie, Series, Episode } from '@sbtltv/core';
 
 // Extended channel with local metadata
 export interface StoredChannel extends Channel {
@@ -19,7 +19,40 @@ export interface SourceMeta {
   last_synced?: Date;
   channel_count: number;
   category_count: number;
+  vod_movie_count?: number;
+  vod_series_count?: number;
   error?: string;
+}
+
+// VOD Movie with TMDB enrichment
+export interface StoredMovie extends Movie {
+  tmdb_id?: number;
+  imdb_id?: string;
+  added?: Date;
+  backdrop_path?: string;
+  popularity?: number;
+}
+
+// VOD Series with TMDB enrichment
+export interface StoredSeries extends Series {
+  tmdb_id?: number;
+  imdb_id?: string;
+  added?: Date;
+  backdrop_path?: string;
+  popularity?: number;
+}
+
+// VOD Episode
+export interface StoredEpisode extends Episode {
+  series_id: string;
+}
+
+// VOD Category (movies or series)
+export interface VodCategory {
+  category_id: string;
+  source_id: string;
+  name: string;
+  type: 'movie' | 'series';
 }
 
 // User preferences (last selected category, etc.)
@@ -45,6 +78,10 @@ class SbtltvDatabase extends Dexie {
   sourcesMeta!: Table<SourceMeta, string>;
   prefs!: Table<UserPrefs, string>;
   programs!: Table<StoredProgram, string>;
+  vodMovies!: Table<StoredMovie, string>;
+  vodSeries!: Table<StoredSeries, string>;
+  vodEpisodes!: Table<StoredEpisode, string>;
+  vodCategories!: Table<VodCategory, string>;
 
   constructor() {
     super('sbtltv');
@@ -68,6 +105,19 @@ class SbtltvDatabase extends Dexie {
       prefs: 'key',
       programs: 'id, stream_id, source_id, start, end',
     });
+
+    // Add VOD tables for movies and series
+    this.version(3).stores({
+      channels: 'stream_id, source_id, *category_ids, name',
+      categories: 'category_id, source_id, category_name',
+      sourcesMeta: 'source_id',
+      prefs: 'key',
+      programs: 'id, stream_id, source_id, start, end',
+      vodMovies: 'stream_id, source_id, *category_ids, name, tmdb_id, added',
+      vodSeries: 'series_id, source_id, *category_ids, name, tmdb_id, added',
+      vodEpisodes: 'id, series_id, season_num, episode_num',
+      vodCategories: 'category_id, source_id, name, type',
+    });
   }
 }
 
@@ -79,6 +129,20 @@ export async function clearSourceData(sourceId: string): Promise<void> {
     await db.channels.where('source_id').equals(sourceId).delete();
     await db.categories.where('source_id').equals(sourceId).delete();
     await db.sourcesMeta.where('source_id').equals(sourceId).delete();
+  });
+}
+
+// Helper to clear VOD data for a source
+export async function clearVodData(sourceId: string): Promise<void> {
+  await db.transaction('rw', [db.vodMovies, db.vodSeries, db.vodEpisodes, db.vodCategories], async () => {
+    await db.vodMovies.where('source_id').equals(sourceId).delete();
+    await db.vodSeries.where('source_id').equals(sourceId).delete();
+    // Episodes don't have source_id directly, need to get series first
+    const series = await db.vodSeries.where('source_id').equals(sourceId).toArray();
+    for (const s of series) {
+      await db.vodEpisodes.where('series_id').equals(s.series_id).delete();
+    }
+    await db.vodCategories.where('source_id').equals(sourceId).delete();
   });
 }
 

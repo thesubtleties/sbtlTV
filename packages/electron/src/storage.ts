@@ -2,10 +2,10 @@ import Store from 'electron-store';
 import { safeStorage } from 'electron';
 import type { Source } from '@sbtltv/core';
 
-// Store schema - passwords stored as encrypted buffers
+// Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
   sources: StoredSource[];
-  settings: AppSettings;
+  settings: StoredSettings;
 }
 
 // Source as stored (password encrypted)
@@ -24,6 +24,14 @@ interface StoredSource {
 interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
+  tmdbApiKey?: string;  // Decrypted value returned to callers
+}
+
+// Internal storage format (encrypted)
+interface StoredSettings {
+  theme: 'dark' | 'light';
+  lastSourceId?: string;
+  encryptedTmdbApiKey?: string;  // Base64 encoded encrypted buffer
 }
 
 const store = new Store<StoreSchema>({
@@ -136,18 +144,34 @@ export function deleteSource(id: string): void {
 }
 
 /**
- * Get app settings
+ * Get app settings (with TMDB API key decrypted)
  */
 export function getSettings(): AppSettings {
-  return store.get('settings');
+  const stored = store.get('settings');
+  const result: AppSettings = {
+    theme: stored.theme,
+    lastSourceId: stored.lastSourceId,
+  };
+  if (stored.encryptedTmdbApiKey) {
+    result.tmdbApiKey = decryptPassword(stored.encryptedTmdbApiKey);
+  }
+  return result;
 }
 
 /**
- * Update app settings
+ * Update app settings (encrypts TMDB API key)
  */
 export function updateSettings(settings: Partial<AppSettings>): void {
   const current = store.get('settings');
-  store.set('settings', { ...current, ...settings });
+  const updated: StoredSettings = { ...current };
+
+  if (settings.theme !== undefined) updated.theme = settings.theme;
+  if (settings.lastSourceId !== undefined) updated.lastSourceId = settings.lastSourceId;
+  if (settings.tmdbApiKey !== undefined) {
+    updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;
+  }
+
+  store.set('settings', updated);
 }
 
 /**

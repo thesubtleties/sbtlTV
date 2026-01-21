@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import type { Source } from '../types/electron';
-import { syncAllSources, type SyncResult } from '../db/sync';
+import { syncAllSources, syncAllVod, type SyncResult, type VodSyncResult } from '../db/sync';
 import { useSyncStatus } from '../hooks/useChannels';
+import { validateApiKey } from '../services/tmdb';
 import './Settings.css';
 
 interface SettingsProps {
@@ -37,10 +38,18 @@ export function Settings({ onClose }: SettingsProps) {
   const [syncResults, setSyncResults] = useState<Map<string, SyncResult> | null>(null);
   const syncStatus = useSyncStatus();
 
+  // TMDB API key state
+  const [tmdbApiKey, setTmdbApiKey] = useState('');
+  const [tmdbKeyValid, setTmdbKeyValid] = useState<boolean | null>(null);
+  const [tmdbValidating, setTmdbValidating] = useState(false);
+  const [vodSyncing, setVodSyncing] = useState(false);
+  const [vodSyncResults, setVodSyncResults] = useState<Map<string, VodSyncResult> | null>(null);
+
   // Load sources and check encryption on mount
   useEffect(() => {
     loadSources();
     checkEncryption();
+    loadTmdbApiKey();
   }, []);
 
   async function loadSources() {
@@ -56,6 +65,47 @@ export function Settings({ onClose }: SettingsProps) {
     const result = await window.storage.isEncryptionAvailable();
     if (result.data !== undefined) {
       setIsEncryptionAvailable(result.data);
+    }
+  }
+
+  async function loadTmdbApiKey() {
+    if (!window.storage) return;
+    const result = await window.storage.getSettings();
+    if (result.data && 'tmdbApiKey' in result.data) {
+      const key = (result.data as { tmdbApiKey?: string }).tmdbApiKey || '';
+      setTmdbApiKey(key);
+      if (key) {
+        setTmdbKeyValid(true); // Assume valid if previously saved
+      }
+    }
+  }
+
+  async function saveTmdbApiKey() {
+    if (!window.storage) return;
+    setTmdbValidating(true);
+    setTmdbKeyValid(null);
+
+    // Validate the key first
+    const isValid = tmdbApiKey ? await validateApiKey(tmdbApiKey) : true;
+    setTmdbKeyValid(isValid);
+
+    if (isValid) {
+      await window.storage.updateSettings({ tmdbApiKey });
+    }
+
+    setTmdbValidating(false);
+  }
+
+  async function handleVodSync() {
+    setVodSyncing(true);
+    setVodSyncResults(null);
+    try {
+      const results = await syncAllVod();
+      setVodSyncResults(results);
+    } catch (err) {
+      console.error('VOD sync error:', err);
+    } finally {
+      setVodSyncing(false);
     }
   }
 
@@ -225,6 +275,77 @@ export function Settings({ onClose }: SettingsProps) {
                 </li>
               ))}
             </ul>
+          )}
+        </div>
+
+        {/* TMDB Settings */}
+        <div className="settings-section">
+          <div className="section-header">
+            <h3>TMDB Integration</h3>
+            <div className="section-actions">
+              <button
+                className="sync-btn"
+                onClick={handleVodSync}
+                disabled={vodSyncing || !sources.some(s => s.type === 'xtream')}
+              >
+                {vodSyncing ? 'Syncing...' : 'Sync Movies & Series'}
+              </button>
+            </div>
+          </div>
+
+          <p className="section-description">
+            Add a TMDB API key to enable Netflix-style browsing with trending lists,
+            popularity sorting, and enhanced metadata for movies and series.
+          </p>
+
+          <div className="tmdb-form">
+            <div className="form-group inline">
+              <label>API Key</label>
+              <input
+                type="password"
+                value={tmdbApiKey}
+                onChange={(e) => {
+                  setTmdbApiKey(e.target.value);
+                  setTmdbKeyValid(null);
+                }}
+                placeholder="Enter your TMDB API key"
+              />
+              <button
+                type="button"
+                onClick={saveTmdbApiKey}
+                disabled={tmdbValidating}
+                className={tmdbKeyValid === true ? 'success' : tmdbKeyValid === false ? 'error' : ''}
+              >
+                {tmdbValidating ? 'Validating...' : tmdbKeyValid === true ? 'Valid' : tmdbKeyValid === false ? 'Invalid' : 'Save'}
+              </button>
+            </div>
+            <p className="form-hint">
+              Get a free API key at{' '}
+              <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer">
+                themoviedb.org
+              </a>
+            </p>
+          </div>
+
+          {/* VOD Sync Results */}
+          {vodSyncResults && vodSyncResults.size > 0 && (
+            <div className="sync-status">
+              {Array.from(vodSyncResults.entries()).map(([sourceId, result]) => {
+                const source = sources.find((s) => s.id === sourceId);
+                return (
+                  <div key={sourceId} className={`sync-status-item ${result.error ? 'error' : 'success'}`}>
+                    <span className="status-name">{source?.name || sourceId}</span>
+                    {result.error ? (
+                      <span className="status-error">{result.error}</span>
+                    ) : (
+                      <span className="status-count">
+                        {result.movieCount} movies, {result.seriesCount} series
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 

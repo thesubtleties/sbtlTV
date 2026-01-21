@@ -103,6 +103,9 @@ export interface Movie {
   release_date?: string;
   duration?: number;      // In seconds
   rating?: string;
+
+  // External IDs (if provider includes them)
+  tmdb_id?: number;
 }
 
 export interface Series {
@@ -118,6 +121,9 @@ export interface Series {
   genre?: string;
   release_date?: string;
   rating?: string;
+
+  // External IDs (if provider includes them)
+  tmdb_id?: number;
 }
 
 export interface Season {
