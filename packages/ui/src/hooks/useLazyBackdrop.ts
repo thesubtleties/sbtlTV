@@ -40,25 +40,40 @@ export function useLazyBackdrop(
   apiKey: string | null | undefined,
   size: keyof typeof TMDB_BACKDROP_SIZES = 'large'
 ): string | null {
-  const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+  // Synchronously compute URL if item already has backdrop_path (no flash)
+  const cachedUrl = item?.backdrop_path
+    ? getTmdbImageUrl(item.backdrop_path, TMDB_BACKDROP_SIZES[size])
+    : null;
+
+  // State only for async-fetched backdrops
+  const [fetchedUrl, setFetchedUrl] = useState<string | null>(null);
+  const lastItemIdRef = useRef<string | null>(null);
   // useRef instead of useState - synchronously mutable, no stale closure issues
   const fetchingRef = useRef(false);
 
+  // Get item ID for tracking
+  const itemId = item ? (isMovie(item) ? item.stream_id : item.series_id) : null;
+
+  // Reset fetched URL when item changes
+  if (itemId !== lastItemIdRef.current) {
+    lastItemIdRef.current = itemId;
+    if (fetchedUrl !== null) {
+      setFetchedUrl(null);
+    }
+  }
+
   useEffect(() => {
     if (!item) {
-      setBackdropUrl(null);
       return;
     }
 
-    // If we already have a backdrop_path, use it
+    // If we already have a backdrop_path, no need to fetch
     if (item.backdrop_path) {
-      setBackdropUrl(getTmdbImageUrl(item.backdrop_path, TMDB_BACKDROP_SIZES[size]));
       return;
     }
 
     // No API key or no tmdb_id - can't fetch
     if (!apiKey || !item.tmdb_id) {
-      setBackdropUrl(null);
       return;
     }
 
@@ -99,7 +114,7 @@ export function useLazyBackdrop(
         }
 
         if (!cancelled && backdropPath) {
-          setBackdropUrl(getTmdbImageUrl(backdropPath, TMDB_BACKDROP_SIZES[size]));
+          setFetchedUrl(getTmdbImageUrl(backdropPath, TMDB_BACKDROP_SIZES[size]));
         }
       } catch (err) {
         if (!cancelled) {
@@ -120,7 +135,8 @@ export function useLazyBackdrop(
     };
   }, [item?.tmdb_id, item?.backdrop_path, apiKey, size]);
 
-  return backdropUrl;
+  // Return cached URL (sync) or fetched URL (async)
+  return cachedUrl || fetchedUrl;
 }
 
 export default useLazyBackdrop;

@@ -426,8 +426,22 @@ export function useTvGenres(accessToken: string | null) {
 // ===========================================================================
 
 /**
+ * Randomly sample n items from an array (Fisher-Yates shuffle)
+ */
+function randomSample<T>(array: T[], n: number): T[] {
+  if (array.length <= n) return [...array];
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled.slice(0, n);
+}
+
+/**
  * Get featured content for hero section
- * Returns top items from trending (with cache fallback)
+ * Returns random items from trending (with cache fallback)
+ * Selection is stable - only re-randomizes when data source changes
  */
 export function useFeaturedContent(accessToken: string | null, type: 'movies' | 'series', count = 5) {
   const { movies: trendingMovies } = useTrendingMovies(accessToken);
@@ -435,16 +449,28 @@ export function useFeaturedContent(accessToken: string | null, type: 'movies' | 
   const { movies: popularMovies } = useLocalPopularMovies(count);
   const { series: popularSeries } = useLocalPopularSeries(count);
 
-  const featured = useMemo(() => {
+  const [featured, setFeatured] = useState<(StoredMovie | StoredSeries)[]>([]);
+  const [sourceKey, setSourceKey] = useState<string>('');
+
+  useEffect(() => {
+    // Determine which source to use
+    let items: (StoredMovie | StoredSeries)[];
+    let key: string;
+
     if (type === 'movies') {
-      // Use trending (from API or cache), fall back to local popularity
-      const items = trendingMovies.length > 0 ? trendingMovies : popularMovies;
-      return items.slice(0, count);
+      items = trendingMovies.length > 0 ? trendingMovies : popularMovies;
+      key = `movies-${trendingMovies.length > 0 ? 'trending' : 'local'}-${items.length}`;
     } else {
-      const items = trendingSeries.length > 0 ? trendingSeries : popularSeries;
-      return items.slice(0, count);
+      items = trendingSeries.length > 0 ? trendingSeries : popularSeries;
+      key = `series-${trendingSeries.length > 0 ? 'trending' : 'local'}-${items.length}`;
     }
-  }, [type, trendingMovies, trendingSeries, popularMovies, popularSeries, count]);
+
+    // Only re-randomize if source actually changed
+    if (key !== sourceKey && items.length > 0) {
+      setSourceKey(key);
+      setFeatured(randomSample(items, count));
+    }
+  }, [type, trendingMovies, trendingSeries, popularMovies, popularSeries, count, sourceKey]);
 
   return {
     items: featured,

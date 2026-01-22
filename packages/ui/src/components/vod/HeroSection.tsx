@@ -4,6 +4,38 @@ import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
 import './HeroSection.css';
 
+type MediaItem = StoredMovie | StoredSeries;
+
+// Sub-component for each backdrop layer (hooks can't be in loops)
+function HeroBackdropLayer({
+  item,
+  apiKey,
+  isActive,
+}: {
+  item: MediaItem;
+  apiKey?: string | null;
+  isActive: boolean;
+}) {
+  const tmdbBackdropUrl = useLazyBackdrop(item, apiKey);
+
+  // Fallback to cover/icon if no TMDB backdrop
+  const fallbackUrl = 'stream_icon' in item
+    ? item.stream_icon
+    : (item as StoredSeries).cover;
+  const backdropUrl = tmdbBackdropUrl || fallbackUrl;
+
+  if (!backdropUrl) return null;
+
+  return (
+    <img
+      src={backdropUrl}
+      alt=""
+      aria-hidden="true"
+      className={`hero__backdrop-img ${isActive ? 'hero__backdrop-img--active' : ''}`}
+    />
+  );
+}
+
 export interface HeroSectionProps {
   items: (StoredMovie | StoredSeries)[];
   type: 'movie' | 'series';
@@ -11,7 +43,7 @@ export interface HeroSectionProps {
   onMoreInfo?: (item: StoredMovie | StoredSeries) => void;
   autoRotate?: boolean;
   rotateInterval?: number;
-  apiKey?: string | null; // TMDB API key for lazy backdrop loading
+  apiKey?: string | null;
 }
 
 export function HeroSection({
@@ -24,12 +56,11 @@ export function HeroSection({
   apiKey,
 }: HeroSectionProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isContentTransitioning, setIsContentTransitioning] = useState(false);
 
   const currentItem = items[currentIndex];
 
-  // Lazy-load backdrop and plot from TMDB if available
-  const tmdbBackdropUrl = useLazyBackdrop(currentItem, apiKey);
+  // Lazy-load plot for current item
   const lazyPlot = useLazyPlot(currentItem, apiKey);
 
   // Auto-rotate through items
@@ -37,11 +68,13 @@ export function HeroSection({
     if (!autoRotate || items.length <= 1) return;
 
     const timer = setInterval(() => {
-      setIsTransitioning(true);
+      // Fade out content
+      setIsContentTransitioning(true);
       setTimeout(() => {
+        // Swap to next item (backdrop crossfades automatically via CSS)
         setCurrentIndex((prev) => (prev + 1) % items.length);
-        setIsTransitioning(false);
-      }, 500); // Match CSS transition duration
+        setIsContentTransitioning(false);
+      }, 300); // Content fade duration
     }, rotateInterval);
 
     return () => clearInterval(timer);
@@ -49,10 +82,10 @@ export function HeroSection({
 
   const handleDotClick = useCallback((index: number) => {
     if (index === currentIndex) return;
-    setIsTransitioning(true);
+    setIsContentTransitioning(true);
     setTimeout(() => {
       setCurrentIndex(index);
-      setIsTransitioning(false);
+      setIsContentTransitioning(false);
     }, 300);
   }, [currentIndex]);
 
@@ -67,12 +100,6 @@ export function HeroSection({
     );
   }
 
-  // Get backdrop image - use TMDB if available, fallback to cover/icon
-  const fallbackUrl = 'stream_icon' in currentItem
-    ? currentItem.stream_icon
-    : (currentItem as StoredSeries).cover;
-  const backdropUrl = tmdbBackdropUrl || fallbackUrl;
-
   // Get year
   const year = currentItem.release_date?.slice(0, 4);
 
@@ -80,21 +107,22 @@ export function HeroSection({
   const rating = currentItem.rating ? parseFloat(currentItem.rating) : null;
 
   return (
-    <section className={`hero ${isTransitioning ? 'hero--transitioning' : ''}`}>
-      {/* Background image */}
+    <section className="hero">
+      {/* Background images - all rendered, only current is visible */}
       <div className="hero__backdrop">
-        {backdropUrl && (
-          <img
-            src={backdropUrl}
-            alt=""
-            aria-hidden="true"
+        {items.map((item, index) => (
+          <HeroBackdropLayer
+            key={'stream_id' in item ? item.stream_id : item.series_id}
+            item={item}
+            apiKey={apiKey}
+            isActive={index === currentIndex}
           />
-        )}
+        ))}
         <div className="hero__gradient" />
       </div>
 
       {/* Content */}
-      <div className="hero__content">
+      <div className={`hero__content ${isContentTransitioning ? 'hero__content--transitioning' : ''}`}>
         <div className="hero__info">
           <span className="hero__type">{type === 'movie' ? 'Movie' : 'Series'}</span>
           <h1 className="hero__title">{currentItem.name}</h1>
@@ -145,7 +173,7 @@ export function HeroSection({
       {/* Navigation dots */}
       {items.length > 1 && (
         <div className="hero__dots">
-          {items.map((_, index) => (
+          {items.map((item, index) => (
             <button
               key={index}
               className={`hero__dot ${index === currentIndex ? 'active' : ''}`}
