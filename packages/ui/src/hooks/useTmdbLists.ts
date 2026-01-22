@@ -65,6 +65,48 @@ export function useTmdbAccessToken(): string | null {
 // Alias for backwards compatibility
 export const useTmdbApiKey = useTmdbAccessToken;
 
+/**
+ * Get enabled movie genres from settings
+ * Returns undefined if not yet loaded, or array of genre IDs
+ */
+export function useEnabledMovieGenres(): number[] | undefined {
+  const [enabledGenres, setEnabledGenres] = useState<number[] | undefined>(undefined);
+
+  useEffect(() => {
+    async function loadSettings() {
+      if (!window.storage) return;
+      const result = await window.storage.getSettings();
+      if (result.data && 'movieGenresEnabled' in result.data) {
+        setEnabledGenres((result.data as { movieGenresEnabled?: number[] }).movieGenresEnabled);
+      }
+    }
+    loadSettings();
+  }, []);
+
+  return enabledGenres;
+}
+
+/**
+ * Get enabled series genres from settings
+ * Returns undefined if not yet loaded, or array of genre IDs
+ */
+export function useEnabledSeriesGenres(): number[] | undefined {
+  const [enabledGenres, setEnabledGenres] = useState<number[] | undefined>(undefined);
+
+  useEffect(() => {
+    async function loadSettings() {
+      if (!window.storage) return;
+      const result = await window.storage.getSettings();
+      if (result.data && 'seriesGenresEnabled' in result.data) {
+        setEnabledGenres((result.data as { seriesGenresEnabled?: number[] }).seriesGenresEnabled);
+      }
+    }
+    loadSettings();
+  }, []);
+
+  return enabledGenres;
+}
+
 // ===========================================================================
 // Helper: Match TMDB list to local content using index
 // ===========================================================================

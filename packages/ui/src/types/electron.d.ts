@@ -49,6 +49,9 @@ export interface AppSettings {
   tmdbApiKey?: string;
   vodRefreshHours?: number;  // 0 = manual only, default 24
   epgRefreshHours?: number;  // 0 = manual only, default 6
+  movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
+  seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
+  posterDbApiKey?: string;         // For future RatingPosterDB integration
 }
 
 export interface Source {

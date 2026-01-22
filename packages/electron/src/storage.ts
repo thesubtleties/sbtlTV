@@ -27,6 +27,9 @@ interface AppSettings {
   tmdbApiKey?: string;  // Decrypted value returned to callers
   vodRefreshHours: number;  // 0 = manual only, default 24
   epgRefreshHours: number;  // 0 = manual only, default 6
+  movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
+  seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
+  posterDbApiKey?: string;         // For future RatingPosterDB integration
 }
 
 // Internal storage format (encrypted)
@@ -36,6 +39,9 @@ interface StoredSettings {
   encryptedTmdbApiKey?: string;  // Base64 encoded encrypted buffer
   vodRefreshHours: number;
   epgRefreshHours: number;
+  movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
+  seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
+  encryptedPosterDbApiKey?: string; // Base64 encoded encrypted buffer
 }
 
 const store = new Store<StoreSchema>({
@@ -159,9 +165,14 @@ export function getSettings(): AppSettings {
     lastSourceId: stored.lastSourceId,
     vodRefreshHours: stored.vodRefreshHours ?? 24,
     epgRefreshHours: stored.epgRefreshHours ?? 6,
+    movieGenresEnabled: stored.movieGenresEnabled,
+    seriesGenresEnabled: stored.seriesGenresEnabled,
   };
   if (stored.encryptedTmdbApiKey) {
     result.tmdbApiKey = decryptPassword(stored.encryptedTmdbApiKey);
+  }
+  if (stored.encryptedPosterDbApiKey) {
+    result.posterDbApiKey = decryptPassword(stored.encryptedPosterDbApiKey);
   }
   return result;
 }
@@ -180,6 +191,11 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.vodRefreshHours !== undefined) updated.vodRefreshHours = settings.vodRefreshHours;
   if (settings.epgRefreshHours !== undefined) updated.epgRefreshHours = settings.epgRefreshHours;
+  if (settings.movieGenresEnabled !== undefined) updated.movieGenresEnabled = settings.movieGenresEnabled;
+  if (settings.seriesGenresEnabled !== undefined) updated.seriesGenresEnabled = settings.seriesGenresEnabled;
+  if (settings.posterDbApiKey !== undefined) {
+    updated.encryptedPosterDbApiKey = settings.posterDbApiKey ? encryptPassword(settings.posterDbApiKey) : undefined;
+  }
 
   store.set('settings', updated);
 }

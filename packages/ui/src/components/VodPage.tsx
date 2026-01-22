@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { HeroSection } from './vod/HeroSection';
 import { HorizontalCarousel } from './vod/HorizontalCarousel';
+import { GenreCarousel } from './vod/GenreCarousel';
 import { HorizontalCategoryStrip } from './vod/HorizontalCategoryStrip';
 import { VodBrowse } from './vod/VodBrowse';
 import { MovieDetail } from './vod/MovieDetail';
@@ -12,17 +13,17 @@ import {
   useTopRatedMovies,
   useNowPlayingMovies,
   useLocalPopularMovies,
-  useMoviesByGenre,
   useTrendingSeries,
   usePopularSeries,
   useTopRatedSeries,
   useOnTheAirSeries,
   useLocalPopularSeries,
-  useSeriesByGenre,
   useFeaturedContent,
   useTmdbApiKey,
   useMovieGenres,
   useTvGenres,
+  useEnabledMovieGenres,
+  useEnabledSeriesGenres,
 } from '../hooks/useTmdbLists';
 import {
   useMoviesCategory,
@@ -101,11 +102,22 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // Get selected category name for VodBrowse
   const selectedCategory = categories.find(c => c.category_id === selectedCategoryId);
 
-  // Genre-based list (show first genre if available)
-  const firstGenre = genres[0];
-  const { movies: genreMovies } = useMoviesByGenre(type === 'movie' ? tmdbApiKey : null, firstGenre?.id ?? null);
-  const { series: genreSeries } = useSeriesByGenre(type === 'series' ? tmdbApiKey : null, firstGenre?.id ?? null);
-  const genreItems = type === 'movie' ? genreMovies : genreSeries;
+  // Enabled genres from settings
+  const enabledMovieGenres = useEnabledMovieGenres();
+  const enabledSeriesGenres = useEnabledSeriesGenres();
+  const enabledGenreIds = type === 'movie' ? enabledMovieGenres : enabledSeriesGenres;
+
+  // Filter genres to only show enabled ones
+  // No hard limit - user controls via Settings which genres to show
+  const genresToShow = useMemo(() => {
+    if (!genres.length) return [];
+    // If no enabled genres defined yet (undefined), show first 6 as default
+    if (enabledGenreIds === undefined) {
+      return genres.slice(0, 6);
+    }
+    // Show all enabled genres (user chose these in Settings)
+    return genres.filter(g => enabledGenreIds.includes(g.id));
+  }, [genres, enabledGenreIds]);
 
   const handleItemClick = useCallback((item: VodItem) => {
     setSelectedItem(item);
@@ -267,15 +279,17 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
                 />
               )}
 
-              {/* Genre-based list */}
-              {firstGenre && genreItems.length > 0 && (
-                <HorizontalCarousel
-                  title={firstGenre.name}
-                  items={genreItems}
+              {/* Genre-based carousels */}
+              {genresToShow.map(genre => (
+                <GenreCarousel
+                  key={genre.id}
+                  genreId={genre.id}
+                  genreName={genre.name}
                   type={type}
+                  tmdbApiKey={tmdbApiKey}
                   onItemClick={handleItemClick}
                 />
-              )}
+              ))}
 
               {/* Fallback: local popular if no TMDB content */}
               {!showTmdbContent && localPopularItems.length > 0 && (
