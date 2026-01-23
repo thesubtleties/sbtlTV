@@ -134,17 +134,18 @@ function useSeriesByTmdbIds(tmdbIds: number[]) {
 }
 
 /**
- * Sort matched results by TMDB order
+ * Filter to items in TMDB order map, then sort by that order
  */
 function sortByTmdbOrder<T extends { tmdb_id?: number }>(
   items: T[],
   tmdbOrder: Map<number, number>
 ): T[] {
-  return [...items].sort(
-    (a, b) =>
-      (tmdbOrder.get(a.tmdb_id!) ?? Infinity) -
-      (tmdbOrder.get(b.tmdb_id!) ?? Infinity)
-  );
+  return items
+    .filter((item) => item.tmdb_id !== undefined && tmdbOrder.has(item.tmdb_id))
+    .sort(
+      (a, b) =>
+        (tmdbOrder.get(a.tmdb_id!) ?? 0) - (tmdbOrder.get(b.tmdb_id!) ?? 0)
+    );
 }
 
 // ===========================================================================
