@@ -18,6 +18,22 @@
   text-align: center;
 }
 
+.hero__spinner {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 16px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  animation: hero-spin 0.8s linear infinite;
+}
+
+@keyframes hero-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Backdrop images - all layers stacked, only active is visible */
 .hero__backdrop {
   position: absolute;

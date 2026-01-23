@@ -44,6 +44,7 @@ export interface HeroSectionProps {
   autoRotate?: boolean;
   rotateInterval?: number;
   apiKey?: string | null;
+  loading?: boolean;
 }
 
 export function HeroSection({
@@ -54,6 +55,7 @@ export function HeroSection({
   autoRotate = true,
   rotateInterval = 8000,
   apiKey,
+  loading = false,
 }: HeroSectionProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isContentTransitioning, setIsContentTransitioning] = useState(false);
@@ -89,12 +91,22 @@ export function HeroSection({
     }, 300);
   }, [currentIndex]);
 
-  if (!currentItem) {
+  // Show loading state while data is being fetched
+  if (loading || !currentItem) {
     return (
       <div className="hero hero--empty">
         <div className="hero__content">
-          <h1>No content available</h1>
-          <p>Add an Xtream source in Settings to get started</p>
+          {loading ? (
+            <>
+              <div className="hero__spinner" />
+              <p>Loading content...</p>
+            </>
+          ) : (
+            <>
+              <h1>No content available</h1>
+              <p>Add an Xtream source in Settings to get started</p>
+            </>
+          )}
         </div>
       </div>
     );

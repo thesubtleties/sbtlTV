@@ -60,6 +60,7 @@ async function createWindow(): Promise<void> {
     transparent: isWindows, // Transparent on Windows so mpv shows through
     frame: !isWindows, // Frameless on Windows (required for transparency)
     resizable: true, // Explicit for Electron 40
+    icon: path.join(__dirname, '../assets/logo-white.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

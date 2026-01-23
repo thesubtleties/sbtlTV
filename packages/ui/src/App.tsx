@@ -7,6 +7,7 @@ import { CategoryStrip } from './components/CategoryStrip';
 import { ChannelPanel } from './components/ChannelPanel';
 import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
+import { Logo } from './components/Logo';
 import { useSelectedCategory } from './hooks/useChannels';
 import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
 import type { StoredChannel } from './db';
@@ -243,7 +244,7 @@ function App() {
     <div className="app" onMouseMove={handleMouseMove}>
       {/* Custom title bar for frameless window */}
       <div className="title-bar">
-        <span className="title-bar-title">sbtlTV</span>
+        <Logo className="title-bar-logo" />
         <div className="window-controls">
           <button onClick={handleMinimize} title="Minimize">
             ─
@@ -261,8 +262,7 @@ function App() {
       <div className="video-background">
         {!currentChannel && (
           <div className="placeholder">
-            <h1>sbtlTV</h1>
-            <p>{syncing ? 'Loading channels...' : 'Select a channel to begin'}</p>
+            <Logo className="placeholder__logo" />
           </div>
         )}
       </div>

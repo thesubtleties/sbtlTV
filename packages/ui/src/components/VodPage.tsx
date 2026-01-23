@@ -53,6 +53,7 @@ interface HomeVirtuosoContext {
   tmdbApiKey: string | null;
   featuredItems: VodItem[];
   localPopularItems: VodItem[];
+  heroLoading: boolean;
   onItemClick: (item: VodItem) => void;
   onHeroPlay: (item: VodItem) => void;
 }
@@ -60,7 +61,7 @@ interface HomeVirtuosoContext {
 // Header component for Virtuoso (defined outside render to prevent remounting)
 const HomeHeader: React.ComponentType<{ context?: HomeVirtuosoContext }> = ({ context }) => {
   if (!context) return null;
-  const { featuredItems, localPopularItems, type, onHeroPlay, onItemClick, tmdbApiKey } = context;
+  const { featuredItems, localPopularItems, type, onHeroPlay, onItemClick, tmdbApiKey, heroLoading } = context;
   return (
     <HeroSection
       items={featuredItems.length > 0 ? featuredItems : localPopularItems.slice(0, 5)}
@@ -68,6 +69,7 @@ const HomeHeader: React.ComponentType<{ context?: HomeVirtuosoContext }> = ({ co
       onPlay={onHeroPlay}
       onMoreInfo={onItemClick}
       apiKey={tmdbApiKey}
+      loading={heroLoading}
     />
   );
 };
@@ -301,15 +303,21 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     }
   }, [type, handlePlay]);
 
+  // Hero is loading if we have no items AND data is still being fetched
+  const heroLoading = featuredItems.length === 0 &&
+    localPopularItems.length === 0 &&
+    (trendingLoading || popularLoading);
+
   // Memoized context for Virtuoso to prevent unnecessary re-renders
   const homeVirtuosoContext = useMemo((): HomeVirtuosoContext => ({
     type,
     tmdbApiKey,
     featuredItems,
     localPopularItems,
+    heroLoading,
     onItemClick: handleItemClick,
     onHeroPlay: handleHeroPlay,
-  }), [type, tmdbApiKey, featuredItems, localPopularItems, handleItemClick, handleHeroPlay]);
+  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, handleItemClick, handleHeroPlay]);
 
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {
