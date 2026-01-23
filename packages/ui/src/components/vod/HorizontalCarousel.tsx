@@ -45,7 +45,7 @@ export function HorizontalCarousel({
     updateScrollButtons();
     window.addEventListener('resize', updateScrollButtons);
     return () => window.removeEventListener('resize', updateScrollButtons);
-  }, [updateScrollButtons, displayItems]);
+  }, [updateScrollButtons, items.length]);
 
   // Scroll by amount
   const scroll = useCallback((direction: 'left' | 'right') => {
