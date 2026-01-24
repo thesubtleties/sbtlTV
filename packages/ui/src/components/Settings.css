@@ -800,3 +800,12 @@
   color: #fff;
   padding: 8px 12px;
 }
+
+/* Disclaimer text */
+.settings-disclaimer {
+  margin-top: auto;
+  padding-top: 16px;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: center;
+}

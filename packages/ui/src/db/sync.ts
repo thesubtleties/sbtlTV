@@ -29,19 +29,21 @@ const DEFAULT_VOD_STALE_HOURS = 24;
 async function syncEpgForSource(source: Source, channels: Channel[]): Promise<number> {
   if (!source.username || !source.password) return 0;
 
+  console.log('[EPG] Starting sync for source:', source.name || source.id);
+
   const client = new XtreamClient(
     { baseUrl: source.url, username: source.username, password: source.password },
     source.id
   );
 
-  // Clear old EPG data for this source
-  await db.programs.where('source_id').equals(source.id).delete();
-
   try {
-    // Fetch full XMLTV data
+    // Fetch full XMLTV data FIRST (don't delete old data until we have new)
+    console.log('[EPG] Fetching XMLTV data...');
     const xmltvPrograms = await client.getXmltvEpg();
+    console.log('[EPG] Received', xmltvPrograms.length, 'programs from XMLTV');
 
     if (xmltvPrograms.length === 0) {
+      console.log('[EPG] No programs found, keeping existing data');
       return 0;
     }
 
@@ -71,6 +73,9 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<nu
       }
     }
 
+    // Only clear old data after successful fetch
+    await db.programs.where('source_id').equals(source.id).delete();
+
     // Store in batches
     const BATCH_SIZE = 1000;
     for (let i = 0; i < storedPrograms.length; i += BATCH_SIZE) {
@@ -78,9 +83,10 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<nu
       await db.programs.bulkPut(batch);
     }
 
+    console.log('[EPG] Sync complete:', storedPrograms.length, 'programs stored');
     return storedPrograms.length;
   } catch (err) {
-    console.error('EPG fetch failed:', err);
+    console.error('[EPG] Fetch failed, keeping existing data:', err);
     return 0;
   }
 }
