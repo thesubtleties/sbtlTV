@@ -9,6 +9,7 @@ import { useEffect, useCallback } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
+import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import type { StoredMovie } from '../../db';
@@ -38,9 +39,10 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
     onPlay?.(movie);
   }, [movie, onPlay]);
 
-  // Lazy-load backdrop and plot from TMDB if available
+  // Lazy-load backdrop, plot, genre, and credits from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(movie, apiKey);
-  const lazyPlot = useLazyPlot(movie, apiKey);
+  const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(movie, apiKey);
+  const lazyCredits = useLazyCredits(movie, apiKey);
 
   // Load RPDB settings for poster
   const { apiKey: rpdbApiKey } = useRpdbSettings();
@@ -60,7 +62,8 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
   // Parse metadata
   const year = movie.release_date?.slice(0, 4);
   const rating = movie.rating ? parseFloat(movie.rating) : null;
-  const genres = movie.genre?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
+  const genreSource = movie.genre || lazyGenre;
+  const genres = genreSource?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
   const duration = movie.duration && movie.duration > 0
     ? `${Math.floor(movie.duration / 60)}h ${movie.duration % 60}m`
     : null;
@@ -149,16 +152,16 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
 
             {/* Credits */}
             <div className="movie-detail__credits">
-              {movie.cast && (
+              {lazyCredits.cast && (
                 <div className="movie-detail__credit-row">
                   <span className="movie-detail__credit-label">Cast</span>
-                  <span className="movie-detail__credit-value">{movie.cast}</span>
+                  <span className="movie-detail__credit-value">{lazyCredits.cast}</span>
                 </div>
               )}
-              {movie.director && (
+              {lazyCredits.director && (
                 <div className="movie-detail__credit-row">
                   <span className="movie-detail__credit-label">Director</span>
-                  <span className="movie-detail__credit-value">{movie.director}</span>
+                  <span className="movie-detail__credit-value">{lazyCredits.director}</span>
                 </div>
               )}
             </div>

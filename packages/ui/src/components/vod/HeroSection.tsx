@@ -63,7 +63,7 @@ export function HeroSection({
   const currentItem = items[currentIndex];
 
   // Lazy-load plot for current item
-  const lazyPlot = useLazyPlot(currentItem, apiKey);
+  const { plot: lazyPlot } = useLazyPlot(currentItem, apiKey);
 
   // Auto-rotate through items
   useEffect(() => {

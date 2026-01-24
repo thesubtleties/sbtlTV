@@ -93,6 +93,27 @@ export interface TmdbMovieDetails extends TmdbMovieResult {
   revenue: number;
 }
 
+export interface TmdbCastMember {
+  id: number;
+  name: string;
+  character: string;
+  profile_path: string | null;
+  order: number;
+}
+
+export interface TmdbCrewMember {
+  id: number;
+  name: string;
+  job: string;
+  department: string;
+  profile_path: string | null;
+}
+
+export interface TmdbCredits {
+  cast: TmdbCastMember[];
+  crew: TmdbCrewMember[];
+}
+
 export interface TmdbTvResult {
   id: number;
   name: string;
@@ -192,6 +213,15 @@ export async function getMovieDetails(
   return details as unknown as TmdbMovieDetails;
 }
 
+export async function getMovieCredits(
+  accessToken: string,
+  movieId: number
+): Promise<TmdbCredits> {
+  const tmdb = getTmdb(accessToken);
+  const credits = await tmdb.movies.credits(movieId);
+  return credits as unknown as TmdbCredits;
+}
+
 // ===========================================================================
 // TV Show endpoints (direct API)
 // ===========================================================================
@@ -258,6 +288,15 @@ export async function getTvShowDetails(
   const tmdb = getTmdb(accessToken);
   const details = await tmdb.tvShows.details(tvId);
   return details as unknown as TmdbTvDetails;
+}
+
+export async function getTvShowCredits(
+  accessToken: string,
+  tvId: number
+): Promise<TmdbCredits> {
+  const tmdb = getTmdb(accessToken);
+  const credits = await tmdb.tvShows.credits(tvId);
+  return credits as unknown as TmdbCredits;
 }
 
 // ===========================================================================

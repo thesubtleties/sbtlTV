@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
+import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useSeriesDetails } from '../../hooks/useVod';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
@@ -60,9 +61,10 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
     [series.name, onPlayEpisode]
   );
 
-  // Lazy-load backdrop and plot from TMDB if available
+  // Lazy-load backdrop, plot, genre, and credits from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(series, apiKey);
-  const lazyPlot = useLazyPlot(series, apiKey);
+  const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(series, apiKey);
+  const lazyCredits = useLazyCredits(series, apiKey);
 
   // Load RPDB settings for poster
   const { apiKey: rpdbApiKey } = useRpdbSettings();
@@ -82,7 +84,8 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
   // Parse metadata
   const year = series.release_date?.slice(0, 4);
   const rating = series.rating ? parseFloat(series.rating) : null;
-  const genres = series.genre?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
+  const genreSource = series.genre || lazyGenre;
+  const genres = genreSource?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
 
   // Current season episodes
   const currentEpisodes = seasons[selectedSeason] ?? [];
@@ -159,10 +162,10 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
             )}
 
             {/* Credits */}
-            {series.cast && (
+            {lazyCredits.cast && (
               <div className="series-detail__credits">
                 <span className="series-detail__credit-label">Cast</span>
-                <span className="series-detail__credit-value">{series.cast}</span>
+                <span className="series-detail__credit-value">{lazyCredits.cast}</span>
               </div>
             )}
           </div>
