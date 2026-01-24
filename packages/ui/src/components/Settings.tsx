@@ -26,7 +26,7 @@ const TABS: Tab[] = [
   { id: 'refresh', label: 'Refresh' },
   { id: 'movies', label: 'Movies', requiresXtream: true },
   { id: 'series', label: 'Series', requiresXtream: true },
-  { id: 'posterdb', label: 'Poster DB' },
+  { id: 'posterdb', label: 'RPDB' },
 ];
 
 export function Settings({ onClose }: SettingsProps) {
@@ -48,6 +48,8 @@ export function Settings({ onClose }: SettingsProps) {
 
   // PosterDB state
   const [posterDbApiKey, setPosterDbApiKey] = useState('');
+  const [posterDbKeyValid, setPosterDbKeyValid] = useState<boolean | null>(null);
+  const [rpdbBackdropsEnabled, setRpdbBackdropsEnabled] = useState(false);
 
   // Load sources and check encryption on mount
   useEffect(() => {
@@ -83,6 +85,7 @@ export function Settings({ onClose }: SettingsProps) {
         movieGenresEnabled?: number[];
         seriesGenresEnabled?: number[];
         posterDbApiKey?: string;
+        rpdbBackdropsEnabled?: boolean;
       };
 
       // Load TMDB API key
@@ -105,7 +108,12 @@ export function Settings({ onClose }: SettingsProps) {
       setSeriesGenresEnabled(settings.seriesGenresEnabled);
 
       // Load PosterDB key
-      setPosterDbApiKey(settings.posterDbApiKey || '');
+      const rpdbKey = settings.posterDbApiKey || '';
+      setPosterDbApiKey(rpdbKey);
+      if (rpdbKey) {
+        setPosterDbKeyValid(true); // Assume valid if previously saved
+      }
+      setRpdbBackdropsEnabled(settings.rpdbBackdropsEnabled ?? false);
     }
   }
 
@@ -179,7 +187,11 @@ export function Settings({ onClose }: SettingsProps) {
         return (
           <PosterDbTab
             apiKey={posterDbApiKey}
+            apiKeyValid={posterDbKeyValid}
             onApiKeyChange={setPosterDbApiKey}
+            onApiKeyValidChange={setPosterDbKeyValid}
+            backdropsEnabled={rpdbBackdropsEnabled}
+            onBackdropsEnabledChange={setRpdbBackdropsEnabled}
           />
         );
       default:

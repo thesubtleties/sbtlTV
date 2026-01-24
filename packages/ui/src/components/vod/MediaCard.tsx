@@ -1,5 +1,7 @@
 import { useState, useCallback, memo } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
+import { useRpdbSettings } from '../../hooks/useRpdbSettings';
+import { getRpdbPosterUrl } from '../../services/rpdb';
 import type { StoredMovie, StoredSeries } from '../../db';
 import './MediaCard.css';
 
@@ -14,14 +16,24 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
 
+  // Load RPDB settings
+  const { apiKey: rpdbApiKey } = useRpdbSettings();
+
   // Get the appropriate image URL
   const posterUrl = 'stream_icon' in item
     ? item.stream_icon
     : (item as StoredSeries).cover;
 
+  // Use RPDB poster if we have an API key and tmdb_id
+  const rpdbPosterUrl = rpdbApiKey && item.tmdb_id
+    ? getRpdbPosterUrl(rpdbApiKey, item.tmdb_id, type)
+    : null;
+
   // Try TMDB image if we have tmdb_id but no local poster
   const tmdbPosterPath = (item as StoredMovie | StoredSeries).backdrop_path;
-  const displayUrl = posterUrl || getTmdbImageUrl(tmdbPosterPath, TMDB_POSTER_SIZES.medium);
+
+  // Priority: RPDB (if available) > local poster > TMDB fallback
+  const displayUrl = rpdbPosterUrl || posterUrl || getTmdbImageUrl(tmdbPosterPath, TMDB_POSTER_SIZES.medium);
 
   // Extract year from release_date
   const year = item.release_date

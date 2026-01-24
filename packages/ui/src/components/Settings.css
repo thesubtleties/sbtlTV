@@ -108,6 +108,17 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+.tier-badge {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(0, 212, 255, 0.15);
+  color: #00d4ff;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .section-actions {
   display: flex;
   gap: 8px;
@@ -808,4 +819,13 @@
   font-size: 0.7rem;
   color: rgba(255, 255, 255, 0.4);
   text-align: center;
+}
+
+.settings-disclaimer a {
+  color: #00d4ff;
+  text-decoration: none;
+}
+
+.settings-disclaimer a:hover {
+  text-decoration: underline;
 }

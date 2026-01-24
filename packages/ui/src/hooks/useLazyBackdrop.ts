@@ -17,6 +17,8 @@ import {
   getTmdbImageUrl,
   TMDB_BACKDROP_SIZES,
 } from '../services/tmdb';
+import { getRpdbBackdropUrl } from '../services/rpdb';
+import { useRpdbSettings } from './useRpdbSettings';
 
 type MediaItem = StoredMovie | StoredSeries;
 
@@ -40,12 +42,10 @@ export function useLazyBackdrop(
   apiKey: string | null | undefined,
   size: keyof typeof TMDB_BACKDROP_SIZES = 'large'
 ): string | null {
-  // Synchronously compute URL if item already has backdrop_path (no flash)
-  const cachedUrl = item?.backdrop_path
-    ? getTmdbImageUrl(item.backdrop_path, TMDB_BACKDROP_SIZES[size])
-    : null;
+  // Load RPDB settings
+  const { apiKey: rpdbApiKey, backdropsEnabled: rpdbBackdropsEnabled } = useRpdbSettings();
 
-  // State only for async-fetched backdrops
+  // State only for async-fetched backdrops (must be called before any early returns)
   const [fetchedUrl, setFetchedUrl] = useState<string | null>(null);
   const lastItemIdRef = useRef<string | null>(null);
   // useRef instead of useState - synchronously mutable, no stale closure issues
@@ -53,6 +53,17 @@ export function useLazyBackdrop(
 
   // Get item ID for tracking
   const itemId = item ? (isMovie(item) ? item.stream_id : item.series_id) : null;
+
+  // Check if we should use RPDB backdrop
+  const itemType = item ? (isMovie(item) ? 'movie' : 'series') : null;
+  const rpdbBackdropUrl = rpdbApiKey && rpdbBackdropsEnabled && item?.tmdb_id && itemType
+    ? getRpdbBackdropUrl(rpdbApiKey, item.tmdb_id, itemType)
+    : null;
+
+  // Synchronously compute URL if item already has backdrop_path (no flash)
+  const cachedUrl = item?.backdrop_path
+    ? getTmdbImageUrl(item.backdrop_path, TMDB_BACKDROP_SIZES[size])
+    : null;
 
   // Reset fetched URL when item changes
   if (itemId !== lastItemIdRef.current) {
@@ -135,8 +146,8 @@ export function useLazyBackdrop(
     };
   }, [item?.tmdb_id, item?.backdrop_path, apiKey, size]);
 
-  // Return cached URL (sync) or fetched URL (async)
-  return cachedUrl || fetchedUrl;
+  // Priority: RPDB backdrop > cached TMDB URL > fetched TMDB URL
+  return rpdbBackdropUrl || cachedUrl || fetchedUrl;
 }
 
 export default useLazyBackdrop;

@@ -29,7 +29,8 @@ interface AppSettings {
   epgRefreshHours: number;  // 0 = manual only, default 6
   movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
-  posterDbApiKey?: string;         // For future RatingPosterDB integration
+  posterDbApiKey?: string;         // RatingPosterDB API key
+  rpdbBackdropsEnabled?: boolean;  // Use RPDB for backdrop images (tier 2+)
 }
 
 // Internal storage format (encrypted)
@@ -42,6 +43,7 @@ interface StoredSettings {
   movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   encryptedPosterDbApiKey?: string; // Base64 encoded encrypted buffer
+  rpdbBackdropsEnabled?: boolean;   // Use RPDB for backdrop images
 }
 
 const store = new Store<StoreSchema>({
@@ -174,6 +176,7 @@ export function getSettings(): AppSettings {
   if (stored.encryptedPosterDbApiKey) {
     result.posterDbApiKey = decryptPassword(stored.encryptedPosterDbApiKey);
   }
+  result.rpdbBackdropsEnabled = stored.rpdbBackdropsEnabled ?? false;
   return result;
 }
 
@@ -195,6 +198,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   if (settings.seriesGenresEnabled !== undefined) updated.seriesGenresEnabled = settings.seriesGenresEnabled;
   if (settings.posterDbApiKey !== undefined) {
     updated.encryptedPosterDbApiKey = settings.posterDbApiKey ? encryptPassword(settings.posterDbApiKey) : undefined;
+  }
+  if (settings.rpdbBackdropsEnabled !== undefined) {
+    updated.rpdbBackdropsEnabled = settings.rpdbBackdropsEnabled;
   }
 
   store.set('settings', updated);

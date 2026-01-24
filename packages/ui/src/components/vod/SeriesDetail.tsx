@@ -10,6 +10,8 @@ import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useSeriesDetails } from '../../hooks/useVod';
+import { useRpdbSettings } from '../../hooks/useRpdbSettings';
+import { getRpdbPosterUrl } from '../../services/rpdb';
 import type { StoredSeries, StoredEpisode } from '../../db';
 import './SeriesDetail.css';
 
@@ -62,10 +64,17 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
   const tmdbBackdropUrl = useLazyBackdrop(series, apiKey);
   const lazyPlot = useLazyPlot(series, apiKey);
 
+  // Load RPDB settings for poster
+  const { apiKey: rpdbApiKey } = useRpdbSettings();
+  const rpdbPosterUrl = rpdbApiKey && series.tmdb_id
+    ? getRpdbPosterUrl(rpdbApiKey, series.tmdb_id, 'series')
+    : null;
+
   // Get images - use TMDB backdrop if available, fallback to cover
   const backdropUrl = tmdbBackdropUrl || series.cover;
 
-  const posterUrl = series.cover ||
+  // Priority: RPDB poster > local cover > TMDB fallback
+  const posterUrl = rpdbPosterUrl || series.cover ||
     (series.backdrop_path
       ? getTmdbImageUrl(series.backdrop_path, TMDB_POSTER_SIZES.medium)
       : null);

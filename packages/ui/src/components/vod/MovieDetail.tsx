@@ -9,6 +9,8 @@ import { useEffect, useCallback } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
+import { useRpdbSettings } from '../../hooks/useRpdbSettings';
+import { getRpdbPosterUrl } from '../../services/rpdb';
 import type { StoredMovie } from '../../db';
 import './MovieDetail.css';
 
@@ -40,10 +42,17 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
   const tmdbBackdropUrl = useLazyBackdrop(movie, apiKey);
   const lazyPlot = useLazyPlot(movie, apiKey);
 
+  // Load RPDB settings for poster
+  const { apiKey: rpdbApiKey } = useRpdbSettings();
+  const rpdbPosterUrl = rpdbApiKey && movie.tmdb_id
+    ? getRpdbPosterUrl(rpdbApiKey, movie.tmdb_id, 'movie')
+    : null;
+
   // Get images - use TMDB backdrop if available, fallback to stream_icon
   const backdropUrl = tmdbBackdropUrl || movie.stream_icon;
 
-  const posterUrl = movie.stream_icon ||
+  // Priority: RPDB poster > local poster > TMDB fallback
+  const posterUrl = rpdbPosterUrl || movie.stream_icon ||
     (movie.backdrop_path
       ? getTmdbImageUrl(movie.backdrop_path, TMDB_POSTER_SIZES.medium)
       : null);

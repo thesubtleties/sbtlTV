@@ -51,7 +51,8 @@ export interface AppSettings {
   epgRefreshHours?: number;  // 0 = manual only, default 6
   movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
-  posterDbApiKey?: string;         // For future RatingPosterDB integration
+  posterDbApiKey?: string;         // RatingPosterDB API key for rating posters
+  rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
 }
 
 export interface Source {
