@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Source } from '../../types/electron';
 import { syncAllSources, syncAllVod, type SyncResult, type VodSyncResult } from '../../db/sync';
+import { clearSourceData, clearVodData } from '../../db';
 import { useSyncStatus } from '../../hooks/useChannels';
 
 interface SourcesTabProps {
@@ -60,8 +61,17 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
     setError(null);
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(id: string, sourceName: string) {
     if (!window.storage) return;
+
+    const confirmed = window.confirm(
+      `Delete "${sourceName}"?\n\nThis will remove all channels, EPG, and VOD data from this source.`
+    );
+    if (!confirmed) return;
+
+    // Clean up all data in IndexedDB before removing source config
+    await clearSourceData(id);
+    await clearVodData(id);
     await window.storage.deleteSource(id);
     onSourcesChange();
   }
@@ -224,7 +234,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
                 </div>
                 <div className="source-actions">
                   <button onClick={() => handleEdit(source)}>Edit</button>
-                  <button className="delete" onClick={() => handleDelete(source.id)}>Delete</button>
+                  <button className="delete" onClick={() => handleDelete(source.id, source.name)}>Delete</button>
                 </div>
               </li>
             ))}

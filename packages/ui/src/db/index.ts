@@ -139,24 +139,29 @@ class SbtltvDatabase extends Dexie {
 
 export const db = new SbtltvDatabase();
 
-// Helper to clear all data for a source (before re-sync)
+// Helper to clear all data for a source (before re-sync or on delete)
 export async function clearSourceData(sourceId: string): Promise<void> {
-  await db.transaction('rw', [db.channels, db.categories, db.sourcesMeta], async () => {
+  await db.transaction('rw', [db.channels, db.categories, db.sourcesMeta, db.programs], async () => {
     await db.channels.where('source_id').equals(sourceId).delete();
     await db.categories.where('source_id').equals(sourceId).delete();
     await db.sourcesMeta.where('source_id').equals(sourceId).delete();
+    await db.programs.where('source_id').equals(sourceId).delete();
   });
 }
 
 // Helper to clear VOD data for a source
 export async function clearVodData(sourceId: string): Promise<void> {
   await db.transaction('rw', [db.vodMovies, db.vodSeries, db.vodEpisodes, db.vodCategories], async () => {
+    // Get series IDs BEFORE deleting them (episodes don't have source_id directly)
+    const series = await db.vodSeries.where('source_id').equals(sourceId).toArray();
+    const seriesIds = series.map(s => s.series_id);
+
     await db.vodMovies.where('source_id').equals(sourceId).delete();
     await db.vodSeries.where('source_id').equals(sourceId).delete();
-    // Episodes don't have source_id directly, need to get series first
-    const series = await db.vodSeries.where('source_id').equals(sourceId).toArray();
-    for (const s of series) {
-      await db.vodEpisodes.where('series_id').equals(s.series_id).delete();
+
+    // Delete episodes for all series from this source
+    for (const seriesId of seriesIds) {
+      await db.vodEpisodes.where('series_id').equals(seriesId).delete();
     }
     await db.vodCategories.where('source_id').equals(sourceId).delete();
   });
