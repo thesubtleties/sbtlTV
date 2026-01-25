@@ -59,7 +59,11 @@ export function Settings({ onClose }: SettingsProps) {
   }, []);
 
   async function loadSources() {
-    if (!window.storage) return;
+    // window.storage is the Electron IPC bridge - if missing, app is broken
+    if (!window.storage) {
+      console.error('[Settings] window.storage unavailable - Electron IPC bridge missing');
+      return;
+    }
     const result = await window.storage.getSources();
     if (result.data) {
       setSources(result.data);
@@ -67,7 +71,10 @@ export function Settings({ onClose }: SettingsProps) {
   }
 
   async function checkEncryption() {
-    if (!window.storage) return;
+    if (!window.storage) {
+      console.error('[Settings] window.storage unavailable - Electron IPC bridge missing');
+      return;
+    }
     const result = await window.storage.isEncryptionAvailable();
     if (result.data !== undefined) {
       setIsEncryptionAvailable(result.data);
@@ -75,7 +82,10 @@ export function Settings({ onClose }: SettingsProps) {
   }
 
   async function loadSettings() {
-    if (!window.storage) return;
+    if (!window.storage) {
+      console.error('[Settings] window.storage unavailable - Electron IPC bridge missing');
+      return;
+    }
     const result = await window.storage.getSettings();
     if (result.data) {
       const settings = result.data as {

@@ -417,7 +417,7 @@ export async function syncVodSeries(source: Source): Promise<{ count: number; ca
   // Store in batches - use bulkPut to upsert (no delete needed)
   const BATCH_SIZE = 500;
 
-  await db.transaction('rw', [db.vodSeries, db.vodCategories], async () => {
+  await db.transaction('rw', [db.vodSeries, db.vodCategories, db.vodEpisodes], async () => {
     // Update categories (upsert)
     await db.vodCategories.where('source_id').equals(source.id).filter(c => c.type === 'series').delete();
     if (vodCategories.length > 0) {
@@ -430,12 +430,14 @@ export async function syncVodSeries(source: Source): Promise<{ count: number; ca
       await db.vodSeries.bulkPut(batch);
     }
 
-    // Remove series that no longer exist in source (optional cleanup)
+    // Remove series that no longer exist in source (and their episodes)
     const newIds = new Set(series.map(s => s.series_id));
     const toRemove = existingSeries.filter(s => !newIds.has(s.series_id)).map(s => s.series_id);
     if (toRemove.length > 0) {
+      // Delete orphaned episodes first (they reference series_id)
+      await db.vodEpisodes.where('series_id').anyOf(toRemove).delete();
       await db.vodSeries.bulkDelete(toRemove);
-      console.log(`[VOD Series] Removed ${toRemove.length} series no longer in source`);
+      console.log(`[VOD Series] Removed ${toRemove.length} series (and their episodes) no longer in source`);
     }
   });
 
@@ -669,6 +671,11 @@ export async function syncVodForSource(source: Source): Promise<VodSyncResult> {
 
     // Match against TMDB exports (runs in background, no API calls)
     // This enriches movies/series with tmdb_id for the curated lists
+    // TODO: Handle catastrophic matching failures better. Currently errors only go to
+    // console.error which is stripped in production builds. If matching fails completely
+    // (DB corruption, OOM, etc.), user sees degraded experience (no curated lists) with
+    // no indication why. Consider: user-facing error notification, or accept as edge case
+    // where "clear app data" is the fix.
     matchMoviesWithTmdb(source.id).catch(console.error);
     matchSeriesWithTmdb(source.id).catch(console.error);
 

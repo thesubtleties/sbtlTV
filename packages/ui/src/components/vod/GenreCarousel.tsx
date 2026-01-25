@@ -21,17 +21,23 @@ export function GenreCarousel({
   onItemClick,
 }: GenreCarouselProps) {
   // Call the appropriate hook based on type
-  const { movies, loading: moviesLoading } = useMoviesByGenre(
+  const { movies, loading: moviesLoading, error: moviesError } = useMoviesByGenre(
     type === 'movie' ? tmdbApiKey : null,
     type === 'movie' ? genreId : null
   );
-  const { series, loading: seriesLoading } = useSeriesByGenre(
+  const { series, loading: seriesLoading, error: seriesError } = useSeriesByGenre(
     type === 'series' ? tmdbApiKey : null,
     type === 'series' ? genreId : null
   );
 
   const items = type === 'movie' ? movies : series;
   const loading = type === 'movie' ? moviesLoading : seriesLoading;
+  const error = type === 'movie' ? moviesError : seriesError;
+
+  // Log errors for debugging (stripped in production - TODO: add user-facing error state)
+  if (error) {
+    console.error(`[GenreCarousel] Failed to load ${genreName}:`, error);
+  }
 
   // Always render carousel - Virtuoso requires non-zero height items
   // Empty carousels will show loading state briefly, then hide via CSS

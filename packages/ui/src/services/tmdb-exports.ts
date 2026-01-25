@@ -65,9 +65,9 @@ let enrichedTvCache: TmdbExportData | null = null;
 // Cache for 24 hours
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-// GitHub cache URLs for enriched data
-const ENRICHED_MOVIE_URL = 'https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb-movies-enriched.json';
-const ENRICHED_TV_URL = 'https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb-tvs-enriched.json';
+// GitHub cache URLs for enriched data (NDJSON format for streaming)
+const ENRICHED_MOVIE_URL = 'https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb-movies-enriched.ndjson';
+const ENRICHED_TV_URL = 'https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb-tvs-enriched.ndjson';
 
 // ===========================================================================
 // Helpers
@@ -129,7 +129,8 @@ export function extractMatchParams(item: { name: string; title?: string; year?: 
 }
 
 /**
- * Download and parse enriched TMDB data from GitHub cache
+ * Download and parse enriched TMDB data from GitHub cache (NDJSON format)
+ * Uses streaming to avoid blocking main thread with 1M+ entries
  * Returns null if unavailable (will fall back to regular exports)
  */
 async function downloadEnrichedExport(type: 'movie' | 'tv'): Promise<TmdbExportData | null> {
@@ -137,7 +138,7 @@ async function downloadEnrichedExport(type: 'movie' | 'tv'): Promise<TmdbExportD
   console.log(`[TMDB Export] Downloading enriched ${type} data from GitHub...`);
 
   try {
-    let response: Response;
+    let textContent: string;
 
     // Use Electron's fetch proxy if available (bypasses CORS)
     if (typeof window !== 'undefined' && window.fetchProxy?.fetch) {
@@ -146,24 +147,28 @@ async function downloadEnrichedExport(type: 'movie' | 'tv'): Promise<TmdbExportD
         console.warn(`[TMDB Export] Enriched ${type} fetch failed:`, result.error || result.data?.statusText);
         return null;
       }
-      // fetchProxy.fetch returns { success, data: FetchProxyResponse } where data.text is the content
-      response = new Response(result.data.text);
+      textContent = result.data.text;
     } else {
-      response = await fetch(url);
+      const response = await fetch(url);
       if (!response.ok) {
         console.warn(`[TMDB Export] Enriched ${type} not available: ${response.status}`);
         return null;
       }
+      textContent = await response.text();
     }
 
-    const data: EnrichedData = await response.json();
-    console.log(`[TMDB Export] Parsing ${data.count} enriched ${type} entries...`);
+    // Parse NDJSON (one entry per line) - much faster than single JSON.parse
+    const lines = textContent.split('\n');
+    console.log(`[TMDB Export] Parsing ${lines.length} enriched ${type} entries...`);
 
     // Build lookup maps
     const entries = new Map<string, TmdbExportEntry[]>();
     const byId = new Map<number, TmdbExportEntry>();
 
-    for (const e of data.entries) {
+    for (const line of lines) {
+      if (!line.trim()) continue;
+
+      const e = JSON.parse(line) as EnrichedEntry;
       const normalized = normalizeTitle(e.t);
       if (!normalized) continue;
 
