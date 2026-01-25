@@ -67,6 +67,11 @@ export interface Source {
   password?: string;
 }
 
+export interface M3UImportResult {
+  content: string;
+  fileName: string;
+}
+
 export interface StorageApi {
   getSources: () => Promise<StorageResult<Source[]>>;
   getSource: (id: string) => Promise<StorageResult<Source | undefined>>;
@@ -75,6 +80,7 @@ export interface StorageApi {
   getSettings: () => Promise<StorageResult<AppSettings>>;
   updateSettings: (settings: Partial<AppSettings>) => Promise<StorageResult>;
   isEncryptionAvailable: () => Promise<StorageResult<boolean>>;
+  importM3UFile: () => Promise<StorageResult<M3UImportResult> & { canceled?: boolean }>;
 }
 
 export interface FetchProxyResponse {

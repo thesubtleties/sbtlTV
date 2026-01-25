@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Source } from '../../types/electron';
 import { syncAllSources, syncAllVod, type SyncResult, type VodSyncResult } from '../../db/sync';
-import { clearSourceData, clearVodData } from '../../db';
+import { clearSourceData, clearVodData, db } from '../../db';
 import { useSyncStatus } from '../../hooks/useChannels';
+import { parseM3U } from '@sbtltv/local-adapter';
 
 interface SourcesTabProps {
   sources: Source[];
@@ -46,8 +47,50 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
 
   const hasXtreamSource = sources.some(s => s.type === 'xtream');
 
+  // Track imported M3U data (file import flow)
+  const [importedM3U, setImportedM3U] = useState<{
+    channels: number;
+    categories: number;
+    epgUrl?: string;
+    rawContent: string;
+  } | null>(null);
+
   function handleAdd() {
     setFormData(emptyForm);
+    setEditingId(null);
+    setImportedM3U(null);
+    setShowAddForm(true);
+    setError(null);
+  }
+
+  async function handleImportM3U() {
+    if (!window.storage) return;
+
+    const result = await window.storage.importM3UFile();
+    if (result.canceled || !result.data) return;
+
+    const { content, fileName } = result.data;
+
+    // Parse to validate and extract info
+    const tempSourceId = 'temp-import';
+    const parsed = parseM3U(content, tempSourceId);
+
+    setImportedM3U({
+      channels: parsed.channels.length,
+      categories: parsed.categories.length,
+      epgUrl: parsed.epgUrl ?? undefined,
+      rawContent: content,
+    });
+
+    setFormData({
+      ...emptyForm,
+      name: fileName,
+      type: 'm3u',
+      url: '', // No URL for file imports
+      autoLoadEpg: !!parsed.epgUrl,
+      epgUrl: parsed.epgUrl ?? '',
+    });
+
     setEditingId(null);
     setShowAddForm(true);
     setError(null);
@@ -92,7 +135,8 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       setError('Name is required');
       return;
     }
-    if (!formData.url.trim()) {
+    // URL is required unless this is a file import
+    if (!importedM3U && !formData.url.trim()) {
       setError('URL is required');
       return;
     }
@@ -101,11 +145,13 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       return;
     }
 
+    const sourceId = editingId || crypto.randomUUID();
+
     const source: Source = {
-      id: editingId || crypto.randomUUID(),
+      id: sourceId,
       name: formData.name.trim(),
       type: formData.type,
-      url: formData.url.trim(),
+      url: importedM3U ? `imported:${formData.name.trim()}` : formData.url.trim(),
       enabled: true,
       username: formData.type === 'xtream' ? formData.username.trim() : undefined,
       password: formData.type === 'xtream' ? formData.password.trim() : undefined,
@@ -119,9 +165,31 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       return;
     }
 
+    // For file imports, store channels directly in the database
+    if (importedM3U) {
+      const parsed = parseM3U(importedM3U.rawContent, sourceId);
+
+      await db.transaction('rw', [db.channels, db.categories, db.sourcesMeta], async () => {
+        if (parsed.channels.length > 0) {
+          await db.channels.bulkPut(parsed.channels);
+        }
+        if (parsed.categories.length > 0) {
+          await db.categories.bulkPut(parsed.categories);
+        }
+        await db.sourcesMeta.put({
+          source_id: sourceId,
+          epg_url: parsed.epgUrl ?? undefined,
+          last_synced: new Date(),
+          channel_count: parsed.channels.length,
+          category_count: parsed.categories.length,
+        });
+      });
+    }
+
     setShowAddForm(false);
     setFormData(emptyForm);
     setEditingId(null);
+    setImportedM3U(null);
     onSourcesChange();
   }
 
@@ -129,6 +197,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
     setShowAddForm(false);
     setFormData(emptyForm);
     setEditingId(null);
+    setImportedM3U(null);
     setError(null);
   }
 
@@ -269,35 +338,83 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
               />
             </div>
 
-            <div className="form-group">
-              <label>Type</label>
-              <div className="type-selector">
+            {/* Type selector - hidden for file imports */}
+            {!importedM3U && (
+              <div className="form-group">
+                <label>Type</label>
+                <div className="type-selector">
+                  <button
+                    type="button"
+                    className={formData.type === 'm3u' ? 'active' : ''}
+                    onClick={() => setFormData({ ...formData, type: 'm3u' })}
+                  >
+                    M3U Playlist
+                  </button>
+                  <button
+                    type="button"
+                    className={formData.type === 'xtream' ? 'active' : ''}
+                    onClick={() => setFormData({ ...formData, type: 'xtream' })}
+                  >
+                    Xtream Codes
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* URL field for Xtream sources */}
+            {formData.type === 'xtream' && (
+              <div className="form-group">
+                <label>Server URL</label>
+                <input
+                  type="text"
+                  value={formData.url}
+                  onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                  placeholder="http://provider.com:8080"
+                />
+              </div>
+            )}
+
+            {/* M3U: URL or File import */}
+            {formData.type === 'm3u' && !importedM3U && (
+              <div className="form-group">
+                <label>Playlist URL</label>
+                <input
+                  type="text"
+                  value={formData.url}
+                  onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                  placeholder="http://example.com/playlist.m3u"
+                />
+                <div className="or-divider">
+                  <span>or</span>
+                </div>
                 <button
                   type="button"
-                  className={formData.type === 'm3u' ? 'active' : ''}
-                  onClick={() => setFormData({ ...formData, type: 'm3u' })}
+                  className="import-btn"
+                  onClick={handleImportM3U}
                 >
-                  M3U Playlist
-                </button>
-                <button
-                  type="button"
-                  className={formData.type === 'xtream' ? 'active' : ''}
-                  onClick={() => setFormData({ ...formData, type: 'xtream' })}
-                >
-                  Xtream Codes
+                  Import from File...
                 </button>
               </div>
-            </div>
+            )}
 
-            <div className="form-group">
-              <label>{formData.type === 'm3u' ? 'Playlist URL' : 'Server URL'}</label>
-              <input
-                type="text"
-                value={formData.url}
-                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                placeholder={formData.type === 'm3u' ? 'http://example.com/playlist.m3u' : 'http://provider.com:8080'}
-              />
-            </div>
+            {/* Import info for file imports */}
+            {formData.type === 'm3u' && importedM3U && (
+              <div className="form-group import-info">
+                <label>Imported File</label>
+                <div className="import-summary">
+                  <span>{importedM3U.channels} channels</span>
+                  <span>{importedM3U.categories} categories</span>
+                  {importedM3U.epgUrl && <span>EPG URL detected</span>}
+                </div>
+                <button
+                  type="button"
+                  className="change-file-btn"
+                  onClick={() => setImportedM3U(null)}
+                >
+                  Use URL instead
+                </button>
+              </div>
+            )}
 
             {formData.type === 'xtream' && (
               <>

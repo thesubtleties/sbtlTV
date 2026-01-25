@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import * as net from 'net';
@@ -514,6 +514,34 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
 
 ipcMain.handle('storage-is-encryption-available', async () => {
   return { success: true, data: storage.isEncryptionAvailable() };
+});
+
+// IPC Handler - Import M3U file via file dialog
+ipcMain.handle('import-m3u-file', async () => {
+  if (!mainWindow) return { error: 'No window available' };
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import M3U Playlist',
+    filters: [
+      { name: 'M3U Playlists', extensions: ['m3u', 'm3u8'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, canceled: true };
+  }
+
+  const filePath = result.filePaths[0];
+
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const fileName = path.basename(filePath, path.extname(filePath));
+    return { success: true, data: { content, fileName } };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Failed to read file' };
+  }
 });
 
 // URL allowlist for fetch-binary (TMDB exports only) - prevents SSRF attacks
