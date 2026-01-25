@@ -134,6 +134,19 @@ class SbtltvDatabase extends Dexie {
       vodEpisodes: 'id, series_id, season_num, episode_num',
       vodCategories: 'category_id, source_id, name, type',
     });
+
+    // Add compound index for efficient unmatched item queries
+    this.version(5).stores({
+      channels: 'stream_id, source_id, *category_ids, name',
+      categories: 'category_id, source_id, category_name',
+      sourcesMeta: 'source_id',
+      prefs: 'key',
+      programs: 'id, stream_id, source_id, start, end',
+      vodMovies: 'stream_id, source_id, *category_ids, name, tmdb_id, added, popularity, [source_id+tmdb_id]',
+      vodSeries: 'series_id, source_id, *category_ids, name, tmdb_id, added, popularity, [source_id+tmdb_id]',
+      vodEpisodes: 'id, series_id, season_num, episode_num',
+      vodCategories: 'category_id, source_id, name, type',
+    });
   }
 }
 

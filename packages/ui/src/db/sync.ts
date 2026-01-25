@@ -485,14 +485,19 @@ export async function syncSeriesEpisodes(source: Source, seriesId: string): Prom
 async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
   try {
     console.log('[TMDB Match] Starting movie matching with year-aware lookup...');
+    console.time('[TMDB Match] Download exports');
     const exports = await getEnrichedMovieExports();
+    console.timeEnd('[TMDB Match] Download exports');
 
     // Get only movies that haven't been matched AND haven't been attempted
+    // Query by source_id, filter for unmatched (tmdb_id undefined means not in compound index)
+    console.time('[TMDB Match] Query unmatched');
     const movies = await db.vodMovies
       .where('source_id')
       .equals(sourceId)
       .filter(m => !m.tmdb_id && !m.match_attempted)
       .toArray();
+    console.timeEnd('[TMDB Match] Query unmatched');
 
     if (movies.length === 0) {
       console.log('[TMDB Match] No new movies to match');
@@ -500,6 +505,7 @@ async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
     }
 
     console.log(`[TMDB Match] Matching ${movies.length} new movies...`);
+    console.time('[TMDB Match] Matching loop');
 
     let matched = 0;
     let yearMatched = 0;
@@ -508,7 +514,7 @@ async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
 
     for (let i = 0; i < movies.length; i += BATCH_SIZE) {
       const batch = movies.slice(i, i + BATCH_SIZE);
-      const updates: { key: string; changes: Partial<StoredMovie> }[] = [];
+      const toUpdate: StoredMovie[] = [];
 
       for (const movie of batch) {
         // Extract title and year from movie data
@@ -520,38 +526,31 @@ async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
           if (year && match.year === year) {
             yearMatched++;
           }
-          updates.push({
-            key: movie.stream_id,
-            changes: {
-              tmdb_id: match.id,
-              popularity: match.popularity,
-              match_attempted: now,
-            },
+          toUpdate.push({
+            ...movie,
+            tmdb_id: match.id,
+            popularity: match.popularity,
+            match_attempted: now,
           });
           matched++;
         } else {
           // Mark as attempted even if no match found (prevents re-trying)
-          updates.push({
-            key: movie.stream_id,
-            changes: {
-              match_attempted: now,
-            },
+          toUpdate.push({
+            ...movie,
+            match_attempted: now,
           });
         }
       }
 
-      // Batch update
-      if (updates.length > 0) {
-        await db.transaction('rw', db.vodMovies, async () => {
-          for (const { key, changes } of updates) {
-            await db.vodMovies.update(key, changes);
-          }
-        });
+      // Bulk update - much faster than individual updates
+      if (toUpdate.length > 0) {
+        await db.vodMovies.bulkPut(toUpdate);
       }
 
       console.log(`[TMDB Match] Progress: ${Math.min(i + BATCH_SIZE, movies.length)}/${movies.length}`);
     }
 
+    console.timeEnd('[TMDB Match] Matching loop');
     console.log(`[TMDB Match] Matched ${matched}/${movies.length} movies (${yearMatched} with exact year match)`);
     return matched;
   } catch (error) {
@@ -566,14 +565,19 @@ async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
 async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
   try {
     console.log('[TMDB Match] Starting series matching with year-aware lookup...');
+    console.time('[TMDB Match] Download TV exports');
     const exports = await getEnrichedTvExports();
+    console.timeEnd('[TMDB Match] Download TV exports');
 
     // Get only series that haven't been matched AND haven't been attempted
+    // Query by source_id, filter for unmatched
+    console.time('[TMDB Match] Query unmatched series');
     const series = await db.vodSeries
       .where('source_id')
       .equals(sourceId)
       .filter(s => !s.tmdb_id && !s.match_attempted)
       .toArray();
+    console.timeEnd('[TMDB Match] Query unmatched series');
 
     if (series.length === 0) {
       console.log('[TMDB Match] No new series to match');
@@ -581,6 +585,7 @@ async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
     }
 
     console.log(`[TMDB Match] Matching ${series.length} new series...`);
+    console.time('[TMDB Match] Series matching loop');
 
     let matched = 0;
     let yearMatched = 0;
@@ -589,7 +594,7 @@ async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
 
     for (let i = 0; i < series.length; i += BATCH_SIZE) {
       const batch = series.slice(i, i + BATCH_SIZE);
-      const updates: { key: string; changes: Partial<StoredSeries> }[] = [];
+      const toUpdate: StoredSeries[] = [];
 
       for (const s of batch) {
         // Extract title and year from series data
@@ -601,38 +606,31 @@ async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
           if (year && match.year === year) {
             yearMatched++;
           }
-          updates.push({
-            key: s.series_id,
-            changes: {
-              tmdb_id: match.id,
-              popularity: match.popularity,
-              match_attempted: now,
-            },
+          toUpdate.push({
+            ...s,
+            tmdb_id: match.id,
+            popularity: match.popularity,
+            match_attempted: now,
           });
           matched++;
         } else {
           // Mark as attempted even if no match found (prevents re-trying)
-          updates.push({
-            key: s.series_id,
-            changes: {
-              match_attempted: now,
-            },
+          toUpdate.push({
+            ...s,
+            match_attempted: now,
           });
         }
       }
 
-      // Batch update
-      if (updates.length > 0) {
-        await db.transaction('rw', db.vodSeries, async () => {
-          for (const { key, changes } of updates) {
-            await db.vodSeries.update(key, changes);
-          }
-        });
+      // Bulk update - much faster than individual updates
+      if (toUpdate.length > 0) {
+        await db.vodSeries.bulkPut(toUpdate);
       }
 
       console.log(`[TMDB Match] Progress: ${Math.min(i + BATCH_SIZE, series.length)}/${series.length}`);
     }
 
+    console.timeEnd('[TMDB Match] Series matching loop');
     console.log(`[TMDB Match] Matched ${matched}/${series.length} series (${yearMatched} with exact year match)`);
     return matched;
   } catch (error) {
