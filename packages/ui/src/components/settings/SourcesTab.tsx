@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Source } from '../../types/electron';
 import { syncAllSources, syncAllVod, type SyncResult, type VodSyncResult } from '../../db/sync';
 import { clearSourceData, clearVodData } from '../../db';
@@ -18,6 +19,8 @@ interface SourceFormData {
   url: string;
   username: string;
   password: string;
+  autoLoadEpg: boolean;
+  epgUrl: string;
 }
 
 const emptyForm: SourceFormData = {
@@ -26,6 +29,8 @@ const emptyForm: SourceFormData = {
   url: '',
   username: '',
   password: '',
+  autoLoadEpg: true,
+  epgUrl: '',
 };
 
 export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: SourcesTabProps) {
@@ -55,6 +60,8 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       url: source.url,
       username: source.username || '',
       password: source.password || '',
+      autoLoadEpg: source.auto_load_epg ?? (source.type === 'xtream'),
+      epgUrl: source.epg_url || '',
     });
     setEditingId(source.id);
     setShowAddForm(true);
@@ -102,6 +109,8 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       enabled: true,
       username: formData.type === 'xtream' ? formData.username.trim() : undefined,
       password: formData.type === 'xtream' ? formData.password.trim() : undefined,
+      auto_load_epg: formData.autoLoadEpg,
+      epg_url: formData.epgUrl.trim() || undefined,
     };
 
     const result = await window.storage.saveSource(source);
@@ -243,7 +252,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       </div>
 
       {/* Add/Edit Form */}
-      {showAddForm && (
+      {showAddForm && createPortal(
         <div className="source-form-overlay">
           <form className="source-form" onSubmit={handleSubmit}>
             <h3>{editingId ? 'Edit Source' : 'Add Source'}</h3>
@@ -318,6 +327,36 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
               </>
             )}
 
+            {/* EPG Settings */}
+            <div className="form-group epg-settings">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={formData.autoLoadEpg}
+                  onChange={(e) => setFormData({ ...formData, autoLoadEpg: e.target.checked })}
+                />
+                Auto-load EPG from source
+              </label>
+              <span className="hint">
+                {formData.type === 'xtream'
+                  ? 'Uses provider\'s XMLTV endpoint'
+                  : 'Uses url-tvg from M3U header if available'}
+              </span>
+            </div>
+
+            {!formData.autoLoadEpg && (
+              <div className="form-group">
+                <label>EPG URL (optional)</label>
+                <input
+                  type="text"
+                  value={formData.epgUrl}
+                  onChange={(e) => setFormData({ ...formData, epgUrl: e.target.value })}
+                  placeholder="http://example.com/epg.xml"
+                />
+                <span className="hint">XMLTV format EPG URL</span>
+              </div>
+            )}
+
             <div className="form-actions">
               <button type="button" className="cancel-btn" onClick={handleCancel}>
                 Cancel
@@ -327,7 +366,8 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
               </button>
             </div>
           </form>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

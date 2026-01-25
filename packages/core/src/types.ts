@@ -16,7 +16,8 @@ export interface Source {
   url: string;
   username?: string;      // Xtream only
   password?: string;      // Xtream only
-  epg_url?: string;       // Auto-detected or manual
+  epg_url?: string;       // Auto-detected or manual override
+  auto_load_epg?: boolean; // Auto-fetch EPG from source (default: true for xtream)
   enabled: boolean;
 }
 

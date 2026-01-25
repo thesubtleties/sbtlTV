@@ -188,10 +188,23 @@ export async function syncSource(source: Source): Promise<SyncResult> {
       await db.sourcesMeta.put(meta);
     });
 
-    // Fetch EPG for Xtream sources
+    // Fetch EPG if enabled
     let programCount = 0;
-    if (source.type === 'xtream' && source.username && source.password) {
+    const shouldLoadEpg = source.auto_load_epg ?? (source.type === 'xtream');
+
+    if (shouldLoadEpg && source.type === 'xtream' && source.username && source.password) {
+      // Xtream: use built-in EPG endpoint (or override if provided)
       programCount = await syncEpgForSource(source, channels);
+    } else if (shouldLoadEpg && epgUrl) {
+      // M3U with EPG URL: fetch XMLTV from the EPG URL
+      // TODO: Implement XMLTV fetch for M3U sources
+      console.log('[EPG] M3U EPG URL detected:', epgUrl);
+    }
+
+    // If user provided a manual EPG URL override, use that instead
+    if (source.epg_url && !shouldLoadEpg) {
+      // TODO: Implement manual XMLTV fetch
+      console.log('[EPG] Manual EPG URL override:', source.epg_url);
     }
 
     return {

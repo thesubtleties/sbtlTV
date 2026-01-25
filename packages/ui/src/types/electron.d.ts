@@ -62,6 +62,7 @@ export interface Source {
   url: string;
   enabled: boolean;
   epg_url?: string;
+  auto_load_epg?: boolean;
   username?: string;
   password?: string;
 }

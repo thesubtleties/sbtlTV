@@ -16,6 +16,7 @@ interface StoredSource {
   url: string;
   enabled: boolean;
   epg_url?: string;
+  auto_load_epg?: boolean; // Auto-fetch EPG from source (default: true for xtream)
   // Xtream-specific (encrypted)
   username?: string;
   encryptedPassword?: string; // Base64 encoded encrypted buffer
@@ -96,6 +97,7 @@ export function getSources(): Source[] {
       url: s.url,
       enabled: s.enabled,
       epg_url: s.epg_url,
+      auto_load_epg: s.auto_load_epg,
     };
     if (s.type === 'xtream' && s.username) {
       source.username = s.username;
@@ -127,6 +129,7 @@ export function saveSource(source: Source): void {
     url: source.url,
     enabled: source.enabled,
     epg_url: source.epg_url,
+    auto_load_epg: source.auto_load_epg,
   };
 
   if (source.type === 'xtream') {
