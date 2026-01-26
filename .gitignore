@@ -28,6 +28,7 @@ pnpm-debug.log*
 
 # Electron
 release/
+packages/electron/mpv-bundle/
 *.dmg
 *.exe
 *.AppImage
@@ -43,7 +44,6 @@ coverage/
 .tldr/
 .tldrignore
 .claude/
-scripts/
 
 # Development notes
 thoughts/

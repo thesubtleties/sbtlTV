@@ -29,6 +29,11 @@ win:
       arch:
         - x64
   icon: assets/icon-white.png
+  extraResources:
+    - from: mpv-bundle
+      to: mpv
+      filter:
+        - "**/*"
 
 nsis:
   oneClick: false
@@ -49,6 +54,11 @@ mac:
   icon: assets/icon-white.png
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   category: public.app-category.entertainment
+  extraResources:
+    - from: mpv-bundle
+      to: mpv
+      filter:
+        - "**/*"
 
 dmg:
   contents:

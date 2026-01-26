@@ -1,0 +1,114 @@
+# sbtlTV
+
+A desktop IPTV player built with Electron and mpv.
+
+## Features
+
+- **Live TV** - Browse channels by category, view EPG program guide
+- **Movies** - Browse and play VOD movies with TMDB metadata matching
+- **TV Series** - Browse series with season/episode navigation
+- **mpv Player** - Hardware-accelerated playback via libmpv
+- **Multi-source** - Add multiple IPTV sources (Xtream Codes API)
+- **Stream Fallback** - Automatic URL format fallback (.ts → .m3u8 → .m3u)
+- **Offline Database** - IndexedDB storage for channels, EPG, and VOD catalog
+
+## Installation
+
+Download the latest release for your platform from the [Releases](../../releases) page:
+
+- **Windows**: `.exe` installer or portable version (mpv included)
+- **macOS Apple Silicon**: `.dmg` for M1/M2/M3 (mpv included)
+- **macOS Intel**: `.dmg` (requires mpv via Homebrew - see below)
+- **Linux**: `.AppImage` or `.deb` (requires mpv - see below)
+
+### Linux / macOS Intel Users
+
+mpv must be installed separately:
+
+```bash
+# macOS (Intel)
+brew install mpv
+
+# Ubuntu/Debian
+sudo apt install mpv
+
+# Fedora
+sudo dnf install mpv
+
+# Arch
+sudo pacman -S mpv
+```
+
+## Building from Source
+
+### Prerequisites
+
+- Node.js 20+
+- pnpm 10+
+- mpv installed (for development)
+
+### Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Build all packages
+pnpm build
+
+# Run in development mode
+pnpm dev
+```
+
+### Building Distributables
+
+```bash
+# Download mpv for bundling (Windows/macOS)
+bash scripts/download-mpv.sh
+
+# Build for current platform
+pnpm dist
+
+# Build for specific platform
+pnpm dist:win    # Windows
+pnpm dist:mac    # macOS
+pnpm dist:linux  # Linux
+```
+
+Output files will be in the `release/` directory.
+
+## Configuration
+
+### Adding Sources
+
+1. Open Settings (gear icon in sidebar)
+2. Go to the Sources tab
+3. Click "Add Source"
+4. Enter your Xtream Codes credentials:
+   - Server URL
+   - Username
+   - Password
+5. Click "Sync" to fetch channels and VOD catalog
+
+### Data Location
+
+User data is stored in:
+- **Windows**: `%APPDATA%/sbtlTV`
+- **macOS**: `~/Library/Application Support/sbtlTV`
+- **Linux**: `~/.config/sbtlTV`
+
+This includes your sources configuration and cached data. App updates do not affect user data.
+
+## Project Structure
+
+```
+packages/
+├── core/        # Shared types and utilities
+├── electron/    # Electron main process, mpv integration
+├── local-adapter/  # Local file adapter (future)
+└── ui/          # React frontend (Vite)
+```
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE)

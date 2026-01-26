@@ -106,33 +106,76 @@ function killMpv(): void {
   }
 }
 
-// Find mpv binary - checks common locations
-function findMpvBinary(): string {
+// Find mpv binary - checks bundled location first, then common locations
+function findMpvBinary(): string | null {
+  // For packaged apps, check bundled mpv first
+  const resourcesPath = app.isPackaged ? process.resourcesPath : __dirname;
+
   if (process.platform === 'win32') {
+    // Check bundled mpv first (in resources/mpv/)
+    const bundledPath = path.join(resourcesPath, 'mpv', 'mpv.exe');
+    if (fs.existsSync(bundledPath)) return bundledPath;
+
+    // Fall back to system locations
     const windowsPaths = [
       'C:\\Program Files\\mpv\\mpv.exe',
       'C:\\Program Files (x86)\\mpv\\mpv.exe',
       `${process.env.LOCALAPPDATA}\\Programs\\mpv\\mpv.exe`,
-      path.join(__dirname, 'mpv', 'mpv.exe'),
-      'mpv',
     ];
     for (const p of windowsPaths) {
-      if (p === 'mpv') return p;
       try {
         if (fs.existsSync(p)) return p;
       } catch {
         // Continue checking
       }
     }
-    return 'mpv';
+    return null; // Not found
   } else if (process.platform === 'darwin') {
-    // macOS - check homebrew locations
+    // Check bundled mpv first (in resources/mpv/)
+    const bundledPath = path.join(resourcesPath, 'mpv', 'mpv');
+    if (fs.existsSync(bundledPath)) return bundledPath;
+
+    // Fall back to system locations
     if (fs.existsSync('/opt/homebrew/bin/mpv')) return '/opt/homebrew/bin/mpv';
     if (fs.existsSync('/usr/local/bin/mpv')) return '/usr/local/bin/mpv';
-    return 'mpv';
+    if (fs.existsSync('/usr/bin/mpv')) return '/usr/bin/mpv';
+    return null;
   } else {
-    return '/usr/bin/mpv';
+    // Linux - rely on system mpv
+    if (fs.existsSync('/usr/bin/mpv')) return '/usr/bin/mpv';
+    if (fs.existsSync('/usr/local/bin/mpv')) return '/usr/local/bin/mpv';
+    return null;
   }
+}
+
+// Check if mpv is available and show error dialog if not
+async function checkMpvAvailable(): Promise<boolean> {
+  const mpvPath = findMpvBinary();
+  if (mpvPath) return true;
+
+  if (process.platform === 'linux') {
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'mpv Required',
+      message: 'mpv media player is required but not installed.',
+      detail: 'Please install mpv using your package manager:\n\n' +
+        'Ubuntu/Debian: sudo apt install mpv\n' +
+        'Fedora: sudo dnf install mpv\n' +
+        'Arch: sudo pacman -S mpv\n\n' +
+        'Then restart the application.',
+      buttons: ['OK'],
+    });
+  } else {
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'mpv Not Found',
+      message: 'mpv media player could not be found.',
+      detail: 'The bundled mpv appears to be missing. Please reinstall the application.',
+      buttons: ['OK'],
+    });
+  }
+
+  return false;
 }
 
 async function initMpv(): Promise<void> {
@@ -149,6 +192,10 @@ async function initMpv(): Promise<void> {
     }
 
     const mpvBinary = findMpvBinary();
+    if (!mpvBinary) {
+      console.error('[mpv] Binary not found');
+      return;
+    }
     console.log('[mpv] Using binary:', mpvBinary);
 
     let mpvArgs = [
@@ -620,6 +667,11 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
 
 // App lifecycle
 app.whenReady().then(async () => {
+  const mpvAvailable = await checkMpvAvailable();
+  if (!mpvAvailable) {
+    app.quit();
+    return;
+  }
   await createWindow();
   await initMpv();
 });
