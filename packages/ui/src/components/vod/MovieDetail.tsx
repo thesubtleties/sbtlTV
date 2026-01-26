@@ -18,7 +18,7 @@ import './MovieDetail.css';
 export interface MovieDetailProps {
   movie: StoredMovie;
   onClose: () => void;
-  onPlay?: (movie: StoredMovie) => void;
+  onPlay?: (movie: StoredMovie, plot?: string | null) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
 }
 
@@ -35,14 +35,14 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const handlePlay = useCallback(() => {
-    onPlay?.(movie);
-  }, [movie, onPlay]);
-
   // Lazy-load backdrop, plot, genre, and credits from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(movie, apiKey);
   const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(movie, apiKey);
   const lazyCredits = useLazyCredits(movie, apiKey);
+
+  const handlePlay = useCallback(() => {
+    onPlay?.(movie, lazyPlot || movie.plot);
+  }, [movie, onPlay, lazyPlot]);
 
   // Load RPDB settings for poster
   const { apiKey: rpdbApiKey } = useRpdbSettings();

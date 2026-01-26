@@ -6,13 +6,14 @@ import { DataRefreshTab } from './settings/DataRefreshTab';
 import { MoviesTab } from './settings/MoviesTab';
 import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
+import { SecurityTab } from './settings/SecurityTab';
 import './Settings.css';
 
 interface SettingsProps {
   onClose: () => void;
 }
 
-type TabId = 'sources' | 'tmdb' | 'refresh' | 'movies' | 'series' | 'posterdb';
+type TabId = 'sources' | 'tmdb' | 'refresh' | 'movies' | 'series' | 'posterdb' | 'security';
 
 interface Tab {
   id: TabId;
@@ -27,6 +28,7 @@ const TABS: Tab[] = [
   { id: 'movies', label: 'Movies', requiresXtream: true },
   { id: 'series', label: 'Series', requiresXtream: true },
   { id: 'posterdb', label: 'RPDB' },
+  { id: 'security', label: 'Security' },
 ];
 
 export function Settings({ onClose }: SettingsProps) {
@@ -50,6 +52,9 @@ export function Settings({ onClose }: SettingsProps) {
   const [posterDbApiKey, setPosterDbApiKey] = useState('');
   const [posterDbKeyValid, setPosterDbKeyValid] = useState<boolean | null>(null);
   const [rpdbBackdropsEnabled, setRpdbBackdropsEnabled] = useState(false);
+
+  // Security state
+  const [allowLanSources, setAllowLanSources] = useState(false);
 
   // Load sources and check encryption on mount
   useEffect(() => {
@@ -96,6 +101,7 @@ export function Settings({ onClose }: SettingsProps) {
         seriesGenresEnabled?: number[];
         posterDbApiKey?: string;
         rpdbBackdropsEnabled?: boolean;
+        allowLanSources?: boolean;
       };
 
       // Load TMDB API key
@@ -124,6 +130,9 @@ export function Settings({ onClose }: SettingsProps) {
         setPosterDbKeyValid(true); // Assume valid if previously saved
       }
       setRpdbBackdropsEnabled(settings.rpdbBackdropsEnabled ?? false);
+
+      // Load security settings
+      setAllowLanSources(settings.allowLanSources ?? false);
     }
   }
 
@@ -202,6 +211,13 @@ export function Settings({ onClose }: SettingsProps) {
             onApiKeyValidChange={setPosterDbKeyValid}
             backdropsEnabled={rpdbBackdropsEnabled}
             onBackdropsEnabledChange={setRpdbBackdropsEnabled}
+          />
+        );
+      case 'security':
+        return (
+          <SecurityTab
+            allowLanSources={allowLanSources}
+            onAllowLanSourcesChange={setAllowLanSources}
           />
         );
       default:

@@ -1,5 +1,6 @@
 import { type ChangeEvent, useEffect, useState, useRef, useCallback } from 'react';
 import type { StoredChannel } from '../db';
+import type { VodPlayInfo } from '../types/media';
 import { useCurrentProgram } from '../hooks/useChannels';
 import './NowPlayingBar.css';
 
@@ -13,6 +14,7 @@ interface NowPlayingBarProps {
   position: number;
   duration: number;
   isVod?: boolean;
+  vodInfo?: VodPlayInfo | null;
   onTogglePlay: () => void;
   onStop: () => void;
   onToggleMute: () => void;
@@ -46,6 +48,7 @@ export function NowPlayingBar({
   position,
   duration,
   isVod,
+  vodInfo,
   onTogglePlay,
   onStop,
   onToggleMute,
@@ -174,9 +177,9 @@ export function NowPlayingBar({
     >
       {channel ? (
         <>
-          {/* Row 1: Channel info with description */}
+          {/* Row 1: Channel/VOD info with description */}
           <div className="npb-row npb-info-row">
-            {/* Left: Logo + Channel/Program */}
+            {/* Left: Logo + Channel/Program or VOD info */}
             <div className="npb-channel-section">
               {channel.stream_icon && (
                 <img
@@ -187,26 +190,42 @@ export function NowPlayingBar({
                 />
               )}
               <div className="npb-channel-text">
-                <span className="npb-channel-name" title={channel.name}>
-                  {channel.name}
-                </span>
-                {currentProgram ? (
-                  <span className="npb-program-title" title={currentProgram.title}>
-                    {currentProgram.title}
-                  </span>
+                {isVod && vodInfo ? (
+                  <>
+                    <span className="npb-channel-name" title={vodInfo.title}>
+                      {vodInfo.title}
+                      {vodInfo.year && <span className="npb-vod-year"> ({vodInfo.year})</span>}
+                    </span>
+                    {vodInfo.episodeInfo && (
+                      <span className="npb-program-title" title={vodInfo.episodeInfo}>
+                        {vodInfo.episodeInfo}
+                      </span>
+                    )}
+                  </>
                 ) : (
-                  <span className="npb-no-program">No program info</span>
+                  <>
+                    <span className="npb-channel-name" title={channel.name}>
+                      {channel.name}
+                    </span>
+                    {currentProgram ? (
+                      <span className="npb-program-title" title={currentProgram.title}>
+                        {currentProgram.title}
+                      </span>
+                    ) : (
+                      <span className="npb-no-program">No program info</span>
+                    )}
+                  </>
                 )}
               </div>
             </div>
 
-            {/* Divider + Description (only if we have a description) */}
-            {currentProgram?.description && (
+            {/* Divider + Description (VOD plot or TV program description) */}
+            {(isVod ? vodInfo?.plot : currentProgram?.description) && (
               <>
                 <div className="npb-divider" />
                 <div className="npb-description-section">
-                  <span className="npb-program-desc" title={currentProgram.description}>
-                    {currentProgram.description}
+                  <span className="npb-program-desc" title={isVod ? vodInfo?.plot : currentProgram?.description}>
+                    {isVod ? vodInfo?.plot : currentProgram?.description}
                   </span>
                 </div>
               </>

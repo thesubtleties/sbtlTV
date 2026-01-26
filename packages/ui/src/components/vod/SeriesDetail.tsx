@@ -14,12 +14,13 @@ import { useSeriesDetails } from '../../hooks/useVod';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import type { StoredSeries, StoredEpisode } from '../../db';
+import type { VodPlayInfo } from '../../types/media';
 import './SeriesDetail.css';
 
 export interface SeriesDetailProps {
   series: StoredSeries;
   onClose: () => void;
-  onPlayEpisode?: (url: string, title: string) => void;
+  onPlayEpisode?: (info: VodPlayInfo) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
 }
 
@@ -53,18 +54,24 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const handlePlayEpisode = useCallback(
-    (episode: StoredEpisode) => {
-      const title = `${series.name} - S${episode.season_num}E${episode.episode_num} - ${episode.title}`;
-      onPlayEpisode?.(episode.direct_url, title);
-    },
-    [series.name, onPlayEpisode]
-  );
-
   // Lazy-load backdrop, plot, genre, and credits from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(series, apiKey);
   const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(series, apiKey);
   const lazyCredits = useLazyCredits(series, apiKey);
+
+  const handlePlayEpisode = useCallback(
+    (episode: StoredEpisode) => {
+      onPlayEpisode?.({
+        url: episode.direct_url,
+        title: series.title || series.name,
+        year: series.year || series.release_date?.slice(0, 4),
+        plot: lazyPlot || series.plot,
+        type: 'series',
+        episodeInfo: `S${episode.season_num} E${episode.episode_num}${episode.title ? ` · ${episode.title}` : ''}`,
+      });
+    },
+    [series, onPlayEpisode, lazyPlot]
+  );
 
   // Load RPDB settings for poster
   const { apiKey: rpdbApiKey } = useRpdbSettings();

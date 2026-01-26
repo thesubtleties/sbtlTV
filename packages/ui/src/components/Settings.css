@@ -18,7 +18,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   width: 90%;
-  max-width: 500px;
+  max-width: 600px;
   height: 70vh;
   min-height: 400px;
   max-height: 650px;
@@ -346,7 +346,8 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
-.form-error {
+.form-error,
+.sync-error {
   background: rgba(255, 68, 68, 0.1);
   border-left: 3px solid #ff4444;
   padding: 10px 14px;

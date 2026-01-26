@@ -9,8 +9,80 @@ import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
 import { useSelectedCategory } from './hooks/useChannels';
+import { useChannelSyncing, useVodSyncing, useTmdbMatching } from './stores/uiStore';
 import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
 import type { StoredChannel } from './db';
+import type { VodPlayInfo } from './types/media';
+
+/**
+ * Generate fallback stream URLs when primary fails.
+ * Live TV: .ts → .m3u8 → .m3u
+ * VOD: provider extension → .m3u8 → .ts
+ */
+function getStreamFallbacks(url: string, isLive: boolean): string[] {
+  try {
+    // Parse URL properly to preserve query params (often used for auth tokens)
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+
+    const extMatch = pathname.match(/\.([a-z0-9]+)$/i);
+    if (!extMatch) return []; // No extension, can't generate fallbacks
+
+    const currentExt = extMatch[1].toLowerCase();
+    const basePathname = pathname.slice(0, -currentExt.length - 1);
+
+    const generateUrl = (ext: string): string => {
+      const newUrl = new URL(url);
+      newUrl.pathname = `${basePathname}.${ext}`;
+      return newUrl.toString();
+    };
+
+    if (isLive) {
+      // Live TV fallback order: .ts → .m3u8 → .m3u
+      const fallbacks: string[] = [];
+      if (currentExt !== 'm3u8') fallbacks.push(generateUrl('m3u8'));
+      if (currentExt !== 'm3u') fallbacks.push(generateUrl('m3u'));
+      return fallbacks;
+    } else {
+      // VOD fallback order: provider ext → .m3u8 → .ts
+      const fallbacks: string[] = [];
+      if (currentExt !== 'm3u8') fallbacks.push(generateUrl('m3u8'));
+      if (currentExt !== 'ts') fallbacks.push(generateUrl('ts'));
+      return fallbacks;
+    }
+  } catch {
+    // Invalid URL, can't generate fallbacks
+    return [];
+  }
+}
+
+/**
+ * Try loading a stream URL with fallbacks on failure.
+ * Returns the successful URL or null if all failed.
+ */
+async function tryLoadWithFallbacks(
+  primaryUrl: string,
+  isLive: boolean,
+  mpv: NonNullable<typeof window.mpv>
+): Promise<{ success: boolean; url: string; error?: string }> {
+  // Try primary URL first
+  const result = await mpv.load(primaryUrl);
+  if (!result.error) {
+    return { success: true, url: primaryUrl };
+  }
+
+  // Try fallbacks
+  const fallbacks = getStreamFallbacks(primaryUrl, isLive);
+  for (const fallbackUrl of fallbacks) {
+    const fallbackResult = await mpv.load(fallbackUrl);
+    if (!fallbackResult.error) {
+      return { success: true, url: fallbackUrl };
+    }
+  }
+
+  // All failed - return original error
+  return { success: false, url: primaryUrl, error: result.error };
+}
 
 function App() {
   // mpv state
@@ -22,6 +94,7 @@ function App() {
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
+  const [vodInfo, setVodInfo] = useState<VodPlayInfo | null>(null);
 
   // UI state
   const [showControls, setShowControls] = useState(true);
@@ -32,6 +105,11 @@ function App() {
 
   // Channel/category state (persisted)
   const { categoryId, setCategoryId, loading: categoryLoading } = useSelectedCategory();
+
+  // Global sync state (from Settings)
+  const channelSyncing = useChannelSyncing();
+  const vodSyncing = useVodSyncing();
+  const tmdbMatching = useTmdbMatching();
 
   // Sync state
   const [syncing, setSyncing] = useState(false);
@@ -108,11 +186,15 @@ function App() {
   const handleLoadStream = async (channel: StoredChannel) => {
     if (!window.mpv) return;
     setError(null);
-    const result = await window.mpv.load(channel.direct_url);
-    if (result.error) {
-      setError(result.error);
+    const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
+    if (!result.success) {
+      setError(result.error ?? 'Failed to load stream');
     } else {
-      setCurrentChannel(channel);
+      // Update channel with working URL if fallback was used
+      setCurrentChannel(result.url !== channel.direct_url
+        ? { ...channel, direct_url: result.url }
+        : channel
+      );
       setPlaying(true);
     }
   };
@@ -158,23 +240,25 @@ function App() {
   };
 
   // Play VOD content (movies/series)
-  const handlePlayVod = async (url: string, title: string) => {
+  const handlePlayVod = async (info: VodPlayInfo) => {
     if (!window.mpv) return;
     setError(null);
-    const result = await window.mpv.load(url);
-    if (result.error) {
-      setError(result.error);
+    const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
+    if (!result.success) {
+      setError(result.error ?? 'Failed to load stream');
     } else {
       // Create a pseudo-channel for the now playing bar
+      const workingUrl = result.url;
       setCurrentChannel({
         stream_id: 'vod',
-        name: title,
+        name: info.title,
         stream_icon: '',
         epg_channel_id: '',
         category_ids: [],
-        direct_url: url,
+        direct_url: workingUrl,
         source_id: 'vod',
       });
+      setVodInfo({ ...info, url: workingUrl });
       setPlaying(true);
       // Close VOD pages when playing
       setActiveView('none');
@@ -284,6 +368,22 @@ function App() {
         {!currentChannel && (
           <div className="placeholder">
             <Logo className="placeholder__logo" />
+            {(channelSyncing || vodSyncing || tmdbMatching) ? (
+              <div className="sync-status">
+                <div className="sync-status__spinner" />
+                <span className="sync-status__text">
+                  {channelSyncing && vodSyncing
+                    ? 'Syncing channels & VOD...'
+                    : channelSyncing
+                    ? 'Syncing channels...'
+                    : vodSyncing
+                    ? 'Syncing VOD...'
+                    : 'Matching with TMDB...'}
+                </span>
+              </div>
+            ) : (
+              <div className="placeholder__spacer" />
+            )}
           </div>
         )}
       </div>
@@ -307,6 +407,7 @@ function App() {
         position={position}
         duration={duration}
         isVod={currentChannel?.stream_id === 'vod'}
+        vodInfo={vodInfo}
         onTogglePlay={handleTogglePlay}
         onStop={handleStop}
         onToggleMute={handleToggleMute}

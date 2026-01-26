@@ -1,0 +1,89 @@
+appId: com.sbtltv.app
+productName: sbtlTV
+copyright: Copyright © 2026 sbtl
+
+directories:
+  output: ../../release
+  buildResources: assets
+
+files:
+  - dist/**/*
+  - assets/**/*
+  - "!**/*.ts"
+  - "!**/tsconfig.json"
+
+extraResources:
+  # Bundle the UI dist folder
+  - from: ../ui/dist
+    to: ui
+    filter:
+      - "**/*"
+
+# Windows configuration
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: assets/icon-white.png
+  extraResources:
+    - from: mpv-bundle
+      to: mpv
+      filter:
+        - "**/*"
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  license: ../../LICENSE
+  artifactName: ${productName}-${version}-win-${arch}-setup.${ext}
+
+portable:
+  artifactName: ${productName}-${version}-win-${arch}-portable.${ext}
+
+# macOS configuration
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: assets/icon-white.png
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  category: public.app-category.entertainment
+  extraResources:
+    - from: mpv-bundle
+      to: mpv
+      filter:
+        - "**/*"
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# Linux configuration
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  icon: assets/icon-white.png
+  category: AudioVideo
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
+
+appImage:
+  license: ../../LICENSE
+
+# Don't publish automatically - we'll handle this in CI
+publish: null

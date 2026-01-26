@@ -2,6 +2,7 @@ import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram,
 import { fetchAndParseM3U, XtreamClient } from '@sbtltv/local-adapter';
 import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
 import { getEnrichedMovieExports, getEnrichedTvExports, findBestMatch, extractMatchParams } from '../services/tmdb-exports';
+import { useUIStore } from '../stores/uiStore';
 
 export interface SyncResult {
   success: boolean;
@@ -24,6 +25,39 @@ export interface VodSyncResult {
 // Default freshness thresholds (can be overridden by user settings)
 const DEFAULT_EPG_STALE_HOURS = 6;
 const DEFAULT_VOD_STALE_HOURS = 24;
+
+// Track deleted sources to prevent sync from writing results after deletion
+// This prevents the race condition where sync writes error AFTER clearSourceData runs
+const deletedSourceIds = new Set<string>();
+
+export function markSourceDeleted(sourceId: string) {
+  deletedSourceIds.add(sourceId);
+  // Clean up after 30 seconds (sync should be done by then)
+  setTimeout(() => deletedSourceIds.delete(sourceId), 30000);
+}
+
+function isSourceDeleted(sourceId: string): boolean {
+  return deletedSourceIds.has(sourceId);
+}
+
+// Reference counter for concurrent TMDB matching operations
+// Prevents race condition where Source A finishing sets tmdbMatching=false
+// while Source B is still running
+let tmdbMatchingCount = 0;
+
+function startTmdbMatching() {
+  tmdbMatchingCount++;
+  if (tmdbMatchingCount === 1) {
+    useUIStore.getState().setTmdbMatching(true);
+  }
+}
+
+function endTmdbMatching() {
+  tmdbMatchingCount = Math.max(0, tmdbMatchingCount - 1);
+  if (tmdbMatchingCount === 0) {
+    useUIStore.getState().setTmdbMatching(false);
+  }
+}
 
 // Sync EPG for all channels from a source using XMLTV
 async function syncEpgForSource(source: Source, channels: Channel[]): Promise<number> {
@@ -168,6 +202,12 @@ export async function syncSource(source: Source): Promise<SyncResult> {
       throw new Error(`Unsupported source type: ${source.type}`);
     }
 
+    // Check if source was deleted during sync
+    if (isSourceDeleted(source.id)) {
+      console.log(`[Sync] Source ${source.id} was deleted during sync, skipping write`);
+      return { success: false, channelCount: 0, categoryCount: 0, programCount: 0, error: 'Source deleted' };
+    }
+
     // Store channels and categories in Dexie
     await db.transaction('rw', [db.channels, db.categories, db.sourcesMeta], async () => {
       if (channels.length > 0) {
@@ -217,14 +257,18 @@ export async function syncSource(source: Source): Promise<SyncResult> {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
 
-    // Store error in metadata
-    await db.sourcesMeta.put({
-      source_id: source.id,
-      last_synced: new Date(),
-      channel_count: 0,
-      category_count: 0,
-      error: errorMsg,
-    });
+    // Don't write error if source was deleted during sync
+    if (!isSourceDeleted(source.id)) {
+      await db.sourcesMeta.put({
+        source_id: source.id,
+        last_synced: new Date(),
+        channel_count: 0,
+        category_count: 0,
+        error: errorMsg,
+      });
+    } else {
+      console.log(`[Sync] Source ${source.id} was deleted during sync, skipping error write`);
+    }
 
     return {
       success: false,
@@ -671,13 +715,16 @@ export async function syncVodForSource(source: Source): Promise<VodSyncResult> {
 
     // Match against TMDB exports (runs in background, no API calls)
     // This enriches movies/series with tmdb_id for the curated lists
-    // TODO: Handle catastrophic matching failures better. Currently errors only go to
-    // console.error which is stripped in production builds. If matching fails completely
-    // (DB corruption, OOM, etc.), user sees degraded experience (no curated lists) with
-    // no indication why. Consider: user-facing error notification, or accept as edge case
-    // where "clear app data" is the fix.
-    matchMoviesWithTmdb(source.id).catch(console.error);
-    matchSeriesWithTmdb(source.id).catch(console.error);
+    // Uses reference counting to handle concurrent syncs correctly
+    startTmdbMatching();
+    Promise.all([
+      matchMoviesWithTmdb(source.id),
+      matchSeriesWithTmdb(source.id),
+    ])
+      .catch(console.error)
+      .finally(() => {
+        endTmdbMatching();
+      });
 
     return {
       success: true,

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Source } from '../../types/electron';
-import { syncAllSources, syncAllVod, type SyncResult, type VodSyncResult } from '../../db/sync';
+import { syncAllSources, syncAllVod, markSourceDeleted, type SyncResult, type VodSyncResult } from '../../db/sync';
 import { clearSourceData, clearVodData, db } from '../../db';
 import { useSyncStatus } from '../../hooks/useChannels';
+import { useChannelSyncing, useSetChannelSyncing, useVodSyncing, useSetVodSyncing } from '../../stores/uiStore';
 import { parseM3U } from '@sbtltv/local-adapter';
 
 interface SourcesTabProps {
@@ -39,11 +40,16 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<SourceFormData>(emptyForm);
   const [error, setError] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [syncResults, setSyncResults] = useState<Map<string, SyncResult> | null>(null);
-  const [vodSyncing, setVodSyncing] = useState(false);
   const [vodSyncResults, setVodSyncResults] = useState<Map<string, VodSyncResult> | null>(null);
   const syncStatus = useSyncStatus();
+
+  // Global sync state - persists across Settings open/close
+  const syncing = useChannelSyncing();
+  const setSyncing = useSetChannelSyncing();
+  const vodSyncing = useVodSyncing();
+  const setVodSyncing = useSetVodSyncing();
 
   const hasXtreamSource = sources.some(s => s.type === 'xtream');
 
@@ -118,6 +124,9 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       `Delete "${sourceName}"?\n\nThis will remove all channels, EPG, and VOD data from this source.`
     );
     if (!confirmed) return;
+
+    // Mark source as deleted FIRST - prevents sync from writing results after deletion
+    markSourceDeleted(id);
 
     // Clean up all data in IndexedDB before removing source config
     await clearSourceData(id);
@@ -204,11 +213,13 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
   async function handleSync() {
     setSyncing(true);
     setSyncResults(null);
+    setSyncError(null);
     try {
       const results = await syncAllSources();
       setSyncResults(results);
     } catch (err) {
       console.error('Sync error:', err);
+      setSyncError(err instanceof Error ? err.message : 'Channel sync failed');
     } finally {
       setSyncing(false);
     }
@@ -217,11 +228,13 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
   async function handleVodSync() {
     setVodSyncing(true);
     setVodSyncResults(null);
+    setSyncError(null);
     try {
       const results = await syncAllVod();
       setVodSyncResults(results);
     } catch (err) {
       console.error('VOD sync error:', err);
+      setSyncError(err instanceof Error ? err.message : 'VOD sync failed');
     } finally {
       setVodSyncing(false);
     }
@@ -252,7 +265,33 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
           </div>
         </div>
 
-        {/* Sync Status */}
+        {syncError && (
+          <div className="sync-error">{syncError}</div>
+        )}
+
+        {sources.length === 0 ? (
+          <div className="empty-state">
+            <p>No sources configured</p>
+            <p className="hint">Add an M3U playlist or Xtream account to get started</p>
+          </div>
+        ) : (
+          <ul className="sources-list">
+            {sources.map((source) => (
+              <li key={source.id} className="source-item">
+                <div className="source-info">
+                  <span className="source-name">{source.name}</span>
+                  <span className="source-type">{source.type.toUpperCase()}</span>
+                </div>
+                <div className="source-actions">
+                  <button onClick={() => handleEdit(source)}>Edit</button>
+                  <button className="delete" onClick={() => handleDelete(source.id, source.name)}>Delete</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Sync Status - shown below sources list */}
         {syncStatus.length > 0 && (
           <div className="sync-status">
             {syncStatus.map((status) => {
@@ -295,28 +334,6 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
               );
             })}
           </div>
-        )}
-
-        {sources.length === 0 ? (
-          <div className="empty-state">
-            <p>No sources configured</p>
-            <p className="hint">Add an M3U playlist or Xtream account to get started</p>
-          </div>
-        ) : (
-          <ul className="sources-list">
-            {sources.map((source) => (
-              <li key={source.id} className="source-item">
-                <div className="source-info">
-                  <span className="source-name">{source.name}</span>
-                  <span className="source-type">{source.type.toUpperCase()}</span>
-                </div>
-                <div className="source-actions">
-                  <button onClick={() => handleEdit(source)}>Edit</button>
-                  <button className="delete" onClick={() => handleDelete(source.id, source.name)}>Delete</button>
-                </div>
-              </li>
-            ))}
-          </ul>
         )}
       </div>
 

@@ -34,7 +34,7 @@ import {
   useSetSeriesCategory,
 } from '../stores/uiStore';
 import type { StoredMovie, StoredSeries } from '../db';
-import { type MediaItem, type VodType } from '../types/media';
+import { type MediaItem, type VodType, type VodPlayInfo } from '../types/media';
 import './VodPage.css';
 
 // Carousel row type for virtualization (all data pre-fetched)
@@ -100,7 +100,7 @@ const homeVirtuosoComponents = {
 
 interface VodPageProps {
   type: VodType;
-  onPlay?: (url: string, title: string) => void;
+  onPlay?: (info: VodPlayInfo) => void;
   onClose?: () => void;
 }
 
@@ -273,9 +273,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     setSelectedItem(item);
   }, []);
 
-  const handlePlay = useCallback((url: string, title: string) => {
+  const handlePlay = useCallback((info: VodPlayInfo) => {
     if (onPlay) {
-      onPlay(url, title);
+      onPlay(info);
     }
   }, [onPlay]);
 
@@ -287,7 +287,13 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const handleHeroPlay = useCallback((item: MediaItem) => {
     if (type === 'movie') {
       const movie = item as StoredMovie;
-      handlePlay(movie.direct_url, movie.name);
+      handlePlay({
+        url: movie.direct_url,
+        title: movie.title || movie.name,
+        year: movie.year || movie.release_date?.slice(0, 4),
+        plot: movie.plot,
+        type: 'movie',
+      });
     } else {
       setSelectedItem(item);
     }
@@ -406,7 +412,13 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         <MovieDetail
           movie={selectedItem as StoredMovie}
           onClose={handleCloseDetail}
-          onPlay={(movie) => handlePlay(movie.direct_url, movie.name)}
+          onPlay={(movie, plot) => handlePlay({
+            url: movie.direct_url,
+            title: movie.title || movie.name,
+            year: movie.year || movie.release_date?.slice(0, 4),
+            plot: plot || movie.plot,
+            type: 'movie',
+          })}
           apiKey={tmdbApiKey}
         />
       )}

@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "pnpm --filter @sbtltv/electron dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "dist": "pnpm build && pnpm --filter @sbtltv/electron dist",
+    "dist:win": "pnpm build && pnpm --filter @sbtltv/electron dist:win",
+    "dist:mac": "pnpm build && pnpm --filter @sbtltv/electron dist:mac",
+    "dist:linux": "pnpm build && pnpm --filter @sbtltv/electron dist:linux"
   },
   "devDependencies": {
     "typescript": "^5.3.0"

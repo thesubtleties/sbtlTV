@@ -1,7 +1,8 @@
 import { VodPage } from './VodPage';
+import type { VodPlayInfo } from '../types/media';
 
 interface SeriesPageProps {
-  onPlay?: (url: string, title: string) => void;
+  onPlay?: (info: VodPlayInfo) => void;
   onClose?: () => void;
 }
 

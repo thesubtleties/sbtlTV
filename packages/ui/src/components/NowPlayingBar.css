@@ -92,6 +92,11 @@
   font-style: italic;
 }
 
+.npb-vod-year {
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.5);
+}
+
 /* Soft vertical divider with faded top/bottom */
 .npb-divider {
   width: 1px;
