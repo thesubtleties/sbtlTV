@@ -131,8 +131,8 @@ function findMpvBinary(): string | null {
     }
     return null; // Not found
   } else if (process.platform === 'darwin') {
-    // Check bundled mpv first (in resources/mpv/)
-    const bundledPath = path.join(resourcesPath, 'mpv', 'mpv');
+    // Check bundled mpv first (in resources/mpv/MacOS/ to preserve dylib paths)
+    const bundledPath = path.join(resourcesPath, 'mpv', 'MacOS', 'mpv');
     if (fs.existsSync(bundledPath)) return bundledPath;
 
     // Fall back to system locations

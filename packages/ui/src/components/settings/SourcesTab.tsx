@@ -40,6 +40,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<SourceFormData>(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [syncResults, setSyncResults] = useState<Map<string, SyncResult> | null>(null);
   const [vodSyncResults, setVodSyncResults] = useState<Map<string, VodSyncResult> | null>(null);
   const syncStatus = useSyncStatus();
@@ -209,11 +210,13 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
   async function handleSync() {
     setSyncing(true);
     setSyncResults(null);
+    setSyncError(null);
     try {
       const results = await syncAllSources();
       setSyncResults(results);
     } catch (err) {
       console.error('Sync error:', err);
+      setSyncError(err instanceof Error ? err.message : 'Channel sync failed');
     } finally {
       setSyncing(false);
     }
@@ -222,11 +225,13 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
   async function handleVodSync() {
     setVodSyncing(true);
     setVodSyncResults(null);
+    setSyncError(null);
     try {
       const results = await syncAllVod();
       setVodSyncResults(results);
     } catch (err) {
       console.error('VOD sync error:', err);
+      setSyncError(err instanceof Error ? err.message : 'VOD sync failed');
     } finally {
       setVodSyncing(false);
     }
@@ -256,6 +261,10 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
             <button className="add-btn" onClick={handleAdd}>+ Add Source</button>
           </div>
         </div>
+
+        {syncError && (
+          <div className="sync-error">{syncError}</div>
+        )}
 
         {/* Sync Status */}
         {syncStatus.length > 0 && (

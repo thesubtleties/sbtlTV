@@ -8,6 +8,46 @@
 
 set -e
 
+# =============================================================================
+# Checksums - UPDATE THESE when changing mpv versions
+# To get checksum: curl -L <url> | sha256sum
+# =============================================================================
+MPV_SHA256_WINDOWS="8cf5ce27d21490c24eedf91e0ac2bc4a748ba8f4eb20cb7c1fc9442d2d580008"
+MPV_SHA256_MACOS="3170fb709defebaba33e9755297d70dc3562220541de54fc3d494a8309ef1260"
+
+# Verify checksum of downloaded file
+# Usage: verify_checksum <file> <expected_sha256>
+verify_checksum() {
+  local file="$1"
+  local expected="$2"
+
+  if [ "$expected" = "SKIP" ]; then
+    echo "⚠️  Checksum verification SKIPPED (set MPV_SHA256_* to enable)"
+    return 0
+  fi
+
+  echo "Verifying checksum..."
+  local actual
+  if command -v sha256sum &> /dev/null; then
+    actual=$(sha256sum "$file" | cut -d' ' -f1)
+  elif command -v shasum &> /dev/null; then
+    actual=$(shasum -a 256 "$file" | cut -d' ' -f1)
+  else
+    echo "⚠️  No sha256sum or shasum found, skipping verification"
+    return 0
+  fi
+
+  if [ "$actual" != "$expected" ]; then
+    echo "❌ Checksum mismatch!"
+    echo "   Expected: $expected"
+    echo "   Actual:   $actual"
+    echo "   This could indicate a corrupted download or supply chain attack."
+    exit 1
+  fi
+
+  echo "✓ Checksum verified"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUNDLE_DIR="$REPO_ROOT/packages/electron/mpv-bundle"
@@ -22,6 +62,8 @@ case "$(uname -s)" in
     MPV_URL="https://downloads.sourceforge.net/project/mpv-player-windows/64bit/mpv-x86_64-20250119-git-ab78d7b.7z"
     TEMP_DIR=$(mktemp -d)
     curl -L -o "$TEMP_DIR/mpv.7z" "$MPV_URL"
+
+    verify_checksum "$TEMP_DIR/mpv.7z" "$MPV_SHA256_WINDOWS"
 
     # Extract with 7z (available in GitHub Actions Windows runners)
     7z x "$TEMP_DIR/mpv.7z" -o"$TEMP_DIR/mpv-extract" -y
@@ -43,11 +85,15 @@ case "$(uname -s)" in
     TEMP_DIR=$(mktemp -d)
     curl -L -o "$TEMP_DIR/mpv.tar.gz" "$MPV_URL"
 
+    verify_checksum "$TEMP_DIR/mpv.tar.gz" "$MPV_SHA256_MACOS"
+
     # Extract
     tar -xzf "$TEMP_DIR/mpv.tar.gz" -C "$TEMP_DIR"
 
-    # Copy the mpv binary from the app bundle
-    cp "$TEMP_DIR/mpv.app/Contents/MacOS/mpv" "$BUNDLE_DIR/"
+    # Copy mpv binary preserving relative path structure for dylib loading
+    # mpv uses @executable_path/../Frameworks/ to find dylibs
+    mkdir -p "$BUNDLE_DIR/MacOS"
+    cp "$TEMP_DIR/mpv.app/Contents/MacOS/mpv" "$BUNDLE_DIR/MacOS/"
     # Copy frameworks (required dylibs)
     if [ -d "$TEMP_DIR/mpv.app/Contents/Frameworks" ]; then
       cp -R "$TEMP_DIR/mpv.app/Contents/Frameworks" "$BUNDLE_DIR/"
