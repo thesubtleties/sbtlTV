@@ -50,6 +50,11 @@ export interface AppSettings {
   lastSourceId?: string;
 }
 
+export interface M3UImportResult {
+  content: string;
+  fileName: string;
+}
+
 export interface StorageApi {
   getSources: () => Promise<StorageResult<Source[]>>;
   getSource: (id: string) => Promise<StorageResult<Source | undefined>>;
@@ -58,6 +63,7 @@ export interface StorageApi {
   getSettings: () => Promise<StorageResult<AppSettings>>;
   updateSettings: (settings: Partial<AppSettings>) => Promise<StorageResult>;
   isEncryptionAvailable: () => Promise<StorageResult<boolean>>;
+  importM3UFile: () => Promise<StorageResult<M3UImportResult> & { canceled?: boolean }>;
 }
 
 // Fetch proxy response
@@ -123,6 +129,7 @@ contextBridge.exposeInMainWorld('storage', {
   getSettings: () => ipcRenderer.invoke('storage-get-settings'),
   updateSettings: (settings: Partial<AppSettings>) => ipcRenderer.invoke('storage-update-settings', settings),
   isEncryptionAvailable: () => ipcRenderer.invoke('storage-is-encryption-available'),
+  importM3UFile: () => ipcRenderer.invoke('import-m3u-file'),
 } satisfies StorageApi);
 
 // Expose fetch proxy API - bypasses CORS for API calls

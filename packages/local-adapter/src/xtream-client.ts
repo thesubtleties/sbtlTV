@@ -179,6 +179,8 @@ export class XtreamClient {
     return data.map(vod => ({
       stream_id: `${this.sourceId}_${vod.stream_id}`,
       name: vod.name,
+      title: vod.title,
+      year: vod.year,
       stream_icon: vod.stream_icon || '',
       category_ids: vod.category_id ? [`${this.sourceId}_vod_${vod.category_id}`] : [],
       direct_url: this.buildStreamUrl('movie', vod.stream_id, vod.container_extension),
@@ -219,6 +221,8 @@ export class XtreamClient {
     return data.map(series => ({
       series_id: `${this.sourceId}_${series.series_id}`,
       name: series.name,
+      title: series.title,
+      year: series.year,
       cover: series.cover || '',
       category_ids: series.category_id ? [`${this.sourceId}_series_${series.category_id}`] : [],
       source_id: this.sourceId,
@@ -406,6 +410,8 @@ interface XtreamStream {
 interface XtreamVodStream {
   stream_id: number;
   name: string;
+  title?: string;       // Clean title without year (e.g., "40 Pounds of Trouble")
+  year?: string;        // Release year (e.g., "1962")
   stream_icon: string;
   category_id: string;
   container_extension: string;
@@ -420,6 +426,8 @@ interface XtreamVodStream {
 interface XtreamSeries {
   series_id: number;
   name: string;
+  title?: string;       // Clean title without year
+  year?: string;        // First air year
   cover: string;
   category_id: string;
   plot?: string;

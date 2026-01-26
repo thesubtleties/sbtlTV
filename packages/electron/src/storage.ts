@@ -16,6 +16,7 @@ interface StoredSource {
   url: string;
   enabled: boolean;
   epg_url?: string;
+  auto_load_epg?: boolean; // Auto-fetch EPG from source (default: true for xtream)
   // Xtream-specific (encrypted)
   username?: string;
   encryptedPassword?: string; // Base64 encoded encrypted buffer
@@ -25,6 +26,12 @@ interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   tmdbApiKey?: string;  // Decrypted value returned to callers
+  vodRefreshHours: number;  // 0 = manual only, default 24
+  epgRefreshHours: number;  // 0 = manual only, default 6
+  movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
+  seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
+  posterDbApiKey?: string;         // RatingPosterDB API key
+  rpdbBackdropsEnabled?: boolean;  // Use RPDB for backdrop images (tier 2+)
 }
 
 // Internal storage format (encrypted)
@@ -32,6 +39,12 @@ interface StoredSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   encryptedTmdbApiKey?: string;  // Base64 encoded encrypted buffer
+  vodRefreshHours: number;
+  epgRefreshHours: number;
+  movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
+  seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
+  encryptedPosterDbApiKey?: string; // Base64 encoded encrypted buffer
+  rpdbBackdropsEnabled?: boolean;   // Use RPDB for backdrop images
 }
 
 const store = new Store<StoreSchema>({
@@ -40,6 +53,8 @@ const store = new Store<StoreSchema>({
     sources: [],
     settings: {
       theme: 'dark',
+      vodRefreshHours: 24,  // Default: refresh VOD every 24 hours
+      epgRefreshHours: 6,   // Default: refresh EPG every 6 hours
     },
   },
 });
@@ -82,6 +97,7 @@ export function getSources(): Source[] {
       url: s.url,
       enabled: s.enabled,
       epg_url: s.epg_url,
+      auto_load_epg: s.auto_load_epg,
     };
     if (s.type === 'xtream' && s.username) {
       source.username = s.username;
@@ -113,6 +129,7 @@ export function saveSource(source: Source): void {
     url: source.url,
     enabled: source.enabled,
     epg_url: source.epg_url,
+    auto_load_epg: source.auto_load_epg,
   };
 
   if (source.type === 'xtream') {
@@ -151,10 +168,18 @@ export function getSettings(): AppSettings {
   const result: AppSettings = {
     theme: stored.theme,
     lastSourceId: stored.lastSourceId,
+    vodRefreshHours: stored.vodRefreshHours ?? 24,
+    epgRefreshHours: stored.epgRefreshHours ?? 6,
+    movieGenresEnabled: stored.movieGenresEnabled,
+    seriesGenresEnabled: stored.seriesGenresEnabled,
   };
   if (stored.encryptedTmdbApiKey) {
     result.tmdbApiKey = decryptPassword(stored.encryptedTmdbApiKey);
   }
+  if (stored.encryptedPosterDbApiKey) {
+    result.posterDbApiKey = decryptPassword(stored.encryptedPosterDbApiKey);
+  }
+  result.rpdbBackdropsEnabled = stored.rpdbBackdropsEnabled ?? false;
   return result;
 }
 
@@ -169,6 +194,16 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   if (settings.lastSourceId !== undefined) updated.lastSourceId = settings.lastSourceId;
   if (settings.tmdbApiKey !== undefined) {
     updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;
+  }
+  if (settings.vodRefreshHours !== undefined) updated.vodRefreshHours = settings.vodRefreshHours;
+  if (settings.epgRefreshHours !== undefined) updated.epgRefreshHours = settings.epgRefreshHours;
+  if (settings.movieGenresEnabled !== undefined) updated.movieGenresEnabled = settings.movieGenresEnabled;
+  if (settings.seriesGenresEnabled !== undefined) updated.seriesGenresEnabled = settings.seriesGenresEnabled;
+  if (settings.posterDbApiKey !== undefined) {
+    updated.encryptedPosterDbApiKey = settings.posterDbApiKey ? encryptPassword(settings.posterDbApiKey) : undefined;
+  }
+  if (settings.rpdbBackdropsEnabled !== undefined) {
+    updated.rpdbBackdropsEnabled = settings.rpdbBackdropsEnabled;
   }
 
   store.set('settings', updated);

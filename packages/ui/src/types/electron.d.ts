@@ -47,6 +47,12 @@ export interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   tmdbApiKey?: string;
+  vodRefreshHours?: number;  // 0 = manual only, default 24
+  epgRefreshHours?: number;  // 0 = manual only, default 6
+  movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
+  seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
+  posterDbApiKey?: string;         // RatingPosterDB API key for rating posters
+  rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
 }
 
 export interface Source {
@@ -56,8 +62,14 @@ export interface Source {
   url: string;
   enabled: boolean;
   epg_url?: string;
+  auto_load_epg?: boolean;
   username?: string;
   password?: string;
+}
+
+export interface M3UImportResult {
+  content: string;
+  fileName: string;
 }
 
 export interface StorageApi {
@@ -68,6 +80,7 @@ export interface StorageApi {
   getSettings: () => Promise<StorageResult<AppSettings>>;
   updateSettings: (settings: Partial<AppSettings>) => Promise<StorageResult>;
   isEncryptionAvailable: () => Promise<StorageResult<boolean>>;
+  importM3UFile: () => Promise<StorageResult<M3UImportResult> & { canceled?: boolean }>;
 }
 
 export interface FetchProxyResponse {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import * as net from 'net';
@@ -60,6 +60,7 @@ async function createWindow(): Promise<void> {
     transparent: isWindows, // Transparent on Windows so mpv shows through
     frame: !isWindows, // Frameless on Windows (required for transparency)
     resizable: true, // Explicit for Electron 40
+    icon: path.join(__dirname, '../assets/logo-white.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -243,6 +244,7 @@ async function connectToMpvSocket(): Promise<void> {
       sendMpvCommand('observe_property', [1, 'pause']);
       sendMpvCommand('observe_property', [2, 'volume']);
       sendMpvCommand('observe_property', [3, 'mute']);
+      sendMpvCommand('observe_property', [4, 'time-pos']);
       sendMpvCommand('observe_property', [5, 'duration']);
 
       resolve();
@@ -439,7 +441,7 @@ ipcMain.handle('mpv-toggle-mute', async () => {
 ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
-    await sendMpvCommand('seek', [seconds, 'relative']);
+    await sendMpvCommand('seek', [seconds, 'absolute']);
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -512,6 +514,34 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
 
 ipcMain.handle('storage-is-encryption-available', async () => {
   return { success: true, data: storage.isEncryptionAvailable() };
+});
+
+// IPC Handler - Import M3U file via file dialog
+ipcMain.handle('import-m3u-file', async () => {
+  if (!mainWindow) return { error: 'No window available' };
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import M3U Playlist',
+    filters: [
+      { name: 'M3U Playlists', extensions: ['m3u', 'm3u8'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, canceled: true };
+  }
+
+  const filePath = result.filePaths[0];
+
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const fileName = path.basename(filePath, path.extname(filePath));
+    return { success: true, data: { content, fileName } };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Failed to read file' };
+  }
 });
 
 // URL allowlist for fetch-binary (TMDB exports only) - prevents SSRF attacks

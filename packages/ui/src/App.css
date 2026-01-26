@@ -31,11 +31,12 @@
   opacity: 1;
 }
 
-.title-bar-title {
-  padding-left: 12px;
-  font-size: 13px;
-  font-weight: 500;
+.title-bar-logo {
+  margin-left: 12px;
+  height: 24px;
+  width: auto;
   opacity: 0.8;
+  color: white;
 }
 
 .window-controls {
@@ -80,23 +81,21 @@
 
 /* Placeholder shown before any stream is loaded */
 .placeholder {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0.7;
   background: rgba(0, 0, 0, 0.8);
-  padding: 40px 60px;
+  padding: clamp(24px, 5vw, 48px) clamp(32px, 6vw, 64px);
   border-radius: 12px;
   pointer-events: auto;
+  color: white;
 }
 
-.placeholder h1 {
-  font-size: 3rem;
-  margin-bottom: 0.5rem;
-  font-weight: 300;
-}
-
-.placeholder p {
-  font-size: 1.2rem;
-  opacity: 0.7;
+.placeholder__logo {
+  width: clamp(120px, 18vw, 220px);
+  height: auto;
+  opacity: 0.75;
 }
 
 /* Now playing indicator */

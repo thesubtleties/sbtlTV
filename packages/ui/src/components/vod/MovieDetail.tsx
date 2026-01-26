@@ -9,6 +9,9 @@ import { useEffect, useCallback } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
+import { useLazyCredits } from '../../hooks/useLazyCredits';
+import { useRpdbSettings } from '../../hooks/useRpdbSettings';
+import { getRpdbPosterUrl } from '../../services/rpdb';
 import type { StoredMovie } from '../../db';
 import './MovieDetail.css';
 
@@ -36,22 +39,37 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
     onPlay?.(movie);
   }, [movie, onPlay]);
 
-  // Lazy-load backdrop and plot from TMDB if available
+  // Lazy-load backdrop, plot, genre, and credits from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(movie, apiKey);
-  const lazyPlot = useLazyPlot(movie, apiKey);
+  const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(movie, apiKey);
+  const lazyCredits = useLazyCredits(movie, apiKey);
+
+  // Load RPDB settings for poster
+  const { apiKey: rpdbApiKey } = useRpdbSettings();
+  const rpdbPosterUrl = rpdbApiKey && movie.tmdb_id
+    ? getRpdbPosterUrl(rpdbApiKey, movie.tmdb_id, 'movie')
+    : null;
 
   // Get images - use TMDB backdrop if available, fallback to stream_icon
   const backdropUrl = tmdbBackdropUrl || movie.stream_icon;
 
-  const posterUrl = movie.stream_icon ||
+  // Priority: RPDB poster > local poster > TMDB fallback
+  const posterUrl = rpdbPosterUrl || movie.stream_icon ||
     (movie.backdrop_path
       ? getTmdbImageUrl(movie.backdrop_path, TMDB_POSTER_SIZES.medium)
       : null);
 
-  // Parse metadata
-  const year = movie.release_date?.slice(0, 4);
-  const rating = movie.rating ? parseFloat(movie.rating) : null;
-  const genres = movie.genre?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
+  // Use clean title if available, otherwise fall back to name
+  const displayTitle = movie.title || movie.name;
+
+  // Use year field if available, otherwise extract from release_date
+  const year = movie.year || movie.release_date?.slice(0, 4);
+
+  // Rating - only show if it's a meaningful value (not 0, not NaN)
+  const parsedRating = movie.rating ? parseFloat(movie.rating) : NaN;
+  const rating = !isNaN(parsedRating) && parsedRating > 0 ? parsedRating : null;
+  const genreSource = movie.genre || lazyGenre;
+  const genres = genreSource?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
   const duration = movie.duration && movie.duration > 0
     ? `${Math.floor(movie.duration / 60)}h ${movie.duration % 60}m`
     : null;
@@ -94,11 +112,11 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
 
           {/* Info */}
           <div className="movie-detail__info">
-            <h1 className="movie-detail__title">{movie.name}</h1>
+            <h1 className="movie-detail__title">{displayTitle}</h1>
 
             <div className="movie-detail__meta">
               {year && <span className="movie-detail__year">{year}</span>}
-              {rating && rating > 0 && (
+              {rating && (
                 <span className="movie-detail__rating">
                   <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -140,16 +158,16 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
 
             {/* Credits */}
             <div className="movie-detail__credits">
-              {movie.cast && (
+              {lazyCredits.cast && (
                 <div className="movie-detail__credit-row">
                   <span className="movie-detail__credit-label">Cast</span>
-                  <span className="movie-detail__credit-value">{movie.cast}</span>
+                  <span className="movie-detail__credit-value">{lazyCredits.cast}</span>
                 </div>
               )}
-              {movie.director && (
+              {lazyCredits.director && (
                 <div className="movie-detail__credit-row">
                   <span className="movie-detail__credit-label">Director</span>
-                  <span className="movie-detail__credit-value">{movie.director}</span>
+                  <span className="movie-detail__credit-value">{lazyCredits.director}</span>
                 </div>
               )}
             </div>

@@ -1,6 +1,21 @@
 .carousel {
   position: relative;
-  margin-bottom: 32px;
+  /* Use padding instead of margin - Virtuoso can't measure margins correctly */
+  margin-bottom: 0;
+  padding-bottom: 16px;
+  /* Fixed height for Virtuoso - all rows must be same size */
+  height: 366px;
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Empty/hidden carousel - same height as normal for Virtuoso fixedItemHeight */
+.carousel--empty {
+  height: 366px;
+  padding: 0;
+  overflow: hidden;
 }
 
 .carousel__header {
@@ -56,6 +71,8 @@
 
 /* Scroll container */
 .carousel__scroll-container {
+  flex: 1;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x mandatory;

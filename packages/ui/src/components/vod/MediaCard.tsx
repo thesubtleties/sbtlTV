@@ -1,5 +1,7 @@
-import { useState, useCallback, memo } from 'react';
+import { useState, useCallback, useRef, useEffect, memo } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
+import { useRpdbSettings } from '../../hooks/useRpdbSettings';
+import { getRpdbPosterUrl } from '../../services/rpdb';
 import type { StoredMovie, StoredSeries } from '../../db';
 import './MediaCard.css';
 
@@ -13,23 +15,46 @@ export interface MediaCardProps {
 export const MediaCard = memo(function MediaCard({ item, type, onClick, size = 'medium' }: MediaCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [titleOverflows, setTitleOverflows] = useState(false);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+
+  // Check if title overflows (triggers marquee animation on hover)
+  useEffect(() => {
+    const el = titleRef.current;
+    if (el) {
+      setTitleOverflows(el.scrollWidth > el.clientWidth);
+    }
+  }, [item.title, item.name]);
+
+  // Load RPDB settings
+  const { apiKey: rpdbApiKey } = useRpdbSettings();
 
   // Get the appropriate image URL
   const posterUrl = 'stream_icon' in item
     ? item.stream_icon
     : (item as StoredSeries).cover;
 
-  // Try TMDB image if we have tmdb_id but no local poster
-  const tmdbPosterPath = (item as StoredMovie | StoredSeries).backdrop_path;
-  const displayUrl = posterUrl || getTmdbImageUrl(tmdbPosterPath, TMDB_POSTER_SIZES.medium);
-
-  // Extract year from release_date
-  const year = item.release_date
-    ? item.release_date.slice(0, 4)
+  // Use RPDB poster if we have an API key and tmdb_id
+  const rpdbPosterUrl = rpdbApiKey && item.tmdb_id
+    ? getRpdbPosterUrl(rpdbApiKey, item.tmdb_id, type)
     : null;
 
-  // Rating
-  const rating = item.rating ? parseFloat(item.rating) : null;
+  // Try TMDB image if we have tmdb_id but no local poster
+  const tmdbPosterPath = (item as StoredMovie | StoredSeries).backdrop_path;
+
+  // Priority: RPDB (if available) > local poster > TMDB fallback
+  const displayUrl = rpdbPosterUrl || posterUrl || getTmdbImageUrl(tmdbPosterPath, TMDB_POSTER_SIZES.medium);
+
+  // Use item.year if available, otherwise extract from release_date
+  const year = item.year
+    || (item.release_date ? item.release_date.slice(0, 4) : null);
+
+  // Use clean title if available, otherwise fall back to name
+  const displayTitle = item.title || item.name;
+
+  // Rating - only show if it's a meaningful value (not 0, not NaN)
+  const parsedRating = item.rating ? parseFloat(item.rating) : NaN;
+  const rating = !isNaN(parsedRating) && parsedRating > 0 ? parsedRating : null;
 
   const handleClick = useCallback(() => {
     onClick?.(item);
@@ -59,7 +84,6 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
           <img
             src={displayUrl}
             alt={item.name}
-            loading="lazy"
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}
             className={imageLoaded ? 'loaded' : ''}
@@ -81,10 +105,15 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
       </div>
 
       <div className="media-card__info">
-        <h3 className="media-card__title">{item.name}</h3>
+        <h3
+          ref={titleRef}
+          className={`media-card__title${titleOverflows ? ' media-card__title--overflow' : ''}`}
+        >
+          <span className="media-card__title-inner">{displayTitle}</span>
+        </h3>
         <div className="media-card__meta">
           {year && <span className="media-card__year">{year}</span>}
-          {rating && rating > 0 && (
+          {rating && (
             <span className="media-card__rating">
               <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -92,7 +121,6 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
               {rating.toFixed(1)}
             </span>
           )}
-          <span className="media-card__type">{type === 'movie' ? 'Movie' : 'Series'}</span>
         </div>
       </div>
     </div>

@@ -7,6 +7,8 @@
  * Export files: https://developer.themoviedb.org/docs/daily-id-exports
  * Format: Line-delimited JSON (gzipped)
  * Fields: { id, original_title, adult, video, popularity }
+ *
+ * Also supports enriched exports with year data from GitHub cache.
  */
 
 // ===========================================================================
@@ -20,12 +22,33 @@ export interface TmdbExportEntry {
   adult: boolean;
   video?: boolean;
   popularity: number;
+  year?: number;           // Added from enriched data
 }
 
 export interface TmdbExportData {
   entries: Map<string, TmdbExportEntry[]>;  // normalized title -> entries
   byId: Map<number, TmdbExportEntry>;       // id -> entry
   lastUpdated: Date;
+}
+
+// Enriched data format from GitHub cache: { i: id, t: title, y: year, p: popularity }
+interface EnrichedEntry {
+  i: number;   // TMDB ID
+  t: string;   // Title
+  y: number;   // Year
+  p: number;   // Popularity
+}
+
+interface EnrichedData {
+  generated_at: string;
+  count: number;
+  entries: EnrichedEntry[];
+}
+
+// Parameters extracted from VOD item for matching
+export interface MatchParams {
+  title: string;
+  year?: number;
 }
 
 // ===========================================================================
@@ -35,8 +58,16 @@ export interface TmdbExportData {
 let movieExportCache: TmdbExportData | null = null;
 let tvExportCache: TmdbExportData | null = null;
 
+// Enriched data caches (with year info from GitHub)
+let enrichedMovieCache: TmdbExportData | null = null;
+let enrichedTvCache: TmdbExportData | null = null;
+
 // Cache for 24 hours
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// GitHub cache URLs for enriched data (NDJSON format for streaming)
+const ENRICHED_MOVIE_URL = 'https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb-movies-enriched.ndjson';
+const ENRICHED_TV_URL = 'https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb-tvs-enriched.ndjson';
 
 // ===========================================================================
 // Helpers
@@ -59,6 +90,116 @@ function normalizeTitle(title: string): string {
     // Normalize whitespace
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Extract title and year from VOD item for TMDB matching
+ * Priority: title+year fields → parse from name → name only
+ */
+export function extractMatchParams(item: { name: string; title?: string; year?: string }): MatchParams {
+  // 1. Best case: structured fields from Xtream API
+  if (item.title && item.year) {
+    const year = parseInt(item.year, 10);
+    return {
+      title: item.title,
+      year: !isNaN(year) ? year : undefined,
+    };
+  }
+
+  // 2. Has title but no year - check if name has (YEAR) pattern
+  if (item.title) {
+    const yearMatch = item.name.match(/\((\d{4})\)/);
+    return {
+      title: item.title,
+      year: yearMatch ? parseInt(yearMatch[1], 10) : undefined,
+    };
+  }
+
+  // 3. No title field - parse from name: "Movie Title (1962)"
+  const nameMatch = item.name.match(/^(.+?)\s*\((\d{4})\)\s*$/);
+  if (nameMatch) {
+    return {
+      title: nameMatch[1].trim(),
+      year: parseInt(nameMatch[2], 10),
+    };
+  }
+
+  // 4. Fallback: just use name as title, no year
+  return { title: item.name };
+}
+
+/**
+ * Download and parse enriched TMDB data from GitHub cache (NDJSON format)
+ * Uses streaming to avoid blocking main thread with 1M+ entries
+ * Returns null if unavailable (will fall back to regular exports)
+ */
+async function downloadEnrichedExport(type: 'movie' | 'tv'): Promise<TmdbExportData | null> {
+  const url = type === 'movie' ? ENRICHED_MOVIE_URL : ENRICHED_TV_URL;
+  console.log(`[TMDB Export] Downloading enriched ${type} data from GitHub...`);
+
+  try {
+    let textContent: string;
+
+    // Use Electron's fetch proxy if available (bypasses CORS)
+    if (typeof window !== 'undefined' && window.fetchProxy?.fetch) {
+      const result = await window.fetchProxy.fetch(url);
+      if (!result.success || !result.data || !result.data.ok) {
+        console.warn(`[TMDB Export] Enriched ${type} fetch failed:`, result.error || result.data?.statusText);
+        return null;
+      }
+      textContent = result.data.text;
+    } else {
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.warn(`[TMDB Export] Enriched ${type} not available: ${response.status}`);
+        return null;
+      }
+      textContent = await response.text();
+    }
+
+    // Parse NDJSON (one entry per line) - much faster than single JSON.parse
+    const lines = textContent.split('\n');
+    console.log(`[TMDB Export] Parsing ${lines.length} enriched ${type} entries...`);
+
+    // Build lookup maps
+    const entries = new Map<string, TmdbExportEntry[]>();
+    const byId = new Map<number, TmdbExportEntry>();
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+
+      const e = JSON.parse(line) as EnrichedEntry;
+      const normalized = normalizeTitle(e.t);
+      if (!normalized) continue;
+
+      const entry: TmdbExportEntry = {
+        id: e.i,
+        original_title: e.t,
+        adult: false,
+        popularity: e.p,
+        year: e.y,
+      };
+
+      // Add to title index
+      const existing = entries.get(normalized) || [];
+      existing.push(entry);
+      entries.set(normalized, existing);
+
+      // Add to ID index
+      byId.set(e.i, entry);
+    }
+
+    console.log(`[TMDB Export] Indexed ${entries.size} unique enriched ${type} titles`);
+
+    return {
+      entries,
+      byId,
+      lastUpdated: new Date(),
+    };
+  } catch (error) {
+    console.warn(`[TMDB Export] Failed to load enriched ${type} data:`, error);
+    return null;
+  }
 }
 
 /**
@@ -243,34 +384,95 @@ export async function getTvExports(): Promise<TmdbExportData> {
 }
 
 /**
+ * Get enriched movie exports with year data (from GitHub cache)
+ * Falls back to regular exports if enriched data unavailable
+ */
+export async function getEnrichedMovieExports(): Promise<TmdbExportData> {
+  // Check enriched cache first
+  if (enrichedMovieCache) {
+    const age = Date.now() - enrichedMovieCache.lastUpdated.getTime();
+    if (age < CACHE_TTL_MS) {
+      return enrichedMovieCache;
+    }
+  }
+
+  // Try to download enriched data
+  const enriched = await downloadEnrichedExport('movie');
+  if (enriched) {
+    enrichedMovieCache = enriched;
+    return enrichedMovieCache;
+  }
+
+  // Fall back to regular exports (no year data)
+  console.log('[TMDB Export] Falling back to regular movie exports (no year data)');
+  return getMovieExports();
+}
+
+/**
+ * Get enriched TV exports with year data (from GitHub cache)
+ * Falls back to regular exports if enriched data unavailable
+ */
+export async function getEnrichedTvExports(): Promise<TmdbExportData> {
+  // Check enriched cache first
+  if (enrichedTvCache) {
+    const age = Date.now() - enrichedTvCache.lastUpdated.getTime();
+    if (age < CACHE_TTL_MS) {
+      return enrichedTvCache;
+    }
+  }
+
+  // Try to download enriched data
+  const enriched = await downloadEnrichedExport('tv');
+  if (enriched) {
+    enrichedTvCache = enriched;
+    return enrichedTvCache;
+  }
+
+  // Fall back to regular exports (no year data)
+  console.log('[TMDB Export] Falling back to regular TV exports (no year data)');
+  return getTvExports();
+}
+
+/**
  * Find best TMDB match for a title using exports
  * Uses exact normalized title matching only (fast O(1) lookup)
+ * When year is provided, prefers exact year match before falling back to most popular
  */
 export function findBestMatch(
   exports: TmdbExportData,
-  title: string
+  title: string,
+  year?: number
 ): TmdbExportEntry | null {
   const normalized = normalizeTitle(title);
   if (!normalized) return null;
 
-  // Exact match using Map lookup - O(1)
-  const matches = exports.entries.get(normalized);
-  if (matches && matches.length > 0) {
-    // Return most popular among matches
+  // Helper to find best match from candidates
+  const findFromCandidates = (matches: TmdbExportEntry[]): TmdbExportEntry | null => {
+    if (!matches || matches.length === 0) return null;
+
+    // If year provided, try exact year match first
+    if (year) {
+      const exactYear = matches.find(m => m.year === year);
+      if (exactYear) return exactYear;
+    }
+
+    // Fall back to most popular
     return matches.reduce((best, current) =>
       current.popularity > best.popularity ? current : best
     );
-  }
+  };
+
+  // Exact match using Map lookup - O(1)
+  const matches = exports.entries.get(normalized);
+  const result = findFromCandidates(matches || []);
+  if (result) return result;
 
   // Try without "the" prefix
   const withoutThe = normalized.replace(/^the\s+/, '');
   if (withoutThe !== normalized) {
     const matches2 = exports.entries.get(withoutThe);
-    if (matches2 && matches2.length > 0) {
-      return matches2.reduce((best, current) =>
-        current.popularity > best.popularity ? current : best
-      );
-    }
+    const result2 = findFromCandidates(matches2 || []);
+    if (result2) return result2;
   }
 
   return null;
@@ -311,4 +513,6 @@ export async function batchMatchFromExports(
 export function clearExportCache(): void {
   movieExportCache = null;
   tvExportCache = null;
+  enrichedMovieCache = null;
+  enrichedTvCache = null;
 }

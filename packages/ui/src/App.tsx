@@ -7,8 +7,9 @@ import { CategoryStrip } from './components/CategoryStrip';
 import { ChannelPanel } from './components/ChannelPanel';
 import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
+import { Logo } from './components/Logo';
 import { useSelectedCategory } from './hooks/useChannels';
-import { syncAllSources, syncAllVod } from './db/sync';
+import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
 import type { StoredChannel } from './db';
 
 function App() {
@@ -17,6 +18,8 @@ function App() {
   const [playing, setPlaying] = useState(false);
   const [volume, setVolume] = useState(100);
   const [muted, setMuted] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
 
@@ -35,6 +38,9 @@ function App() {
 
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
+
+  // Track seeking to prevent position flickering during scrub
+  const seekingRef = useRef(false);
 
   // Track if mouse is hovering over controls (prevents auto-hide)
   const controlsHoveredRef = useRef(false);
@@ -58,6 +64,13 @@ function App() {
         setVolume(status.volume);
       }
       if (status.muted !== undefined) setMuted(status.muted);
+      // Skip position updates while user is seeking (prevents flickering)
+      if (status.position !== undefined && !seekingRef.current) {
+        setPosition(status.position);
+      }
+      if (status.duration !== undefined) {
+        setDuration(status.duration);
+      }
     });
 
     window.mpv.onError((err) => {
@@ -130,6 +143,15 @@ function App() {
     setCurrentChannel(null);
   };
 
+  const handleSeek = async (seconds: number) => {
+    if (!window.mpv) return;
+    seekingRef.current = true;
+    setPosition(seconds); // Optimistic update
+    await window.mpv.seek(seconds);
+    // Brief delay before accepting mpv updates again
+    setTimeout(() => { seekingRef.current = false; }, 200);
+  };
+
   // Play a channel
   const handlePlayChannel = (channel: StoredChannel) => {
     handleLoadStream(channel);
@@ -176,10 +198,21 @@ function App() {
       if (result.data && result.data.length > 0) {
         setSyncing(true);
         await syncAllSources();
-        // Also sync VOD for Xtream sources
-        const hasXtream = result.data.some(s => s.type === 'xtream' && s.enabled);
-        if (hasXtream) {
-          await syncAllVod();
+
+        // Get user's configured refresh settings
+        const settingsResult = await window.storage.getSettings();
+        const vodRefreshHours = settingsResult.data?.vodRefreshHours ?? 24;
+
+        // Sync VOD only for Xtream sources that are stale
+        const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
+        for (const source of xtreamSources) {
+          const stale = await isVodStale(source.id, vodRefreshHours);
+          if (stale) {
+            console.log(`[VOD] Source ${source.name} is stale, syncing...`);
+            await syncVodForSource(source);
+          } else {
+            console.log(`[VOD] Source ${source.name} is fresh, skipping sync`);
+          }
         }
         setSyncing(false);
       }
@@ -232,7 +265,7 @@ function App() {
     <div className="app" onMouseMove={handleMouseMove}>
       {/* Custom title bar for frameless window */}
       <div className="title-bar">
-        <span className="title-bar-title">sbtlTV</span>
+        <Logo className="title-bar-logo" />
         <div className="window-controls">
           <button onClick={handleMinimize} title="Minimize">
             ─
@@ -250,8 +283,7 @@ function App() {
       <div className="video-background">
         {!currentChannel && (
           <div className="placeholder">
-            <h1>sbtlTV</h1>
-            <p>{syncing ? 'Loading channels...' : 'Select a channel to begin'}</p>
+            <Logo className="placeholder__logo" />
           </div>
         )}
       </div>
@@ -272,10 +304,14 @@ function App() {
         muted={muted}
         volume={volume}
         mpvReady={mpvReady}
+        position={position}
+        duration={duration}
+        isVod={currentChannel?.stream_id === 'vod'}
         onTogglePlay={handleTogglePlay}
         onStop={handleStop}
         onToggleMute={handleToggleMute}
         onVolumeChange={handleVolumeChange}
+        onSeek={handleSeek}
         onVolumeDragStart={() => { volumeDraggingRef.current = true; }}
         onVolumeDragEnd={() => { volumeDraggingRef.current = false; }}
         onMouseEnter={() => { controlsHoveredRef.current = true; }}

@@ -154,6 +154,85 @@
   transition: width 0.5s ease;
 }
 
+/* VOD progress section */
+.npb-progress-vod {
+  gap: 12px;
+}
+
+.npb-time-elapsed {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  min-width: 50px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Interactive progress bar for VOD */
+.npb-progress-interactive {
+  cursor: pointer;
+  position: relative;
+  height: 3px;
+  transition: height 0.15s ease;
+}
+
+.npb-progress-interactive.active {
+  height: 6px;
+}
+
+.npb-progress-interactive .npb-progress-fill {
+  transition: width 0.1s ease;
+}
+
+/* Scrubber handle */
+.npb-scrubber-handle {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  background: white;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+  pointer-events: none;
+}
+
+.npb-progress-interactive:hover .npb-scrubber-handle,
+.npb-progress-interactive.active .npb-scrubber-handle {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.npb-scrubber-handle.dragging {
+  transform: translate(-50%, -50%) scale(1.2);
+}
+
+/* Time tooltip */
+.npb-time-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  background: rgba(20, 20, 20, 0.95);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.npb-time-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(20, 20, 20, 0.95);
+}
+
 .npb-time-remaining {
   font-size: 0.7rem;
   color: rgba(255, 255, 255, 0.5);

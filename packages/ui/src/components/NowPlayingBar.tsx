@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useState } from 'react';
+import { type ChangeEvent, useEffect, useState, useRef, useCallback } from 'react';
 import type { StoredChannel } from '../db';
 import { useCurrentProgram } from '../hooks/useChannels';
 import './NowPlayingBar.css';
@@ -10,14 +10,30 @@ interface NowPlayingBarProps {
   muted: boolean;
   volume: number;
   mpvReady: boolean;
+  position: number;
+  duration: number;
+  isVod?: boolean;
   onTogglePlay: () => void;
   onStop: () => void;
   onToggleMute: () => void;
   onVolumeChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  onSeek?: (seconds: number) => void;
   onVolumeDragStart?: () => void;
   onVolumeDragEnd?: () => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+}
+
+// Format seconds to "H:MM:SS" or "M:SS"
+function formatTime(seconds: number): string {
+  if (!isFinite(seconds) || seconds < 0) return '0:00';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 export function NowPlayingBar({
@@ -27,10 +43,14 @@ export function NowPlayingBar({
   muted,
   volume,
   mpvReady,
+  position,
+  duration,
+  isVod,
   onTogglePlay,
   onStop,
   onToggleMute,
   onVolumeChange,
+  onSeek,
   onVolumeDragStart,
   onVolumeDragEnd,
   onMouseEnter,
@@ -39,9 +59,15 @@ export function NowPlayingBar({
   const canControl = mpvReady && channel !== null;
   const currentProgram = useCurrentProgram(channel?.stream_id ?? null);
 
-  // Progress tracking - updates every second
+  // Progress tracking for live TV - updates every second
   const [progress, setProgress] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState('');
+
+  // VOD scrubber state
+  const [isHovering, setIsHovering] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [hoverPosition, setHoverPosition] = useState(0);
+  const progressBarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!currentProgram) {
@@ -76,6 +102,69 @@ export function NowPlayingBar({
     const interval = setInterval(updateProgress, 1000);
     return () => clearInterval(interval);
   }, [currentProgram]);
+
+  // Calculate position from mouse/touch event on progress bar
+  const getSeekPosition = useCallback((clientX: number): number => {
+    if (!progressBarRef.current || duration <= 0) return 0;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return ratio * duration;
+  }, [duration]);
+
+  // Handle click to seek
+  const handleProgressClick = useCallback((e: React.MouseEvent) => {
+    if (!isVod || !onSeek) return;
+    const seekTo = getSeekPosition(e.clientX);
+    onSeek(seekTo);
+  }, [isVod, onSeek, getSeekPosition]);
+
+  // Handle mouse move for hover tooltip
+  const handleProgressMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isVod) return;
+    setHoverPosition(getSeekPosition(e.clientX));
+  }, [isVod, getSeekPosition]);
+
+  // Handle drag start
+  const handleDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!isVod || !onSeek) return;
+    e.preventDefault();
+    setIsDragging(true);
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const seekTo = getSeekPosition(clientX);
+    onSeek(seekTo);
+  }, [isVod, onSeek, getSeekPosition]);
+
+  // Handle drag (mouse/touch move while dragging)
+  useEffect(() => {
+    if (!isDragging || !onSeek) return;
+
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const seekTo = getSeekPosition(clientX);
+      onSeek(seekTo);
+    };
+
+    const handleEnd = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('touchmove', handleMove);
+    document.addEventListener('touchend', handleEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleEnd);
+      document.removeEventListener('touchmove', handleMove);
+      document.removeEventListener('touchend', handleEnd);
+    };
+  }, [isDragging, onSeek, getSeekPosition]);
+
+  // VOD progress calculation
+  const vodProgress = duration > 0 ? (position / duration) * 100 : 0;
+  const vodRemaining = duration - position;
 
   return (
     <div
@@ -126,18 +215,52 @@ export function NowPlayingBar({
 
           {/* Row 2: Progress and controls */}
           <div className="npb-row npb-controls-row">
-            {/* Progress section */}
-            <div className="npb-progress-section">
-              <div className="npb-progress-bar">
+            {/* Progress section - VOD vs Live TV */}
+            {isVod ? (
+              <div className="npb-progress-section npb-progress-vod">
+                <span className="npb-time-elapsed">{formatTime(position)}</span>
                 <div
-                  className="npb-progress-fill"
-                  style={{ width: currentProgram ? `${progress}%` : '0%' }}
-                />
+                  ref={progressBarRef}
+                  className={`npb-progress-bar npb-progress-interactive ${isHovering || isDragging ? 'active' : ''}`}
+                  onClick={handleProgressClick}
+                  onMouseEnter={() => setIsHovering(true)}
+                  onMouseLeave={() => setIsHovering(false)}
+                  onMouseMove={handleProgressMouseMove}
+                  onMouseDown={handleDragStart}
+                  onTouchStart={handleDragStart}
+                >
+                  <div
+                    className="npb-progress-fill"
+                    style={{ width: `${vodProgress}%` }}
+                  />
+                  <div
+                    className={`npb-scrubber-handle ${isDragging ? 'dragging' : ''}`}
+                    style={{ left: `${vodProgress}%` }}
+                  />
+                  {isHovering && !isDragging && (
+                    <div
+                      className="npb-time-tooltip"
+                      style={{ left: `${(hoverPosition / duration) * 100}%` }}
+                    >
+                      {formatTime(hoverPosition)}
+                    </div>
+                  )}
+                </div>
+                <span className="npb-time-remaining">-{formatTime(vodRemaining)}</span>
               </div>
-              <span className="npb-time-remaining">
-                {timeRemaining || '--'}
-              </span>
-            </div>
+            ) : (
+              <div className="npb-progress-section">
+                <div className="npb-progress-bar">
+                  <div
+                    className="npb-progress-fill"
+                    style={{ width: currentProgram ? `${progress}%` : '0%' }}
+                  />
+                </div>
+                <span className="npb-time-remaining">
+                  {timeRemaining || '--'}
+                </span>
+              </div>
+            )}
 
             {/* Playback controls */}
             <div className="npb-controls">

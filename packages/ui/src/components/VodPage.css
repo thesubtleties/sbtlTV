@@ -1,4 +1,4 @@
-.movies-page {
+.vod-page {
   position: fixed;
   top: 32px; /* Below frameless title bar */
   left: 0;
@@ -12,7 +12,7 @@
 }
 
 /* Header */
-.movies-page__header {
+.vod-page__header {
   flex-shrink: 0;
   z-index: 50;
   display: flex;
@@ -22,7 +22,7 @@
   background: #0d0d0d;
 }
 
-.movies-page__close {
+.vod-page__close {
   width: 36px;
   height: 36px;
   border-radius: 8px;
@@ -36,17 +36,17 @@
   transition: color 0.15s ease, background 0.15s ease;
 }
 
-.movies-page__close:hover {
+.vod-page__close:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.08);
 }
 
-.movies-page__close svg {
+.vod-page__close svg {
   width: 20px;
   height: 20px;
 }
 
-.movies-page__title {
+.vod-page__title {
   font-size: 1.375rem;
   font-weight: 500;
   color: #fff;
@@ -55,7 +55,7 @@
 }
 
 /* Search - refined Apple-style */
-.movies-page__search {
+.vod-page__search {
   flex: 1;
   max-width: 320px;
   margin-left: auto;
@@ -69,19 +69,19 @@
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.movies-page__search:focus-within {
+.vod-page__search:focus-within {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.15);
 }
 
-.movies-page__search svg {
+.vod-page__search svg {
   width: 16px;
   height: 16px;
   color: rgba(255, 255, 255, 0.4);
   flex-shrink: 0;
 }
 
-.movies-page__search input {
+.vod-page__search input {
   flex: 1;
   background: none;
   border: none;
@@ -91,11 +91,11 @@
   outline: none;
 }
 
-.movies-page__search input::placeholder {
+.vod-page__search input::placeholder {
   color: rgba(255, 255, 255, 0.35);
 }
 
-.movies-page__search button {
+.vod-page__search button {
   background: none;
   border: none;
   padding: 2px;
@@ -107,17 +107,17 @@
   transition: color 0.15s ease;
 }
 
-.movies-page__search button:hover {
+.vod-page__search button:hover {
   color: rgba(255, 255, 255, 0.8);
 }
 
-.movies-page__search button svg {
+.vod-page__search button svg {
   width: 14px;
   height: 14px;
 }
 
 /* Category strip */
-.movies-page__categories {
+.vod-page__categories {
   flex-shrink: 0;
   display: flex;
   gap: 8px;
@@ -129,11 +129,11 @@
   -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
 }
 
-.movies-page__categories::-webkit-scrollbar {
+.vod-page__categories::-webkit-scrollbar {
   display: none;
 }
 
-.movies-page__category {
+.vod-page__category {
   flex-shrink: 0;
   padding: 7px 14px;
   font-size: 0.8125rem;
@@ -147,20 +147,20 @@
   white-space: nowrap;
 }
 
-.movies-page__category:hover {
+.vod-page__category:hover {
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.9);
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-.movies-page__category.active {
+.vod-page__category.active {
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
   border-color: rgba(255, 255, 255, 0.25);
 }
 
 /* Main content */
-.movies-page__content {
+.vod-page__content {
   flex: 1;
   min-height: 0; /* Important: allows flex child to shrink below content size */
   overflow-y: auto;
@@ -168,39 +168,50 @@
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
-.movies-page__content::-webkit-scrollbar {
+.vod-page__content::-webkit-scrollbar {
   width: 6px;
 }
 
-.movies-page__content::-webkit-scrollbar-track {
+.vod-page__content::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.movies-page__content::-webkit-scrollbar-thumb {
+.vod-page__content::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 3px;
 }
 
-.movies-page__content::-webkit-scrollbar-thumb:hover {
+.vod-page__content::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
 
-.movies-page__carousels {
+.vod-page__carousels {
   padding-top: 24px;
+}
+
+/* Virtualized home view - must fill container for Virtuoso */
+.vod-page__home {
+  height: 100%;
+}
+
+/* Wrapper for genre carousels in virtualized list */
+.vod-page__carousel-slot {
+  /* No min-height - let content determine size */
+  /* Empty carousels will collapse, which is fine */
 }
 
 /* Responsive */
 @media (max-width: 768px) {
-  .movies-page__header {
+  .vod-page__header {
     padding: 12px 24px;
     gap: 16px;
   }
 
-  .movies-page__title {
+  .vod-page__title {
     font-size: 1.25rem;
   }
 
-  .movies-page__search {
+  .vod-page__search {
     max-width: none;
     margin-left: 0;
     order: 3;
@@ -208,7 +219,7 @@
     flex-basis: 100%;
   }
 
-  .movies-page__categories {
+  .vod-page__categories {
     padding: 8px 24px 16px;
   }
 }
