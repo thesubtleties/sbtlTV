@@ -20,25 +20,39 @@ import type { VodPlayInfo } from './types/media';
  * VOD: provider extension → .m3u8 → .ts
  */
 function getStreamFallbacks(url: string, isLive: boolean): string[] {
-  // Extract base URL and current extension
-  const extMatch = url.match(/\.([a-z0-9]+)$/i);
-  if (!extMatch) return []; // No extension, can't generate fallbacks
+  try {
+    // Parse URL properly to preserve query params (often used for auth tokens)
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
 
-  const currentExt = extMatch[1].toLowerCase();
-  const baseUrl = url.slice(0, -currentExt.length - 1); // Remove .ext
+    const extMatch = pathname.match(/\.([a-z0-9]+)$/i);
+    if (!extMatch) return []; // No extension, can't generate fallbacks
 
-  if (isLive) {
-    // Live TV fallback order: .ts → .m3u8 → .m3u
-    const fallbacks: string[] = [];
-    if (currentExt !== 'm3u8') fallbacks.push(`${baseUrl}.m3u8`);
-    if (currentExt !== 'm3u') fallbacks.push(`${baseUrl}.m3u`);
-    return fallbacks;
-  } else {
-    // VOD fallback order: provider ext → .m3u8 → .ts
-    const fallbacks: string[] = [];
-    if (currentExt !== 'm3u8') fallbacks.push(`${baseUrl}.m3u8`);
-    if (currentExt !== 'ts') fallbacks.push(`${baseUrl}.ts`);
-    return fallbacks;
+    const currentExt = extMatch[1].toLowerCase();
+    const basePathname = pathname.slice(0, -currentExt.length - 1);
+
+    const generateUrl = (ext: string): string => {
+      const newUrl = new URL(url);
+      newUrl.pathname = `${basePathname}.${ext}`;
+      return newUrl.toString();
+    };
+
+    if (isLive) {
+      // Live TV fallback order: .ts → .m3u8 → .m3u
+      const fallbacks: string[] = [];
+      if (currentExt !== 'm3u8') fallbacks.push(generateUrl('m3u8'));
+      if (currentExt !== 'm3u') fallbacks.push(generateUrl('m3u'));
+      return fallbacks;
+    } else {
+      // VOD fallback order: provider ext → .m3u8 → .ts
+      const fallbacks: string[] = [];
+      if (currentExt !== 'm3u8') fallbacks.push(generateUrl('m3u8'));
+      if (currentExt !== 'ts') fallbacks.push(generateUrl('ts'));
+      return fallbacks;
+    }
+  } catch {
+    // Invalid URL, can't generate fallbacks
+    return [];
   }
 }
 
