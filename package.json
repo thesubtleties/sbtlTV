@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "Desktop IPTV player with mpv",
+  "homepage": "https://github.com/thesubtleties/sbtlTV",
+  "author": {
+    "name": "thesubtleties",
+    "email": "thesubtleties@users.noreply.github.com"
+  },
   "scripts": {
     "dev": "pnpm --filter @sbtltv/electron dev",
     "build": "pnpm -r build",

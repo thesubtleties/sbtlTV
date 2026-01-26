@@ -39,8 +39,17 @@ jobs:
       - name: Build all packages
         run: pnpm build
 
-      - name: Download mpv (Windows/macOS only)
-        if: matrix.platform != 'linux'
+      - name: Install mpv (Windows)
+        if: matrix.platform == 'win'
+        run: |
+          choco install mpvio -y
+          mkdir -p packages/electron/mpv-bundle
+          cp "C:/ProgramData/chocolatey/lib/mpvio/tools/mpv/"*.exe packages/electron/mpv-bundle/
+          cp "C:/ProgramData/chocolatey/lib/mpvio/tools/mpv/"*.dll packages/electron/mpv-bundle/
+        shell: bash
+
+      - name: Download mpv (macOS only)
+        if: matrix.platform == 'mac'
         run: bash scripts/download-mpv.sh
         shell: bash
 

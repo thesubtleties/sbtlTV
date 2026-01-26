@@ -90,13 +90,22 @@ case "$(uname -s)" in
     # Extract
     tar -xzf "$TEMP_DIR/mpv.tar.gz" -C "$TEMP_DIR"
 
+    # Find the .app bundle (name may vary)
+    MPV_APP=$(find "$TEMP_DIR" -maxdepth 2 -name "*.app" -type d | head -1)
+    if [ -z "$MPV_APP" ]; then
+      echo "❌ Could not find .app bundle in archive"
+      ls -la "$TEMP_DIR"
+      exit 1
+    fi
+    echo "Found app bundle: $MPV_APP"
+
     # Copy mpv binary preserving relative path structure for dylib loading
     # mpv uses @executable_path/../Frameworks/ to find dylibs
     mkdir -p "$BUNDLE_DIR/MacOS"
-    cp "$TEMP_DIR/mpv.app/Contents/MacOS/mpv" "$BUNDLE_DIR/MacOS/"
+    cp "$MPV_APP/Contents/MacOS/mpv" "$BUNDLE_DIR/MacOS/"
     # Copy frameworks (required dylibs)
-    if [ -d "$TEMP_DIR/mpv.app/Contents/Frameworks" ]; then
-      cp -R "$TEMP_DIR/mpv.app/Contents/Frameworks" "$BUNDLE_DIR/"
+    if [ -d "$MPV_APP/Contents/Frameworks" ]; then
+      cp -R "$MPV_APP/Contents/Frameworks" "$BUNDLE_DIR/"
     fi
 
     rm -rf "$TEMP_DIR"
