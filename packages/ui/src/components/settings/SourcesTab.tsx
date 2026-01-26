@@ -4,6 +4,7 @@ import type { Source } from '../../types/electron';
 import { syncAllSources, syncAllVod, type SyncResult, type VodSyncResult } from '../../db/sync';
 import { clearSourceData, clearVodData, db } from '../../db';
 import { useSyncStatus } from '../../hooks/useChannels';
+import { useChannelSyncing, useSetChannelSyncing, useVodSyncing, useSetVodSyncing } from '../../stores/uiStore';
 import { parseM3U } from '@sbtltv/local-adapter';
 
 interface SourcesTabProps {
@@ -39,11 +40,15 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<SourceFormData>(emptyForm);
   const [error, setError] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [syncResults, setSyncResults] = useState<Map<string, SyncResult> | null>(null);
-  const [vodSyncing, setVodSyncing] = useState(false);
   const [vodSyncResults, setVodSyncResults] = useState<Map<string, VodSyncResult> | null>(null);
   const syncStatus = useSyncStatus();
+
+  // Global sync state - persists across Settings open/close
+  const syncing = useChannelSyncing();
+  const setSyncing = useSetChannelSyncing();
+  const vodSyncing = useVodSyncing();
+  const setVodSyncing = useSetVodSyncing();
 
   const hasXtreamSource = sources.some(s => s.type === 'xtream');
 

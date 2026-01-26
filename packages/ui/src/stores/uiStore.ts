@@ -16,11 +16,11 @@ interface UIState {
   seriesSelectedCategory: string | null;
   setSeriesSelectedCategory: (id: string | null) => void;
 
-  // Could add more UI state here later:
-  // - Scroll positions
-  // - Last played item
-  // - Sidebar collapsed state
-  // - etc.
+  // Sync state - persists across Settings open/close
+  channelSyncing: boolean;
+  vodSyncing: boolean;
+  setChannelSyncing: (value: boolean) => void;
+  setVodSyncing: (value: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -31,6 +31,12 @@ export const useUIStore = create<UIState>((set) => ({
   // Series
   seriesSelectedCategory: null,
   setSeriesSelectedCategory: (id) => set({ seriesSelectedCategory: id }),
+
+  // Sync state
+  channelSyncing: false,
+  vodSyncing: false,
+  setChannelSyncing: (value) => set({ channelSyncing: value }),
+  setVodSyncing: (value) => set({ vodSyncing: value }),
 }));
 
 // Selectors for cleaner component code
@@ -39,3 +45,9 @@ export const useSetMoviesCategory = () => useUIStore((s) => s.setMoviesSelectedC
 
 export const useSeriesCategory = () => useUIStore((s) => s.seriesSelectedCategory);
 export const useSetSeriesCategory = () => useUIStore((s) => s.setSeriesSelectedCategory);
+
+// Sync state selectors
+export const useChannelSyncing = () => useUIStore((s) => s.channelSyncing);
+export const useSetChannelSyncing = () => useUIStore((s) => s.setChannelSyncing);
+export const useVodSyncing = () => useUIStore((s) => s.vodSyncing);
+export const useSetVodSyncing = () => useUIStore((s) => s.setVodSyncing);

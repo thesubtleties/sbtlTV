@@ -9,6 +9,7 @@ import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
 import { useSelectedCategory } from './hooks/useChannels';
+import { useChannelSyncing, useVodSyncing } from './stores/uiStore';
 import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
@@ -90,6 +91,10 @@ function App() {
 
   // Channel/category state (persisted)
   const { categoryId, setCategoryId, loading: categoryLoading } = useSelectedCategory();
+
+  // Global sync state (from Settings)
+  const channelSyncing = useChannelSyncing();
+  const vodSyncing = useVodSyncing();
 
   // Sync state
   const [syncing, setSyncing] = useState(false);
@@ -348,6 +353,18 @@ function App() {
         {!currentChannel && (
           <div className="placeholder">
             <Logo className="placeholder__logo" />
+            {(channelSyncing || vodSyncing) && (
+              <div className="sync-status">
+                <div className="sync-status__spinner" />
+                <span className="sync-status__text">
+                  {channelSyncing && vodSyncing
+                    ? 'Syncing channels & VOD...'
+                    : channelSyncing
+                    ? 'Syncing channels...'
+                    : 'Syncing VOD...'}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
