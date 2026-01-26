@@ -32,6 +32,7 @@ interface AppSettings {
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   posterDbApiKey?: string;         // RatingPosterDB API key
   rpdbBackdropsEnabled?: boolean;  // Use RPDB for backdrop images (tier 2+)
+  allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF protection bypass)
 }
 
 // Internal storage format (encrypted)
@@ -45,6 +46,7 @@ interface StoredSettings {
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   encryptedPosterDbApiKey?: string; // Base64 encoded encrypted buffer
   rpdbBackdropsEnabled?: boolean;   // Use RPDB for backdrop images
+  allowLanSources?: boolean;        // Allow requests to LAN IPs
 }
 
 const store = new Store<StoreSchema>({
@@ -180,6 +182,7 @@ export function getSettings(): AppSettings {
     result.posterDbApiKey = decryptPassword(stored.encryptedPosterDbApiKey);
   }
   result.rpdbBackdropsEnabled = stored.rpdbBackdropsEnabled ?? false;
+  result.allowLanSources = stored.allowLanSources ?? false;
   return result;
 }
 
@@ -204,6 +207,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.rpdbBackdropsEnabled !== undefined) {
     updated.rpdbBackdropsEnabled = settings.rpdbBackdropsEnabled;
+  }
+  if (settings.allowLanSources !== undefined) {
+    updated.allowLanSources = settings.allowLanSources;
   }
 
   store.set('settings', updated);

@@ -596,7 +596,6 @@ ipcMain.handle('import-m3u-file', async () => {
 });
 
 // URL allowlist for fetch-binary (TMDB exports only) - prevents SSRF attacks
-// Note: fetch-proxy is unrestricted because it's used for user-configured IPTV providers
 const ALLOWED_BINARY_FETCH_DOMAINS = [
   'files.tmdb.org',       // TMDB daily exports (gzipped)
 ];
@@ -610,10 +609,37 @@ function isAllowedBinaryUrl(url: string): boolean {
   }
 }
 
+// SSRF protection - block requests to internal/private networks
+// These patterns match localhost, private IP ranges, and cloud metadata endpoints
+const BLOCKED_URL_PATTERNS = [
+  /^https?:\/\/localhost(?::\d+)?(?:\/|$)/i,
+  /^https?:\/\/127\.\d+\.\d+\.\d+/,
+  /^https?:\/\/\[?::1\]?/,                      // IPv6 localhost
+  /^https?:\/\/10\.\d+\.\d+\.\d+/,              // Private Class A
+  /^https?:\/\/172\.(1[6-9]|2\d|3[01])\./,      // Private Class B
+  /^https?:\/\/192\.168\./,                     // Private Class C
+  /^https?:\/\/169\.254\./,                     // Link-local + cloud metadata
+  /^file:/i,                                    // File protocol
+];
+
+function isBlockedUrl(url: string): boolean {
+  return BLOCKED_URL_PATTERNS.some(pattern => pattern.test(url));
+}
+
 // Fetch proxy - bypasses CORS by making requests from main process
-// Used for IPTV provider API calls (user-configured URLs) - not restricted
+// Used for IPTV provider API calls (user-configured URLs)
+// Blocks internal network access unless allowLanSources is enabled in settings
 ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => {
   try {
+    // Check SSRF protection (unless LAN sources are allowed)
+    const settings = storage.getSettings();
+    if (!settings.allowLanSources && isBlockedUrl(url)) {
+      return {
+        success: false,
+        error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > Security if you trust this source.',
+      };
+    }
+
     const response = await electronNet.fetch(url, {
       method: options?.method || 'GET',
       headers: options?.headers,

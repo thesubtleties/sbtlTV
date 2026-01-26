@@ -198,6 +198,19 @@ function createCategoryId(sourceId: string, groupTitle: string): string {
  * Fetch and parse an M3U playlist from URL
  */
 export async function fetchAndParseM3U(url: string, sourceId: string): Promise<M3UParseResult> {
+  // Use Electron's fetch proxy if available (bypasses CORS + SSRF protection)
+  if (typeof window !== 'undefined' && window.fetchProxy) {
+    const result = await window.fetchProxy.fetch(url);
+    if (!result.success || !result.data) {
+      throw new Error(result.error || 'Failed to fetch M3U');
+    }
+    if (!result.data.ok) {
+      throw new Error(`Failed to fetch M3U: ${result.data.status} ${result.data.statusText}`);
+    }
+    return parseM3U(result.data.text, sourceId);
+  }
+
+  // Fallback to regular fetch (Node.js or when CORS is not an issue)
   const response = await fetch(url);
 
   if (!response.ok) {

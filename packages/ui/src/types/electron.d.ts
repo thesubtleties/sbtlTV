@@ -53,6 +53,7 @@ export interface AppSettings {
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   posterDbApiKey?: string;         // RatingPosterDB API key for rating posters
   rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
+  allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
 }
 
 export interface Source {
