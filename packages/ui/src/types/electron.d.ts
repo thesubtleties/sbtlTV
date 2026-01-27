@@ -6,6 +6,7 @@ export interface MpvStatus {
   muted: boolean;
   position: number;
   duration: number;
+  hwdec?: string;
 }
 
 export interface MpvResult {

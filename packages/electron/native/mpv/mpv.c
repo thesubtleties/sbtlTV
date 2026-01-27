@@ -4,6 +4,7 @@
 #include <mpv/render.h>
 #include <mpv/render_gl.h>
 #include <libavformat/avformat.h>
+#include <locale.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GL/gl.h>
@@ -65,6 +66,10 @@ static GLXFBConfig glx_fbconfig;
 static atomic_int render_pending;
 static char last_error[256];
 static int set_size_call_count = 0;
+static int g_file_loaded = 0;
+static int g_end_file_error = 0;
+static char g_end_file_error_text[512] = {0};
+static char g_last_log[1024] = {0};
 
 static void load_gl_fbo(void);
 static int gl_has_fbo(void);
@@ -530,6 +535,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
 
   set_last_error(NULL);
   set_size_call_count = 0;
+  setlocale(LC_NUMERIC, "C");
   if (avformat_network_init() < 0) {
     log_error("[libmpv] avformat_network_init failed");
   }
@@ -546,6 +552,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
 
   int ok = 1;
   set_option_string_optional("terminal", "no");
+  set_option_string_optional("config", "no");
   set_option_string_optional("msg-level", "all=warn");
   set_option_string_optional("idle", "yes");
   set_option_string_optional("keep-open", "yes");
@@ -581,7 +588,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
     return make_bool(env, 0);
   }
 
-  if (mpv_request_log_messages(mpv_instance, "warn") < 0) {
+  if (mpv_request_log_messages(mpv_instance, "info") < 0) {
     log_error("[libmpv] mpv_request_log_messages failed");
   }
 
@@ -876,7 +883,7 @@ static napi_value mpv_toggle_pause(napi_env env, napi_callback_info info) {
 
 static napi_value mpv_stop(napi_env env, napi_callback_info info) {
   (void)info;
-  return mpv_command_simple(env, "stop", "keep-open");
+  return mpv_command_simple(env, "stop", NULL);
 }
 
 static napi_value mpv_set_volume(napi_env env, napi_callback_info info) {
@@ -927,14 +934,20 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   int pause = 0;
   int mute = 0;
   double volume = 0.0;
-  double position = 0.0;
+  double position = -1.0;
   double duration = 0.0;
+  char hwdec_value[64] = "no";
 
   if (mpv_get_property(mpv_instance, "pause", MPV_FORMAT_FLAG, &pause) < 0) pause = 0;
   if (mpv_get_property(mpv_instance, "mute", MPV_FORMAT_FLAG, &mute) < 0) mute = 0;
   if (mpv_get_property(mpv_instance, "volume", MPV_FORMAT_DOUBLE, &volume) < 0) volume = 0.0;
-  if (mpv_get_property(mpv_instance, "time-pos", MPV_FORMAT_DOUBLE, &position) < 0) position = 0.0;
+  if (mpv_get_property(mpv_instance, "time-pos", MPV_FORMAT_DOUBLE, &position) < 0) position = -1.0;
   if (mpv_get_property(mpv_instance, "duration", MPV_FORMAT_DOUBLE, &duration) < 0) duration = 0.0;
+  char *hwdec_current = NULL;
+  if (mpv_get_property(mpv_instance, "hwdec-current", MPV_FORMAT_STRING, &hwdec_current) >= 0 && hwdec_current) {
+    snprintf(hwdec_value, sizeof(hwdec_value), "%s", hwdec_current);
+    mpv_free(hwdec_current);
+  }
 
   napi_value obj;
   if (napi_create_object(env, &obj) != napi_ok) return make_null(env);
@@ -944,18 +957,21 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   napi_value muted_val;
   napi_value position_val;
   napi_value duration_val;
+  napi_value hwdec_val;
 
-  if (napi_get_boolean(env, pause ? 0 : 1, &playing_val) != napi_ok) return make_null(env);
+  if (napi_get_boolean(env, (!pause && position >= 0.0) ? 1 : 0, &playing_val) != napi_ok) return make_null(env);
   if (napi_create_double(env, volume, &volume_val) != napi_ok) return make_null(env);
   if (napi_get_boolean(env, mute ? 1 : 0, &muted_val) != napi_ok) return make_null(env);
   if (napi_create_double(env, position, &position_val) != napi_ok) return make_null(env);
   if (napi_create_double(env, duration, &duration_val) != napi_ok) return make_null(env);
+  if (napi_create_string_utf8(env, hwdec_value, NAPI_AUTO_LENGTH, &hwdec_val) != napi_ok) return make_null(env);
 
   if (napi_set_named_property(env, obj, "playing", playing_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "volume", volume_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "muted", muted_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "position", position_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "duration", duration_val) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "hwdec", hwdec_val) != napi_ok) return make_null(env);
 
   return obj;
 }
@@ -973,40 +989,71 @@ static napi_value mpv_get_last_error(napi_env env, napi_callback_info info) {
   return value;
 }
 
-static napi_value mpv_poll_log(napi_env env, napi_callback_info info) {
-  (void)info;
-  if (!mpv_instance) return make_null(env);
+static void drain_mpv_events(void) {
+  if (!mpv_instance) return;
 
-  for (int i = 0; i < 16; i += 1) {
+  for (;;) {
     mpv_event *event = mpv_wait_event(mpv_instance, 0);
     if (!event || event->event_id == MPV_EVENT_NONE) break;
 
-    if (event->event_id == MPV_EVENT_LOG_MESSAGE) {
-      mpv_event_log_message *msg = (mpv_event_log_message *)event->data;
-      if (!msg || !msg->text) continue;
-      const char *level = msg->level ? msg->level : "log";
-      const char *prefix = msg->prefix ? msg->prefix : "";
-      const char *text = msg->text;
-      char buffer[512];
-      snprintf(buffer, sizeof(buffer), "%s: %s%s%s", level, prefix, prefix[0] ? ": " : "", text);
-
-      napi_value value;
-      if (napi_create_string_utf8(env, buffer, NAPI_AUTO_LENGTH, &value) != napi_ok) return make_null(env);
-      return value;
-    }
-
-    if (event->event_id == MPV_EVENT_END_FILE) {
-      mpv_event_end_file *end = (mpv_event_end_file *)event->data;
-      if (end && end->reason == MPV_END_FILE_REASON_ERROR) {
-        set_last_error_from_mpv("end-file", end->error);
-        napi_value value;
-        if (napi_create_string_utf8(env, last_error, NAPI_AUTO_LENGTH, &value) != napi_ok) return make_null(env);
-        return value;
+    switch (event->event_id) {
+      case MPV_EVENT_FILE_LOADED:
+        g_file_loaded = 1;
+        break;
+      case MPV_EVENT_END_FILE: {
+        mpv_event_end_file *end = (mpv_event_end_file *)event->data;
+        if (end && end->reason == MPV_END_FILE_REASON_ERROR) {
+          g_end_file_error = end->error;
+          snprintf(g_end_file_error_text, sizeof(g_end_file_error_text),
+            "%s", mpv_error_string(end->error));
+        }
+        break;
       }
+      case MPV_EVENT_LOG_MESSAGE: {
+        mpv_event_log_message *msg = (mpv_event_log_message *)event->data;
+        if (!msg || !msg->text) break;
+        snprintf(g_last_log, sizeof(g_last_log),
+          "[%s] %s: %s",
+          msg->level ? msg->level : "?",
+          msg->prefix ? msg->prefix : "mpv",
+          msg->text);
+        fprintf(stderr, "%s", g_last_log);
+        fflush(stderr);
+        break;
+      }
+      default:
+        break;
     }
   }
+}
 
-  return make_null(env);
+static napi_value mpv_poll_events(napi_env env, napi_callback_info info) {
+  (void)info;
+  if (!mpv_instance) return make_null(env);
+
+  drain_mpv_events();
+
+  napi_value obj;
+  if (napi_create_object(env, &obj) != napi_ok) return make_null(env);
+
+  napi_value v;
+  if (napi_get_boolean(env, g_file_loaded, &v) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "fileLoaded", v) != napi_ok) return make_null(env);
+
+  if (napi_create_int32(env, g_end_file_error, &v) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "endFileErrorCode", v) != napi_ok) return make_null(env);
+
+  if (napi_create_string_utf8(env, g_end_file_error_text, NAPI_AUTO_LENGTH, &v) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "endFileError", v) != napi_ok) return make_null(env);
+
+  if (napi_create_string_utf8(env, g_last_log, NAPI_AUTO_LENGTH, &v) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "lastLog", v) != napi_ok) return make_null(env);
+
+  g_file_loaded = 0;
+  g_end_file_error = 0;
+  g_end_file_error_text[0] = '\0';
+
+  return obj;
 }
 
 static napi_value init(napi_env env, napi_value exports) {
@@ -1026,7 +1073,7 @@ static napi_value init(napi_env env, napi_value exports) {
     { "getStatus", NULL, mpv_get_status, NULL, NULL, NULL, napi_default, NULL },
     { "isInitialized", NULL, mpv_is_initialized, NULL, NULL, NULL, napi_default, NULL },
     { "getLastError", NULL, mpv_get_last_error, NULL, NULL, NULL, napi_default, NULL },
-    { "pollLog", NULL, mpv_poll_log, NULL, NULL, NULL, napi_default, NULL },
+    { "pollEvents", NULL, mpv_poll_events, NULL, NULL, NULL, napi_default, NULL },
   };
 
   if (napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors) != napi_ok) {

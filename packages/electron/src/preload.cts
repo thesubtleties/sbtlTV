@@ -10,6 +10,7 @@ export interface MpvStatus {
   muted: boolean;
   position: number;
   duration: number;
+  hwdec?: string;
 }
 
 export interface MpvResult {
@@ -143,12 +144,12 @@ const startStatusPolling = () => {
   if (mpvPollTimer || !mpvNative) return;
   mpvPollTimer = setInterval(() => {
     try {
-      const logLine = mpvNative.pollLog?.();
-      if (logLine) {
-        console.warn('[mpv]', logLine);
-        if (typeof logLine === 'string' && (logLine.startsWith('error') || logLine.startsWith('fatal'))) {
-          emitError(logLine);
-        }
+      const events = mpvNative.pollEvents?.();
+      if (events?.lastLog) {
+        console.warn('[mpv]', events.lastLog);
+      }
+      if (events?.endFileError) {
+        emitError(events.endFileError);
       }
       const status = mpvNative.getStatus?.();
       if (status) emitStatus(status as MpvStatus);
@@ -163,9 +164,23 @@ const mpvApi: MpvApi = isLinux
   ? {
     load: async (url: string) => {
       if (!mpvNative?.isInitialized?.()) return { error: 'libmpv not initialized' };
-      if (mpvNative.load(url)) return { success: true };
-      const detail = mpvNative.getLastError?.();
-      return { error: detail ? `mpv load failed: ${detail}` : 'mpv load failed' };
+      if (!mpvNative.load(url)) {
+        const detail = mpvNative.getLastError?.();
+        return { error: detail ? `mpv load failed: ${detail}` : 'mpv load failed' };
+      }
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        const events = mpvNative.pollEvents?.();
+        if (events?.lastLog) console.warn('[mpv]', events.lastLog);
+        if (events?.endFileError) {
+          return { error: events.endFileError };
+        }
+        if (events?.fileLoaded) {
+          return { success: true };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return { error: 'Timed out waiting for mpv to load stream' };
     },
     play: async () => (mpvNative?.play?.()
       ? { success: true }
