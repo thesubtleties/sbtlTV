@@ -27,6 +27,7 @@ export interface MpvApi {
   initRenderer?: (width: number, height: number) => { buffer: ArrayBuffer; width: number; height: number; stride: number } | null;
   setSize?: (width: number, height: number) => { buffer: ArrayBuffer; width: number; height: number; stride: number } | null;
   renderFrame?: () => boolean;
+  attachCanvas?: (canvasId: string) => boolean;
   isLibmpv?: boolean;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;

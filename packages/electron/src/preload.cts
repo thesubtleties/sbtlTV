@@ -25,6 +25,8 @@ const renderMaxWidth = parseEnvInt(process.env.SBTLTV_RENDER_MAX_WIDTH, 1920);
 const renderMaxHeight = parseEnvInt(process.env.SBTLTV_RENDER_MAX_HEIGHT, 1080);
 const hwdecGraceMs = parseEnvInt(process.env.SBTLTV_HWDEC_GRACE_MS, 5000);
 const allowSwDec = process.env.SBTLTV_ALLOW_SWDEC === '1';
+const enforceHwdec = process.env.SBTLTV_HWDEC_ENFORCE !== '0';
+const renderFlipY = process.env.SBTLTV_RENDER_FLIP_Y === '1';
 
 const serializeArg = (arg: unknown): unknown => {
   if (arg instanceof Error) {
@@ -46,6 +48,14 @@ const sendLog = (level: LogLevel, tag: string, args: unknown[]): void => {
 
 const logPreload = (level: LogLevel, ...args: unknown[]): void => {
   sendLog(level, 'preload', args);
+  const logger = {
+    error: console.error,
+    warn: console.warn,
+    info: console.info,
+    debug: console.debug,
+    trace: console.trace,
+  }[level];
+  logger('[preload]', ...args);
 };
 
 const patchRendererConsole = (): void => {
@@ -116,6 +126,7 @@ export interface MpvApi {
   initRenderer?: (width: number, height: number) => { buffer: ArrayBuffer; width: number; height: number; stride: number } | null;
   setSize?: (width: number, height: number) => { buffer: ArrayBuffer; width: number; height: number; stride: number } | null;
   renderFrame?: () => boolean;
+  attachCanvas?: (canvasId: string) => boolean;
   isLibmpv?: boolean;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
@@ -202,6 +213,13 @@ type PendingLoad = {
   url: string;
 };
 let pendingLoad: PendingLoad | null = null;
+let renderCanvas: HTMLCanvasElement | null = null;
+let renderCtx: CanvasRenderingContext2D | null = null;
+let renderImage: ImageData | null = null;
+let activeFrame: MpvFrame | null = null;
+let activeSrc: Uint8Array | null = null;
+let renderTimer: NodeJS.Timeout | null = null;
+let renderObserver: ResizeObserver | null = null;
 
 if (isLinux) {
   const prependEnvPath = (key: string, value: string): void => {
@@ -216,12 +234,28 @@ if (isLinux) {
   if (process.env.SBTLTV_USE_SYSTEM_LIBMPV !== '1') {
     const packagedLibDir = path.join(process.resourcesPath, 'native', 'lib');
     const distLibDir = path.join(__dirname, '../dist/native/lib');
-    if (fs.existsSync(packagedLibDir)) {
-      prependEnvPath('LD_LIBRARY_PATH', packagedLibDir);
-      process.env.SBTLTV_LIBMPV_PATH = path.join(packagedLibDir, 'libmpv.so.2');
-    } else if (fs.existsSync(distLibDir)) {
-      prependEnvPath('LD_LIBRARY_PATH', distLibDir);
-      process.env.SBTLTV_LIBMPV_PATH = path.join(distLibDir, 'libmpv.so.2');
+    const libDir = fs.existsSync(packagedLibDir) ? packagedLibDir : (fs.existsSync(distLibDir) ? distLibDir : null);
+    if (libDir) {
+      prependEnvPath('LD_LIBRARY_PATH', libDir);
+      const libmpvPath = path.join(libDir, 'libmpv.so.2');
+      if (fs.existsSync(libmpvPath)) {
+        process.env.SBTLTV_LIBMPV_PATH = libmpvPath;
+      } else {
+        logPreload('warn', 'libmpv not found in bundled lib dir', { libDir, libmpvPath });
+      }
+      try {
+        const entries = fs.readdirSync(libDir);
+        const ffmpegPresence = {
+          avformat: entries.some((entry) => entry.startsWith('libavformat.so')),
+          avcodec: entries.some((entry) => entry.startsWith('libavcodec.so')),
+          avutil: entries.some((entry) => entry.startsWith('libavutil.so')),
+        };
+        if (!ffmpegPresence.avformat || !ffmpegPresence.avcodec || !ffmpegPresence.avutil) {
+          logPreload('warn', 'bundled ffmpeg libs missing', { libDir, ...ffmpegPresence });
+        }
+      } catch (error) {
+        logPreload('warn', 'failed to scan bundled lib dir', { libDir, error });
+      }
     }
   }
 
@@ -229,6 +263,11 @@ if (isLinux) {
   const distPath = path.join(__dirname, '../dist/native/mpv.node');
   const devPath = path.join(__dirname, '../native/mpv/build/Release/mpv.node');
   mpvAddonPath = fs.existsSync(packagedPath) ? packagedPath : (fs.existsSync(distPath) ? distPath : devPath);
+  logPreload('info', 'libmpv paths', {
+    mpvAddonPath,
+    libmpvPath: process.env.SBTLTV_LIBMPV_PATH,
+    ldLibraryPath: process.env.LD_LIBRARY_PATH,
+  });
 }
 
 const emitReady = (ready: boolean) => {
@@ -242,6 +281,71 @@ const emitStatus = (status: MpvStatus) => {
 
 const emitError = (message: string) => {
   errorListeners.forEach((callback) => callback(message));
+};
+
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+const stopRenderLoop = () => {
+  if (renderTimer) {
+    clearInterval(renderTimer);
+    renderTimer = null;
+  }
+};
+
+const startRenderLoop = () => {
+  if (renderTimer) return;
+  const intervalMs = Math.max(1, Math.floor(1000 / Math.max(1, renderFps)));
+  renderTimer = setInterval(() => {
+    if (!mpvNative || !renderCtx || !renderCanvas || !renderImage || !activeFrame || !activeSrc) return;
+    const ok = mpvNative.renderFrame?.();
+    if (!ok) {
+      const detail = mpvNative.getLastError?.();
+      if (detail) {
+        logPreload('warn', 'mpv renderFrame failed', detail);
+      }
+      return;
+    }
+    const rowBytes = activeFrame.width * 4;
+    const stride = activeFrame.stride;
+    const dst = renderImage.data;
+    for (let y = 0; y < activeFrame.height; y += 1) {
+      const srcOff = y * stride;
+      const dstRow = renderFlipY ? activeFrame.height - 1 - y : y;
+      const dstOff = dstRow * rowBytes;
+      dst.set(activeSrc.subarray(srcOff, srcOff + rowBytes), dstOff);
+    }
+    renderCtx.putImageData(renderImage, 0, 0);
+  }, intervalMs);
+};
+
+const resizeFromCanvasRect = () => {
+  if (!renderCanvas || !renderCtx || !mpvNative) return;
+  const rect = renderCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const rawWidth = Math.max(1, Math.floor(rect.width * dpr));
+  const rawHeight = Math.max(1, Math.floor(rect.height * dpr));
+  const maxWidth = renderMaxWidth > 0 ? renderMaxWidth : rawWidth;
+  const maxHeight = renderMaxHeight > 0 ? renderMaxHeight : rawHeight;
+  const scale = Math.min(1, maxWidth / rawWidth, maxHeight / rawHeight);
+  const width = clamp(Math.floor(rawWidth * scale), 1, Math.max(1, maxWidth));
+  const height = clamp(Math.floor(rawHeight * scale), 1, Math.max(1, maxHeight));
+    const frame = mpvNative.setSize?.(width, height) as MpvFrame | null;
+    if (!frame) {
+      const detail = mpvNative.getLastError?.();
+      emitError(detail ? `libmpv setSize failed: ${detail}` : 'libmpv setSize failed');
+      return;
+    }
+    logPreload('info', 'libmpv setSize', {
+      width,
+      height,
+      stride: frame.stride,
+      bufferBytes: frame.stride * frame.height,
+    });
+    activeFrame = frame;
+    activeSrc = new Uint8Array(frame.buffer);
+    renderCanvas.width = frame.width;
+    renderCanvas.height = frame.height;
+    renderImage = renderCtx.createImageData(frame.width, frame.height);
 };
 
 const settlePendingLoad = (result: MpvResult) => {
@@ -293,19 +397,40 @@ const startStatusPolling = () => {
       }
       if (events?.endFileError) {
         if (events?.lastErrorLog) lastMpvErrorLog = events.lastErrorLog;
+        logPreload('warn', 'mpv end-file error', {
+          error: events.endFileError,
+          code: events.endFileErrorCode,
+          lastErrorLog: events.lastErrorLog,
+          url: pendingLoad?.url,
+        });
         emitError(events?.lastErrorLog || events.endFileError);
         settlePendingLoad({ error: events?.lastErrorLog || events.endFileError });
         hwdecDeadline = 0;
       } else if (events?.lastErrorLog && events.lastErrorLog !== lastMpvErrorLog) {
         lastMpvErrorLog = events.lastErrorLog;
-        emitError(events.lastErrorLog);
-        settlePendingLoad({ error: events.lastErrorLog });
+        logPreload('warn', 'mpv error log', events.lastErrorLog);
       }
       if (events?.fileLoaded) {
+        logPreload('info', 'mpv file loaded', { url: pendingLoad?.url });
         settlePendingLoad({ success: true });
       }
       const status = mpvNative.getStatus?.();
       if (status) {
+        if (!allowSwDec && !hwdecSatisfied && !hwdecDeadline && status.position >= 0) {
+          hwdecDeadline = Date.now() + hwdecGraceMs;
+          logPreload('info', 'hwdec enforcement armed', {
+            hwdecCurrent: status.hwdec ?? 'no',
+            graceMs: hwdecGraceMs,
+          });
+        }
+        if (pendingLoad && status.position >= 0) {
+          logPreload('info', 'mpv load settled from status', {
+            url: pendingLoad.url,
+            position: status.position,
+            duration: status.duration,
+          });
+          settlePendingLoad({ success: true });
+        }
         const hwdecValue = (status.hwdec ?? '').toLowerCase();
         if (hwdecValue && hwdecValue !== 'no') {
           hwdecSatisfied = true;
@@ -315,18 +440,29 @@ const startStatusPolling = () => {
           const message = `Hardware decode required but inactive (hwdec-current: ${status.hwdec ?? 'no'})`;
           if (message !== lastHwdecError) {
             lastHwdecError = message;
-            emitError(message);
+            if (enforceHwdec) {
+              emitError(message);
+            }
+            logPreload(enforceHwdec ? 'warn' : 'info', 'hwdec enforcement', {
+              enforced: enforceHwdec,
+              hwdecCurrent: status.hwdec ?? 'no',
+              allowSwDec,
+              graceMs: hwdecGraceMs,
+            });
           }
-          try {
-            mpvNative?.stop?.();
-          } catch (error) {
-            logPreload('error', 'mpv stop failed', error);
+          if (enforceHwdec) {
+            try {
+              mpvNative?.stop?.();
+            } catch (error) {
+              logPreload('error', 'mpv stop failed', error);
+            }
           }
           hwdecDeadline = 0;
         }
         emitStatus(status as MpvStatus);
       }
       if (pendingLoad && Date.now() > pendingLoad.deadline) {
+        logPreload('warn', 'mpv load timed out', { url: pendingLoad.url });
         settlePendingLoad({ error: 'Timed out waiting for mpv to load stream' });
       }
     } catch (error) {
@@ -348,7 +484,7 @@ const mpvApi: MpvApi = isLinux
       }
       lastMpvErrorLog = '';
       if (!allowSwDec) {
-        hwdecDeadline = Date.now() + hwdecGraceMs;
+        hwdecDeadline = 0;
         hwdecSatisfied = false;
         lastHwdecError = '';
       }
@@ -357,7 +493,7 @@ const mpvApi: MpvApi = isLinux
         if (pendingLoad) {
           pendingLoad.resolve({ error: 'Load superseded by another request' });
         }
-        pendingLoad = { resolve, deadline: Date.now() + 10000, url };
+        pendingLoad = { resolve, deadline: Date.now() + 30000, url };
       });
     },
     play: async () => (mpvNative?.play?.()
@@ -392,11 +528,14 @@ const mpvApi: MpvApi = isLinux
       }
       return mpvNative.getStatus() as MpvStatus;
     },
-    initRenderer: (width: number, height: number) => {
+    initRenderer: () => null,
+    setSize: () => null,
+    renderFrame: () => false,
+    attachCanvas: (canvasId: string) => {
       if (!ensureMpvNative()) {
         logPreload('error', 'libmpv not available');
         emitError('libmpv not available - install libmpv-dev');
-        return null;
+        return false;
       }
       if (!mpvNative.isInitialized?.()) {
         const ok = mpvNative.init?.();
@@ -404,27 +543,39 @@ const mpvApi: MpvApi = isLinux
           const detail = mpvNative.getLastError?.();
           logPreload('error', 'libmpv init failed', detail);
           emitError(detail ? `libmpv init failed: ${detail}` : 'libmpv init failed');
-          return null;
+          return false;
         }
       }
-      const frame = mpvNative.setSize?.(width, height) as MpvFrame | null;
-      if (!frame) {
-        const detail = mpvNative.getLastError?.();
-        const message = detail ? `libmpv setSize failed: ${detail}` : 'libmpv setSize failed: unknown';
-        logPreload('error', message);
-        emitError(message);
-        return null;
+      const el = document.getElementById(canvasId);
+      if (!(el instanceof HTMLCanvasElement)) {
+        emitError(`attachCanvas: element #${canvasId} is not a canvas`);
+        return false;
       }
-      logPreload('info', 'libmpv initRenderer ok', { width, height });
-      emitReady(true);
+      renderCanvas = el;
+      renderCtx = el.getContext('2d', { alpha: false });
+      if (!renderCtx) {
+        emitError('attachCanvas: could not get 2D context');
+        return false;
+      }
+      logPreload('info', 'attachCanvas', {
+        canvasId,
+        rect: renderCanvas.getBoundingClientRect(),
+        dpr: window.devicePixelRatio || 1,
+      });
+      renderCanvas.style.width = '100%';
+      renderCanvas.style.height = '100%';
+      if (renderObserver) {
+        renderObserver.disconnect();
+        renderObserver = null;
+      }
+      renderObserver = new ResizeObserver(() => resizeFromCanvasRect());
+      renderObserver.observe(renderCanvas);
+      resizeFromCanvasRect();
       startStatusPolling();
-      return frame;
+      startRenderLoop();
+      emitReady(true);
+      return true;
     },
-    setSize: (width: number, height: number) => {
-      if (!mpvNative?.setSize) return null;
-      return mpvNative.setSize(width, height) as MpvFrame | null;
-    },
-    renderFrame: () => (mpvNative?.renderFrame?.() ? true : false),
     isLibmpv: true,
     onReady: (callback: (ready: boolean) => void) => {
       readyListeners.add(callback);
@@ -444,6 +595,11 @@ const mpvApi: MpvApi = isLinux
         clearInterval(mpvPollTimer);
         mpvPollTimer = null;
       }
+      if (renderObserver) {
+        renderObserver.disconnect();
+        renderObserver = null;
+      }
+      stopRenderLoop();
     },
   }
   : {
@@ -508,7 +664,7 @@ contextBridge.exposeInMainWorld('appConfig', {
     maxHeight: renderMaxHeight,
   },
   hwdec: {
-    required: !allowSwDec,
+    required: !allowSwDec && enforceHwdec,
     graceMs: hwdecGraceMs,
   },
 });

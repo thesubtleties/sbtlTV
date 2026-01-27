@@ -97,6 +97,22 @@ static void log_error_message(const char *message) {
   fflush(stderr);
 }
 
+static void log_info_message(const char *message) {
+  if (message && message[0]) {
+    fprintf(stderr, "%s\n", message);
+  }
+  fflush(stderr);
+}
+
+static void log_versions(void) {
+  const char *ffmpeg_ver = av_version_info();
+  unsigned avformat_ver = avformat_version();
+  fprintf(stderr, "[libmpv] mpv client api: %lu\n", (unsigned long)mpv_client_api_version());
+  if (ffmpeg_ver) fprintf(stderr, "[libmpv] ffmpeg version: %s\n", ffmpeg_ver);
+  fprintf(stderr, "[libmpv] avformat version: %u\n", avformat_ver);
+  fflush(stderr);
+}
+
 static void set_last_error_from_mpv(const char *context, int code) {
   const char *msg = mpv_error_string(code);
   if (!msg) msg = "unknown";
@@ -124,6 +140,16 @@ static napi_value make_null(napi_env env) {
 
 static void log_error(const char *message) {
   log_error_message(message);
+}
+
+static int env_is_truthy(const char *value) {
+  if (!value || !value[0]) return 0;
+  return !strcasecmp(value, "1") || !strcasecmp(value, "true") || !strcasecmp(value, "yes");
+}
+
+static int env_is_falsey(const char *value) {
+  if (!value || !value[0]) return 0;
+  return !strcasecmp(value, "0") || !strcasecmp(value, "false") || !strcasecmp(value, "no");
 }
 
 static int set_option_string_required(const char *name, const char *value) {
@@ -224,6 +250,8 @@ static int init_egl_x11(void) {
   egl_x11_display = XOpenDisplay(NULL);
   if (!egl_x11_display) return 0;
   if (!egl_init_display((EGLNativeDisplayType)egl_x11_display)) {
+    fprintf(stderr, "[libmpv] EGL X11 init failed (egl error: 0x%04x)\n", eglGetError());
+    fflush(stderr);
     XCloseDisplay(egl_x11_display);
     egl_x11_display = NULL;
     return 0;
@@ -237,6 +265,8 @@ static int init_egl_wayland(void) {
   egl_wl_display = wl_display_connect(NULL);
   if (!egl_wl_display) return 0;
   if (!egl_init_display((EGLNativeDisplayType)egl_wl_display)) {
+    fprintf(stderr, "[libmpv] EGL Wayland init failed (egl error: 0x%04x)\n", eglGetError());
+    fflush(stderr);
     wl_display_disconnect(egl_wl_display);
     egl_wl_display = NULL;
     return 0;
@@ -293,12 +323,16 @@ static int init_glx(void) {
 
   glx_context = glXCreateNewContext(glx_display, glx_fbconfig, GLX_RGBA_TYPE, NULL, True);
   if (!glx_context) {
+    fprintf(stderr, "[libmpv] GLX context create failed\n");
+    fflush(stderr);
     XCloseDisplay(glx_display);
     glx_display = NULL;
     return 0;
   }
 
   if (!glx_create_pbuffer(1, 1)) {
+    fprintf(stderr, "[libmpv] GLX pbuffer create failed\n");
+    fflush(stderr);
     glXDestroyContext(glx_display, glx_context);
     glx_context = NULL;
     XCloseDisplay(glx_display);
@@ -315,9 +349,10 @@ static int init_gl_context(void) {
   const char *display = getenv("DISPLAY");
   const char *wayland = getenv("WAYLAND_DISPLAY");
   const char *session = getenv("XDG_SESSION_TYPE");
+  int prefer_wayland = (wayland && wayland[0]) || (session && strcmp(session, "wayland") == 0);
 
+  if (prefer_wayland && init_egl_wayland()) return 1;
   if (display && init_egl_x11()) return 1;
-  if ((wayland || (session && strcmp(session, "wayland") == 0)) && init_egl_wayland()) return 1;
   if (display && init_glx()) return 1;
 
   log_error("[libmpv] Failed to initialize OpenGL context (x11egl, wayland, x11)");
@@ -328,12 +363,20 @@ static int init_gl_context(void) {
 static int make_current(void) {
   if (gl_ctx == CTX_EGL_X11 || gl_ctx == CTX_EGL_WAYLAND) {
     if (egl_display == EGL_NO_DISPLAY || egl_context == EGL_NO_CONTEXT) return 0;
-    if (!eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context)) return 0;
+    if (!eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context)) {
+      fprintf(stderr, "[libmpv] eglMakeCurrent failed (egl error: 0x%04x)\n", eglGetError());
+      fflush(stderr);
+      return 0;
+    }
     return 1;
   }
   if (gl_ctx == CTX_GLX) {
     if (!glx_display || !glx_context || !glx_pbuffer) return 0;
-    if (!glXMakeContextCurrent(glx_display, glx_pbuffer, glx_pbuffer, glx_context)) return 0;
+    if (!glXMakeContextCurrent(glx_display, glx_pbuffer, glx_pbuffer, glx_context)) {
+      fprintf(stderr, "[libmpv] glXMakeContextCurrent failed\n");
+      fflush(stderr);
+      return 0;
+    }
     return 1;
   }
   return 0;
@@ -540,6 +583,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   set_last_error(NULL);
   set_size_call_count = 0;
   setlocale(LC_NUMERIC, "C");
+  log_versions();
   if (avformat_network_init() < 0) {
     log_error("[libmpv] avformat_network_init failed");
   }
@@ -581,8 +625,10 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   if (ytdl_path && ytdl_path[0]) {
     set_option_string_optional("ytdl-path", ytdl_path);
   }
-  set_option_string_optional("hwdec", "auto-safe");
-
+  const char *video_rotate = getenv("SBTLTV_VIDEO_ROTATE");
+  if (video_rotate && video_rotate[0]) {
+    set_option_string_optional("video-rotate", video_rotate);
+  }
   ok &= set_option_string_required("vo", "libmpv");
   ok &= set_option_string_required("gpu-api", "opengl");
 
@@ -595,8 +641,17 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   }
 
   const char *hwdec = getenv("SBTLTV_HWDEC");
-  if (!hwdec || !hwdec[0]) hwdec = "auto-safe";
+  const char *enforce_env = getenv("SBTLTV_HWDEC_ENFORCE");
+  int enforce_hwdec = !env_is_falsey(enforce_env);
+  if (!hwdec || !hwdec[0]) hwdec = enforce_hwdec ? "vaapi" : "auto-safe";
   set_option_string_optional("hwdec", hwdec);
+  {
+    char summary[256];
+    snprintf(summary, sizeof(summary), "[libmpv] options: vo=libmpv gpu-api=opengl gpu-context=%s hwdec=%s",
+      gl_ctx == CTX_EGL_X11 ? "x11egl" : (gl_ctx == CTX_EGL_WAYLAND ? "wayland" : (gl_ctx == CTX_GLX ? "x11" : "auto")),
+      hwdec);
+    log_info_message(summary);
+  }
 
   if (!ok) {
     if (!last_error[0]) {
@@ -656,6 +711,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
 
   if (mpv_render_context_create(&mpv_render, mpv_instance, params) < 0) {
     set_last_error("mpv_render_context_create failed");
+    log_error("[libmpv] mpv_render_context_create failed");
     mpv_terminate_destroy(mpv_instance);
     mpv_instance = NULL;
     mpv_render = NULL;
@@ -810,15 +866,16 @@ static napi_value mpv_render_frame(napi_env env, napi_callback_info info) {
     return make_bool(env, 0);
   }
 
-  if (!atomic_exchange(&render_pending, 0)) {
-    return make_bool(env, 0);
-  }
+  atomic_exchange(&render_pending, 0);
 
   if (!make_current()) return make_bool(env, 0);
 
   uint64_t flags = mpv_render_context_update(mpv_render);
-  if (!(flags & MPV_RENDER_UPDATE_FRAME)) {
-    return make_bool(env, 0);
+  static uint64_t last_flags = 0;
+  if (flags != last_flags) {
+    fprintf(stderr, "[libmpv] render flags: 0x%llx\n", (unsigned long long)flags);
+    fflush(stderr);
+    last_flags = flags;
   }
 
   if (!fbo) return make_bool(env, 0);
@@ -830,7 +887,8 @@ static napi_value mpv_render_frame(napi_env env, napi_callback_info info) {
     .internal_format = 0,
   };
 
-  int flip = 1;
+  const char *flip_env = getenv("SBTLTV_RENDER_FLIP_Y");
+  int flip = env_is_truthy(flip_env) ? 0 : 1;
   mpv_render_param params[] = {
     { MPV_RENDER_PARAM_OPENGL_FBO, &target },
     { MPV_RENDER_PARAM_FLIP_Y, &flip },
@@ -843,6 +901,13 @@ static napi_value mpv_render_frame(napi_env env, napi_callback_info info) {
   gl_bind_framebuffer(GL_FRAMEBUFFER, fbo);
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
   glReadPixels(0, 0, frame_width, frame_height, GL_RGBA, GL_UNSIGNED_BYTE, frame_buffer);
+  {
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+      fprintf(stderr, "[libmpv] glReadPixels error: 0x%04x\n", err);
+      fflush(stderr);
+    }
+  }
 
   return make_bool(env, 1);
 }
@@ -1081,6 +1146,9 @@ static void drain_mpv_events(void) {
         mpv_event_end_file *end = (mpv_event_end_file *)event->data;
         if (end && end->reason == MPV_END_FILE_REASON_ERROR) {
           g_end_file_error = end->error;
+          fprintf(stderr, "[libmpv] end-file error: %s (%d)\n",
+            mpv_error_string(end->error), end->error);
+          fflush(stderr);
           if (g_last_error_log[0]) {
             snprintf(g_end_file_error_text, sizeof(g_end_file_error_text),
               "%s", g_last_error_log);

@@ -65,7 +65,7 @@ Notes:
 
 ## IPTV feature set → FFmpeg components (baseline)
 - Protocols: `file,pipe,http,https,tcp,tls,crypto,udp`
-- Demuxers: `hls,mpegts,mpegtsraw,mov,aac,mp3`
+- Demuxers: `hls,mpegts,mpegtsraw,mov,aac,mp3,dash`
 - Decoders: `h264,hevc,aac,mp3,opus,vorbis,mpeg2video`
 - Parsers: `h264,hevc,aac,opus,vorbis,mpegaudio`
 - Bitstream filters: `aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb`

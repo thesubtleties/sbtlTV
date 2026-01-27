@@ -59,7 +59,7 @@ vite.on('exit', (code) => {
 
   const distLibDir = path.join(__dirname, '..', 'packages', 'electron', 'dist', 'native', 'lib');
   const preloadLibs = (() => {
-    if (process.env.SBTLTV_PRELOAD_FFMPEG !== '1') return null;
+    if (process.env.SBTLTV_PRELOAD_FFMPEG === '0') return null;
     if (!fs.existsSync(distLibDir)) return null;
     const libs = [
       'libavutil.so.60',

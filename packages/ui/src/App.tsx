@@ -124,8 +124,6 @@ function App() {
   // Track if mouse is hovering over controls (prevents auto-hide)
   const controlsHoveredRef = useRef(false);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
   // Set up mpv event listeners
   useEffect(() => {
     if (!window.mpv) {
@@ -178,88 +176,11 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!window.platform?.isLinux || !window.mpv?.initRenderer || !window.mpv?.renderFrame || !window.mpv?.setSize) {
-      return;
+    if (!window.platform?.isLinux || !window.mpv?.isLibmpv || !window.mpv?.attachCanvas) return;
+    const ok = window.mpv.attachCanvas('mpv-canvas');
+    if (!ok) {
+      setError('Failed to attach mpv canvas');
     }
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let initialized = false;
-    let imageData: ImageData | null = null;
-    let rafId = 0;
-    let destroyed = false;
-
-    const initFrame = (width: number, height: number) => {
-      if (!initialized) {
-        const frame = window.mpv?.initRenderer?.(width, height);
-        if (!frame) return;
-        initialized = true;
-        canvas.width = frame.width;
-        canvas.height = frame.height;
-        canvas.style.width = '100%';
-        canvas.style.height = '100%';
-        imageData = new ImageData(new Uint8ClampedArray(frame.buffer), frame.width, frame.height);
-        return;
-      }
-
-      const frame = window.mpv?.setSize?.(width, height);
-      if (!frame) return;
-      canvas.width = frame.width;
-      canvas.height = frame.height;
-      canvas.style.width = '100%';
-      canvas.style.height = '100%';
-      imageData = new ImageData(new Uint8ClampedArray(frame.buffer), frame.width, frame.height);
-    };
-
-    const resize = () => {
-      const rect = canvas.parentElement?.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      const rawWidth = Math.max(1, Math.floor((rect?.width ?? window.innerWidth) * dpr));
-      const rawHeight = Math.max(1, Math.floor((rect?.height ?? window.innerHeight) * dpr));
-      const maxWidth = window.appConfig?.render?.maxWidth ?? 1920;
-      const maxHeight = window.appConfig?.render?.maxHeight ?? 1080;
-      const capWidth = maxWidth > 0 ? maxWidth : rawWidth;
-      const capHeight = maxHeight > 0 ? maxHeight : rawHeight;
-      const scale = Math.min(1, capWidth / rawWidth, capHeight / rawHeight);
-      const width = Math.max(1, Math.floor(rawWidth * scale));
-      const height = Math.max(1, Math.floor(rawHeight * scale));
-      initFrame(width, height);
-    };
-
-    const observer = new ResizeObserver(() => resize());
-    observer.observe(canvas.parentElement ?? canvas);
-    window.addEventListener('resize', resize);
-    resize();
-
-    const frameInterval = 1000 / Math.max(1, window.appConfig?.render?.fps ?? 30);
-    let lastFrameTime = 0;
-
-    const render = () => {
-      if (destroyed) return;
-      const now = performance.now();
-      if (now - lastFrameTime < frameInterval) {
-        rafId = requestAnimationFrame(render);
-        return;
-      }
-      lastFrameTime = now;
-      if (imageData && window.mpv?.renderFrame?.()) {
-        ctx.putImageData(imageData, 0, 0);
-      }
-      rafId = requestAnimationFrame(render);
-    };
-
-    render();
-
-    return () => {
-      destroyed = true;
-      observer.disconnect();
-      window.removeEventListener('resize', resize);
-      cancelAnimationFrame(rafId);
-    };
   }, []);
 
   // Auto-hide controls after 3 seconds of no activity
@@ -488,7 +409,7 @@ function App() {
       {/* Background - transparent over mpv */}
       <div className="video-background">
         {window.platform?.isLinux && window.mpv?.isLibmpv && (
-          <canvas className="video-canvas" ref={canvasRef} />
+          <canvas className="video-canvas" id="mpv-canvas" />
         )}
         {!currentChannel && (
           <div className="placeholder">

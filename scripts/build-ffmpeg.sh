@@ -6,9 +6,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RAW_PLATFORM="${PLATFORM:-$(uname -s)}"
 case "$RAW_PLATFORM" in
-  Linux) PLATFORM="linux" ;;
-  Darwin) PLATFORM="macos" ;;
-  *) echo "Unsupported platform: $RAW_PLATFORM" >&2; exit 1 ;;
+Linux) PLATFORM="linux" ;;
+Darwin) PLATFORM="macos" ;;
+*)
+	echo "Unsupported platform: $RAW_PLATFORM" >&2
+	exit 1
+	;;
 esac
 
 FFMPEG_VERSION="${FFMPEG_VERSION:-8.0.1}"
@@ -18,8 +21,8 @@ FFMPEG_STATIC="${FFMPEG_STATIC:-0}"
 DEFAULT_PREFIX="$BUNDLE_ROOT/$PLATFORM/ffmpeg"
 DEFAULT_BUILD_ROOT="$REPO_ROOT/.build/ffmpeg-build-$PLATFORM"
 if [ "$FFMPEG_STATIC" = "1" ]; then
-  DEFAULT_PREFIX="$BUNDLE_ROOT/$PLATFORM/ffmpeg-static"
-  DEFAULT_BUILD_ROOT="$REPO_ROOT/.build/ffmpeg-build-$PLATFORM-static"
+	DEFAULT_PREFIX="$BUNDLE_ROOT/$PLATFORM/ffmpeg-static"
+	DEFAULT_BUILD_ROOT="$REPO_ROOT/.build/ffmpeg-build-$PLATFORM-static"
 fi
 
 FFMPEG_PREFIX="${FFMPEG_PREFIX:-$DEFAULT_PREFIX}"
@@ -34,12 +37,12 @@ TARBALL_URL="https://ffmpeg.org/releases/${TARBALL}"
 mkdir -p "$BUNDLE_ROOT" "$BUILD_ROOT" "$(dirname "$SRC_ROOT")"
 
 if [ ! -d "$SRC_ROOT" ]; then
-  TMP_DIR="$(mktemp -d)"
-  echo "Downloading FFmpeg $FFMPEG_VERSION..."
-  curl -L -o "$TMP_DIR/$TARBALL" "$TARBALL_URL"
-  tar -xf "$TMP_DIR/$TARBALL" -C "$TMP_DIR"
-  mv "$TMP_DIR/ffmpeg-$FFMPEG_VERSION" "$SRC_ROOT"
-  rm -rf "$TMP_DIR"
+	TMP_DIR="$(mktemp -d)"
+	echo "Downloading FFmpeg $FFMPEG_VERSION..."
+	curl -L -o "$TMP_DIR/$TARBALL" "$TARBALL_URL"
+	tar -xf "$TMP_DIR/$TARBALL" -C "$TMP_DIR"
+	mv "$TMP_DIR/ffmpeg-$FFMPEG_VERSION" "$SRC_ROOT"
+	rm -rf "$TMP_DIR"
 fi
 
 EXTRA_CFLAGS=("-fPIC" "-O2")
@@ -47,70 +50,73 @@ EXTRA_LDFLAGS=()
 EXTRA_PKGCONFIG=()
 
 if [ -n "$OPENSSL_PREFIX" ]; then
-  EXTRA_CFLAGS+=("-I$OPENSSL_PREFIX/include")
-  EXTRA_LDFLAGS+=("-L$OPENSSL_PREFIX/lib")
-  EXTRA_PKGCONFIG+=("$OPENSSL_PREFIX/lib/pkgconfig")
+	EXTRA_CFLAGS+=("-I$OPENSSL_PREFIX/include")
+	EXTRA_LDFLAGS+=("-L$OPENSSL_PREFIX/lib")
+	EXTRA_PKGCONFIG+=("$OPENSSL_PREFIX/lib/pkgconfig")
 fi
 
 if [ "${#EXTRA_PKGCONFIG[@]}" -gt 0 ]; then
-  export PKG_CONFIG_PATH="$(IFS=:; echo "${EXTRA_PKGCONFIG[*]}"):${PKG_CONFIG_PATH:-}"
+	export PKG_CONFIG_PATH="$(
+		IFS=:
+		echo "${EXTRA_PKGCONFIG[*]}"
+	):${PKG_CONFIG_PATH:-}"
 fi
 
 HWACCEL_FLAGS=()
 if [ "$PLATFORM" = "linux" ]; then
-  if pkg-config --exists libva; then
-    HWACCEL_FLAGS+=("--enable-vaapi")
-  fi
-  if pkg-config --exists vdpau; then
-    HWACCEL_FLAGS+=("--enable-vdpau")
-  fi
-  if [ "${FFMPEG_NVDEC:-0}" = "1" ]; then
-    if pkg-config --exists ffnvcodec; then
-      HWACCEL_FLAGS+=("--enable-nvdec" "--enable-cuvid" "--enable-ffnvcodec")
-    else
-      echo "FFMPEG_NVDEC=1 set but ffnvcodec not found; skipping NVDEC" >&2
-    fi
-  fi
+	if pkg-config --exists libva; then
+		HWACCEL_FLAGS+=("--enable-vaapi")
+	fi
+	if pkg-config --exists vdpau; then
+		HWACCEL_FLAGS+=("--enable-vdpau")
+	fi
+	if [ "${FFMPEG_NVDEC:-0}" = "1" ]; then
+		if pkg-config --exists ffnvcodec; then
+			HWACCEL_FLAGS+=("--enable-nvdec" "--enable-cuvid" "--enable-ffnvcodec")
+		else
+			echo "FFMPEG_NVDEC=1 set but ffnvcodec not found; skipping NVDEC" >&2
+		fi
+	fi
 fi
 if [ "$PLATFORM" = "macos" ]; then
-  HWACCEL_FLAGS+=("--enable-videotoolbox")
+	HWACCEL_FLAGS+=("--enable-videotoolbox")
 fi
 
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN || sysctl -n hw.ncpu || echo 4)}"
 
 FFMPEG_LINK_FLAGS=(--enable-shared --disable-static)
 if [ "$FFMPEG_STATIC" = "1" ]; then
-  FFMPEG_LINK_FLAGS=(--disable-shared --enable-static)
+	FFMPEG_LINK_FLAGS=(--disable-shared --enable-static)
 fi
 
 cd "$BUILD_ROOT"
 
 echo "Configuring FFmpeg..."
 "$SRC_ROOT/configure" \
-  --prefix="$FFMPEG_PREFIX" \
-  "${FFMPEG_LINK_FLAGS[@]}" \
-  --disable-programs \
-  --disable-doc \
-  --disable-debug \
-  --enable-gpl \
-  --disable-everything \
-  --enable-avcodec \
-  --enable-avformat \
-  --enable-avutil \
-  --enable-swresample \
-  --enable-swscale \
-  --enable-network \
-  --enable-openssl \
-  --enable-version3 \
-  --disable-gnutls \
-  --enable-protocol=file,pipe,http,https,tcp,tls,crypto,udp \
-  --enable-demuxer=hls,mpegts,mpegtsraw,mov,aac,mp3 \
-  --enable-decoder=h264,hevc,aac,mp3,opus,vorbis,mpeg2video \
-  --enable-parser=h264,hevc,aac,opus,vorbis,mpegaudio \
-  --enable-bsf=aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb \
-  "${HWACCEL_FLAGS[@]}" \
-  --extra-cflags="${EXTRA_CFLAGS[*]}" \
-  --extra-ldflags="${EXTRA_LDFLAGS[*]}"
+	--prefix="$FFMPEG_PREFIX" \
+	"${FFMPEG_LINK_FLAGS[@]}" \
+	--disable-programs \
+	--disable-doc \
+	--disable-debug \
+	--enable-gpl \
+	--disable-everything \
+	--enable-avcodec \
+	--enable-avformat \
+	--enable-avutil \
+	--enable-swresample \
+	--enable-swscale \
+	--enable-network \
+	--enable-openssl \
+	--enable-version3 \
+	--disable-gnutls \
+	--enable-protocol=file,pipe,http,https,tcp,tls,crypto,udp \
+	--enable-demuxer=hls,mpegts,mpegtsraw,mov,aac,mp3,dash \
+	--enable-decoder=h264,hevc,aac,mp3,opus,vorbis,mpeg2video \
+	--enable-parser=h264,hevc,aac,opus,vorbis,mpegaudio \
+	--enable-bsf=aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb \
+	"${HWACCEL_FLAGS[@]}" \
+	--extra-cflags="${EXTRA_CFLAGS[*]}" \
+	--extra-ldflags="${EXTRA_LDFLAGS[*]}"
 
 echo "Building FFmpeg..."
 make -j"$JOBS"

@@ -11,7 +11,7 @@ read_when: adding/changing runtime flags or debugging playback/render issues
 ## libmpv / FFmpeg
 - `SBTLTV_USE_SYSTEM_LIBMPV=1` use system libmpv instead of bundled
 - `SBTLTV_DISABLE_LIBMPV=1` disable libmpv path (fallback to external mpv)
-- `SBTLTV_PRELOAD_FFMPEG=1` dev only: preload bundled FFmpeg libs
+- `SBTLTV_PRELOAD_FFMPEG=0` dev only: disable bundled FFmpeg preload (default: enabled)
 - `SBTLTV_LIBMPV_PATH=/path/to/libmpv.so.2` override libmpv path
 
 ## YouTube / yt-dlp
@@ -20,14 +20,17 @@ read_when: adding/changing runtime flags or debugging playback/render issues
   - Unset: auto-enable for YouTube URLs only
 
 ## Hardware decode
-- `SBTLTV_HWDEC=auto|auto-safe|vaapi|vdpau|nvdec` (default: auto-safe)
+- `SBTLTV_HWDEC=auto|auto-safe|vaapi|vdpau|nvdec` (default: vaapi when enforced)
 - `SBTLTV_HWDEC_GRACE_MS=5000` grace window before enforcing hwdec
 - `SBTLTV_ALLOW_SWDEC=1` allow software decode fallback
+- `SBTLTV_HWDEC_ENFORCE=0` disable enforcement (default: enforced)
 
 ## Renderer (Linux libmpv)
 - `SBTLTV_RENDER_FPS=30` cap render loop fps
 - `SBTLTV_RENDER_MAX_WIDTH=1920` cap render buffer width (0 = no cap)
 - `SBTLTV_RENDER_MAX_HEIGHT=1080` cap render buffer height (0 = no cap)
+- `SBTLTV_RENDER_FLIP_Y=1` flip render buffer vertically (disables mpv flip)
+- `SBTLTV_VIDEO_ROTATE=0|90|180|270|auto` override mpv rotation
 
 ## Native build/dev
 - `SBTLTV_SKIP_NATIVE_BUILD=1` skip node-gyp rebuild if mpv.node exists
