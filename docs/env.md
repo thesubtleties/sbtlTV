@@ -20,8 +20,8 @@ read_when: adding/changing runtime flags or debugging playback/render issues
   - Unset: auto-enable for YouTube URLs only
 
 ## Hardware decode
-- `SBTLTV_HWDEC=auto|auto-safe|vaapi|vdpau|nvdec` (default: vaapi when enforced)
-- `SBTLTV_HWDEC_INTEROP=auto|vaapi|drmprime|no` (default: vaapi when enforced)
+- `SBTLTV_HWDEC=auto|auto-safe|auto-copy|vaapi|vaapi-copy|vdpau|nvdec|<list>` (default: vaapi-copy when enforced; auto-copy otherwise)
+- `SBTLTV_HWDEC_INTEROP=auto|vaapi|drmprime|no` (default: auto)
 - `SBTLTV_HWDEC_GRACE_MS=5000` grace window before enforcing hwdec
 - `SBTLTV_ALLOW_SWDEC=1` allow software decode fallback
 - `SBTLTV_HWDEC_ENFORCE=0` disable enforcement (default: enforced)

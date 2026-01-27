@@ -105,6 +105,13 @@ export interface MpvStatus {
   position: number;
   duration: number;
   hwdec?: string;
+  hwdecSetting?: string;
+  hwdecInterop?: string;
+  gpuHwdecInterop?: string;
+  vo?: string;
+  gpuApi?: string;
+  gpuContext?: string;
+  videoCodec?: string;
 }
 
 export interface MpvResult {
@@ -297,7 +304,6 @@ const startRenderLoop = () => {
   const intervalMs = Math.max(1, Math.floor(1000 / Math.max(1, renderFps)));
   renderTimer = setInterval(() => {
     if (!mpvNative || !renderCtx || !renderCanvas || !renderImage || !activeFrame || !activeSrc) return;
-    if (mpvNative.needsRender && !mpvNative.needsRender()) return;
     const ok = mpvNative.renderFrame?.();
     if (!ok) {
       const detail = mpvNative.getLastError?.();
@@ -424,6 +430,7 @@ const startStatusPolling = () => {
           ['hwdec', status.hwdec],
           ['hwdecSetting', status.hwdecSetting],
           ['hwdecInterop', status.hwdecInterop],
+          ['gpuHwdecInterop', status.gpuHwdecInterop],
           ['vo', status.vo],
           ['gpuApi', status.gpuApi],
           ['gpuContext', status.gpuContext],

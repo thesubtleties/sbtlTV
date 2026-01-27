@@ -55,10 +55,15 @@ Notes:
 - OpenSSL is a shared dependency; if you bundle `libssl` + `libcrypto`, include the OpenSSL license separately (not fetched by `scripts/download-licenses.sh`).
 
 ## Linux hwdec deps (VAAPI + DRM)
-- Build-time pkg-config deps: `libva`, `libdrm`, `gbm`, and Wayland/X11 variants (`libva-wayland`/`libva-x11` as appropriate).
+- Build-time pkg-config deps: `libva`, `libdrm`, `gbm`, and Wayland/X11 variants (`libva-wayland`/`libva-x11` as appropriate). Build script warns if the latter are missing.
 - Runtime deps: VAAPI driver (Mesa for AMD, intel-media-driver for Intel), `libva`, `libdrm`, `libgbm`, `libEGL`, `libGL`.
 - FFmpeg: enable `--enable-vaapi --enable-libdrm` when available.
 - mpv (Meson): enable `-Dvaapi=enabled -Ddrm=enabled -Dgbm=enabled` on Linux.
+
+## libmpv render API (vo=libmpv)
+- Direct VAAPI interop often fails with render API; use copy-back hwdec.
+- Recommended: `SBTLTV_HWDEC=vaapi-copy` or `SBTLTV_HWDEC=auto-copy`.
+- Direct VAAPI requires `vo=gpu|gpu-next|vaapi|dmabuf-wayland` + EGL; not `vo=libmpv`.
 
 ### Environment variables
 - `FFMPEG_VERSION` (default in script)

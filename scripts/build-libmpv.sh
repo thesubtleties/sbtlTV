@@ -97,16 +97,25 @@ if [ "$PLATFORM" = "linux" ]; then
 		MESON_OPTS+=("-Dvaapi=enabled")
 	else
 		MESON_OPTS+=("-Dvaapi=disabled")
+		echo "libva not found; VAAPI disabled" >&2
 	fi
 	if pkg-config --exists libdrm; then
 		MESON_OPTS+=("-Ddrm=enabled")
 	else
 		MESON_OPTS+=("-Ddrm=disabled")
+		echo "libdrm not found; DRM disabled" >&2
 	fi
 	if pkg-config --exists gbm; then
 		MESON_OPTS+=("-Dgbm=enabled")
 	else
 		MESON_OPTS+=("-Dgbm=disabled")
+		echo "gbm not found; GBM disabled" >&2
+	fi
+	if ! pkg-config --exists libva-wayland; then
+		echo "libva-wayland not found; VAAPI Wayland interop may fail" >&2
+	fi
+	if ! pkg-config --exists libva-x11; then
+		echo "libva-x11 not found; VAAPI X11 interop may fail" >&2
 	fi
 fi
 
