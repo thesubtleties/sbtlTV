@@ -87,6 +87,22 @@ pnpm dist:linux  # Linux
 
 Output files will be in the `release/` directory.
 
+### Bundling FFmpeg + libmpv (Linux/macOS)
+
+For custom IPTV-focused builds, use:
+
+```bash
+bash scripts/build-ffmpeg.sh
+bash scripts/build-mpv.sh
+```
+
+Details, codec/protocol list, and licensing notes: `docs/mpv-bundling.md`.
+
+Troubleshooting (Linux libmpv):
+- Verify the URL with system mpv:
+  - `mpv --no-config --msg-level=all=v "<URL>"`
+- If it fails there too, it is likely the stream, headers, or geo/TLS.
+
 ## Configuration
 
 ### Adding Sources
