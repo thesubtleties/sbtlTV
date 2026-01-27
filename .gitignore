@@ -7,6 +7,10 @@ node_modules/
 dist/
 out/
 *.tsbuildinfo
+*.node
+*.pdb
+*.ilk
+*.dSYM/
 
 # IDE
 .idea/
@@ -30,6 +34,7 @@ pnpm-debug.log*
 # Electron
 release/
 packages/electron/mpv-bundle/
+packages/electron/native/mpv/build/
 *.dmg
 *.exe
 *.AppImage
@@ -45,7 +50,6 @@ coverage/
 .tldr/
 .tldrignore
 .claude/
-.sisyphus/
 AGENTS.md
 
 # Development notes

@@ -128,7 +128,7 @@ function App() {
   // Set up mpv event listeners
   useEffect(() => {
     if (!window.mpv) {
-      setError('mpv API not available - are you running in Electron?');
+      setError('mpv API not available - run the Electron app (pnpm dev), not the Vite browser.');
       return;
     }
 
@@ -412,7 +412,13 @@ function App() {
   // Window control handlers
   const handleMinimize = () => window.electronWindow?.minimize();
   const handleMaximize = () => window.electronWindow?.maximize();
-  const handleClose = () => window.electronWindow?.close();
+  const handleClose = () => {
+    if (window.electronWindow?.close) {
+      window.electronWindow.close();
+      return;
+    }
+    window.close();
+  };
 
   return (
     <div className="app" onMouseMove={handleMouseMove}>

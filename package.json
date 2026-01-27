@@ -9,7 +9,7 @@
     "email": "thesubtleties@users.noreply.github.com"
   },
   "scripts": {
-    "dev": "pnpm --filter @sbtltv/electron dev",
+    "dev": "node scripts/dev.cjs",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "dist": "pnpm build && pnpm --filter @sbtltv/electron dist",

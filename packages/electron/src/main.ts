@@ -52,6 +52,7 @@ async function createWindow(): Promise<void> {
   const isWindows = process.platform === 'win32';
   const isLinux = process.platform === 'linux';
   const useTransparent = isWindows || isLinux;
+  const useFrameless = isWindows || isLinux;
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -60,14 +61,15 @@ async function createWindow(): Promise<void> {
     minHeight: MIN_HEIGHT,
     backgroundColor: useTransparent ? '#00000000' : '#000000',
     transparent: useTransparent, // Transparent on Windows/Linux so mpv shows through
-    frame: !isWindows, // Frameless on Windows (required for transparency)
+    frame: !useFrameless, // Frameless on Windows/Linux (required for transparency)
     resizable: true, // Explicit for Electron 40
-    show: !isLinux,
+    show: true,
     icon: path.join(__dirname, '../assets/logo-white.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
 
@@ -75,7 +77,7 @@ async function createWindow(): Promise<void> {
   // In dev, load from Vite server; in prod, load from built files
   if (process.argv.includes('--dev')) {
     await mainWindow.loadURL('http://localhost:5173');
-    if (process.env.OPEN_DEVTOOLS === '1') {
+    if (process.env.OPEN_DEVTOOLS !== '0') {
       mainWindow.webContents.openDevTools({ mode: 'detach' });
     }
   } else {
@@ -765,18 +767,9 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
 });
 
 if (process.platform === 'linux') {
-  const XDG_SESSION_TYPE = process.env.XDG_SESSION_TYPE;
-  const WAYLAND_DISPLAY = process.env.WAYLAND_DISPLAY;
-  const isWayland = XDG_SESSION_TYPE === 'wayland' ||
-    (typeof WAYLAND_DISPLAY === 'string' && WAYLAND_DISPLAY.trim().length > 0);
-
-  if (isWayland) {
-    app.disableHardwareAcceleration();
-    app.commandLine.appendSwitch('disable-gpu');
-    console.log('[linux] Wayland session detected; disabling GPU');
-  }
-  app.commandLine.appendSwitch('ozone-platform', 'x11');
-  console.log('[electron] Forcing X11 (Xwayland) for mpv embedding');
+  const ozoneHint = process.env.ELECTRON_OZONE_PLATFORM_HINT ?? 'auto';
+  app.commandLine.appendSwitch('ozone-platform-hint', ozoneHint);
+  console.log(`[electron] Ozone platform hint=${ozoneHint}`);
 }
 
 // App lifecycle
@@ -794,18 +787,18 @@ app.whenReady().then(async () => {
       ' XDG_SESSION_TYPE=' + (XDG_SESSION_TYPE ?? '') +
       ' WAYLAND_DISPLAY=' + (WAYLAND_DISPLAY ?? ''));
 
-    const hasDisplay = typeof DISPLAY === 'string' && DISPLAY.trim().length > 0;
-    const isWayland = XDG_SESSION_TYPE === 'wayland' ||
+    const hasX11 = typeof DISPLAY === 'string' && DISPLAY.trim().length > 0;
+    const hasWayland = XDG_SESSION_TYPE === 'wayland' ||
       (typeof WAYLAND_DISPLAY === 'string' && WAYLAND_DISPLAY.trim().length > 0);
 
-    if (!hasDisplay) {
+    if (!hasX11 && !hasWayland) {
+      const title = 'No display detected';
+      const message = 'X11 or Wayland display not detected.';
       await dialog.showMessageBox({
         type: 'error',
-        title: 'X11/Xwayland Required',
-        message: 'X11/Xwayland is required for mpv embedding.',
-        detail: isWayland
-          ? 'Enable Xwayland for this session, then restart the application.'
-          : 'Log into an X11 session or enable Xwayland, then restart the application.',
+        title,
+        message,
+        detail: 'Log into an X11 or Wayland session, then restart the application.',
         buttons: ['OK'],
       });
       app.exit(1);

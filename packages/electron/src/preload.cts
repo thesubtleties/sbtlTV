@@ -116,6 +116,14 @@ if (isLinux) {
     mpvNative = null;
     console.error('[libmpv] Failed to load native module:', error);
   }
+
+  process.on('exit', () => {
+    try {
+      mpvNative?.shutdown?.();
+    } catch (error) {
+      console.error('[libmpv] Shutdown failed:', error);
+    }
+  });
 }
 
 const emitReady = (ready: boolean) => {

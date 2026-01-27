@@ -38,6 +38,17 @@ sudo dnf install mpv
 sudo pacman -S mpv
 ```
 
+### Linux (libmpv GPU renderer)
+
+On Linux, sbtlTV uses a native libmpv addon (no external mpv process). It creates an OpenGL context via EGL and renders frames through libmpv into a shared buffer that the UI draws to a canvas. Context priority is `x11egl → wayland → x11`.
+
+Build/runtime requirements (names vary by distro):
+- libmpv development headers
+- EGL/OpenGL development headers (Mesa)
+- X11 and Wayland client headers
+
+Run in dev with `pnpm dev`. Wayland sessions are supported; Electron uses an ozone hint of `auto` by default.
+
 ## Building from Source
 
 ### Prerequisites
