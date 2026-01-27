@@ -143,6 +143,13 @@ const startStatusPolling = () => {
   if (mpvPollTimer || !mpvNative) return;
   mpvPollTimer = setInterval(() => {
     try {
+      const logLine = mpvNative.pollLog?.();
+      if (logLine) {
+        console.warn('[mpv]', logLine);
+        if (typeof logLine === 'string' && (logLine.startsWith('error') || logLine.startsWith('fatal'))) {
+          emitError(logLine);
+        }
+      }
       const status = mpvNative.getStatus?.();
       if (status) emitStatus(status as MpvStatus);
     } catch (error) {
@@ -156,15 +163,31 @@ const mpvApi: MpvApi = isLinux
   ? {
     load: async (url: string) => {
       if (!mpvNative?.isInitialized?.()) return { error: 'libmpv not initialized' };
-      return mpvNative.load(url) ? { success: true } : { error: 'mpv load failed' };
+      if (mpvNative.load(url)) return { success: true };
+      const detail = mpvNative.getLastError?.();
+      return { error: detail ? `mpv load failed: ${detail}` : 'mpv load failed' };
     },
-    play: async () => (mpvNative?.play?.() ? { success: true } : { error: 'mpv play failed' }),
-    pause: async () => (mpvNative?.pause?.() ? { success: true } : { error: 'mpv pause failed' }),
-    togglePause: async () => (mpvNative?.togglePause?.() ? { success: true } : { error: 'mpv toggle failed' }),
-    stop: async () => (mpvNative?.stop?.() ? { success: true } : { error: 'mpv stop failed' }),
-    setVolume: async (volume: number) => (mpvNative?.setVolume?.(volume) ? { success: true } : { error: 'mpv volume failed' }),
-    toggleMute: async () => (mpvNative?.toggleMute?.() ? { success: true } : { error: 'mpv mute failed' }),
-    seek: async (seconds: number) => (mpvNative?.seek?.(seconds) ? { success: true } : { error: 'mpv seek failed' }),
+    play: async () => (mpvNative?.play?.()
+      ? { success: true }
+      : { error: mpvNative?.getLastError?.() ? `mpv play failed: ${mpvNative.getLastError()}` : 'mpv play failed' }),
+    pause: async () => (mpvNative?.pause?.()
+      ? { success: true }
+      : { error: mpvNative?.getLastError?.() ? `mpv pause failed: ${mpvNative.getLastError()}` : 'mpv pause failed' }),
+    togglePause: async () => (mpvNative?.togglePause?.()
+      ? { success: true }
+      : { error: mpvNative?.getLastError?.() ? `mpv toggle failed: ${mpvNative.getLastError()}` : 'mpv toggle failed' }),
+    stop: async () => (mpvNative?.stop?.()
+      ? { success: true }
+      : { error: mpvNative?.getLastError?.() ? `mpv stop failed: ${mpvNative.getLastError()}` : 'mpv stop failed' }),
+    setVolume: async (volume: number) => (mpvNative?.setVolume?.(volume)
+      ? { success: true }
+      : { error: mpvNative?.getLastError?.() ? `mpv volume failed: ${mpvNative.getLastError()}` : 'mpv volume failed' }),
+    toggleMute: async () => (mpvNative?.toggleMute?.()
+      ? { success: true }
+      : { error: mpvNative?.getLastError?.() ? `mpv mute failed: ${mpvNative.getLastError()}` : 'mpv mute failed' }),
+    seek: async (seconds: number) => (mpvNative?.seek?.(seconds)
+      ? { success: true }
+      : { error: mpvNative?.getLastError?.() ? `mpv seek failed: ${mpvNative.getLastError()}` : 'mpv seek failed' }),
     getStatus: async () => {
       if (!mpvNative?.getStatus) {
         return { playing: false, volume: 0, muted: false, position: 0, duration: 0 };

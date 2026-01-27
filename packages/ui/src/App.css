@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap');
+
 /* Main container - full screen, TRANSPARENT so mpv video shows through */
 .app {
   width: 100vw;
@@ -81,6 +83,79 @@
   justify-content: center;
   background: transparent;
   pointer-events: none;
+}
+
+.video-element {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: auto;
+  background: #000;
+}
+
+.html5-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: stretch;
+  z-index: 1;
+}
+
+.html5-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0.65) 100%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0px, rgba(255, 255, 255, 0.05) 1px, rgba(0, 0, 0, 0) 2px, rgba(0, 0, 0, 0) 4px);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  opacity: 0.25;
+}
+
+.html5-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 22px 28px;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.html5-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.html5-badge {
+  background: #ff3a2f;
+  color: #140606;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  font-size: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  box-shadow: 0 8px 18px rgba(255, 58, 47, 0.35);
+}
+
+.html5-reason {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+  max-width: 70vw;
+  line-height: 1.4;
+}
+
+.html5-url {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  max-width: 80vw;
+  word-break: break-all;
 }
 
 .video-canvas {

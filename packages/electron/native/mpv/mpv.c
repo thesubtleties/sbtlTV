@@ -3,6 +3,7 @@
 #include <mpv/client.h>
 #include <mpv/render.h>
 #include <mpv/render_gl.h>
+#include <libavformat/avformat.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GL/gl.h>
@@ -118,13 +119,25 @@ static void log_error(const char *message) {
   log_error_message(message);
 }
 
-static int set_option_string(const char *name, const char *value) {
-  if (!mpv_instance) return -1;
+static int set_option_string_required(const char *name, const char *value) {
+  if (!mpv_instance) return 0;
   int res = mpv_set_option_string(mpv_instance, name, value);
   if (res < 0) {
-    fprintf(stderr, "[libmpv] set option failed: %s=%s (%d)\n", name, value, res);
+    set_last_error_from_mpv(name, res);
+    return 0;
   }
-  return res;
+  return 1;
+}
+
+static void set_option_string_optional(const char *name, const char *value) {
+  if (!mpv_instance) return;
+  int res = mpv_set_option_string(mpv_instance, name, value);
+  if (res < 0) {
+    const char *msg = mpv_error_string(res);
+    if (!msg) msg = "unknown";
+    fprintf(stderr, "[libmpv] optional option failed: %s=%s (%s)\n", name, value, msg);
+    fflush(stderr);
+  }
 }
 
 static void on_mpv_update(void *ctx) {
@@ -517,6 +530,9 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
 
   set_last_error(NULL);
   set_size_call_count = 0;
+  if (avformat_network_init() < 0) {
+    log_error("[libmpv] avformat_network_init failed");
+  }
   if (!init_gl_context()) {
     return make_bool(env, 0);
   }
@@ -529,22 +545,25 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   }
 
   int ok = 1;
-  ok &= set_option_string("terminal", "no") >= 0;
-  ok &= set_option_string("msg-level", "all=warn") >= 0;
-  ok &= set_option_string("idle", "yes") >= 0;
-  ok &= set_option_string("keep-open", "yes") >= 0;
-  ok &= set_option_string("osc", "no") >= 0;
-  ok &= set_option_string("osd-bar", "no") >= 0;
-  ok &= set_option_string("osd-level", "0") >= 0;
-  ok &= set_option_string("input-default-bindings", "no") >= 0;
-  ok &= set_option_string("cursor-autohide", "no") >= 0;
-  ok &= set_option_string("hwdec", "auto-safe") >= 0;
-  ok &= set_option_string("vo", "libmpv") >= 0;
-  ok &= set_option_string("gpu-api", "opengl") >= 0;
+  set_option_string_optional("terminal", "no");
+  set_option_string_optional("msg-level", "all=warn");
+  set_option_string_optional("idle", "yes");
+  set_option_string_optional("keep-open", "yes");
+  set_option_string_optional("osc", "no");
+  set_option_string_optional("osd-bar", "no");
+  set_option_string_optional("osd-level", "0");
+  set_option_string_optional("input-default-bindings", "no");
+  set_option_string_optional("cursor-autohide", "no");
+  set_option_string_optional("network", "yes");
+  set_option_string_optional("ytdl", "no");
+  set_option_string_optional("hwdec", "auto-safe");
 
-  if (gl_ctx == CTX_EGL_X11) ok &= set_option_string("gpu-context", "x11egl") >= 0;
-  if (gl_ctx == CTX_EGL_WAYLAND) ok &= set_option_string("gpu-context", "wayland") >= 0;
-  if (gl_ctx == CTX_GLX) ok &= set_option_string("gpu-context", "x11") >= 0;
+  ok &= set_option_string_required("vo", "libmpv");
+  ok &= set_option_string_required("gpu-api", "opengl");
+
+  if (gl_ctx == CTX_EGL_X11) ok &= set_option_string_required("gpu-context", "x11egl");
+  if (gl_ctx == CTX_EGL_WAYLAND) ok &= set_option_string_required("gpu-context", "wayland");
+  if (gl_ctx == CTX_GLX) ok &= set_option_string_required("gpu-context", "x11");
 
   if (!ok) {
     set_last_error("mpv option set failed");
@@ -560,6 +579,10 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
     mpv_instance = NULL;
     cleanup_gl();
     return make_bool(env, 0);
+  }
+
+  if (mpv_request_log_messages(mpv_instance, "warn") < 0) {
+    log_error("[libmpv] mpv_request_log_messages failed");
   }
 
   if (mpv_observe_property(mpv_instance, 0, "pause", MPV_FORMAT_FLAG) < 0) {
@@ -625,6 +648,7 @@ static napi_value mpv_shutdown(napi_env env, napi_callback_info info) {
   }
 
   cleanup_gl();
+  avformat_network_deinit();
 
   frame_buffer = NULL;
   frame_buffer_size = 0;
@@ -949,6 +973,42 @@ static napi_value mpv_get_last_error(napi_env env, napi_callback_info info) {
   return value;
 }
 
+static napi_value mpv_poll_log(napi_env env, napi_callback_info info) {
+  (void)info;
+  if (!mpv_instance) return make_null(env);
+
+  for (int i = 0; i < 16; i += 1) {
+    mpv_event *event = mpv_wait_event(mpv_instance, 0);
+    if (!event || event->event_id == MPV_EVENT_NONE) break;
+
+    if (event->event_id == MPV_EVENT_LOG_MESSAGE) {
+      mpv_event_log_message *msg = (mpv_event_log_message *)event->data;
+      if (!msg || !msg->text) continue;
+      const char *level = msg->level ? msg->level : "log";
+      const char *prefix = msg->prefix ? msg->prefix : "";
+      const char *text = msg->text;
+      char buffer[512];
+      snprintf(buffer, sizeof(buffer), "%s: %s%s%s", level, prefix, prefix[0] ? ": " : "", text);
+
+      napi_value value;
+      if (napi_create_string_utf8(env, buffer, NAPI_AUTO_LENGTH, &value) != napi_ok) return make_null(env);
+      return value;
+    }
+
+    if (event->event_id == MPV_EVENT_END_FILE) {
+      mpv_event_end_file *end = (mpv_event_end_file *)event->data;
+      if (end && end->reason == MPV_END_FILE_REASON_ERROR) {
+        set_last_error_from_mpv("end-file", end->error);
+        napi_value value;
+        if (napi_create_string_utf8(env, last_error, NAPI_AUTO_LENGTH, &value) != napi_ok) return make_null(env);
+        return value;
+      }
+    }
+  }
+
+  return make_null(env);
+}
+
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor descriptors[] = {
     { "init", NULL, mpv_init, NULL, NULL, NULL, napi_default, NULL },
@@ -966,6 +1026,7 @@ static napi_value init(napi_env env, napi_value exports) {
     { "getStatus", NULL, mpv_get_status, NULL, NULL, NULL, napi_default, NULL },
     { "isInitialized", NULL, mpv_is_initialized, NULL, NULL, NULL, napi_default, NULL },
     { "getLastError", NULL, mpv_get_last_error, NULL, NULL, NULL, napi_default, NULL },
+    { "pollLog", NULL, mpv_poll_log, NULL, NULL, NULL, napi_default, NULL },
   };
 
   if (napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors) != napi_ok) {

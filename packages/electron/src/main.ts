@@ -76,7 +76,10 @@ async function createWindow(): Promise<void> {
   // Load the React app
   // In dev, load from Vite server; in prod, load from built files
   if (process.argv.includes('--dev')) {
-    await mainWindow.loadURL('http://localhost:5173');
+    const devUrl = process.env.HTML5_PLAYER === '1'
+      ? 'http://localhost:5173/?player=html5'
+      : 'http://localhost:5173';
+    await mainWindow.loadURL(devUrl);
     if (process.env.OPEN_DEVTOOLS !== '0') {
       mainWindow.webContents.openDevTools({ mode: 'detach' });
     }

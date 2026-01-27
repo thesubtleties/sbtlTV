@@ -95,6 +95,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
   const [vodInfo, setVodInfo] = useState<VodPlayInfo | null>(null);
+  const forceHtml5 = new URLSearchParams(window.location.search).get('player') === 'html5';
+  const [useHtml5Fallback, setUseHtml5Fallback] = useState(forceHtml5);
+  const [html5Reason, setHtml5Reason] = useState<string | null>(null);
 
   // UI state
   const [showControls, setShowControls] = useState(true);
@@ -124,9 +127,12 @@ function App() {
   const controlsHoveredRef = useRef(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const html5FallbackRef = useRef(forceHtml5);
 
   // Set up mpv event listeners
   useEffect(() => {
+    if (useHtml5Fallback) return;
     if (!window.mpv) {
       setError('mpv API not available - run the Electron app (pnpm dev), not the Vite browser.');
       return;
@@ -156,14 +162,23 @@ function App() {
     window.mpv.onError((err) => {
       console.error('mpv error:', err);
       setError(err);
+      if (!html5FallbackRef.current) {
+        const shouldFallback = /Protocol not found|libmpv init failed|libmpv setSize failed|mpv API not available/i.test(err);
+        if (shouldFallback) {
+          html5FallbackRef.current = true;
+          setHtml5Reason(err);
+          setUseHtml5Fallback(true);
+        }
+      }
     });
 
     return () => {
       window.mpv?.removeAllListeners();
     };
-  }, []);
+  }, [useHtml5Fallback]);
 
   useEffect(() => {
+    if (useHtml5Fallback) return;
     if (!window.platform?.isLinux || !window.mpv?.initRenderer || !window.mpv?.renderFrame || !window.mpv?.setSize) {
       return;
     }
@@ -230,6 +245,57 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!useHtml5Fallback) return;
+    html5FallbackRef.current = true;
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onTimeUpdate = () => setPosition(video.currentTime || 0);
+    const onDuration = () => setDuration(video.duration || 0);
+    const onVolume = () => {
+      setVolume(Math.round((video.volume ?? 1) * 100));
+      setMuted(!!video.muted);
+    };
+    const onError = () => {
+      setError('HTML5 video failed to load');
+    };
+
+    video.addEventListener('play', onPlay);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('loadedmetadata', onDuration);
+    video.addEventListener('durationchange', onDuration);
+    video.addEventListener('volumechange', onVolume);
+    video.addEventListener('error', onError);
+
+    return () => {
+      video.removeEventListener('play', onPlay);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('loadedmetadata', onDuration);
+      video.removeEventListener('durationchange', onDuration);
+      video.removeEventListener('volumechange', onVolume);
+      video.removeEventListener('error', onError);
+    };
+  }, [useHtml5Fallback]);
+
+  useEffect(() => {
+    if (!useHtml5Fallback) return;
+    const video = videoRef.current;
+    if (!video) return;
+    const url = vodInfo?.url ?? currentChannel?.direct_url;
+    if (!url) return;
+    setError(null);
+    video.src = url;
+    video.load();
+    video.play().catch(() => {
+      setError('HTML5 play failed');
+    });
+  }, [useHtml5Fallback, currentChannel, vodInfo]);
+
   // Auto-hide controls after 3 seconds of no activity
   useEffect(() => {
     // Don't auto-hide if not playing or if panels are open
@@ -253,9 +319,31 @@ function App() {
 
   // Control handlers
   const handleLoadStream = async (channel: StoredChannel) => {
+    if (useHtml5Fallback) {
+      const video = videoRef.current;
+      if (!video) return;
+      setError(null);
+      console.info('[html5] load live', channel.direct_url);
+      video.src = channel.direct_url;
+      video.load();
+      try {
+        await video.play();
+        setCurrentChannel(channel);
+        setPlaying(true);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'HTML5 play failed');
+      }
+      return;
+    }
     if (!window.mpv) return;
+    if (!mpvReady) {
+      setError('mpv not ready yet');
+      return;
+    }
     setError(null);
+    console.info('[mpv] load live', channel.direct_url);
     const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
+    console.info('[mpv] load result', result);
     if (!result.success) {
       setError(result.error ?? 'Failed to load stream');
     } else {
@@ -269,6 +357,16 @@ function App() {
   };
 
   const handleTogglePlay = async () => {
+    if (useHtml5Fallback) {
+      const video = videoRef.current;
+      if (!video) return;
+      if (video.paused) {
+        await video.play();
+      } else {
+        video.pause();
+      }
+      return;
+    }
     if (!window.mpv) return;
     await window.mpv.togglePause();
   };
@@ -276,18 +374,43 @@ function App() {
   const handleVolumeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseInt(e.target.value);
     setVolume(newVolume);
+    if (useHtml5Fallback) {
+      const video = videoRef.current;
+      if (video) {
+        video.volume = Math.max(0, Math.min(1, newVolume / 100));
+      }
+      return;
+    }
     if (window.mpv) {
       await window.mpv.setVolume(newVolume);
     }
   };
 
   const handleToggleMute = async () => {
+    if (useHtml5Fallback) {
+      const video = videoRef.current;
+      if (video) {
+        video.muted = !video.muted;
+      }
+      return;
+    }
     if (!window.mpv) return;
     await window.mpv.toggleMute();
     // UI state updated via mpv status callback
   };
 
   const handleStop = async () => {
+    if (useHtml5Fallback) {
+      const video = videoRef.current;
+      if (video) {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      }
+      setPlaying(false);
+      setCurrentChannel(null);
+      return;
+    }
     if (!window.mpv) return;
     await window.mpv.stop();
     setPlaying(false);
@@ -295,6 +418,13 @@ function App() {
   };
 
   const handleSeek = async (seconds: number) => {
+    if (useHtml5Fallback) {
+      const video = videoRef.current;
+      if (video) {
+        video.currentTime = seconds;
+      }
+      return;
+    }
     if (!window.mpv) return;
     seekingRef.current = true;
     setPosition(seconds); // Optimistic update
@@ -310,9 +440,41 @@ function App() {
 
   // Play VOD content (movies/series)
   const handlePlayVod = async (info: VodPlayInfo) => {
+    if (useHtml5Fallback) {
+      const video = videoRef.current;
+      if (!video) return;
+      setError(null);
+      console.info('[html5] load vod', info.url);
+      video.src = info.url;
+      video.load();
+      try {
+        await video.play();
+        setCurrentChannel({
+          stream_id: 'vod',
+          name: info.title,
+          stream_icon: '',
+          epg_channel_id: '',
+          category_ids: [],
+          direct_url: info.url,
+          source_id: 'vod',
+        });
+        setVodInfo(info);
+        setPlaying(true);
+        setActiveView('none');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'HTML5 play failed');
+      }
+      return;
+    }
     if (!window.mpv) return;
+    if (!mpvReady) {
+      setError('mpv not ready yet');
+      return;
+    }
     setError(null);
+    console.info('[mpv] load vod', info.url);
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
+    console.info('[mpv] load result', result);
     if (!result.success) {
       setError(result.error ?? 'Failed to load stream');
     } else {
@@ -421,6 +583,7 @@ function App() {
   };
 
   const isTransparent = window.platform?.isWindows;
+  const playerReady = useHtml5Fallback ? true : mpvReady;
 
   return (
     <div className={`app${isTransparent ? ' app--transparent' : ''}`} onMouseMove={handleMouseMove}>
@@ -442,7 +605,21 @@ function App() {
 
       {/* Background - transparent over mpv */}
       <div className="video-background">
-        {window.platform?.isLinux && window.mpv?.isLibmpv && (
+        {useHtml5Fallback && (
+          <div className="html5-layer">
+            <video className="video-element" ref={videoRef} playsInline />
+            <div className="html5-overlay">
+              <div className="html5-meta">
+                <span className="html5-badge">HTML5 FALLBACK</span>
+                {html5Reason && <span className="html5-reason">{html5Reason}</span>}
+              </div>
+              {currentChannel && (
+                <div className="html5-url">{currentChannel.direct_url}</div>
+              )}
+            </div>
+          </div>
+        )}
+        {!useHtml5Fallback && window.platform?.isLinux && window.mpv?.isLibmpv && (
           <canvas className="video-canvas" ref={canvasRef} />
         )}
         {!currentChannel && (
@@ -483,7 +660,7 @@ function App() {
         playing={playing}
         muted={muted}
         volume={volume}
-        mpvReady={mpvReady}
+        mpvReady={playerReady}
         position={position}
         duration={duration}
         isVod={currentChannel?.stream_id === 'vod'}
