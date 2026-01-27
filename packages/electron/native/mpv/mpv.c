@@ -70,6 +70,7 @@ static int g_file_loaded = 0;
 static int g_end_file_error = 0;
 static char g_end_file_error_text[512] = {0};
 static char g_last_log[1024] = {0};
+static char g_last_error_log[1024] = {0};
 
 static void load_gl_fbo(void);
 static int gl_has_fbo(void);
@@ -134,15 +135,17 @@ static int set_option_string_required(const char *name, const char *value) {
   return 1;
 }
 
-static void set_option_string_optional(const char *name, const char *value) {
-  if (!mpv_instance) return;
+static int set_option_string_optional(const char *name, const char *value) {
+  if (!mpv_instance) return 0;
   int res = mpv_set_option_string(mpv_instance, name, value);
   if (res < 0) {
     const char *msg = mpv_error_string(res);
     if (!msg) msg = "unknown";
     fprintf(stderr, "[libmpv] optional option failed: %s=%s (%s)\n", name, value, msg);
     fflush(stderr);
+    return 0;
   }
+  return 1;
 }
 
 static void on_mpv_update(void *ctx) {
@@ -553,7 +556,15 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   int ok = 1;
   set_option_string_optional("terminal", "no");
   set_option_string_optional("config", "no");
-  set_option_string_optional("msg-level", "all=warn");
+  const char *log_file = getenv("SBTLTV_MPV_LOG_FILE");
+  if (log_file && log_file[0]) {
+    set_option_string_optional("log-file", log_file);
+  }
+  const char *log_level = getenv("SBTLTV_MPV_LOG_LEVEL");
+  if (!log_level || !log_level[0]) log_level = "v";
+  char msg_level[64];
+  snprintf(msg_level, sizeof(msg_level), "all=%s", log_level);
+  set_option_string_optional("msg-level", msg_level);
   set_option_string_optional("idle", "yes");
   set_option_string_optional("keep-open", "yes");
   set_option_string_optional("osc", "no");
@@ -568,12 +579,18 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   ok &= set_option_string_required("vo", "libmpv");
   ok &= set_option_string_required("gpu-api", "opengl");
 
-  if (gl_ctx == CTX_EGL_X11) ok &= set_option_string_required("gpu-context", "x11egl");
-  if (gl_ctx == CTX_EGL_WAYLAND) ok &= set_option_string_required("gpu-context", "wayland");
-  if (gl_ctx == CTX_GLX) ok &= set_option_string_required("gpu-context", "x11");
+  int ctx_ok = 1;
+  if (gl_ctx == CTX_EGL_X11) ctx_ok = set_option_string_optional("gpu-context", "x11egl");
+  if (gl_ctx == CTX_EGL_WAYLAND) ctx_ok = set_option_string_optional("gpu-context", "wayland");
+  if (gl_ctx == CTX_GLX) ctx_ok = set_option_string_optional("gpu-context", "x11");
+  if (!ctx_ok) {
+    set_option_string_optional("gpu-context", "auto");
+  }
 
   if (!ok) {
-    set_last_error("mpv option set failed");
+    if (!last_error[0]) {
+      set_last_error("mpv option set failed");
+    }
     mpv_terminate_destroy(mpv_instance);
     mpv_instance = NULL;
     cleanup_gl();
@@ -588,7 +605,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
     return make_bool(env, 0);
   }
 
-  if (mpv_request_log_messages(mpv_instance, "info") < 0) {
+  if (mpv_request_log_messages(mpv_instance, log_level) < 0) {
     log_error("[libmpv] mpv_request_log_messages failed");
   }
 
@@ -1004,8 +1021,13 @@ static void drain_mpv_events(void) {
         mpv_event_end_file *end = (mpv_event_end_file *)event->data;
         if (end && end->reason == MPV_END_FILE_REASON_ERROR) {
           g_end_file_error = end->error;
-          snprintf(g_end_file_error_text, sizeof(g_end_file_error_text),
-            "%s", mpv_error_string(end->error));
+          if (g_last_error_log[0]) {
+            snprintf(g_end_file_error_text, sizeof(g_end_file_error_text),
+              "%s", g_last_error_log);
+          } else {
+            snprintf(g_end_file_error_text, sizeof(g_end_file_error_text),
+              "%s", mpv_error_string(end->error));
+          }
         }
         break;
       }
@@ -1017,6 +1039,13 @@ static void drain_mpv_events(void) {
           msg->level ? msg->level : "?",
           msg->prefix ? msg->prefix : "mpv",
           msg->text);
+        if (msg->level && (!strcmp(msg->level, "error") || !strcmp(msg->level, "fatal"))) {
+          snprintf(g_last_error_log, sizeof(g_last_error_log),
+            "[%s] %s: %s",
+            msg->level,
+            msg->prefix ? msg->prefix : "mpv",
+            msg->text);
+        }
         fprintf(stderr, "%s", g_last_log);
         fflush(stderr);
         break;
@@ -1032,6 +1061,7 @@ static napi_value mpv_poll_events(napi_env env, napi_callback_info info) {
   if (!mpv_instance) return make_null(env);
 
   drain_mpv_events();
+  int had_error = g_end_file_error != 0;
 
   napi_value obj;
   if (napi_create_object(env, &obj) != napi_ok) return make_null(env);
@@ -1049,9 +1079,16 @@ static napi_value mpv_poll_events(napi_env env, napi_callback_info info) {
   if (napi_create_string_utf8(env, g_last_log, NAPI_AUTO_LENGTH, &v) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "lastLog", v) != napi_ok) return make_null(env);
 
+  if (napi_create_string_utf8(env, g_last_error_log, NAPI_AUTO_LENGTH, &v) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "lastErrorLog", v) != napi_ok) return make_null(env);
+
   g_file_loaded = 0;
   g_end_file_error = 0;
   g_end_file_error_text[0] = '\0';
+  g_last_log[0] = '\0';
+  if (had_error) {
+    g_last_error_log[0] = '\0';
+  }
 
   return obj;
 }

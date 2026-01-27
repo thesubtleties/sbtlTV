@@ -18,7 +18,7 @@ FFMPEG_PREFIX="${FFMPEG_PREFIX:-$BUNDLE_ROOT/$PLATFORM/ffmpeg}"
 SRC_ROOT="${MPV_SRC:-$REPO_ROOT/.build/mpv-$MPV_VERSION}"
 BUILD_ROOT="${MPV_BUILD_DIR:-$REPO_ROOT/.build/mpv-build-$PLATFORM}"
 
-MPV_GPL="${MPV_GPL:-0}"
+MPV_GPL="${MPV_GPL:-1}"
 
 TARBALL="v${MPV_VERSION}.tar.gz"
 TARBALL_URL="https://github.com/mpv-player/mpv/archive/refs/tags/${TARBALL}"
@@ -38,32 +38,69 @@ export PKG_CONFIG_PATH="$FFMPEG_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN || sysctl -n hw.ncpu || echo 4)}"
 
-cd "$SRC_ROOT"
-if [ ! -f "$SRC_ROOT/waf" ]; then
-  echo "Bootstrapping mpv build..."
-  ./bootstrap.py
+if ! command -v meson >/dev/null 2>&1; then
+  echo "meson not found (install meson + ninja) and retry" >&2
+  exit 1
 fi
 
-GPL_FLAG=()
-if ./waf configure --help 2>/dev/null | grep -q "gpl"; then
-  if [ "$MPV_GPL" = "1" ]; then
-    GPL_FLAG+=("--enable-gpl")
-  else
-    GPL_FLAG+=("--disable-gpl")
-  fi
+if ! command -v ninja >/dev/null 2>&1; then
+  echo "ninja not found (install ninja) and retry" >&2
+  exit 1
 fi
 
-echo "Configuring mpv..."
-./waf configure \
-  --prefix="$MPV_PREFIX" \
-  --libdir="$MPV_PREFIX/lib" \
-  --enable-libmpv-shared \
-  --disable-cplayer \
-  --disable-manpage \
-  "${GPL_FLAG[@]}"
+MESON_GPL="true"
+if [ "${MPV_GPL:-1}" = "0" ]; then
+  MESON_GPL="false"
+fi
 
-echo "Building mpv..."
-./waf build -j"$JOBS"
-./waf install
+RPATH_SELF='$ORIGIN'
+RPATH_LINK_ARGS="-Wl,-rpath,${RPATH_SELF}"
+
+MESON_OPTS=(
+  "-Dlibmpv=true"
+  "-Dgpl=$MESON_GPL"
+  "-Dgl=enabled"
+  "-Degl=enabled"
+  "-Dwayland=enabled"
+  "-Degl-wayland=enabled"
+  "-Ddmabuf-wayland=enabled"
+  "-Dtests=false"
+  "-Dfuzzers=false"
+  "-Dmanpage-build=disabled"
+  "-Dhtml-build=disabled"
+  "-Dpdf-build=disabled"
+  "-Dc_link_args=$RPATH_LINK_ARGS"
+  "-Dcpp_link_args=$RPATH_LINK_ARGS"
+)
+
+if [ "$MESON_GPL" = "true" ]; then
+  MESON_OPTS+=(
+    "-Dx11=enabled"
+    "-Dgl-x11=enabled"
+    "-Degl-x11=enabled"
+  )
+else
+  MESON_OPTS+=(
+    "-Dx11=disabled"
+    "-Dgl-x11=disabled"
+    "-Degl-x11=disabled"
+  )
+fi
+
+if [ -f "$BUILD_ROOT/meson-private/coredata.dat" ]; then
+  echo "Reconfiguring libmpv (meson)..."
+  meson setup --reconfigure "$BUILD_ROOT" --prefix "$MPV_PREFIX" "${MESON_OPTS[@]}"
+elif [ -d "$BUILD_ROOT" ] && [ "$(ls -A "$BUILD_ROOT" 2>/dev/null)" ]; then
+  echo "Build dir exists but is not a Meson build: $BUILD_ROOT" >&2
+  echo "Move it to trash and retry: trash \"$BUILD_ROOT\"" >&2
+  exit 1
+else
+  echo "Configuring libmpv (meson)..."
+  meson setup "$BUILD_ROOT" "$SRC_ROOT" --prefix "$MPV_PREFIX" "${MESON_OPTS[@]}"
+fi
+
+echo "Building libmpv..."
+meson compile -C "$BUILD_ROOT" -j"$JOBS"
+meson install -C "$BUILD_ROOT"
 
 echo "mpv installed to $MPV_PREFIX"

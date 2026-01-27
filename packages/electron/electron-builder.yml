@@ -20,6 +20,14 @@ extraResources:
       - "**/*"
   - from: dist/native/mpv.node
     to: native/mpv.node
+  - from: licenses
+    to: licenses
+    filter:
+      - "**/*"
+  - from: sources
+    to: sources
+    filter:
+      - "**/*"
 
 # Windows configuration
 win:
@@ -61,6 +69,14 @@ mac:
       to: mpv
       filter:
         - "**/*"
+    - from: mpv-bundle/macos/ffmpeg/lib
+      to: native/lib
+      filter:
+        - "**/*"
+    - from: mpv-bundle/macos/mpv/lib
+      to: native/lib
+      filter:
+        - "**/*"
 
 dmg:
   contents:
@@ -83,6 +99,15 @@ linux:
   icon: assets/icon-white.png
   category: AudioVideo
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
+  extraResources:
+    - from: mpv-bundle/linux/ffmpeg/lib
+      to: native/lib
+      filter:
+        - "**/*"
+    - from: mpv-bundle/linux/mpv/lib
+      to: native/lib
+      filter:
+        - "**/*"
 
 appImage:
   license: ../../LICENSE

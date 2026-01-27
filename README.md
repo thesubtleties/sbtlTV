@@ -93,7 +93,8 @@ For custom IPTV-focused builds, use:
 
 ```bash
 bash scripts/build-ffmpeg.sh
-bash scripts/build-mpv.sh
+bash scripts/build-libmpv.sh
+bash scripts/download-licenses.sh
 ```
 
 Details, codec/protocol list, and licensing notes: `docs/mpv-bundling.md`.
@@ -102,6 +103,10 @@ Troubleshooting (Linux libmpv):
 - Verify the URL with system mpv:
   - `mpv --no-config --msg-level=all=v "<URL>"`
 - If it fails there too, it is likely the stream, headers, or geo/TLS.
+- Increase libmpv log verbosity:
+  - `SBTLTV_MPV_LOG_LEVEL=debug pnpm dev`
+- Persist mpv logs to a file:
+  - `SBTLTV_MPV_LOG_FILE=/tmp/sbtltv-mpv.log pnpm dev`
 
 ## Configuration
 

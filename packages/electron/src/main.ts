@@ -38,6 +38,43 @@ const mpvState: MpvState = {
   duration: 0,
 };
 
+const appendEnvPath = (key: string, value: string): void => {
+  if (!value || !fs.existsSync(value)) return;
+  const current = process.env[key];
+  const parts = current ? current.split(path.delimiter) : [];
+  if (!parts.includes(value)) {
+    process.env[key] = [value, ...parts].filter(Boolean).join(path.delimiter);
+  }
+};
+
+const setupBundledLibsEnv = (): void => {
+  if (process.env.SBTLTV_USE_SYSTEM_LIBMPV === '1') return;
+  const isLinux = process.platform === 'linux';
+  const isMac = process.platform === 'darwin';
+  if (!isLinux && !isMac) return;
+
+  const packagedLibDir = path.join(process.resourcesPath, 'native', 'lib');
+  if (fs.existsSync(packagedLibDir)) {
+    if (isLinux) appendEnvPath('LD_LIBRARY_PATH', packagedLibDir);
+    if (isMac) appendEnvPath('DYLD_LIBRARY_PATH', packagedLibDir);
+    return;
+  }
+
+  const platformDir = isLinux ? 'linux' : 'macos';
+  const devBundleRoot = path.join(__dirname, '..', 'mpv-bundle', platformDir);
+  const ffmpegLib = path.join(devBundleRoot, 'ffmpeg', 'lib');
+  const mpvLib = path.join(devBundleRoot, 'mpv', 'lib');
+  if (isLinux) {
+    appendEnvPath('LD_LIBRARY_PATH', ffmpegLib);
+    appendEnvPath('LD_LIBRARY_PATH', mpvLib);
+  } else if (isMac) {
+    appendEnvPath('DYLD_LIBRARY_PATH', ffmpegLib);
+    appendEnvPath('DYLD_LIBRARY_PATH', mpvLib);
+  }
+};
+
+setupBundledLibsEnv();
+
 // Windows uses named pipes, Linux/macOS use Unix sockets
 const SOCKET_PATH = process.platform === 'win32'
   ? `\\\\.\\pipe\\mpv-socket-${process.pid}`

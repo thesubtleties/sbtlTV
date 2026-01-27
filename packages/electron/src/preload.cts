@@ -109,8 +109,9 @@ let mpvNative: any = null;
 
 if (isLinux) {
   const packagedPath = path.join(process.resourcesPath, 'native', 'mpv.node');
+  const distPath = path.join(__dirname, '../dist/native/mpv.node');
   const devPath = path.join(__dirname, '../native/mpv/build/Release/mpv.node');
-  const addonPath = fs.existsSync(packagedPath) ? packagedPath : devPath;
+  const addonPath = fs.existsSync(packagedPath) ? packagedPath : (fs.existsSync(distPath) ? distPath : devPath);
   try {
     mpvNative = require(addonPath);
   } catch (error) {
@@ -149,7 +150,7 @@ const startStatusPolling = () => {
         console.warn('[mpv]', events.lastLog);
       }
       if (events?.endFileError) {
-        emitError(events.endFileError);
+        emitError(events?.lastErrorLog || events.endFileError);
       }
       const status = mpvNative.getStatus?.();
       if (status) emitStatus(status as MpvStatus);
@@ -170,11 +171,11 @@ const mpvApi: MpvApi = isLinux
       }
       const deadline = Date.now() + 10000;
       while (Date.now() < deadline) {
-        const events = mpvNative.pollEvents?.();
-        if (events?.lastLog) console.warn('[mpv]', events.lastLog);
-        if (events?.endFileError) {
-          return { error: events.endFileError };
-        }
+      const events = mpvNative.pollEvents?.();
+      if (events?.lastLog) console.warn('[mpv]', events.lastLog);
+      if (events?.endFileError) {
+        return { error: events?.lastErrorLog || events.endFileError };
+      }
         if (events?.fileLoaded) {
           return { success: true };
         }

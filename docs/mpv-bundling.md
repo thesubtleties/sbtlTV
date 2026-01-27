@@ -17,9 +17,26 @@ read_when: building bundled ffmpeg/libmpv or changing IPTV codec/protocol requir
 ## Build scripts
 Use:
 - `scripts/build-ffmpeg.sh`
-- `scripts/build-mpv.sh`
+- `scripts/build-libmpv.sh` (defaults to GPL; set `MPV_GPL=0` for LGPL)
+- `scripts/download-licenses.sh`
+
+`scripts/build-mpv.sh` is a compatibility wrapper.
 
 Outputs go to `packages/electron/mpv-bundle/<platform>/`.
+
+Runtime loading:
+- Packaged app expects bundled libs in `resources/native/lib`.
+- Dev loads from `packages/electron/mpv-bundle/<platform>/{ffmpeg,mpv}/lib` if present.
+- Opt out and use system libs: `SBTLTV_USE_SYSTEM_LIBMPV=1`.
+- libmpv is built with rpath to `$ORIGIN` so colocated FFmpeg libs resolve in `native/lib`.
+
+Logging:
+- `SBTLTV_MPV_LOG_LEVEL=v|debug|info|warn` controls mpv log verbosity (default: `v`).
+- `SBTLTV_MPV_LOG_FILE=/path` writes mpv logs to a file.
+
+Notes:
+- X11 backends require `gpl=true` in mpv. If you must keep LGPL, X11 is disabled; Wayland/EGL only (`MPV_GPL=0`).
+- GPL mpv means the combined app must be distributed under GPL‑compatible terms (AGPLv3 is compatible). Ensure you ship full corresponding source + build scripts for mpv/FFmpeg and any modifications.
 
 ### Environment variables
 - `FFMPEG_VERSION` (default in script)
