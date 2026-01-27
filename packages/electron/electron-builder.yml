@@ -18,6 +18,8 @@ extraResources:
     to: ui
     filter:
       - "**/*"
+  - from: dist/native/mpv.node
+    to: native/mpv.node
 
 # Windows configuration
 win:

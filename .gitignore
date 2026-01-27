@@ -44,6 +44,7 @@ coverage/
 .tldr/
 .tldrignore
 .claude/
+.sisyphus/
 AGENTS.md
 
 # Development notes

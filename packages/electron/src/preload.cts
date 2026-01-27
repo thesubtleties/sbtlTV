@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { Source } from '@sbtltv/core';
 
 // Types for the exposed APIs
@@ -25,6 +27,10 @@ export interface MpvApi {
   toggleMute: () => Promise<MpvResult>;
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
+  initRenderer?: (width: number, height: number) => { buffer: ArrayBuffer; width: number; height: number; stride: number } | null;
+  setSize?: (width: number, height: number) => { buffer: ArrayBuffer; width: number; height: number; stride: number } | null;
+  renderFrame?: () => boolean;
+  isLibmpv?: boolean;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
@@ -88,37 +94,149 @@ contextBridge.exposeInMainWorld('electronWindow', {
   setSize: (width: number, height: number) => ipcRenderer.invoke('window-set-size', width, height),
 } satisfies ElectronWindowApi);
 
-// Expose mpv API to the renderer process
-contextBridge.exposeInMainWorld('mpv', {
-  // Control functions
-  load: (url: string) => ipcRenderer.invoke('mpv-load', url),
-  play: () => ipcRenderer.invoke('mpv-play'),
-  pause: () => ipcRenderer.invoke('mpv-pause'),
-  togglePause: () => ipcRenderer.invoke('mpv-toggle-pause'),
-  stop: () => ipcRenderer.invoke('mpv-stop'),
-  setVolume: (volume: number) => ipcRenderer.invoke('mpv-volume', volume),
-  toggleMute: () => ipcRenderer.invoke('mpv-toggle-mute'),
-  seek: (seconds: number) => ipcRenderer.invoke('mpv-seek', seconds),
-  getStatus: () => ipcRenderer.invoke('mpv-get-status'),
+const isLinux = process.platform === 'linux';
 
-  // Event listeners
-  onReady: (callback: (ready: boolean) => void) => {
-    ipcRenderer.on('mpv-ready', (_event: IpcRendererEvent, data: boolean) => callback(data));
-  },
-  onStatus: (callback: (status: MpvStatus) => void) => {
-    ipcRenderer.on('mpv-status', (_event: IpcRendererEvent, data: MpvStatus) => callback(data));
-  },
-  onError: (callback: (error: string) => void) => {
-    ipcRenderer.on('mpv-error', (_event: IpcRendererEvent, data: string) => callback(data));
-  },
+type MpvFrame = { buffer: ArrayBuffer; width: number; height: number; stride: number };
 
-  // Cleanup
-  removeAllListeners: () => {
-    ipcRenderer.removeAllListeners('mpv-ready');
-    ipcRenderer.removeAllListeners('mpv-status');
-    ipcRenderer.removeAllListeners('mpv-error');
-  },
-} satisfies MpvApi);
+const readyListeners = new Set<(ready: boolean) => void>();
+const statusListeners = new Set<(status: MpvStatus) => void>();
+const errorListeners = new Set<(error: string) => void>();
+
+let mpvReady = false;
+let mpvPollTimer: NodeJS.Timeout | null = null;
+let mpvNative: any = null;
+
+if (isLinux) {
+  const packagedPath = path.join(process.resourcesPath, 'native', 'mpv.node');
+  const devPath = path.join(__dirname, '../native/mpv/build/Release/mpv.node');
+  const addonPath = fs.existsSync(packagedPath) ? packagedPath : devPath;
+  try {
+    mpvNative = require(addonPath);
+  } catch (error) {
+    mpvNative = null;
+    console.error('[libmpv] Failed to load native module:', error);
+  }
+}
+
+const emitReady = (ready: boolean) => {
+  mpvReady = ready;
+  readyListeners.forEach((callback) => callback(ready));
+};
+
+const emitStatus = (status: MpvStatus) => {
+  statusListeners.forEach((callback) => callback(status));
+};
+
+const emitError = (message: string) => {
+  errorListeners.forEach((callback) => callback(message));
+};
+
+const startStatusPolling = () => {
+  if (mpvPollTimer || !mpvNative) return;
+  mpvPollTimer = setInterval(() => {
+    try {
+      const status = mpvNative.getStatus?.();
+      if (status) emitStatus(status as MpvStatus);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown libmpv error';
+      emitError(message);
+    }
+  }, 250);
+};
+
+const mpvApi: MpvApi = isLinux
+  ? {
+    load: async (url: string) => {
+      if (!mpvNative?.isInitialized?.()) return { error: 'libmpv not initialized' };
+      return mpvNative.load(url) ? { success: true } : { error: 'mpv load failed' };
+    },
+    play: async () => (mpvNative?.play?.() ? { success: true } : { error: 'mpv play failed' }),
+    pause: async () => (mpvNative?.pause?.() ? { success: true } : { error: 'mpv pause failed' }),
+    togglePause: async () => (mpvNative?.togglePause?.() ? { success: true } : { error: 'mpv toggle failed' }),
+    stop: async () => (mpvNative?.stop?.() ? { success: true } : { error: 'mpv stop failed' }),
+    setVolume: async (volume: number) => (mpvNative?.setVolume?.(volume) ? { success: true } : { error: 'mpv volume failed' }),
+    toggleMute: async () => (mpvNative?.toggleMute?.() ? { success: true } : { error: 'mpv mute failed' }),
+    seek: async (seconds: number) => (mpvNative?.seek?.(seconds) ? { success: true } : { error: 'mpv seek failed' }),
+    getStatus: async () => {
+      if (!mpvNative?.getStatus) {
+        return { playing: false, volume: 0, muted: false, position: 0, duration: 0 };
+      }
+      return mpvNative.getStatus() as MpvStatus;
+    },
+    initRenderer: (width: number, height: number) => {
+      if (!mpvNative) {
+        emitError('libmpv not available - install libmpv-dev');
+        return null;
+      }
+      if (!mpvNative.isInitialized?.()) {
+        const ok = mpvNative.init?.();
+        if (!ok) {
+          emitError('libmpv init failed');
+          return null;
+        }
+      }
+      const frame = mpvNative.setSize?.(width, height) as MpvFrame | null;
+      if (!frame) {
+        emitError('libmpv setSize failed');
+        return null;
+      }
+      emitReady(true);
+      startStatusPolling();
+      return frame;
+    },
+    setSize: (width: number, height: number) => {
+      if (!mpvNative?.setSize) return null;
+      return mpvNative.setSize(width, height) as MpvFrame | null;
+    },
+    renderFrame: () => (mpvNative?.renderFrame?.() ? true : false),
+    isLibmpv: true,
+    onReady: (callback: (ready: boolean) => void) => {
+      readyListeners.add(callback);
+      if (mpvReady) callback(true);
+    },
+    onStatus: (callback: (status: MpvStatus) => void) => {
+      statusListeners.add(callback);
+    },
+    onError: (callback: (error: string) => void) => {
+      errorListeners.add(callback);
+    },
+    removeAllListeners: () => {
+      readyListeners.clear();
+      statusListeners.clear();
+      errorListeners.clear();
+      if (mpvPollTimer) {
+        clearInterval(mpvPollTimer);
+        mpvPollTimer = null;
+      }
+    },
+  }
+  : {
+    load: (url: string) => ipcRenderer.invoke('mpv-load', url),
+    play: () => ipcRenderer.invoke('mpv-play'),
+    pause: () => ipcRenderer.invoke('mpv-pause'),
+    togglePause: () => ipcRenderer.invoke('mpv-toggle-pause'),
+    stop: () => ipcRenderer.invoke('mpv-stop'),
+    setVolume: (volume: number) => ipcRenderer.invoke('mpv-volume', volume),
+    toggleMute: () => ipcRenderer.invoke('mpv-toggle-mute'),
+    seek: (seconds: number) => ipcRenderer.invoke('mpv-seek', seconds),
+    getStatus: () => ipcRenderer.invoke('mpv-get-status'),
+    onReady: (callback: (ready: boolean) => void) => {
+      ipcRenderer.on('mpv-ready', (_event: IpcRendererEvent, data: boolean) => callback(data));
+    },
+    onStatus: (callback: (status: MpvStatus) => void) => {
+      ipcRenderer.on('mpv-status', (_event: IpcRendererEvent, data: MpvStatus) => callback(data));
+    },
+    onError: (callback: (error: string) => void) => {
+      ipcRenderer.on('mpv-error', (_event: IpcRendererEvent, data: string) => callback(data));
+    },
+    removeAllListeners: () => {
+      ipcRenderer.removeAllListeners('mpv-ready');
+      ipcRenderer.removeAllListeners('mpv-status');
+      ipcRenderer.removeAllListeners('mpv-error');
+    },
+  };
+
+contextBridge.exposeInMainWorld('mpv', mpvApi);
 
 // Expose storage API for sources and settings
 contextBridge.exposeInMainWorld('storage', {

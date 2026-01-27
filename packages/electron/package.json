@@ -11,9 +11,11 @@
   "type": "module",
   "main": "./dist/main.js",
   "scripts": {
-    "build": "tsc",
-    "dev": "electron . --dev",
+    "build": "tsc && pnpm native:build && pnpm native:copy",
+    "dev": "pnpm native:build && electron --ozone-platform=x11 . --dev",
     "start": "electron .",
+    "native:build": "node scripts/native-build.cjs",
+    "native:copy": "node scripts/native-copy.cjs",
     "typecheck": "tsc --noEmit",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
@@ -28,6 +30,7 @@
   "devDependencies": {
     "electron": "^40.0.0",
     "electron-builder": "^26.4.0",
+    "node-gyp": "^10.2.0",
     "typescript": "^5.3.0"
   }
 }

@@ -123,6 +123,8 @@ function App() {
   // Track if mouse is hovering over controls (prevents auto-hide)
   const controlsHoveredRef = useRef(false);
 
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
   // Set up mpv event listeners
   useEffect(() => {
     if (!window.mpv) {
@@ -158,6 +160,73 @@ function App() {
 
     return () => {
       window.mpv?.removeAllListeners();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!window.platform?.isLinux || !window.mpv?.initRenderer || !window.mpv?.renderFrame || !window.mpv?.setSize) {
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let initialized = false;
+    let imageData: ImageData | null = null;
+    let rafId = 0;
+    let destroyed = false;
+
+    const initFrame = (width: number, height: number) => {
+      if (!initialized) {
+        const frame = window.mpv?.initRenderer?.(width, height);
+        if (!frame) return;
+        initialized = true;
+        canvas.width = frame.width;
+        canvas.height = frame.height;
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        imageData = new ImageData(new Uint8ClampedArray(frame.buffer), frame.width, frame.height);
+        return;
+      }
+
+      const frame = window.mpv?.setSize?.(width, height);
+      if (!frame) return;
+      canvas.width = frame.width;
+      canvas.height = frame.height;
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      imageData = new ImageData(new Uint8ClampedArray(frame.buffer), frame.width, frame.height);
+    };
+
+    const resize = () => {
+      const rect = canvas.parentElement?.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.floor((rect?.width ?? window.innerWidth) * dpr));
+      const height = Math.max(1, Math.floor((rect?.height ?? window.innerHeight) * dpr));
+      initFrame(width, height);
+    };
+
+    const observer = new ResizeObserver(() => resize());
+    observer.observe(canvas.parentElement ?? canvas);
+    resize();
+
+    const render = () => {
+      if (destroyed) return;
+      if (imageData && window.mpv?.renderFrame?.()) {
+        ctx.putImageData(imageData, 0, 0);
+      }
+      rafId = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      destroyed = true;
+      observer.disconnect();
+      cancelAnimationFrame(rafId);
     };
   }, []);
 
@@ -365,6 +434,9 @@ function App() {
 
       {/* Background - transparent over mpv */}
       <div className="video-background">
+        {window.platform?.isLinux && window.mpv?.isLibmpv && (
+          <canvas className="video-canvas" ref={canvasRef} />
+        )}
         {!currentChannel && (
           <div className="placeholder">
             <Logo className="placeholder__logo" />
