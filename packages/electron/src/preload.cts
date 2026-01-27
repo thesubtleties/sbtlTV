@@ -179,13 +179,17 @@ const mpvApi: MpvApi = isLinux
       if (!mpvNative.isInitialized?.()) {
         const ok = mpvNative.init?.();
         if (!ok) {
-          emitError('libmpv init failed');
+          const detail = mpvNative.getLastError?.();
+          emitError(detail ? `libmpv init failed: ${detail}` : 'libmpv init failed');
           return null;
         }
       }
       const frame = mpvNative.setSize?.(width, height) as MpvFrame | null;
       if (!frame) {
-        emitError('libmpv setSize failed');
+        const detail = mpvNative.getLastError?.();
+        const message = detail ? `libmpv setSize failed: ${detail}` : 'libmpv setSize failed: unknown';
+        console.error('[libmpv]', message);
+        emitError(message);
         return null;
       }
       emitReady(true);

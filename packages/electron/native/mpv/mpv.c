@@ -35,6 +35,17 @@ static int fbo_width = 0;
 static int fbo_height = 0;
 static GLuint fbo = 0;
 static GLuint fbo_tex = 0;
+static int gl_fbo_loaded = 0;
+static PFNGLGENFRAMEBUFFERSPROC p_glGenFramebuffers = NULL;
+static PFNGLDELETEFRAMEBUFFERSPROC p_glDeleteFramebuffers = NULL;
+static PFNGLBINDFRAMEBUFFERPROC p_glBindFramebuffer = NULL;
+static PFNGLFRAMEBUFFERTEXTURE2DPROC p_glFramebufferTexture2D = NULL;
+static PFNGLCHECKFRAMEBUFFERSTATUSPROC p_glCheckFramebufferStatus = NULL;
+static PFNGLGENFRAMEBUFFERSEXTPROC p_glGenFramebuffersEXT = NULL;
+static PFNGLDELETEFRAMEBUFFERSEXTPROC p_glDeleteFramebuffersEXT = NULL;
+static PFNGLBINDFRAMEBUFFEREXTPROC p_glBindFramebufferEXT = NULL;
+static PFNGLFRAMEBUFFERTEXTURE2DEXTPROC p_glFramebufferTexture2DEXT = NULL;
+static PFNGLCHECKFRAMEBUFFERSTATUSEXTPROC p_glCheckFramebufferStatusEXT = NULL;
 
 static gl_context_type gl_ctx = CTX_NONE;
 
@@ -51,11 +62,44 @@ static GLXPbuffer glx_pbuffer = 0;
 static GLXFBConfig glx_fbconfig;
 
 static atomic_int render_pending;
+static char last_error[256];
+static int set_size_call_count = 0;
 
-static void free_buffer(napi_env env, void *data, void *hint) {
-  (void)env;
-  (void)hint;
-  free(data);
+static void load_gl_fbo(void);
+static int gl_has_fbo(void);
+static void gl_gen_framebuffers(GLsizei n, GLuint *ids);
+static void gl_delete_framebuffers(GLsizei n, const GLuint *ids);
+static void gl_bind_framebuffer(GLenum target, GLuint framebuffer);
+static void gl_framebuffer_texture_2d(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
+static GLenum gl_check_framebuffer_status(GLenum target);
+
+static void set_last_error(const char *message) {
+  if (!message) {
+    last_error[0] = '\0';
+    return;
+  }
+  strncpy(last_error, message, sizeof(last_error) - 1);
+  last_error[sizeof(last_error) - 1] = '\0';
+}
+
+static void log_error_message(const char *message) {
+  if (message && message[0]) {
+    fprintf(stderr, "%s\n", message);
+  }
+  fflush(stderr);
+}
+
+static void set_last_error_from_mpv(const char *context, int code) {
+  const char *msg = mpv_error_string(code);
+  if (!msg) msg = "unknown";
+  if (context && context[0]) {
+    snprintf(last_error, sizeof(last_error), "%s: %s", context, msg);
+  } else {
+    snprintf(last_error, sizeof(last_error), "%s", msg);
+  }
+  last_error[sizeof(last_error) - 1] = '\0';
+  fprintf(stderr, "[libmpv] %s\n", last_error);
+  fflush(stderr);
 }
 
 static napi_value make_bool(napi_env env, int value) {
@@ -71,7 +115,7 @@ static napi_value make_null(napi_env env) {
 }
 
 static void log_error(const char *message) {
-  fprintf(stderr, "%s\n", message);
+  log_error_message(message);
 }
 
 static int set_option_string(const char *name, const char *value) {
@@ -255,6 +299,7 @@ static int init_gl_context(void) {
   if (display && init_glx()) return 1;
 
   log_error("[libmpv] Failed to initialize OpenGL context (x11egl, wayland, x11)");
+  set_last_error("gl context init failed");
   return 0;
 }
 
@@ -272,19 +317,9 @@ static int make_current(void) {
   return 0;
 }
 
-static int resize_surface(int width, int height) {
-  if (gl_ctx == CTX_EGL_X11 || gl_ctx == CTX_EGL_WAYLAND) {
-    return egl_create_pbuffer(width, height);
-  }
-  if (gl_ctx == CTX_GLX) {
-    return glx_create_pbuffer(width, height);
-  }
-  return 0;
-}
-
 static void cleanup_fbo(void) {
   if (fbo) {
-    glDeleteFramebuffers(1, &fbo);
+    gl_delete_framebuffers(1, &fbo);
     fbo = 0;
   }
   if (fbo_tex) {
@@ -296,6 +331,13 @@ static void cleanup_fbo(void) {
 }
 
 static int ensure_fbo(int width, int height) {
+  load_gl_fbo();
+  if (!gl_has_fbo()) {
+    log_error("[libmpv] FBO functions unavailable");
+    set_last_error("fbo functions unavailable");
+    return 0;
+  }
+
   if (fbo && fbo_tex && fbo_width == width && fbo_height == height) return 1;
 
   cleanup_fbo();
@@ -309,17 +351,31 @@ static int ensure_fbo(int width, int height) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+  {
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+      fprintf(stderr, "[libmpv] GL error after glTexImage2D: 0x%04x\n", err);
+      fflush(stderr);
+      set_last_error("glTexImage2D failed");
+      cleanup_fbo();
+      return 0;
+    }
+  }
 
-  glGenFramebuffers(1, &fbo);
+  gl_gen_framebuffers(1, &fbo);
   if (!fbo) {
+    set_last_error("glGenFramebuffers failed");
     cleanup_fbo();
     return 0;
   }
-  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbo_tex, 0);
+  gl_bind_framebuffer(GL_FRAMEBUFFER, fbo);
+  gl_framebuffer_texture_2d(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbo_tex, 0);
 
-  GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  GLenum status = gl_check_framebuffer_status(GL_FRAMEBUFFER);
   if (status != GL_FRAMEBUFFER_COMPLETE) {
+    fprintf(stderr, "[libmpv] FBO status=0x%04x\n", status);
+    fflush(stderr);
+    set_last_error("fbo incomplete");
     cleanup_fbo();
     return 0;
   }
@@ -384,16 +440,90 @@ static void *get_proc_address(void *ctx, const char *name) {
   return (void *)eglGetProcAddress(name);
 }
 
+static void load_gl_fbo(void) {
+  if (gl_fbo_loaded) return;
+  gl_fbo_loaded = 1;
+  p_glGenFramebuffers = (PFNGLGENFRAMEBUFFERSPROC)get_proc_address(NULL, "glGenFramebuffers");
+  p_glDeleteFramebuffers = (PFNGLDELETEFRAMEBUFFERSPROC)get_proc_address(NULL, "glDeleteFramebuffers");
+  p_glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)get_proc_address(NULL, "glBindFramebuffer");
+  p_glFramebufferTexture2D = (PFNGLFRAMEBUFFERTEXTURE2DPROC)get_proc_address(NULL, "glFramebufferTexture2D");
+  p_glCheckFramebufferStatus = (PFNGLCHECKFRAMEBUFFERSTATUSPROC)get_proc_address(NULL, "glCheckFramebufferStatus");
+
+  p_glGenFramebuffersEXT = (PFNGLGENFRAMEBUFFERSEXTPROC)get_proc_address(NULL, "glGenFramebuffersEXT");
+  p_glDeleteFramebuffersEXT = (PFNGLDELETEFRAMEBUFFERSEXTPROC)get_proc_address(NULL, "glDeleteFramebuffersEXT");
+  p_glBindFramebufferEXT = (PFNGLBINDFRAMEBUFFEREXTPROC)get_proc_address(NULL, "glBindFramebufferEXT");
+  p_glFramebufferTexture2DEXT = (PFNGLFRAMEBUFFERTEXTURE2DEXTPROC)get_proc_address(NULL, "glFramebufferTexture2DEXT");
+  p_glCheckFramebufferStatusEXT = (PFNGLCHECKFRAMEBUFFERSTATUSEXTPROC)get_proc_address(NULL, "glCheckFramebufferStatusEXT");
+}
+
+static int gl_has_fbo(void) {
+  return (p_glGenFramebuffers && p_glBindFramebuffer && p_glFramebufferTexture2D && p_glCheckFramebufferStatus) ||
+    (p_glGenFramebuffersEXT && p_glBindFramebufferEXT && p_glFramebufferTexture2DEXT && p_glCheckFramebufferStatusEXT);
+}
+
+static void gl_gen_framebuffers(GLsizei n, GLuint *ids) {
+  if (p_glGenFramebuffers) {
+    p_glGenFramebuffers(n, ids);
+    return;
+  }
+  if (p_glGenFramebuffersEXT) {
+    p_glGenFramebuffersEXT(n, ids);
+  }
+}
+
+static void gl_delete_framebuffers(GLsizei n, const GLuint *ids) {
+  if (p_glDeleteFramebuffers) {
+    p_glDeleteFramebuffers(n, ids);
+    return;
+  }
+  if (p_glDeleteFramebuffersEXT) {
+    p_glDeleteFramebuffersEXT(n, ids);
+  }
+}
+
+static void gl_bind_framebuffer(GLenum target, GLuint framebuffer) {
+  if (p_glBindFramebuffer) {
+    p_glBindFramebuffer(target, framebuffer);
+    return;
+  }
+  if (p_glBindFramebufferEXT) {
+    p_glBindFramebufferEXT(target, framebuffer);
+  }
+}
+
+static void gl_framebuffer_texture_2d(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level) {
+  if (p_glFramebufferTexture2D) {
+    p_glFramebufferTexture2D(target, attachment, textarget, texture, level);
+    return;
+  }
+  if (p_glFramebufferTexture2DEXT) {
+    p_glFramebufferTexture2DEXT(target, attachment, textarget, texture, level);
+  }
+}
+
+static GLenum gl_check_framebuffer_status(GLenum target) {
+  if (p_glCheckFramebufferStatus) {
+    return p_glCheckFramebufferStatus(target);
+  }
+  if (p_glCheckFramebufferStatusEXT) {
+    return p_glCheckFramebufferStatusEXT(target);
+  }
+  return 0;
+}
+
 static napi_value mpv_init(napi_env env, napi_callback_info info) {
   (void)info;
   if (mpv_instance) return make_bool(env, 1);
 
+  set_last_error(NULL);
+  set_size_call_count = 0;
   if (!init_gl_context()) {
     return make_bool(env, 0);
   }
 
   mpv_instance = mpv_create();
   if (!mpv_instance) {
+    set_last_error("mpv_create failed");
     cleanup_gl();
     return make_bool(env, 0);
   }
@@ -417,6 +547,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   if (gl_ctx == CTX_GLX) ok &= set_option_string("gpu-context", "x11") >= 0;
 
   if (!ok) {
+    set_last_error("mpv option set failed");
     mpv_terminate_destroy(mpv_instance);
     mpv_instance = NULL;
     cleanup_gl();
@@ -424,6 +555,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   }
 
   if (mpv_initialize(mpv_instance) < 0) {
+    set_last_error("mpv_initialize failed");
     mpv_terminate_destroy(mpv_instance);
     mpv_instance = NULL;
     cleanup_gl();
@@ -465,6 +597,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   };
 
   if (mpv_render_context_create(&mpv_render, mpv_instance, params) < 0) {
+    set_last_error("mpv_render_context_create failed");
     mpv_terminate_destroy(mpv_instance);
     mpv_instance = NULL;
     mpv_render = NULL;
@@ -475,6 +608,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   atomic_store(&render_pending, 1);
   mpv_render_context_set_update_callback(mpv_render, on_mpv_update, NULL);
 
+  set_last_error(NULL);
   return make_bool(env, 1);
 }
 
@@ -503,24 +637,52 @@ static napi_value mpv_shutdown(napi_env env, napi_callback_info info) {
 static napi_value mpv_set_size(napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value args[2];
-  if (napi_get_cb_info(env, info, &argc, args, NULL, NULL) != napi_ok) return NULL;
+  if (napi_get_cb_info(env, info, &argc, args, NULL, NULL) != napi_ok) {
+    set_last_error("napi_get_cb_info failed");
+    return make_null(env);
+  }
 
-  if (argc < 2 || !mpv_render) return make_null(env);
+  if (argc < 2) {
+    set_last_error("missing size args");
+    return make_null(env);
+  }
+  if (!mpv_render) {
+    set_last_error("render context missing");
+    return make_null(env);
+  }
+
+  set_size_call_count += 1;
 
   int32_t width = 0;
   int32_t height = 0;
-  if (napi_get_value_int32(env, args[0], &width) != napi_ok) return make_null(env);
-  if (napi_get_value_int32(env, args[1], &height) != napi_ok) return make_null(env);
+  if (napi_get_value_int32(env, args[0], &width) != napi_ok) {
+    set_last_error("width parse failed");
+    return make_null(env);
+  }
+  if (napi_get_value_int32(env, args[1], &height) != napi_ok) {
+    set_last_error("height parse failed");
+    return make_null(env);
+  }
 
-  if (width <= 0 || height <= 0) return make_null(env);
+  if (set_size_call_count <= 3) {
+    fprintf(stderr, "[libmpv] setSize call %d: %dx%d ctx=%d\\n", set_size_call_count, width, height, gl_ctx);
+    fflush(stderr);
+  }
+
+  if (width <= 0 || height <= 0) {
+    set_last_error("invalid size");
+    return make_null(env);
+  }
 
   if (!make_current()) {
     log_error("[libmpv] make current failed");
+    set_last_error("make current failed");
     return make_null(env);
   }
 
   if (!ensure_fbo(width, height)) {
     log_error("[libmpv] FBO resize failed");
+    if (!last_error[0]) set_last_error("fbo resize failed");
     return make_null(env);
   }
 
@@ -530,34 +692,56 @@ static napi_value mpv_set_size(napi_env env, napi_callback_info info) {
   frame_buffer_size = (size_t)frame_stride * (size_t)frame_height;
   atomic_store(&render_pending, 1);
 
-  uint8_t *buffer = (uint8_t *)malloc(frame_buffer_size);
-  if (!buffer) return make_null(env);
-  memset(buffer, 0, frame_buffer_size);
-
-  frame_buffer = buffer;
-
+  void *buffer = NULL;
   napi_value arraybuffer;
-  if (napi_create_external_arraybuffer(env, buffer, frame_buffer_size, free_buffer, NULL, &arraybuffer) != napi_ok) {
-    free(buffer);
-    frame_buffer = NULL;
+  if (napi_create_arraybuffer(env, frame_buffer_size, &buffer, &arraybuffer) != napi_ok || !buffer) {
+    set_last_error("napi_create_arraybuffer failed");
     return make_null(env);
   }
+  memset(buffer, 0, frame_buffer_size);
+
+  frame_buffer = (uint8_t *)buffer;
 
   napi_value obj;
-  if (napi_create_object(env, &obj) != napi_ok) return make_null(env);
+  if (napi_create_object(env, &obj) != napi_ok) {
+    set_last_error("napi_create_object failed");
+    return make_null(env);
+  }
 
   napi_value width_val;
   napi_value height_val;
   napi_value stride_val;
-  if (napi_create_int32(env, frame_width, &width_val) != napi_ok) return make_null(env);
-  if (napi_create_int32(env, frame_height, &height_val) != napi_ok) return make_null(env);
-  if (napi_create_int32(env, frame_stride, &stride_val) != napi_ok) return make_null(env);
+  if (napi_create_int32(env, frame_width, &width_val) != napi_ok) {
+    set_last_error("napi_create_int32 width failed");
+    return make_null(env);
+  }
+  if (napi_create_int32(env, frame_height, &height_val) != napi_ok) {
+    set_last_error("napi_create_int32 height failed");
+    return make_null(env);
+  }
+  if (napi_create_int32(env, frame_stride, &stride_val) != napi_ok) {
+    set_last_error("napi_create_int32 stride failed");
+    return make_null(env);
+  }
 
-  if (napi_set_named_property(env, obj, "buffer", arraybuffer) != napi_ok) return make_null(env);
-  if (napi_set_named_property(env, obj, "width", width_val) != napi_ok) return make_null(env);
-  if (napi_set_named_property(env, obj, "height", height_val) != napi_ok) return make_null(env);
-  if (napi_set_named_property(env, obj, "stride", stride_val) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "buffer", arraybuffer) != napi_ok) {
+    set_last_error("napi_set_named_property buffer failed");
+    return make_null(env);
+  }
+  if (napi_set_named_property(env, obj, "width", width_val) != napi_ok) {
+    set_last_error("napi_set_named_property width failed");
+    return make_null(env);
+  }
+  if (napi_set_named_property(env, obj, "height", height_val) != napi_ok) {
+    set_last_error("napi_set_named_property height failed");
+    return make_null(env);
+  }
+  if (napi_set_named_property(env, obj, "stride", stride_val) != napi_ok) {
+    set_last_error("napi_set_named_property stride failed");
+    return make_null(env);
+  }
 
+  set_last_error(NULL);
   return obj;
 }
 
@@ -597,7 +781,7 @@ static napi_value mpv_render_frame(napi_env env, napi_callback_info info) {
   glViewport(0, 0, frame_width, frame_height);
   mpv_render_context_render(mpv_render, params);
 
-  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  gl_bind_framebuffer(GL_FRAMEBUFFER, fbo);
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
   glReadPixels(0, 0, frame_width, frame_height, GL_RGBA, GL_UNSIGNED_BYTE, frame_buffer);
 
@@ -608,6 +792,9 @@ static napi_value mpv_command_simple(napi_env env, const char *cmd, const char *
   if (!mpv_instance) return make_bool(env, 0);
   const char *cmd_args[3] = { cmd, arg, NULL };
   int res = mpv_command(mpv_instance, cmd_args);
+  if (res < 0) {
+    set_last_error_from_mpv(cmd, res);
+  }
   return make_bool(env, res >= 0);
 }
 
@@ -630,6 +817,9 @@ static napi_value mpv_load(napi_env env, napi_callback_info info) {
   const char *cmd_args[3] = { "loadfile", url, NULL };
   int res = mpv_command(mpv_instance, cmd_args);
   free(url);
+  if (res < 0) {
+    set_last_error_from_mpv("loadfile", res);
+  }
   return make_bool(env, res >= 0);
 }
 
@@ -638,6 +828,9 @@ static napi_value mpv_play(napi_env env, napi_callback_info info) {
   if (!mpv_instance) return make_bool(env, 0);
   int flag = 0;
   int res = mpv_set_property(mpv_instance, "pause", MPV_FORMAT_FLAG, &flag);
+  if (res < 0) {
+    set_last_error_from_mpv("play", res);
+  }
   return make_bool(env, res >= 0);
 }
 
@@ -646,6 +839,9 @@ static napi_value mpv_pause(napi_env env, napi_callback_info info) {
   if (!mpv_instance) return make_bool(env, 0);
   int flag = 1;
   int res = mpv_set_property(mpv_instance, "pause", MPV_FORMAT_FLAG, &flag);
+  if (res < 0) {
+    set_last_error_from_mpv("pause", res);
+  }
   return make_bool(env, res >= 0);
 }
 
@@ -669,6 +865,9 @@ static napi_value mpv_set_volume(napi_env env, napi_callback_info info) {
   double volume = 0.0;
   if (napi_get_value_double(env, args[0], &volume) != napi_ok) return make_bool(env, 0);
   int res = mpv_set_property(mpv_instance, "volume", MPV_FORMAT_DOUBLE, &volume);
+  if (res < 0) {
+    set_last_error_from_mpv("volume", res);
+  }
   return make_bool(env, res >= 0);
 }
 
@@ -691,6 +890,9 @@ static napi_value mpv_seek(napi_env env, napi_callback_info info) {
   snprintf(offset, sizeof(offset), "%f", seconds);
   const char *cmd_args[4] = { "seek", offset, "absolute", NULL };
   int res = mpv_command(mpv_instance, cmd_args);
+  if (res < 0) {
+    set_last_error_from_mpv("seek", res);
+  }
   return make_bool(env, res >= 0);
 }
 
@@ -739,6 +941,14 @@ static napi_value mpv_is_initialized(napi_env env, napi_callback_info info) {
   return make_bool(env, mpv_instance != NULL);
 }
 
+static napi_value mpv_get_last_error(napi_env env, napi_callback_info info) {
+  (void)info;
+  if (!last_error[0]) return make_null(env);
+  napi_value value;
+  if (napi_create_string_utf8(env, last_error, NAPI_AUTO_LENGTH, &value) != napi_ok) return make_null(env);
+  return value;
+}
+
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor descriptors[] = {
     { "init", NULL, mpv_init, NULL, NULL, NULL, napi_default, NULL },
@@ -755,6 +965,7 @@ static napi_value init(napi_env env, napi_value exports) {
     { "seek", NULL, mpv_seek, NULL, NULL, NULL, napi_default, NULL },
     { "getStatus", NULL, mpv_get_status, NULL, NULL, NULL, napi_default, NULL },
     { "isInitialized", NULL, mpv_is_initialized, NULL, NULL, NULL, napi_default, NULL },
+    { "getLastError", NULL, mpv_get_last_error, NULL, NULL, NULL, napi_default, NULL },
   };
 
   if (napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors) != napi_ok) {

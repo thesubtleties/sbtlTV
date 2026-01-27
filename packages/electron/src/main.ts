@@ -51,7 +51,7 @@ async function createWindow(): Promise<void> {
   // On Windows and Linux, use a transparent window so mpv shows through
   const isWindows = process.platform === 'win32';
   const isLinux = process.platform === 'linux';
-  const useTransparent = isWindows || isLinux;
+  const useTransparent = isWindows;
   const useFrameless = isWindows || isLinux;
 
   mainWindow = new BrowserWindow({

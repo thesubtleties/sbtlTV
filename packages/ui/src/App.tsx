@@ -420,8 +420,10 @@ function App() {
     window.close();
   };
 
+  const isTransparent = window.platform?.isWindows;
+
   return (
-    <div className="app" onMouseMove={handleMouseMove}>
+    <div className={`app${isTransparent ? ' app--transparent' : ''}`} onMouseMove={handleMouseMove}>
       {/* Custom title bar for frameless window */}
       <div className="title-bar">
         <Logo className="title-bar-logo" />

@@ -3,10 +3,14 @@
   width: 100vw;
   height: 100vh;
   position: relative;
-  background: transparent;
+  background: #000;
   color: white;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.app--transparent {
+  background: transparent;
 }
 
 /* Custom title bar for frameless window */
