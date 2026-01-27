@@ -21,6 +21,7 @@ read_when: adding/changing runtime flags or debugging playback/render issues
 
 ## Hardware decode
 - `SBTLTV_HWDEC=auto|auto-safe|vaapi|vdpau|nvdec` (default: vaapi when enforced)
+- `SBTLTV_HWDEC_INTEROP=auto|vaapi|drmprime|no` (default: vaapi when enforced)
 - `SBTLTV_HWDEC_GRACE_MS=5000` grace window before enforcing hwdec
 - `SBTLTV_ALLOW_SWDEC=1` allow software decode fallback
 - `SBTLTV_HWDEC_ENFORCE=0` disable enforcement (default: enforced)
@@ -29,8 +30,7 @@ read_when: adding/changing runtime flags or debugging playback/render issues
 - `SBTLTV_RENDER_FPS=30` cap render loop fps
 - `SBTLTV_RENDER_MAX_WIDTH=1920` cap render buffer width (0 = no cap)
 - `SBTLTV_RENDER_MAX_HEIGHT=1080` cap render buffer height (0 = no cap)
-- `SBTLTV_RENDER_FLIP_Y=1` flip render buffer vertically (disables mpv flip)
-- `SBTLTV_VIDEO_ROTATE=0|90|180|270|auto` override mpv rotation
+- `SBTLTV_VIDEO_ROTATE=0|90|180|270|auto` override mpv rotation (default: 0)
 
 ## Native build/dev
 - `SBTLTV_SKIP_NATIVE_BUILD=1` skip node-gyp rebuild if mpv.node exists

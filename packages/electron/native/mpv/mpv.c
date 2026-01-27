@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <strings.h>
 
@@ -72,6 +73,14 @@ static int g_end_file_error = 0;
 static char g_end_file_error_text[512] = {0};
 static char g_last_log[1024] = {0};
 static char g_last_error_log[1024] = {0};
+static const char *SBTLTV_MPV_BUILD_ID = __DATE__ " " __TIME__;
+static char g_last_hwdec_current[64] = {0};
+static char g_last_hwdec_interop[64] = {0};
+static char g_last_hwdec[64] = {0};
+static char g_last_vo[64] = {0};
+static char g_last_gpu_api[64] = {0};
+static char g_last_gpu_context[64] = {0};
+static char g_last_video_codec[64] = {0};
 
 static void load_gl_fbo(void);
 static int gl_has_fbo(void);
@@ -93,15 +102,52 @@ static void set_last_error(const char *message) {
 static void log_error_message(const char *message) {
   if (message && message[0]) {
     fprintf(stderr, "%s\n", message);
+    fflush(stderr);
   }
-  fflush(stderr);
 }
 
 static void log_info_message(const char *message) {
   if (message && message[0]) {
     fprintf(stderr, "%s\n", message);
+    fflush(stderr);
   }
-  fflush(stderr);
+}
+
+static void log_debug_message(const char *message) {
+  if (message && message[0]) {
+    fprintf(stderr, "%s\n", message);
+    fflush(stderr);
+  }
+}
+
+static void log_debugf(const char *fmt, ...) {
+  char buffer[512];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(buffer, sizeof(buffer), fmt, args);
+  va_end(args);
+  log_debug_message(buffer);
+}
+
+static int get_string_property(const char *name, char *out, size_t out_size) {
+  if (!mpv_instance || !out || out_size == 0) return 0;
+  out[0] = '\0';
+  char *value = NULL;
+  if (mpv_get_property(mpv_instance, name, MPV_FORMAT_STRING, &value) >= 0 && value) {
+    snprintf(out, out_size, "%s", value);
+    mpv_free(value);
+    return 1;
+  }
+  return 0;
+}
+
+static void log_prop_change(const char *label, const char *value, char *last, size_t last_size) {
+  if (!label || !value || !last || last_size == 0) return;
+  if (strncmp(last, value, last_size) != 0) {
+    snprintf(last, last_size, "%s", value);
+    fprintf(stderr, "%s%s\n", label, value);
+    fflush(stderr);
+  }
 }
 
 static void log_versions(void) {
@@ -578,11 +624,15 @@ static GLenum gl_check_framebuffer_status(GLenum target) {
 
 static napi_value mpv_init(napi_env env, napi_callback_info info) {
   (void)info;
-  if (mpv_instance) return make_bool(env, 1);
+  if (mpv_instance) {
+    log_info_message("[libmpv] mpv_init called (already initialized)");
+    return make_bool(env, 1);
+  }
 
   set_last_error(NULL);
   set_size_call_count = 0;
   setlocale(LC_NUMERIC, "C");
+  log_info_message("[libmpv] mpv_init called");
   log_versions();
   if (avformat_network_init() < 0) {
     log_error("[libmpv] avformat_network_init failed");
@@ -597,6 +647,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
     cleanup_gl();
     return make_bool(env, 0);
   }
+
 
   int ok = 1;
   set_option_string_optional("terminal", "no");
@@ -626,9 +677,8 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
     set_option_string_optional("ytdl-path", ytdl_path);
   }
   const char *video_rotate = getenv("SBTLTV_VIDEO_ROTATE");
-  if (video_rotate && video_rotate[0]) {
-    set_option_string_optional("video-rotate", video_rotate);
-  }
+  if (!video_rotate || !video_rotate[0]) video_rotate = "0";
+  set_option_string_optional("video-rotate", video_rotate);
   ok &= set_option_string_required("vo", "libmpv");
   ok &= set_option_string_required("gpu-api", "opengl");
 
@@ -645,11 +695,16 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   int enforce_hwdec = !env_is_falsey(enforce_env);
   if (!hwdec || !hwdec[0]) hwdec = enforce_hwdec ? "vaapi" : "auto-safe";
   set_option_string_optional("hwdec", hwdec);
+  const char *hwdec_interop = getenv("SBTLTV_HWDEC_INTEROP");
+  if (!hwdec_interop || !hwdec_interop[0]) hwdec_interop = enforce_hwdec ? "vaapi" : "auto";
+  set_option_string_optional("hwdec-interop", hwdec_interop);
+  set_option_string_optional("gpu-hwdec-interop", hwdec_interop);
   {
     char summary[256];
-    snprintf(summary, sizeof(summary), "[libmpv] options: vo=libmpv gpu-api=opengl gpu-context=%s hwdec=%s",
+    snprintf(summary, sizeof(summary), "[libmpv] options: vo=libmpv gpu-api=opengl gpu-context=%s hwdec=%s hwdec-interop=%s",
       gl_ctx == CTX_EGL_X11 ? "x11egl" : (gl_ctx == CTX_EGL_WAYLAND ? "wayland" : (gl_ctx == CTX_GLX ? "x11" : "auto")),
-      hwdec);
+      hwdec,
+      hwdec_interop);
     log_info_message(summary);
   }
 
@@ -665,14 +720,29 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
 
   if (mpv_initialize(mpv_instance) < 0) {
     set_last_error("mpv_initialize failed");
+    log_error_message("[libmpv] mpv_initialize failed");
     mpv_terminate_destroy(mpv_instance);
     mpv_instance = NULL;
     cleanup_gl();
     return make_bool(env, 0);
   }
 
+  log_info_message("[libmpv] mpv_initialize ok");
+
   if (mpv_request_log_messages(mpv_instance, log_level) < 0) {
     log_error("[libmpv] mpv_request_log_messages failed");
+  }
+
+  {
+    char build_info[256];
+    snprintf(build_info, sizeof(build_info), "[libmpv] build: %s", SBTLTV_MPV_BUILD_ID);
+    log_info_message(build_info);
+    char context_info[256];
+    snprintf(context_info, sizeof(context_info), "[libmpv] gl_ctx=%s gpu-context=%s hwdec=%s",
+      gl_ctx == CTX_EGL_X11 ? "x11egl" : (gl_ctx == CTX_EGL_WAYLAND ? "wayland" : (gl_ctx == CTX_GLX ? "x11" : "none")),
+      gl_ctx == CTX_EGL_X11 ? "x11egl" : (gl_ctx == CTX_EGL_WAYLAND ? "wayland" : (gl_ctx == CTX_GLX ? "x11" : "auto")),
+      hwdec);
+    log_info_message(context_info);
   }
 
   if (mpv_observe_property(mpv_instance, 0, "pause", MPV_FORMAT_FLAG) < 0) {
@@ -709,14 +779,20 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
     { MPV_RENDER_PARAM_INVALID, NULL },
   };
 
-  if (mpv_render_context_create(&mpv_render, mpv_instance, params) < 0) {
-    set_last_error("mpv_render_context_create failed");
-    log_error("[libmpv] mpv_render_context_create failed");
-    mpv_terminate_destroy(mpv_instance);
-    mpv_instance = NULL;
-    mpv_render = NULL;
-    cleanup_gl();
-    return make_bool(env, 0);
+  {
+    int render_res = mpv_render_context_create(&mpv_render, mpv_instance, params);
+    if (render_res < 0) {
+      char msg[256];
+      snprintf(msg, sizeof(msg), "[libmpv] mpv_render_context_create failed: %s (%d)",
+        mpv_error_string(render_res), render_res);
+      set_last_error("mpv_render_context_create failed");
+      log_error_message(msg);
+      mpv_terminate_destroy(mpv_instance);
+      mpv_instance = NULL;
+      mpv_render = NULL;
+      cleanup_gl();
+      return make_bool(env, 0);
+    }
   }
 
   atomic_store(&render_pending, 1);
@@ -863,22 +939,29 @@ static napi_value mpv_set_size(napi_env env, napi_callback_info info) {
 static napi_value mpv_render_frame(napi_env env, napi_callback_info info) {
   (void)info;
   if (!mpv_render || !frame_buffer || frame_width <= 0 || frame_height <= 0) {
+    set_last_error("render context or frame buffer missing");
     return make_bool(env, 0);
   }
 
   atomic_exchange(&render_pending, 0);
 
-  if (!make_current()) return make_bool(env, 0);
+  if (!make_current()) {
+    set_last_error("make_current failed in render");
+    log_error_message("[libmpv] make_current failed in render");
+    return make_bool(env, 0);
+  }
 
   uint64_t flags = mpv_render_context_update(mpv_render);
   static uint64_t last_flags = 0;
   if (flags != last_flags) {
-    fprintf(stderr, "[libmpv] render flags: 0x%llx\n", (unsigned long long)flags);
-    fflush(stderr);
+    log_debugf("[libmpv] render flags: 0x%llx", (unsigned long long)flags);
     last_flags = flags;
   }
 
-  if (!fbo) return make_bool(env, 0);
+  if (!fbo) {
+    set_last_error("fbo not initialized");
+    return make_bool(env, 0);
+  }
 
   mpv_opengl_fbo target = {
     .fbo = (int)fbo,
@@ -887,8 +970,7 @@ static napi_value mpv_render_frame(napi_env env, napi_callback_info info) {
     .internal_format = 0,
   };
 
-  const char *flip_env = getenv("SBTLTV_RENDER_FLIP_Y");
-  int flip = env_is_truthy(flip_env) ? 0 : 1;
+  int flip = 0;
   mpv_render_param params[] = {
     { MPV_RENDER_PARAM_OPENGL_FBO, &target },
     { MPV_RENDER_PARAM_FLIP_Y, &flip },
@@ -904,12 +986,18 @@ static napi_value mpv_render_frame(napi_env env, napi_callback_info info) {
   {
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
-      fprintf(stderr, "[libmpv] glReadPixels error: 0x%04x\n", err);
-      fflush(stderr);
+      char msg[128];
+      snprintf(msg, sizeof(msg), "[libmpv] glReadPixels error: 0x%04x", err);
+      log_error_message(msg);
     }
   }
 
   return make_bool(env, 1);
+}
+
+static napi_value mpv_needs_render(napi_env env, napi_callback_info info) {
+  (void)info;
+  return make_bool(env, atomic_load(&render_pending) != 0);
 }
 
 static napi_value mpv_command_simple(napi_env env, const char *cmd, const char *arg) {
@@ -1079,6 +1167,12 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   double position = -1.0;
   double duration = 0.0;
   char hwdec_value[64] = "no";
+  char hwdec_setting[64] = "";
+  char hwdec_interop[64] = "";
+  char vo_value[64] = "";
+  char gpu_api_value[64] = "";
+  char gpu_context_value[64] = "";
+  char video_codec_value[64] = "";
 
   if (mpv_get_property(mpv_instance, "pause", MPV_FORMAT_FLAG, &pause) < 0) pause = 0;
   if (mpv_get_property(mpv_instance, "mute", MPV_FORMAT_FLAG, &mute) < 0) mute = 0;
@@ -1091,6 +1185,36 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
     mpv_free(hwdec_current);
   }
 
+  get_string_property("hwdec", hwdec_setting, sizeof(hwdec_setting));
+  get_string_property("hwdec-interop", hwdec_interop, sizeof(hwdec_interop));
+  get_string_property("vo", vo_value, sizeof(vo_value));
+  get_string_property("gpu-api", gpu_api_value, sizeof(gpu_api_value));
+  get_string_property("gpu-context", gpu_context_value, sizeof(gpu_context_value));
+  get_string_property("video-codec", video_codec_value, sizeof(video_codec_value));
+
+  {
+    char buf[128];
+    log_prop_change("[libmpv] hwdec-current=", hwdec_value, g_last_hwdec_current, sizeof(g_last_hwdec_current));
+    if (get_string_property("hwdec-interop", buf, sizeof(buf))) {
+      log_prop_change("[libmpv] hwdec-interop=", buf, g_last_hwdec_interop, sizeof(g_last_hwdec_interop));
+    }
+    if (get_string_property("hwdec", buf, sizeof(buf))) {
+      log_prop_change("[libmpv] hwdec=", buf, g_last_hwdec, sizeof(g_last_hwdec));
+    }
+    if (get_string_property("vo", buf, sizeof(buf))) {
+      log_prop_change("[libmpv] vo=", buf, g_last_vo, sizeof(g_last_vo));
+    }
+    if (get_string_property("gpu-api", buf, sizeof(buf))) {
+      log_prop_change("[libmpv] gpu-api=", buf, g_last_gpu_api, sizeof(g_last_gpu_api));
+    }
+    if (get_string_property("gpu-context", buf, sizeof(buf))) {
+      log_prop_change("[libmpv] gpu-context=", buf, g_last_gpu_context, sizeof(g_last_gpu_context));
+    }
+    if (get_string_property("video-codec", buf, sizeof(buf))) {
+      log_prop_change("[libmpv] video-codec=", buf, g_last_video_codec, sizeof(g_last_video_codec));
+    }
+  }
+
   napi_value obj;
   if (napi_create_object(env, &obj) != napi_ok) return make_null(env);
 
@@ -1100,6 +1224,12 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   napi_value position_val;
   napi_value duration_val;
   napi_value hwdec_val;
+  napi_value hwdec_setting_val;
+  napi_value hwdec_interop_val;
+  napi_value vo_val;
+  napi_value gpu_api_val;
+  napi_value gpu_context_val;
+  napi_value video_codec_val;
 
   if (napi_get_boolean(env, (!pause && position >= 0.0) ? 1 : 0, &playing_val) != napi_ok) return make_null(env);
   if (napi_create_double(env, volume, &volume_val) != napi_ok) return make_null(env);
@@ -1107,6 +1237,12 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   if (napi_create_double(env, position, &position_val) != napi_ok) return make_null(env);
   if (napi_create_double(env, duration, &duration_val) != napi_ok) return make_null(env);
   if (napi_create_string_utf8(env, hwdec_value, NAPI_AUTO_LENGTH, &hwdec_val) != napi_ok) return make_null(env);
+  if (napi_create_string_utf8(env, hwdec_setting, NAPI_AUTO_LENGTH, &hwdec_setting_val) != napi_ok) return make_null(env);
+  if (napi_create_string_utf8(env, hwdec_interop, NAPI_AUTO_LENGTH, &hwdec_interop_val) != napi_ok) return make_null(env);
+  if (napi_create_string_utf8(env, vo_value, NAPI_AUTO_LENGTH, &vo_val) != napi_ok) return make_null(env);
+  if (napi_create_string_utf8(env, gpu_api_value, NAPI_AUTO_LENGTH, &gpu_api_val) != napi_ok) return make_null(env);
+  if (napi_create_string_utf8(env, gpu_context_value, NAPI_AUTO_LENGTH, &gpu_context_val) != napi_ok) return make_null(env);
+  if (napi_create_string_utf8(env, video_codec_value, NAPI_AUTO_LENGTH, &video_codec_val) != napi_ok) return make_null(env);
 
   if (napi_set_named_property(env, obj, "playing", playing_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "volume", volume_val) != napi_ok) return make_null(env);
@@ -1114,6 +1250,12 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   if (napi_set_named_property(env, obj, "position", position_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "duration", duration_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "hwdec", hwdec_val) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "hwdecSetting", hwdec_setting_val) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "hwdecInterop", hwdec_interop_val) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "vo", vo_val) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "gpuApi", gpu_api_val) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "gpuContext", gpu_context_val) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "videoCodec", video_codec_val) != napi_ok) return make_null(env);
 
   return obj;
 }
@@ -1128,6 +1270,13 @@ static napi_value mpv_get_last_error(napi_env env, napi_callback_info info) {
   if (!last_error[0]) return make_null(env);
   napi_value value;
   if (napi_create_string_utf8(env, last_error, NAPI_AUTO_LENGTH, &value) != napi_ok) return make_null(env);
+  return value;
+}
+
+static napi_value mpv_get_build_info(napi_env env, napi_callback_info info) {
+  (void)info;
+  napi_value value;
+  if (napi_create_string_utf8(env, SBTLTV_MPV_BUILD_ID, NAPI_AUTO_LENGTH, &value) != napi_ok) return make_null(env);
   return value;
 }
 
@@ -1222,11 +1371,14 @@ static napi_value mpv_poll_events(napi_env env, napi_callback_info info) {
 }
 
 static napi_value init(napi_env env, napi_value exports) {
+  fprintf(stderr, "[libmpv] module init build: %s\n", SBTLTV_MPV_BUILD_ID);
+  fflush(stderr);
   napi_property_descriptor descriptors[] = {
     { "init", NULL, mpv_init, NULL, NULL, NULL, napi_default, NULL },
     { "shutdown", NULL, mpv_shutdown, NULL, NULL, NULL, napi_default, NULL },
     { "setSize", NULL, mpv_set_size, NULL, NULL, NULL, napi_default, NULL },
     { "renderFrame", NULL, mpv_render_frame, NULL, NULL, NULL, napi_default, NULL },
+    { "needsRender", NULL, mpv_needs_render, NULL, NULL, NULL, napi_default, NULL },
     { "load", NULL, mpv_load, NULL, NULL, NULL, napi_default, NULL },
     { "play", NULL, mpv_play, NULL, NULL, NULL, napi_default, NULL },
     { "pause", NULL, mpv_pause, NULL, NULL, NULL, napi_default, NULL },
@@ -1238,6 +1390,7 @@ static napi_value init(napi_env env, napi_value exports) {
     { "getStatus", NULL, mpv_get_status, NULL, NULL, NULL, napi_default, NULL },
     { "isInitialized", NULL, mpv_is_initialized, NULL, NULL, NULL, napi_default, NULL },
     { "getLastError", NULL, mpv_get_last_error, NULL, NULL, NULL, napi_default, NULL },
+    { "getBuildInfo", NULL, mpv_get_build_info, NULL, NULL, NULL, napi_default, NULL },
     { "pollEvents", NULL, mpv_poll_events, NULL, NULL, NULL, napi_default, NULL },
   };
 

@@ -26,7 +26,6 @@ const renderMaxHeight = parseEnvInt(process.env.SBTLTV_RENDER_MAX_HEIGHT, 1080);
 const hwdecGraceMs = parseEnvInt(process.env.SBTLTV_HWDEC_GRACE_MS, 5000);
 const allowSwDec = process.env.SBTLTV_ALLOW_SWDEC === '1';
 const enforceHwdec = process.env.SBTLTV_HWDEC_ENFORCE !== '0';
-const renderFlipY = process.env.SBTLTV_RENDER_FLIP_Y === '1';
 
 const serializeArg = (arg: unknown): unknown => {
   if (arg instanceof Error) {
@@ -204,6 +203,7 @@ let mpvPollTimer: NodeJS.Timeout | null = null;
 let mpvNative: any = null;
 let mpvAddonPath: string | null = null;
 let lastMpvErrorLog = '';
+const lastMpvStatusMeta: Record<string, string> = {};
 let hwdecDeadline = 0;
 let hwdecSatisfied = false;
 let lastHwdecError = '';
@@ -297,6 +297,7 @@ const startRenderLoop = () => {
   const intervalMs = Math.max(1, Math.floor(1000 / Math.max(1, renderFps)));
   renderTimer = setInterval(() => {
     if (!mpvNative || !renderCtx || !renderCanvas || !renderImage || !activeFrame || !activeSrc) return;
+    if (mpvNative.needsRender && !mpvNative.needsRender()) return;
     const ok = mpvNative.renderFrame?.();
     if (!ok) {
       const detail = mpvNative.getLastError?.();
@@ -310,8 +311,7 @@ const startRenderLoop = () => {
     const dst = renderImage.data;
     for (let y = 0; y < activeFrame.height; y += 1) {
       const srcOff = y * stride;
-      const dstRow = renderFlipY ? activeFrame.height - 1 - y : y;
-      const dstOff = dstRow * rowBytes;
+      const dstOff = y * rowBytes;
       dst.set(activeSrc.subarray(srcOff, srcOff + rowBytes), dstOff);
     }
     renderCtx.putImageData(renderImage, 0, 0);
@@ -368,6 +368,10 @@ const ensureMpvNative = (): boolean => {
   try {
     mpvNative = require(mpvAddonPath);
     logPreload('info', 'libmpv addon loaded', mpvAddonPath);
+    const buildInfo = mpvNative?.getBuildInfo?.();
+    if (buildInfo) {
+      logPreload('info', 'libmpv build info', buildInfo);
+    }
   } catch (error) {
     mpvNative = null;
     logPreload('error', 'libmpv addon load failed', error);
@@ -416,6 +420,22 @@ const startStatusPolling = () => {
       }
       const status = mpvNative.getStatus?.();
       if (status) {
+        const metaPairs: Array<[string, string | undefined]> = [
+          ['hwdec', status.hwdec],
+          ['hwdecSetting', status.hwdecSetting],
+          ['hwdecInterop', status.hwdecInterop],
+          ['vo', status.vo],
+          ['gpuApi', status.gpuApi],
+          ['gpuContext', status.gpuContext],
+          ['videoCodec', status.videoCodec],
+        ];
+        for (const [key, value] of metaPairs) {
+          if (!value) continue;
+          if (lastMpvStatusMeta[key] !== value) {
+            lastMpvStatusMeta[key] = value;
+            logPreload('info', 'mpv status', { key, value });
+          }
+        }
         if (!allowSwDec && !hwdecSatisfied && !hwdecDeadline && status.position >= 0) {
           hwdecDeadline = Date.now() + hwdecGraceMs;
           logPreload('info', 'hwdec enforcement armed', {
@@ -538,6 +558,7 @@ const mpvApi: MpvApi = isLinux
         return false;
       }
       if (!mpvNative.isInitialized?.()) {
+        logPreload('info', 'mpv init starting', { initialized: false });
         const ok = mpvNative.init?.();
         if (!ok) {
           const detail = mpvNative.getLastError?.();
@@ -545,6 +566,9 @@ const mpvApi: MpvApi = isLinux
           emitError(detail ? `libmpv init failed: ${detail}` : 'libmpv init failed');
           return false;
         }
+        logPreload('info', 'mpv init ok');
+      } else {
+        logPreload('info', 'mpv already initialized');
       }
       const el = document.getElementById(canvasId);
       if (!(el instanceof HTMLCanvasElement)) {

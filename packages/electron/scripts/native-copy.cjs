@@ -25,6 +25,24 @@ fs.mkdirSync(targetDir, { recursive: true });
 fs.copyFileSync(source, target);
 console.log('[native] Copied mpv.node to dist/native');
 
+const cleanLibTargetDir = () => {
+  if (!fs.existsSync(libTargetDir)) return;
+  for (const entry of fs.readdirSync(libTargetDir)) {
+    const entryPath = path.join(libTargetDir, entry);
+    let stat;
+    try {
+      stat = fs.lstatSync(entryPath);
+    } catch {
+      continue;
+    }
+    if (stat.isFile() || stat.isSymbolicLink()) {
+      fs.unlinkSync(entryPath);
+    } else {
+      console.warn(`[native] Skipping non-file entry in lib dir: ${entry}`);
+    }
+  }
+};
+
 const copyLibs = (srcDir) => {
   if (!fs.existsSync(srcDir)) return;
   fs.mkdirSync(libTargetDir, { recursive: true });
@@ -37,6 +55,7 @@ const copyLibs = (srcDir) => {
   }
 };
 
+cleanLibTargetDir();
 copyLibs(ffmpegLib);
 copyLibs(mpvLib);
 copyLibs(opensslLib);

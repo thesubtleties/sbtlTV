@@ -54,6 +54,12 @@ Notes:
 - If you see `Protocol not found` from FFmpeg, ensure UDP is enabled (TLS/https depends on UDP helpers in FFmpeg).
 - OpenSSL is a shared dependency; if you bundle `libssl` + `libcrypto`, include the OpenSSL license separately (not fetched by `scripts/download-licenses.sh`).
 
+## Linux hwdec deps (VAAPI + DRM)
+- Build-time pkg-config deps: `libva`, `libdrm`, `gbm`, and Wayland/X11 variants (`libva-wayland`/`libva-x11` as appropriate).
+- Runtime deps: VAAPI driver (Mesa for AMD, intel-media-driver for Intel), `libva`, `libdrm`, `libgbm`, `libEGL`, `libGL`.
+- FFmpeg: enable `--enable-vaapi --enable-libdrm` when available.
+- mpv (Meson): enable `-Dvaapi=enabled -Ddrm=enabled -Dgbm=enabled` on Linux.
+
 ### Environment variables
 - `FFMPEG_VERSION` (default in script)
 - `MPV_VERSION` (default in script)

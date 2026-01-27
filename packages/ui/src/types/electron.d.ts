@@ -7,6 +7,12 @@ export interface MpvStatus {
   position: number;
   duration: number;
   hwdec?: string;
+  hwdecSetting?: string;
+  hwdecInterop?: string;
+  vo?: string;
+  gpuApi?: string;
+  gpuContext?: string;
+  videoCodec?: string;
 }
 
 export interface MpvResult {
@@ -24,9 +30,11 @@ export interface MpvApi {
   toggleMute: () => Promise<MpvResult>;
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
+  getBuildInfo?: () => string;
   initRenderer?: (width: number, height: number) => { buffer: ArrayBuffer; width: number; height: number; stride: number } | null;
   setSize?: (width: number, height: number) => { buffer: ArrayBuffer; width: number; height: number; stride: number } | null;
   renderFrame?: () => boolean;
+  needsRender?: () => boolean;
   attachCanvas?: (canvasId: string) => boolean;
   isLibmpv?: boolean;
   onReady: (callback: (ready: boolean) => void) => void;

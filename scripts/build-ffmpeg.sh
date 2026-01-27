@@ -67,6 +67,9 @@ if [ "$PLATFORM" = "linux" ]; then
 	if pkg-config --exists libva; then
 		HWACCEL_FLAGS+=("--enable-vaapi")
 	fi
+	if pkg-config --exists libdrm; then
+		HWACCEL_FLAGS+=("--enable-libdrm")
+	fi
 	if pkg-config --exists vdpau; then
 		HWACCEL_FLAGS+=("--enable-vdpau")
 	fi
