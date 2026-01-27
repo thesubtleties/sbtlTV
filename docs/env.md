@@ -14,6 +14,11 @@ read_when: adding/changing runtime flags or debugging playback/render issues
 - `SBTLTV_PRELOAD_FFMPEG=1` dev only: preload bundled FFmpeg libs
 - `SBTLTV_LIBMPV_PATH=/path/to/libmpv.so.2` override libmpv path
 
+## YouTube / yt-dlp
+- `SBTLTV_YTDL=yes|no` (default: auto) enable mpv ytdl integration
+- `SBTLTV_YTDL_PATH=/path/to/yt-dlp` override ytdl binary
+  - Unset: auto-enable for YouTube URLs only
+
 ## Hardware decode
 - `SBTLTV_HWDEC=auto|auto-safe|vaapi|vdpau|nvdec` (default: auto-safe)
 - `SBTLTV_HWDEC_GRACE_MS=5000` grace window before enforcing hwdec

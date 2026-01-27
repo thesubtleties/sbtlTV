@@ -232,6 +232,7 @@ function App() {
 
     const observer = new ResizeObserver(() => resize());
     observer.observe(canvas.parentElement ?? canvas);
+    window.addEventListener('resize', resize);
     resize();
 
     const frameInterval = 1000 / Math.max(1, window.appConfig?.render?.fps ?? 30);
@@ -256,6 +257,7 @@ function App() {
     return () => {
       destroyed = true;
       observer.disconnect();
+      window.removeEventListener('resize', resize);
       cancelAnimationFrame(rafId);
     };
   }, []);

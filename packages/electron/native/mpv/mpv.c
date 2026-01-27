@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 typedef enum {
   CTX_NONE = 0,
@@ -573,7 +574,13 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   set_option_string_optional("input-default-bindings", "no");
   set_option_string_optional("cursor-autohide", "no");
   set_option_string_optional("network", "yes");
-  set_option_string_optional("ytdl", "no");
+  const char *ytdl = getenv("SBTLTV_YTDL");
+  if (!ytdl || !ytdl[0]) ytdl = "no";
+  set_option_string_optional("ytdl", ytdl);
+  const char *ytdl_path = getenv("SBTLTV_YTDL_PATH");
+  if (ytdl_path && ytdl_path[0]) {
+    set_option_string_optional("ytdl-path", ytdl_path);
+  }
   set_option_string_optional("hwdec", "auto-safe");
 
   ok &= set_option_string_required("vo", "libmpv");
@@ -850,6 +857,34 @@ static napi_value mpv_command_simple(napi_env env, const char *cmd, const char *
   return make_bool(env, res >= 0);
 }
 
+static int set_property_string_optional(const char *name, const char *value) {
+  if (!mpv_instance) return 0;
+  int res = mpv_set_property_string(mpv_instance, name, value);
+  if (res < 0) {
+    const char *msg = mpv_error_string(res);
+    fprintf(stderr, "[libmpv] optional property failed: %s=%s (%s)\n", name, value, msg);
+    fflush(stderr);
+  }
+  return res >= 0;
+}
+
+static int contains_ci(const char *haystack, const char *needle) {
+  if (!haystack || !needle || !needle[0]) return 0;
+  size_t nlen = strlen(needle);
+  for (const char *p = haystack; *p; p++) {
+    if (strncasecmp(p, needle, nlen) == 0) return 1;
+  }
+  return 0;
+}
+
+static int is_youtube_url(const char *url) {
+  if (!url) return 0;
+  return contains_ci(url, "youtube.com/") ||
+    contains_ci(url, "youtu.be/") ||
+    contains_ci(url, "youtube-nocookie.com/") ||
+    contains_ci(url, "music.youtube.com/");
+}
+
 static napi_value mpv_load(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value args[1];
@@ -864,6 +899,27 @@ static napi_value mpv_load(napi_env env, napi_callback_info info) {
   if (napi_get_value_string_utf8(env, args[0], url, len + 1, &len) != napi_ok) {
     free(url);
     return make_bool(env, 0);
+  }
+
+  const char *ytdl_env = getenv("SBTLTV_YTDL");
+  int use_ytdl = is_youtube_url(url);
+  if (ytdl_env && ytdl_env[0]) {
+    if (!strcasecmp(ytdl_env, "no") || !strcasecmp(ytdl_env, "0") || !strcasecmp(ytdl_env, "false")) {
+      use_ytdl = 0;
+    } else if (!strcasecmp(ytdl_env, "yes") || !strcasecmp(ytdl_env, "1") || !strcasecmp(ytdl_env, "true")) {
+      use_ytdl = 1;
+    }
+  }
+  if (!set_property_string_optional("ytdl", use_ytdl ? "yes" : "no")) {
+    // Ignore; continue load with current mpv setting.
+  }
+  if (use_ytdl) {
+    const char *ytdl_path = getenv("SBTLTV_YTDL_PATH");
+    if (ytdl_path && ytdl_path[0]) {
+      if (!set_property_string_optional("ytdl-path", ytdl_path)) {
+        // Ignore; continue load with current mpv setting.
+      }
+    }
   }
 
   const char *cmd_args[3] = { "loadfile", url, NULL };

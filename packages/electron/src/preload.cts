@@ -196,6 +196,12 @@ let lastMpvErrorLog = '';
 let hwdecDeadline = 0;
 let hwdecSatisfied = false;
 let lastHwdecError = '';
+type PendingLoad = {
+  resolve: (result: MpvResult) => void;
+  deadline: number;
+  url: string;
+};
+let pendingLoad: PendingLoad | null = null;
 
 if (isLinux) {
   const prependEnvPath = (key: string, value: string): void => {
@@ -236,6 +242,13 @@ const emitStatus = (status: MpvStatus) => {
 
 const emitError = (message: string) => {
   errorListeners.forEach((callback) => callback(message));
+};
+
+const settlePendingLoad = (result: MpvResult) => {
+  if (!pendingLoad) return;
+  const { resolve } = pendingLoad;
+  pendingLoad = null;
+  resolve(result);
 };
 
 const ensureMpvNative = (): boolean => {
@@ -281,10 +294,15 @@ const startStatusPolling = () => {
       if (events?.endFileError) {
         if (events?.lastErrorLog) lastMpvErrorLog = events.lastErrorLog;
         emitError(events?.lastErrorLog || events.endFileError);
+        settlePendingLoad({ error: events?.lastErrorLog || events.endFileError });
         hwdecDeadline = 0;
       } else if (events?.lastErrorLog && events.lastErrorLog !== lastMpvErrorLog) {
         lastMpvErrorLog = events.lastErrorLog;
         emitError(events.lastErrorLog);
+        settlePendingLoad({ error: events.lastErrorLog });
+      }
+      if (events?.fileLoaded) {
+        settlePendingLoad({ success: true });
       }
       const status = mpvNative.getStatus?.();
       if (status) {
@@ -308,6 +326,9 @@ const startStatusPolling = () => {
         }
         emitStatus(status as MpvStatus);
       }
+      if (pendingLoad && Date.now() > pendingLoad.deadline) {
+        settlePendingLoad({ error: 'Timed out waiting for mpv to load stream' });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown libmpv error';
       emitError(message);
@@ -325,28 +346,19 @@ const mpvApi: MpvApi = isLinux
         logPreload('error', 'mpv load failed', detail);
         return { error: detail ? `mpv load failed: ${detail}` : 'mpv load failed' };
       }
+      lastMpvErrorLog = '';
       if (!allowSwDec) {
         hwdecDeadline = Date.now() + hwdecGraceMs;
         hwdecSatisfied = false;
         lastHwdecError = '';
       }
-      const deadline = Date.now() + 10000;
-      while (Date.now() < deadline) {
-      const events = mpvNative.pollEvents?.();
-      if (events?.lastLog) console.warn('[mpv]', events.lastLog);
-      if (events?.endFileError) {
-        return { error: events?.lastErrorLog || events.endFileError };
-      }
-      if (events?.lastErrorLog) {
-        lastMpvErrorLog = events.lastErrorLog;
-        return { error: events.lastErrorLog };
-      }
-      if (events?.fileLoaded) {
-        return { success: true };
-      }
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      return { error: 'Timed out waiting for mpv to load stream' };
+      startStatusPolling();
+      return await new Promise<MpvResult>((resolve) => {
+        if (pendingLoad) {
+          pendingLoad.resolve({ error: 'Load superseded by another request' });
+        }
+        pendingLoad = { resolve, deadline: Date.now() + 10000, url };
+      });
     },
     play: async () => (mpvNative?.play?.()
       ? { success: true }

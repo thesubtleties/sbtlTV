@@ -43,6 +43,26 @@ const mpvState: MpvState = {
   duration: 0,
 };
 
+const isYoutubeUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return host.endsWith('youtube.com') ||
+      host.endsWith('youtu.be') ||
+      host.endsWith('youtube-nocookie.com') ||
+      host.endsWith('music.youtube.com');
+  } catch {
+    return false;
+  }
+};
+
+const resolveYtdlMode = (url: string): 'yes' | 'no' => {
+  const env = (process.env.SBTLTV_YTDL || '').toLowerCase();
+  if (env === 'no' || env === '0' || env === 'false') return 'no';
+  if (env === 'yes' || env === '1' || env === 'true') return 'yes';
+  return isYoutubeUrl(url) ? 'yes' : 'no';
+};
+
 const appendEnvPath = (key: string, value: string): void => {
   if (!value || !fs.existsSync(value)) return;
   const current = process.env[key];
@@ -276,6 +296,9 @@ async function initMpv(): Promise<void> {
     }
     console.log('[mpv] Using binary:', mpvBinary);
 
+    const hwdec = process.env.SBTLTV_HWDEC || 'auto-safe';
+    const ytdl = process.env.SBTLTV_YTDL || 'no';
+    const ytdlPath = process.env.SBTLTV_YTDL_PATH;
     let mpvArgs = [
       `--input-ipc-server=${SOCKET_PATH}`,
       '--no-osc',
@@ -290,12 +313,17 @@ async function initMpv(): Promise<void> {
       '--force-window=yes',
       '--no-terminal',
       '--really-quiet',
-      '--hwdec=auto-safe',
+      `--hwdec=${hwdec}`,
       '--vo=gpu',
       '--target-colorspace-hint=no',
       '--tone-mapping=mobius',
       '--hdr-compute-peak=no',
     ];
+
+    mpvArgs.push(`--ytdl=${ytdl}`);
+    if (ytdlPath) {
+      mpvArgs.push(`--ytdl-path=${ytdlPath}`);
+    }
 
     if (process.platform === 'linux') {
       mpvArgs.push('--gpu-context=x11');
@@ -578,6 +606,15 @@ ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
 ipcMain.handle('mpv-load', async (_event, url: string) => {
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
+    const ytdlMode = resolveYtdlMode(url);
+    try {
+      await sendMpvCommand('set_property', ['ytdl', ytdlMode]);
+      if (ytdlMode === 'yes' && process.env.SBTLTV_YTDL_PATH) {
+        await sendMpvCommand('set_property', ['ytdl-path', process.env.SBTLTV_YTDL_PATH]);
+      }
+    } catch (error) {
+      console.warn('[mpv] Failed to set ytdl mode:', error instanceof Error ? error.message : error);
+    }
     await sendMpvCommand('loadfile', [url]);
     return { success: true };
   } catch (error) {
