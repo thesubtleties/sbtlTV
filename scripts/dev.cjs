@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const isWindows = process.platform === 'win32';
+const isLinux = process.platform === 'linux';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -54,9 +57,36 @@ vite.on('exit', (code) => {
     return;
   }
 
+  const distLibDir = path.join(__dirname, '..', 'packages', 'electron', 'dist', 'native', 'lib');
+  const preloadLibs = (() => {
+    if (process.env.SBTLTV_PRELOAD_FFMPEG !== '1') return null;
+    if (!fs.existsSync(distLibDir)) return null;
+    const libs = [
+      'libavutil.so.60',
+      'libavcodec.so.62',
+      'libavformat.so.62',
+      'libswresample.so.6',
+      'libswscale.so.9',
+    ];
+    const resolved = libs.map((lib) => path.join(distLibDir, lib)).filter((lib) => fs.existsSync(lib));
+    if (!resolved.length) return null;
+    return resolved.join(':');
+  })();
+
+  const env = { ...process.env };
+  if (preloadLibs && !isWindows) {
+    env.LD_PRELOAD = env.LD_PRELOAD ? `${preloadLibs}:${env.LD_PRELOAD}` : preloadLibs;
+    console.log('[dev] LD_PRELOAD set for bundled FFmpeg libs');
+  }
+  if (isLinux && fs.existsSync(distLibDir)) {
+    env.LD_LIBRARY_PATH = env.LD_LIBRARY_PATH ? `${distLibDir}:${env.LD_LIBRARY_PATH}` : distLibDir;
+    console.log('[dev] LD_LIBRARY_PATH set for bundled FFmpeg libs');
+  }
+
   electron = spawn('pnpm', ['--filter', '@sbtltv/electron', 'dev'], {
     stdio: 'inherit',
     shell: isWindows,
+    env,
   });
 
   electron.on('exit', (code) => {

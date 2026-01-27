@@ -13,6 +13,7 @@ const libTargetDir = path.join(targetDir, 'lib');
 const bundleRoot = path.join(__dirname, '..', 'mpv-bundle', 'linux');
 const ffmpegLib = path.join(bundleRoot, 'ffmpeg', 'lib');
 const mpvLib = path.join(bundleRoot, 'mpv', 'lib');
+const opensslLib = path.join(bundleRoot, 'openssl', 'lib');
 
 if (!fs.existsSync(source)) {
   console.warn('[native] mpv.node not found; run pnpm native:build first');
@@ -37,6 +38,10 @@ const copyLibs = (srcDir) => {
 
 copyLibs(ffmpegLib);
 copyLibs(mpvLib);
+copyLibs(opensslLib);
+if (process.env.OPENSSL_PREFIX) {
+  copyLibs(path.join(process.env.OPENSSL_PREFIX, 'lib'));
+}
 if (fs.existsSync(libTargetDir)) {
   console.log('[native] Copied bundled libs to dist/native/lib');
 }

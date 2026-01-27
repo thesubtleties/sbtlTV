@@ -72,6 +72,7 @@ echo "Configuring FFmpeg..."
   --disable-programs \
   --disable-doc \
   --disable-debug \
+  --enable-gpl \
   --disable-everything \
   --enable-avcodec \
   --enable-avformat \
@@ -80,8 +81,9 @@ echo "Configuring FFmpeg..."
   --enable-swscale \
   --enable-network \
   --enable-openssl \
+  --enable-version3 \
   --disable-gnutls \
-  --enable-protocol=file,pipe,http,https,tcp,tls,crypto \
+  --enable-protocol=file,pipe,http,https,tcp,tls,crypto,udp \
   --enable-demuxer=hls,mpegts,mpegtsraw,mov,aac,mp3 \
   --enable-decoder=h264,hevc,aac,mp3,opus,vorbis,mpeg2video \
   --enable-parser=h264,hevc,aac,opus,vorbis,mpegaudio \

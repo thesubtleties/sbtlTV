@@ -3,6 +3,79 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Source } from '@sbtltv/core';
 
+type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace';
+const LOG_LEVELS: Record<LogLevel, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+  trace: 4,
+};
+const logLevelName = (process.env.SBTLTV_LOG_LEVEL || 'info').toLowerCase() as LogLevel;
+const logLevel = LOG_LEVELS[logLevelName] ?? LOG_LEVELS.info;
+
+const serializeArg = (arg: unknown): unknown => {
+  if (arg instanceof Error) {
+    return { __error: true, message: arg.message, stack: arg.stack };
+  }
+  if (typeof arg === 'bigint') return `${arg.toString()}n`;
+  if (arg === undefined) return 'undefined';
+  try {
+    return JSON.parse(JSON.stringify(arg));
+  } catch {
+    return String(arg);
+  }
+};
+
+const sendLog = (level: LogLevel, tag: string, args: unknown[]): void => {
+  if (LOG_LEVELS[level] > logLevel) return;
+  ipcRenderer.send('log-event', { level, tag, args: args.map(serializeArg) });
+};
+
+const logPreload = (level: LogLevel, ...args: unknown[]): void => {
+  sendLog(level, 'preload', args);
+};
+
+const patchRendererConsole = (): void => {
+  const marker = '__SBTLTV_LOG_PATCHED__';
+  if ((globalThis as unknown as Record<string, boolean>)[marker]) return;
+  (globalThis as unknown as Record<string, boolean>)[marker] = true;
+
+  const original = { ...console };
+  console.log = (...args: unknown[]) => {
+    sendLog('info', 'renderer', args);
+    original.log(...args);
+  };
+  console.info = (...args: unknown[]) => {
+    sendLog('info', 'renderer', args);
+    original.info(...args);
+  };
+  console.warn = (...args: unknown[]) => {
+    sendLog('warn', 'renderer', args);
+    original.warn(...args);
+  };
+  console.error = (...args: unknown[]) => {
+    sendLog('error', 'renderer', args);
+    original.error(...args);
+  };
+  console.debug = (...args: unknown[]) => {
+    sendLog('debug', 'renderer', args);
+    original.debug(...args);
+  };
+  console.trace = (...args: unknown[]) => {
+    sendLog('trace', 'renderer', args);
+    original.trace(...args);
+  };
+};
+
+patchRendererConsole();
+process.on('uncaughtException', (error) => sendLog('error', 'renderer', ['uncaughtException', error]));
+process.on('unhandledRejection', (reason) => sendLog('error', 'renderer', ['unhandledRejection', reason]));
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => sendLog('error', 'renderer', ['window.error', event.message]));
+  window.addEventListener('unhandledrejection', (event) => sendLog('error', 'renderer', ['window.unhandledrejection', event.reason]));
+}
+
 // Types for the exposed APIs
 export interface MpvStatus {
   playing: boolean;
@@ -106,26 +179,34 @@ const errorListeners = new Set<(error: string) => void>();
 let mpvReady = false;
 let mpvPollTimer: NodeJS.Timeout | null = null;
 let mpvNative: any = null;
+let mpvAddonPath: string | null = null;
 
 if (isLinux) {
+  const prependEnvPath = (key: string, value: string): void => {
+    if (!value || !fs.existsSync(value)) return;
+    const current = process.env[key];
+    const parts = current ? current.split(path.delimiter) : [];
+    if (!parts.includes(value)) {
+      process.env[key] = [value, ...parts].filter(Boolean).join(path.delimiter);
+    }
+  };
+
+  if (process.env.SBTLTV_USE_SYSTEM_LIBMPV !== '1') {
+    const packagedLibDir = path.join(process.resourcesPath, 'native', 'lib');
+    const distLibDir = path.join(__dirname, '../dist/native/lib');
+    if (fs.existsSync(packagedLibDir)) {
+      prependEnvPath('LD_LIBRARY_PATH', packagedLibDir);
+      process.env.SBTLTV_LIBMPV_PATH = path.join(packagedLibDir, 'libmpv.so.2');
+    } else if (fs.existsSync(distLibDir)) {
+      prependEnvPath('LD_LIBRARY_PATH', distLibDir);
+      process.env.SBTLTV_LIBMPV_PATH = path.join(distLibDir, 'libmpv.so.2');
+    }
+  }
+
   const packagedPath = path.join(process.resourcesPath, 'native', 'mpv.node');
   const distPath = path.join(__dirname, '../dist/native/mpv.node');
   const devPath = path.join(__dirname, '../native/mpv/build/Release/mpv.node');
-  const addonPath = fs.existsSync(packagedPath) ? packagedPath : (fs.existsSync(distPath) ? distPath : devPath);
-  try {
-    mpvNative = require(addonPath);
-  } catch (error) {
-    mpvNative = null;
-    console.error('[libmpv] Failed to load native module:', error);
-  }
-
-  process.on('exit', () => {
-    try {
-      mpvNative?.shutdown?.();
-    } catch (error) {
-      console.error('[libmpv] Shutdown failed:', error);
-    }
-  });
+  mpvAddonPath = fs.existsSync(packagedPath) ? packagedPath : (fs.existsSync(distPath) ? distPath : devPath);
 }
 
 const emitReady = (ready: boolean) => {
@@ -139,6 +220,34 @@ const emitStatus = (status: MpvStatus) => {
 
 const emitError = (message: string) => {
   errorListeners.forEach((callback) => callback(message));
+};
+
+const ensureMpvNative = (): boolean => {
+  if (mpvNative) return true;
+  if (process.env.SBTLTV_DISABLE_LIBMPV === '1') {
+    logPreload('warn', 'libmpv disabled via SBTLTV_DISABLE_LIBMPV');
+    return false;
+  }
+  if (!mpvAddonPath) {
+    logPreload('error', 'libmpv addon path not set');
+    return false;
+  }
+  try {
+    mpvNative = require(mpvAddonPath);
+    logPreload('info', 'libmpv addon loaded', mpvAddonPath);
+  } catch (error) {
+    mpvNative = null;
+    logPreload('error', 'libmpv addon load failed', error);
+    return false;
+  }
+  process.on('exit', () => {
+    try {
+      mpvNative?.shutdown?.();
+    } catch (error) {
+      logPreload('error', 'libmpv shutdown failed', error);
+    }
+  });
+  return true;
 };
 
 const startStatusPolling = () => {
@@ -164,9 +273,11 @@ const startStatusPolling = () => {
 const mpvApi: MpvApi = isLinux
   ? {
     load: async (url: string) => {
+      if (!ensureMpvNative()) return { error: 'libmpv not available' };
       if (!mpvNative?.isInitialized?.()) return { error: 'libmpv not initialized' };
       if (!mpvNative.load(url)) {
         const detail = mpvNative.getLastError?.();
+        logPreload('error', 'mpv load failed', detail);
         return { error: detail ? `mpv load failed: ${detail}` : 'mpv load failed' };
       }
       const deadline = Date.now() + 10000;
@@ -211,7 +322,8 @@ const mpvApi: MpvApi = isLinux
       return mpvNative.getStatus() as MpvStatus;
     },
     initRenderer: (width: number, height: number) => {
-      if (!mpvNative) {
+      if (!ensureMpvNative()) {
+        logPreload('error', 'libmpv not available');
         emitError('libmpv not available - install libmpv-dev');
         return null;
       }
@@ -219,6 +331,7 @@ const mpvApi: MpvApi = isLinux
         const ok = mpvNative.init?.();
         if (!ok) {
           const detail = mpvNative.getLastError?.();
+          logPreload('error', 'libmpv init failed', detail);
           emitError(detail ? `libmpv init failed: ${detail}` : 'libmpv init failed');
           return null;
         }
@@ -227,10 +340,11 @@ const mpvApi: MpvApi = isLinux
       if (!frame) {
         const detail = mpvNative.getLastError?.();
         const message = detail ? `libmpv setSize failed: ${detail}` : 'libmpv setSize failed: unknown';
-        console.error('[libmpv]', message);
+        logPreload('error', message);
         emitError(message);
         return null;
       }
+      logPreload('info', 'libmpv initRenderer ok', { width, height });
       emitReady(true);
       startStatusPolling();
       return frame;

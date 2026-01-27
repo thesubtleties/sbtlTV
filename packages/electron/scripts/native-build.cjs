@@ -1,5 +1,6 @@
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
+const fs = require('node:fs');
 
 if (process.platform !== 'linux') {
   console.log('[native] Skip libmpv build on non-Linux');
@@ -7,6 +8,12 @@ if (process.platform !== 'linux') {
 }
 
 const mpvDir = path.join(__dirname, '..', 'native', 'mpv');
+const builtNode = path.join(mpvDir, 'build', 'Release', 'mpv.node');
+
+if (process.env.SBTLTV_SKIP_NATIVE_BUILD === '1' && fs.existsSync(builtNode)) {
+  console.log('[native] Skip libmpv build (SBTLTV_SKIP_NATIVE_BUILD=1)');
+  process.exit(0);
+}
 
 execFileSync('node-gyp', [
   'rebuild',

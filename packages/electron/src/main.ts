@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
+import { initLogging, log } from './logger.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +15,10 @@ const __dirname = path.dirname(__filename);
 // Minimum window dimensions
 const MIN_WIDTH = 640;
 const MIN_HEIGHT = 620;
+
+initLogging('main');
+process.on('uncaughtException', (error) => log('error', 'process', 'uncaughtException', error));
+process.on('unhandledRejection', (reason) => log('error', 'process', 'unhandledRejection', reason));
 
 let mainWindow: BrowserWindow | null = null;
 let mpvProcess: ChildProcess | null = null;
@@ -60,6 +65,13 @@ const setupBundledLibsEnv = (): void => {
     return;
   }
 
+  const devDistLibDir = path.join(__dirname, '..', 'dist', 'native', 'lib');
+  if (fs.existsSync(devDistLibDir)) {
+    if (isLinux) appendEnvPath('LD_LIBRARY_PATH', devDistLibDir);
+    if (isMac) appendEnvPath('DYLD_LIBRARY_PATH', devDistLibDir);
+    return;
+  }
+
   const platformDir = isLinux ? 'linux' : 'macos';
   const devBundleRoot = path.join(__dirname, '..', 'mpv-bundle', platformDir);
   const ffmpegLib = path.join(devBundleRoot, 'ffmpeg', 'lib');
@@ -74,6 +86,13 @@ const setupBundledLibsEnv = (): void => {
 };
 
 setupBundledLibsEnv();
+
+ipcMain.on('log-event', (_event, payload: { level?: string; tag?: string; args?: unknown[] }) => {
+  const level = (payload.level || 'info') as 'error' | 'warn' | 'info' | 'debug' | 'trace';
+  const tag = payload.tag || 'renderer';
+  const args = Array.isArray(payload.args) ? payload.args : [];
+  log(level, tag, ...args);
+});
 
 // Windows uses named pipes, Linux/macOS use Unix sockets
 const SOCKET_PATH = process.platform === 'win32'
@@ -109,6 +128,21 @@ async function createWindow(): Promise<void> {
       sandbox: false,
     },
   });
+
+  mainWindow.on('ready-to-show', () => log('info', 'window', 'ready-to-show'));
+  mainWindow.on('show', () => log('info', 'window', 'show'));
+  mainWindow.on('closed', () => log('info', 'window', 'closed'));
+
+  const wc = mainWindow.webContents;
+  wc.on('did-finish-load', () => log('info', 'window', 'did-finish-load', wc.getURL()));
+  wc.on('did-fail-load', (_event, code, desc, url, isMainFrame) => {
+    log('error', 'window', 'did-fail-load', { code, desc, url, isMainFrame });
+  });
+  wc.on('render-process-gone', (_event, details) => {
+    log('error', 'window', 'render-process-gone', details);
+  });
+  wc.on('unresponsive', () => log('warn', 'window', 'unresponsive'));
+  wc.on('responsive', () => log('info', 'window', 'responsive'));
 
   // Load the React app
   // In dev, load from Vite server; in prod, load from built files

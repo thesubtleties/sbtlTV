@@ -12,7 +12,7 @@
   "main": "./dist/main.js",
   "scripts": {
     "build": "tsc && pnpm native:build && pnpm native:copy",
-    "dev": "pnpm native:build && pnpm native:copy && electron --ozone-platform-hint=auto . --dev",
+    "dev": "node scripts/dev-electron.cjs",
     "start": "electron .",
     "native:build": "node scripts/native-build.cjs",
     "native:copy": "node scripts/native-copy.cjs",

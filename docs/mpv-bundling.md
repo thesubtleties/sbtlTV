@@ -10,8 +10,8 @@ read_when: building bundled ffmpeg/libmpv or changing IPTV codec/protocol requir
 - TLS via OpenSSL.
 
 ## Licensing (not legal advice)
-- FFmpeg is LGPL by default; enabling GPL parts with `--enable-gpl` makes the build GPL. FFmpeg license docs also note OpenSSL is incompatible with GPLv2/v3 but considered compatible with LGPL, so stay LGPL if we use OpenSSL.
-- mpv is GPL by default; the project notes it can be built LGPL by disabling GPL (`gpl=false`). Use LGPL mode for libmpv.
+- FFmpeg is LGPL by default; enabling GPL parts with `--enable-gpl` makes the build GPL. OpenSSL compatibility depends on the GPL version you ship under; verify before distributing.
+- mpv is GPL by default; the project notes it can be built LGPL by disabling GPL (`gpl=false`). Default here is GPL to enable X11 backends.
 - Avoid `--enable-nonfree` in FFmpeg; it makes binaries unredistributable.
 
 ## Build scripts
@@ -33,10 +33,14 @@ Runtime loading:
 Logging:
 - `SBTLTV_MPV_LOG_LEVEL=v|debug|info|warn` controls mpv log verbosity (default: `v`).
 - `SBTLTV_MPV_LOG_FILE=/path` writes mpv logs to a file.
+- `SBTLTV_PRELOAD_FFMPEG=1` (dev only) preloads bundled FFmpeg libs to avoid system libs being picked first.
+- `SBTLTV_LOG_FILE=/path` and `SBTLTV_LOG_LEVEL=debug` capture app logs (main + renderer).
 
 Notes:
 - X11 backends require `gpl=true` in mpv. If you must keep LGPL, X11 is disabled; Wayland/EGL only (`MPV_GPL=0`).
 - GPL mpv means the combined app must be distributed under GPL‑compatible terms (AGPLv3 is compatible). Ensure you ship full corresponding source + build scripts for mpv/FFmpeg and any modifications.
+- If you see `Protocol not found` from FFmpeg, ensure UDP is enabled (TLS/https depends on UDP helpers in FFmpeg).
+- OpenSSL is a shared dependency; if you bundle `libssl` + `libcrypto`, include the OpenSSL license separately (not fetched by `scripts/download-licenses.sh`).
 
 ### Environment variables
 - `FFMPEG_VERSION` (default in script)
@@ -44,10 +48,10 @@ Notes:
 - `BUNDLE_ROOT` (default: `packages/electron/mpv-bundle`)
 - `FFMPEG_PREFIX`, `MPV_PREFIX` (override install prefixes)
 - `OPENSSL_PREFIX` (if OpenSSL is not in the system pkg-config path)
-- `MPV_GPL=0|1` (default 0)
+- `MPV_GPL=0|1` (default 1)
 
 ## IPTV feature set → FFmpeg components (baseline)
-- Protocols: `file,pipe,http,https,tcp,tls,crypto`
+- Protocols: `file,pipe,http,https,tcp,tls,crypto,udp`
 - Demuxers: `hls,mpegts,mpegtsraw,mov,aac,mp3`
 - Decoders: `h264,hevc,aac,mp3,opus,vorbis,mpeg2video`
 - Parsers: `h264,hevc,aac,opus,vorbis,mpegaudio`

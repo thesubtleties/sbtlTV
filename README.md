@@ -97,9 +97,10 @@ bash scripts/build-libmpv.sh
 bash scripts/download-licenses.sh
 ```
 
-Details, codec/protocol list, and licensing notes: `docs/mpv-bundling.md`.
+Details, codec/protocol list, and licensing notes (GPL FFmpeg + OpenSSL): `docs/mpv-bundling.md`.
 
-Troubleshooting (Linux libmpv):
+### Troubleshooting (Linux libmpv):
+
 - Verify the URL with system mpv:
   - `mpv --no-config --msg-level=all=v "<URL>"`
 - If it fails there too, it is likely the stream, headers, or geo/TLS.
@@ -107,6 +108,10 @@ Troubleshooting (Linux libmpv):
   - `SBTLTV_MPV_LOG_LEVEL=debug pnpm dev`
 - Persist mpv logs to a file:
   - `SBTLTV_MPV_LOG_FILE=/tmp/sbtltv-mpv.log pnpm dev`
+- If system FFmpeg is loaded first, force bundled FFmpeg in dev:
+  - `SBTLTV_PRELOAD_FFMPEG=1 pnpm dev`
+- App log file + level (main + renderer):
+  - `SBTLTV_LOG_FILE=/tmp/sbtltv-app.log SBTLTV_LOG_LEVEL=debug pnpm dev`
 
 ## Configuration
 
