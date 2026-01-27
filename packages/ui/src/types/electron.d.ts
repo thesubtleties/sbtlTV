@@ -107,6 +107,18 @@ export interface PlatformApi {
   isLinux: boolean;
 }
 
+export interface AppConfig {
+  render: {
+    fps: number;
+    maxWidth: number;
+    maxHeight: number;
+  };
+  hwdec: {
+    required: boolean;
+    graceMs: number;
+  };
+}
+
 declare global {
   interface Window {
     mpv?: MpvApi;
@@ -114,6 +126,7 @@ declare global {
     storage?: StorageApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
+    appConfig?: AppConfig;
   }
 }
 

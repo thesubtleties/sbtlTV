@@ -11,7 +11,8 @@ const targetDir = path.join(__dirname, '..', 'dist', 'native');
 const target = path.join(targetDir, 'mpv.node');
 const libTargetDir = path.join(targetDir, 'lib');
 const bundleRoot = path.join(__dirname, '..', 'mpv-bundle', 'linux');
-const ffmpegLib = path.join(bundleRoot, 'ffmpeg', 'lib');
+const ffmpegDir = process.env.FFMPEG_STATIC === '1' ? 'ffmpeg-static' : 'ffmpeg';
+const ffmpegLib = path.join(bundleRoot, ffmpegDir, 'lib');
 const mpvLib = path.join(bundleRoot, 'mpv', 'lib');
 const opensslLib = path.join(bundleRoot, 'openssl', 'lib');
 

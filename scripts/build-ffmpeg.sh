@@ -13,9 +13,18 @@ esac
 
 FFMPEG_VERSION="${FFMPEG_VERSION:-8.0.1}"
 BUNDLE_ROOT="${BUNDLE_ROOT:-$REPO_ROOT/packages/electron/mpv-bundle}"
-FFMPEG_PREFIX="${FFMPEG_PREFIX:-$BUNDLE_ROOT/$PLATFORM/ffmpeg}"
+FFMPEG_STATIC="${FFMPEG_STATIC:-0}"
+
+DEFAULT_PREFIX="$BUNDLE_ROOT/$PLATFORM/ffmpeg"
+DEFAULT_BUILD_ROOT="$REPO_ROOT/.build/ffmpeg-build-$PLATFORM"
+if [ "$FFMPEG_STATIC" = "1" ]; then
+  DEFAULT_PREFIX="$BUNDLE_ROOT/$PLATFORM/ffmpeg-static"
+  DEFAULT_BUILD_ROOT="$REPO_ROOT/.build/ffmpeg-build-$PLATFORM-static"
+fi
+
+FFMPEG_PREFIX="${FFMPEG_PREFIX:-$DEFAULT_PREFIX}"
 SRC_ROOT="${FFMPEG_SRC:-$REPO_ROOT/.build/ffmpeg-$FFMPEG_VERSION}"
-BUILD_ROOT="${FFMPEG_BUILD_DIR:-$REPO_ROOT/.build/ffmpeg-build-$PLATFORM}"
+BUILD_ROOT="${FFMPEG_BUILD_DIR:-$DEFAULT_BUILD_ROOT}"
 
 OPENSSL_PREFIX="${OPENSSL_PREFIX:-}"
 
@@ -55,6 +64,13 @@ if [ "$PLATFORM" = "linux" ]; then
   if pkg-config --exists vdpau; then
     HWACCEL_FLAGS+=("--enable-vdpau")
   fi
+  if [ "${FFMPEG_NVDEC:-0}" = "1" ]; then
+    if pkg-config --exists ffnvcodec; then
+      HWACCEL_FLAGS+=("--enable-nvdec" "--enable-cuvid" "--enable-ffnvcodec")
+    else
+      echo "FFMPEG_NVDEC=1 set but ffnvcodec not found; skipping NVDEC" >&2
+    fi
+  fi
 fi
 if [ "$PLATFORM" = "macos" ]; then
   HWACCEL_FLAGS+=("--enable-videotoolbox")
@@ -62,13 +78,17 @@ fi
 
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN || sysctl -n hw.ncpu || echo 4)}"
 
+FFMPEG_LINK_FLAGS=(--enable-shared --disable-static)
+if [ "$FFMPEG_STATIC" = "1" ]; then
+  FFMPEG_LINK_FLAGS=(--disable-shared --enable-static)
+fi
+
 cd "$BUILD_ROOT"
 
 echo "Configuring FFmpeg..."
 "$SRC_ROOT/configure" \
   --prefix="$FFMPEG_PREFIX" \
-  --enable-shared \
-  --disable-static \
+  "${FFMPEG_LINK_FLAGS[@]}" \
   --disable-programs \
   --disable-doc \
   --disable-debug \

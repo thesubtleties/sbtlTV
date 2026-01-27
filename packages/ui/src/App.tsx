@@ -218,8 +218,15 @@ function App() {
     const resize = () => {
       const rect = canvas.parentElement?.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      const width = Math.max(1, Math.floor((rect?.width ?? window.innerWidth) * dpr));
-      const height = Math.max(1, Math.floor((rect?.height ?? window.innerHeight) * dpr));
+      const rawWidth = Math.max(1, Math.floor((rect?.width ?? window.innerWidth) * dpr));
+      const rawHeight = Math.max(1, Math.floor((rect?.height ?? window.innerHeight) * dpr));
+      const maxWidth = window.appConfig?.render?.maxWidth ?? 1920;
+      const maxHeight = window.appConfig?.render?.maxHeight ?? 1080;
+      const capWidth = maxWidth > 0 ? maxWidth : rawWidth;
+      const capHeight = maxHeight > 0 ? maxHeight : rawHeight;
+      const scale = Math.min(1, capWidth / rawWidth, capHeight / rawHeight);
+      const width = Math.max(1, Math.floor(rawWidth * scale));
+      const height = Math.max(1, Math.floor(rawHeight * scale));
       initFrame(width, height);
     };
 
@@ -227,8 +234,17 @@ function App() {
     observer.observe(canvas.parentElement ?? canvas);
     resize();
 
+    const frameInterval = 1000 / Math.max(1, window.appConfig?.render?.fps ?? 30);
+    let lastFrameTime = 0;
+
     const render = () => {
       if (destroyed) return;
+      const now = performance.now();
+      if (now - lastFrameTime < frameInterval) {
+        rafId = requestAnimationFrame(render);
+        return;
+      }
+      lastFrameTime = now;
       if (imageData && window.mpv?.renderFrame?.()) {
         ctx.putImageData(imageData, 0, 0);
       }

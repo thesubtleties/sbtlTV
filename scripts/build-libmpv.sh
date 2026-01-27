@@ -14,9 +14,18 @@ esac
 MPV_VERSION="${MPV_VERSION:-0.41.0}"
 BUNDLE_ROOT="${BUNDLE_ROOT:-$REPO_ROOT/packages/electron/mpv-bundle}"
 MPV_PREFIX="${MPV_PREFIX:-$BUNDLE_ROOT/$PLATFORM/mpv}"
-FFMPEG_PREFIX="${FFMPEG_PREFIX:-$BUNDLE_ROOT/$PLATFORM/ffmpeg}"
+FFMPEG_STATIC="${FFMPEG_STATIC:-0}"
+DEFAULT_FFMPEG_PREFIX="$BUNDLE_ROOT/$PLATFORM/ffmpeg"
+if [ "$FFMPEG_STATIC" = "1" ]; then
+  DEFAULT_FFMPEG_PREFIX="$BUNDLE_ROOT/$PLATFORM/ffmpeg-static"
+fi
+FFMPEG_PREFIX="${FFMPEG_PREFIX:-$DEFAULT_FFMPEG_PREFIX}"
 SRC_ROOT="${MPV_SRC:-$REPO_ROOT/.build/mpv-$MPV_VERSION}"
-BUILD_ROOT="${MPV_BUILD_DIR:-$REPO_ROOT/.build/mpv-build-$PLATFORM}"
+DEFAULT_BUILD_ROOT="$REPO_ROOT/.build/mpv-build-$PLATFORM"
+if [ "$FFMPEG_STATIC" = "1" ]; then
+  DEFAULT_BUILD_ROOT="$REPO_ROOT/.build/mpv-build-$PLATFORM-static"
+fi
+BUILD_ROOT="${MPV_BUILD_DIR:-$DEFAULT_BUILD_ROOT}"
 
 MPV_GPL="${MPV_GPL:-1}"
 
@@ -35,6 +44,13 @@ if [ ! -d "$SRC_ROOT" ]; then
 fi
 
 export PKG_CONFIG_PATH="$FFMPEG_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+if [ "$FFMPEG_STATIC" = "1" ]; then
+  if [ -n "${PKG_CONFIG:-}" ]; then
+    export PKG_CONFIG="$PKG_CONFIG --static"
+  else
+    export PKG_CONFIG="pkg-config --static"
+  fi
+fi
 
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN || sysctl -n hw.ncpu || echo 4)}"
 

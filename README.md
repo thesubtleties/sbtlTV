@@ -112,6 +112,7 @@ Details, codec/protocol list, and licensing notes (GPL FFmpeg + OpenSSL): `docs/
   - `SBTLTV_PRELOAD_FFMPEG=1 pnpm dev`
 - App log file + level (main + renderer):
   - `SBTLTV_LOG_FILE=/tmp/sbtltv-app.log SBTLTV_LOG_LEVEL=debug pnpm dev`
+- Full env/flags list: see `docs/env.md`.
 
 ## Configuration
 

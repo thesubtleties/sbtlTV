@@ -22,6 +22,17 @@ Use:
 
 `scripts/build-mpv.sh` is a compatibility wrapper.
 
+Static FFmpeg (recommended for Linux to avoid libav* collisions):
+```bash
+FFMPEG_STATIC=1 bash scripts/build-ffmpeg.sh
+FFMPEG_STATIC=1 bash scripts/build-libmpv.sh
+```
+
+Notes:
+- Static build defaults to `packages/electron/mpv-bundle/<platform>/ffmpeg-static/`.
+- `build-libmpv.sh` uses `pkg-config --static` when `FFMPEG_STATIC=1`.
+- If you need both static + shared outputs, set `FFMPEG_PREFIX`/`MPV_PREFIX` explicitly to separate paths.
+
 Outputs go to `packages/electron/mpv-bundle/<platform>/`.
 
 Runtime loading:
@@ -29,6 +40,7 @@ Runtime loading:
 - Dev loads from `packages/electron/mpv-bundle/<platform>/{ffmpeg,mpv}/lib` if present.
 - Opt out and use system libs: `SBTLTV_USE_SYSTEM_LIBMPV=1`.
 - libmpv is built with rpath to `$ORIGIN` so colocated FFmpeg libs resolve in `native/lib`.
+- Static libmpv build removes `libav*` runtime dependencies (preferred).
 
 Logging:
 - `SBTLTV_MPV_LOG_LEVEL=v|debug|info|warn` controls mpv log verbosity (default: `v`).
@@ -47,6 +59,7 @@ Notes:
 - `MPV_VERSION` (default in script)
 - `BUNDLE_ROOT` (default: `packages/electron/mpv-bundle`)
 - `FFMPEG_PREFIX`, `MPV_PREFIX` (override install prefixes)
+- `FFMPEG_STATIC=0|1` (default 0)
 - `OPENSSL_PREFIX` (if OpenSSL is not in the system pkg-config path)
 - `MPV_GPL=0|1` (default 1)
 

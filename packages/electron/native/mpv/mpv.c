@@ -587,6 +587,10 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
     set_option_string_optional("gpu-context", "auto");
   }
 
+  const char *hwdec = getenv("SBTLTV_HWDEC");
+  if (!hwdec || !hwdec[0]) hwdec = "auto-safe";
+  set_option_string_optional("hwdec", hwdec);
+
   if (!ok) {
     if (!last_error[0]) {
       set_last_error("mpv option set failed");

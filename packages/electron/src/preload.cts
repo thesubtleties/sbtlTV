@@ -14,6 +14,18 @@ const LOG_LEVELS: Record<LogLevel, number> = {
 const logLevelName = (process.env.SBTLTV_LOG_LEVEL || 'info').toLowerCase() as LogLevel;
 const logLevel = LOG_LEVELS[logLevelName] ?? LOG_LEVELS.info;
 
+const parseEnvInt = (value: string | undefined, fallback: number): number => {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const renderFps = parseEnvInt(process.env.SBTLTV_RENDER_FPS, 30);
+const renderMaxWidth = parseEnvInt(process.env.SBTLTV_RENDER_MAX_WIDTH, 1920);
+const renderMaxHeight = parseEnvInt(process.env.SBTLTV_RENDER_MAX_HEIGHT, 1080);
+const hwdecGraceMs = parseEnvInt(process.env.SBTLTV_HWDEC_GRACE_MS, 5000);
+const allowSwDec = process.env.SBTLTV_ALLOW_SWDEC === '1';
+
 const serializeArg = (arg: unknown): unknown => {
   if (arg instanceof Error) {
     return { __error: true, message: arg.message, stack: arg.stack };
@@ -180,6 +192,10 @@ let mpvReady = false;
 let mpvPollTimer: NodeJS.Timeout | null = null;
 let mpvNative: any = null;
 let mpvAddonPath: string | null = null;
+let lastMpvErrorLog = '';
+let hwdecDeadline = 0;
+let hwdecSatisfied = false;
+let lastHwdecError = '';
 
 if (isLinux) {
   const prependEnvPath = (key: string, value: string): void => {
@@ -258,11 +274,40 @@ const startStatusPolling = () => {
       if (events?.lastLog) {
         console.warn('[mpv]', events.lastLog);
       }
+      if (events?.fileLoaded && !allowSwDec) {
+        hwdecDeadline = Date.now() + hwdecGraceMs;
+        hwdecSatisfied = false;
+      }
       if (events?.endFileError) {
+        if (events?.lastErrorLog) lastMpvErrorLog = events.lastErrorLog;
         emitError(events?.lastErrorLog || events.endFileError);
+        hwdecDeadline = 0;
+      } else if (events?.lastErrorLog && events.lastErrorLog !== lastMpvErrorLog) {
+        lastMpvErrorLog = events.lastErrorLog;
+        emitError(events.lastErrorLog);
       }
       const status = mpvNative.getStatus?.();
-      if (status) emitStatus(status as MpvStatus);
+      if (status) {
+        const hwdecValue = (status.hwdec ?? '').toLowerCase();
+        if (hwdecValue && hwdecValue !== 'no') {
+          hwdecSatisfied = true;
+          hwdecDeadline = 0;
+          lastHwdecError = '';
+        } else if (!allowSwDec && !hwdecSatisfied && hwdecDeadline && Date.now() > hwdecDeadline) {
+          const message = `Hardware decode required but inactive (hwdec-current: ${status.hwdec ?? 'no'})`;
+          if (message !== lastHwdecError) {
+            lastHwdecError = message;
+            emitError(message);
+          }
+          try {
+            mpvNative?.stop?.();
+          } catch (error) {
+            logPreload('error', 'mpv stop failed', error);
+          }
+          hwdecDeadline = 0;
+        }
+        emitStatus(status as MpvStatus);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown libmpv error';
       emitError(message);
@@ -280,6 +325,11 @@ const mpvApi: MpvApi = isLinux
         logPreload('error', 'mpv load failed', detail);
         return { error: detail ? `mpv load failed: ${detail}` : 'mpv load failed' };
       }
+      if (!allowSwDec) {
+        hwdecDeadline = Date.now() + hwdecGraceMs;
+        hwdecSatisfied = false;
+        lastHwdecError = '';
+      }
       const deadline = Date.now() + 10000;
       while (Date.now() < deadline) {
       const events = mpvNative.pollEvents?.();
@@ -287,9 +337,13 @@ const mpvApi: MpvApi = isLinux
       if (events?.endFileError) {
         return { error: events?.lastErrorLog || events.endFileError };
       }
-        if (events?.fileLoaded) {
-          return { success: true };
-        }
+      if (events?.lastErrorLog) {
+        lastMpvErrorLog = events.lastErrorLog;
+        return { error: events.lastErrorLog };
+      }
+      if (events?.fileLoaded) {
+        return { success: true };
+      }
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       return { error: 'Timed out waiting for mpv to load stream' };
@@ -303,9 +357,14 @@ const mpvApi: MpvApi = isLinux
     togglePause: async () => (mpvNative?.togglePause?.()
       ? { success: true }
       : { error: mpvNative?.getLastError?.() ? `mpv toggle failed: ${mpvNative.getLastError()}` : 'mpv toggle failed' }),
-    stop: async () => (mpvNative?.stop?.()
-      ? { success: true }
-      : { error: mpvNative?.getLastError?.() ? `mpv stop failed: ${mpvNative.getLastError()}` : 'mpv stop failed' }),
+    stop: async () => {
+      hwdecDeadline = 0;
+      hwdecSatisfied = false;
+      lastHwdecError = '';
+      return (mpvNative?.stop?.()
+        ? { success: true }
+        : { error: mpvNative?.getLastError?.() ? `mpv stop failed: ${mpvNative.getLastError()}` : 'mpv stop failed' });
+    },
     setVolume: async (volume: number) => (mpvNative?.setVolume?.(volume)
       ? { success: true }
       : { error: mpvNative?.getLastError?.() ? `mpv volume failed: ${mpvNative.getLastError()}` : 'mpv volume failed' }),
@@ -428,4 +487,16 @@ contextBridge.exposeInMainWorld('platform', {
   isWindows: process.platform === 'win32',
   isMac: process.platform === 'darwin',
   isLinux: process.platform === 'linux',
+});
+
+contextBridge.exposeInMainWorld('appConfig', {
+  render: {
+    fps: renderFps,
+    maxWidth: renderMaxWidth,
+    maxHeight: renderMaxHeight,
+  },
+  hwdec: {
+    required: !allowSwDec,
+    graceMs: hwdecGraceMs,
+  },
 });
