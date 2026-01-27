@@ -99,11 +99,15 @@ case "$(uname -s)" in
     fi
     echo "Found app bundle: $MPV_APP"
 
-    # Copy mpv binary preserving relative path structure for dylib loading
-    # mpv uses @executable_path/../Frameworks/ to find dylibs
+    # Copy mpv binary and dylibs preserving relative path structure
+    # stolendata builds have libs in MacOS/lib/, not Frameworks/
     mkdir -p "$BUNDLE_DIR/MacOS"
     cp "$MPV_APP/Contents/MacOS/mpv" "$BUNDLE_DIR/MacOS/"
-    # Copy frameworks (required dylibs)
+    # Copy dylibs (in MacOS/lib/ for stolendata builds)
+    if [ -d "$MPV_APP/Contents/MacOS/lib" ]; then
+      cp -R "$MPV_APP/Contents/MacOS/lib" "$BUNDLE_DIR/MacOS/"
+    fi
+    # Also check Frameworks (other builds may use this)
     if [ -d "$MPV_APP/Contents/Frameworks" ]; then
       cp -R "$MPV_APP/Contents/Frameworks" "$BUNDLE_DIR/"
     fi
