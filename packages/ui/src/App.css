@@ -75,7 +75,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  background: black;
   pointer-events: none;
 }
 
@@ -87,6 +87,7 @@
   height: 100%;
   object-fit: contain;
   z-index: 0;
+  background: black;
 }
 
 /* Placeholder shown before any stream is loaded */
