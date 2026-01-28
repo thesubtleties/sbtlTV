@@ -30,8 +30,14 @@ impl HeadlessGLContext {
 
         // Create device
         log::info!("[VIDEO] Creating device...");
-        let mut device = connection.create_device(&adapter)
-            .map_err(|e| format!("Surfman device failed: {:?}", e))?;
+        let device_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            connection.create_device(&adapter)
+        }));
+        let mut device = match device_result {
+            Ok(Ok(d)) => d,
+            Ok(Err(e)) => return Err(format!("Surfman device failed: {:?}", e)),
+            Err(panic) => return Err(format!("Surfman device panicked: {:?}", panic)),
+        };
         log::info!("[VIDEO] Device created");
 
         // Configure GL 3.3 with alpha
