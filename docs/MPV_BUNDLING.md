@@ -81,6 +81,9 @@ Notes:
 - Parsers: `h264,hevc,aac,opus,vorbis,mpegaudio`
 - Bitstream filters: `aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb`
 
+Notes:
+- DASH demuxer (`dash`) requires `libxml2` at build time.
+
 If a stream fails, add only the missing component and document it here.
 
 ## References
