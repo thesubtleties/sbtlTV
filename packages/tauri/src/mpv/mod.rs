@@ -160,10 +160,11 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
     let mut last_status_time = Instant::now();
     let status_throttle = Duration::from_millis(100);
 
-    // Frame rate limiting - target 30fps to reduce IPC load
-    // Video content is typically 24-30fps anyway
+    // Frame rate limiting - match video FPS (capped at 30fps for IPC)
     let mut last_frame_time = Instant::now();
-    let frame_interval = Duration::from_millis(33); // ~30fps
+    let mut frame_interval = Duration::from_millis(33); // default ~30fps
+    let mut last_fps_check = Instant::now();
+    let fps_check_interval = Duration::from_secs(1);
 
     // Render loop
     while !shutdown.load(Ordering::SeqCst) {
@@ -189,7 +190,24 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
                     continue;
                 }
 
-                // Throttle frame emission to reduce IPC load
+                // Update frame interval based on video FPS (check every second)
+                if last_fps_check.elapsed() >= fps_check_interval {
+                    last_fps_check = Instant::now();
+                    // Try container-fps first, fall back to estimated-vf-fps
+                    let fps = mpv.get_property::<f64>("container-fps")
+                        .or_else(|_| mpv.get_property::<f64>("estimated-vf-fps"))
+                        .unwrap_or(30.0);
+
+                    // Cap at 60fps max for IPC, min 10fps to avoid issues
+                    let capped_fps = fps.clamp(10.0, 60.0);
+                    let interval_ms = (1000.0 / capped_fps) as u64;
+                    frame_interval = Duration::from_millis(interval_ms);
+
+                    log::info!("[VIDEO] Video FPS: {:.2}, using {:.2}fps ({:.0}ms interval)",
+                        fps, capped_fps, interval_ms as f64);
+                }
+
+                // Throttle frame emission to match video FPS
                 if last_frame_time.elapsed() >= frame_interval {
                     last_frame_time = Instant::now();
 
