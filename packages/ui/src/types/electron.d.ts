@@ -6,6 +6,33 @@ export interface MpvStatus {
   muted: boolean;
   position: number;
   duration: number;
+  hwdec?: string;
+  hwdecSetting?: string;
+  hwdecInterop?: string;
+  hwdecAvailable?: string;
+  hwdecCodecs?: string;
+  gpuHwdecInterop?: string;
+  vo?: string;
+  gpuApi?: string;
+  gpuContext?: string;
+  videoCodec?: string;
+}
+
+export interface MpvViewport {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  hidden?: boolean;
+}
+
+export interface MpvFrameInfo {
+  width: number;
+  height: number;
+  stride: number;
+  format: 'RGBA';
+  pts: number;
+  frameId: number;
 }
 
 export interface MpvResult {
@@ -23,8 +50,12 @@ export interface MpvApi {
   toggleMute: () => Promise<MpvResult>;
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
+  setViewport: (rect: MpvViewport) => Promise<MpvResult>;
+  onFrame: (callback: (frame: { info: MpvFrameInfo; data: ArrayBuffer }) => void) => void;
+  onVideoInfo: (callback: (info: MpvFrameInfo) => void) => void;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
+  onWarning: (callback: (warning: string) => void) => void;
   onError: (callback: (error: string) => void) => void;
   removeAllListeners: () => void;
 }

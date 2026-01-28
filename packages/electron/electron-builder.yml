@@ -18,6 +18,10 @@ extraResources:
     to: ui
     filter:
       - "**/*"
+  - from: licenses
+    to: licenses
+    filter:
+      - "**/*"
 
 # Windows configuration
 win:
@@ -29,11 +33,6 @@ win:
       arch:
         - x64
   icon: assets/icon-white.png
-  extraResources:
-    - from: mpv-bundle
-      to: mpv
-      filter:
-        - "**/*"
 
 nsis:
   oneClick: false
@@ -54,11 +53,6 @@ mac:
   icon: assets/icon-white.png
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   category: public.app-category.entertainment
-  extraResources:
-    - from: mpv-bundle
-      to: mpv
-      filter:
-        - "**/*"
 
 dmg:
   contents:
@@ -81,6 +75,11 @@ linux:
   icon: assets/icon-white.png
   category: AudioVideo
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
+  extraResources:
+    - from: dist/gst-player
+      to: gst-player
+      filter:
+        - "**/*"
 
 appImage:
   license: ../../LICENSE

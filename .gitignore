@@ -3,9 +3,16 @@ node_modules/
 .pnpm-store/
 
 # Build outputs
+*.o
 dist/
 out/
 *.tsbuildinfo
+*.node
+*.pdb
+*.ilk
+*.dSYM/
+.build/
+packages/electron/gst-player/gst-player
 
 # IDE
 .idea/
@@ -28,7 +35,6 @@ pnpm-debug.log*
 
 # Electron
 release/
-packages/electron/mpv-bundle/
 *.dmg
 *.exe
 *.AppImage
@@ -44,6 +50,10 @@ coverage/
 .tldr/
 .tldrignore
 .claude/
+AGENTS.md
 
 # Development notes
 thoughts/
+
+# Ignore experiment
+packages/zig-app/

@@ -1,6 +1,75 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 import type { Source } from '@sbtltv/core';
 
+type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace';
+const LOG_LEVELS: Record<LogLevel, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+  trace: 4,
+};
+const logLevelName = (process.env.SBTLTV_LOG_LEVEL || 'info').toLowerCase() as LogLevel;
+const logLevel = LOG_LEVELS[logLevelName] ?? LOG_LEVELS.info;
+
+const serializeArg = (arg: unknown): unknown => {
+  if (arg instanceof Error) {
+    return { __error: true, message: arg.message, stack: arg.stack };
+  }
+  if (typeof arg === 'bigint') return `${arg.toString()}n`;
+  if (arg === undefined) return 'undefined';
+  try {
+    return JSON.parse(JSON.stringify(arg));
+  } catch {
+    return String(arg);
+  }
+};
+
+const sendLog = (level: LogLevel, tag: string, args: unknown[]): void => {
+  if (LOG_LEVELS[level] > logLevel) return;
+  ipcRenderer.send('log-event', { level, tag, args: args.map(serializeArg) });
+};
+
+const patchRendererConsole = (): void => {
+  const marker = '__SBTLTV_LOG_PATCHED__';
+  if ((globalThis as unknown as Record<string, boolean>)[marker]) return;
+  (globalThis as unknown as Record<string, boolean>)[marker] = true;
+
+  const original = { ...console };
+  console.log = (...args: unknown[]) => {
+    sendLog('info', 'renderer', args);
+    original.log(...args);
+  };
+  console.info = (...args: unknown[]) => {
+    sendLog('info', 'renderer', args);
+    original.info(...args);
+  };
+  console.warn = (...args: unknown[]) => {
+    sendLog('warn', 'renderer', args);
+    original.warn(...args);
+  };
+  console.error = (...args: unknown[]) => {
+    sendLog('error', 'renderer', args);
+    original.error(...args);
+  };
+  console.debug = (...args: unknown[]) => {
+    sendLog('debug', 'renderer', args);
+    original.debug(...args);
+  };
+  console.trace = (...args: unknown[]) => {
+    sendLog('trace', 'renderer', args);
+    original.trace(...args);
+  };
+};
+
+patchRendererConsole();
+process.on('uncaughtException', (error) => sendLog('error', 'renderer', ['uncaughtException', error]));
+process.on('unhandledRejection', (reason) => sendLog('error', 'renderer', ['unhandledRejection', reason]));
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => sendLog('error', 'renderer', ['window.error', event.message]));
+  window.addEventListener('unhandledrejection', (event) => sendLog('error', 'renderer', ['window.unhandledrejection', event.reason]));
+}
+
 // Types for the exposed APIs
 export interface MpvStatus {
   playing: boolean;
@@ -8,6 +77,33 @@ export interface MpvStatus {
   muted: boolean;
   position: number;
   duration: number;
+  hwdec?: string;
+  hwdecSetting?: string;
+  hwdecInterop?: string;
+  hwdecAvailable?: string;
+  hwdecCodecs?: string;
+  gpuHwdecInterop?: string;
+  vo?: string;
+  gpuApi?: string;
+  gpuContext?: string;
+  videoCodec?: string;
+}
+
+export interface MpvViewport {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  hidden?: boolean;
+}
+
+export interface MpvFrameInfo {
+  width: number;
+  height: number;
+  stride: number;
+  format: 'RGBA';
+  pts: number;
+  frameId: number;
 }
 
 export interface MpvResult {
@@ -25,8 +121,12 @@ export interface MpvApi {
   toggleMute: () => Promise<MpvResult>;
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
+  setViewport: (rect: MpvViewport) => Promise<MpvResult>;
+  onFrame: (callback: (frame: { info: MpvFrameInfo; data: ArrayBuffer }) => void) => void;
+  onVideoInfo: (callback: (info: MpvFrameInfo) => void) => void;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
+  onWarning: (callback: (warning: string) => void) => void;
   onError: (callback: (error: string) => void) => void;
   removeAllListeners: () => void;
 }
@@ -88,9 +188,37 @@ contextBridge.exposeInMainWorld('electronWindow', {
   setSize: (width: number, height: number) => ipcRenderer.invoke('window-set-size', width, height),
 } satisfies ElectronWindowApi);
 
-// Expose mpv API to the renderer process
-contextBridge.exposeInMainWorld('mpv', {
-  // Control functions
+const readyListeners = new Set<(ready: boolean) => void>();
+const statusListeners = new Set<(status: MpvStatus) => void>();
+const warningListeners = new Set<(warning: string) => void>();
+const errorListeners = new Set<(error: string) => void>();
+const frameListeners = new Set<(frame: { info: MpvFrameInfo; data: ArrayBuffer }) => void>();
+const videoInfoListeners = new Set<(info: MpvFrameInfo) => void>();
+let lastReady: boolean | null = null;
+
+ipcRenderer.on('mpv-ready', (_event: IpcRendererEvent, data: boolean) => {
+  lastReady = data;
+  readyListeners.forEach((callback) => callback(data));
+});
+ipcRenderer.on('mpv-status', (_event: IpcRendererEvent, data: MpvStatus) => {
+  statusListeners.forEach((callback) => callback(data));
+});
+ipcRenderer.on('mpv-warning', (_event: IpcRendererEvent, data: string) => {
+  warningListeners.forEach((callback) => callback(data));
+});
+ipcRenderer.on('mpv-error', (_event: IpcRendererEvent, data: string) => {
+  errorListeners.forEach((callback) => callback(data));
+});
+
+ipcRenderer.on('player-video-info', (_event: IpcRendererEvent, info: MpvFrameInfo) => {
+  videoInfoListeners.forEach((callback) => callback(info));
+});
+
+ipcRenderer.on('player-frame', (_event: IpcRendererEvent, payload: { info: MpvFrameInfo; data: ArrayBuffer }) => {
+  frameListeners.forEach((callback) => callback({ info: payload.info, data: payload.data }));
+});
+
+const mpvApi: MpvApi = {
   load: (url: string) => ipcRenderer.invoke('mpv-load', url),
   play: () => ipcRenderer.invoke('mpv-play'),
   pause: () => ipcRenderer.invoke('mpv-pause'),
@@ -100,25 +228,37 @@ contextBridge.exposeInMainWorld('mpv', {
   toggleMute: () => ipcRenderer.invoke('mpv-toggle-mute'),
   seek: (seconds: number) => ipcRenderer.invoke('mpv-seek', seconds),
   getStatus: () => ipcRenderer.invoke('mpv-get-status'),
-
-  // Event listeners
+  setViewport: (rect: MpvViewport) => ipcRenderer.invoke('mpv-set-viewport', rect),
+  onFrame: (callback: (frame: { info: MpvFrameInfo; data: ArrayBuffer }) => void) => {
+    frameListeners.add(callback);
+  },
+  onVideoInfo: (callback: (info: MpvFrameInfo) => void) => {
+    videoInfoListeners.add(callback);
+  },
   onReady: (callback: (ready: boolean) => void) => {
-    ipcRenderer.on('mpv-ready', (_event: IpcRendererEvent, data: boolean) => callback(data));
+    readyListeners.add(callback);
+    if (lastReady !== null) callback(lastReady);
   },
   onStatus: (callback: (status: MpvStatus) => void) => {
-    ipcRenderer.on('mpv-status', (_event: IpcRendererEvent, data: MpvStatus) => callback(data));
+    statusListeners.add(callback);
+  },
+  onWarning: (callback: (warning: string) => void) => {
+    warningListeners.add(callback);
   },
   onError: (callback: (error: string) => void) => {
-    ipcRenderer.on('mpv-error', (_event: IpcRendererEvent, data: string) => callback(data));
+    errorListeners.add(callback);
   },
-
-  // Cleanup
   removeAllListeners: () => {
-    ipcRenderer.removeAllListeners('mpv-ready');
-    ipcRenderer.removeAllListeners('mpv-status');
-    ipcRenderer.removeAllListeners('mpv-error');
+    readyListeners.clear();
+    statusListeners.clear();
+    warningListeners.clear();
+    errorListeners.clear();
+    frameListeners.clear();
+    videoInfoListeners.clear();
   },
-} satisfies MpvApi);
+};
+
+contextBridge.exposeInMainWorld('mpv', mpvApi);
 
 // Expose storage API for sources and settings
 contextBridge.exposeInMainWorld('storage', {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, screen } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import * as net from 'net';
@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
+import { initLogging, log } from './logger.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -15,9 +16,62 @@ const __dirname = path.dirname(__filename);
 const MIN_WIDTH = 640;
 const MIN_HEIGHT = 620;
 
+initLogging('main');
+process.on('uncaughtException', (error) => log('error', 'process', 'uncaughtException', error));
+process.on('unhandledRejection', (reason) => log('error', 'process', 'unhandledRejection', reason));
+
+const normalizeVsyncMode = (value?: string | null): 'on' | 'off' | null => {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'on' || normalized === 'off') return normalized;
+  return null;
+};
+
+if (process.platform === 'linux') {
+  const vsyncMode = normalizeVsyncMode(process.env.SBTLTV_VSYNC);
+  if (vsyncMode === 'off') {
+    process.env.vblank_mode = '0';
+    process.env.__GL_SYNC_TO_VBLANK = '0';
+    app.commandLine.appendSwitch('disable-gpu-vsync');
+    log('info', 'window', 'vsync', { mode: 'off' });
+  } else if (vsyncMode === 'on') {
+    process.env.vblank_mode = '1';
+    process.env.__GL_SYNC_TO_VBLANK = '1';
+    log('info', 'window', 'vsync', { mode: 'on' });
+  }
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+  app.commandLine.appendSwitch('ozone-platform-hint', 'x11');
+  log('info', 'window', 'force-x11', { ozone: 'x11' });
+}
+
 let mainWindow: BrowserWindow | null = null;
 let mpvProcess: ChildProcess | null = null;
 let mpvSocket: net.Socket | null = null;
+let gstProcess: ChildProcess | null = null;
+let gstBuffer = '';
+let gstReady = false;
+let gstRequestId = 0;
+const gstPendingRequests = new Map<number, { resolve: (data: { success?: boolean; error?: string }) => void; reject: (err: Error) => void }>();
+let gstResizeHandler: (() => void) | null = null;
+let gstStderrTail: string[] = [];
+const GST_STDERR_TAIL_MAX = 6;
+interface GstViewport {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  hidden?: boolean;
+}
+
+let gstLastRect: { x: number; y: number; width: number; height: number; scale: number } | null = null;
+let gstViewport: GstViewport | null = null;
+const gstUseAppsink = process.platform === 'linux';
+let gstFrameServer: net.Server | null = null;
+let gstFrameSocketPath: string | null = null;
+let gstFrameBuffer = Buffer.alloc(0);
+let gstLastVideoInfoKey = '';
+let gstFrameSendScheduled = false;
+let gstLatestFrame: { info: MpvFrameInfo; data: Buffer } | null = null;
 let requestId = 0;
 const pendingRequests = new Map<number, { resolve: (data: unknown) => void; reject: (err: Error) => void }>();
 
@@ -30,6 +84,15 @@ interface MpvState {
   duration: number;
 }
 
+interface MpvFrameInfo {
+  width: number;
+  height: number;
+  stride: number;
+  format: 'RGBA';
+  pts: number;
+  frameId: number;
+}
+
 const mpvState: MpvState = {
   playing: false,
   volume: 100,
@@ -37,6 +100,116 @@ const mpvState: MpvState = {
   position: 0,
   duration: 0,
 };
+
+const isYoutubeUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return host.endsWith('youtube.com') ||
+      host.endsWith('youtu.be') ||
+      host.endsWith('youtube-nocookie.com') ||
+      host.endsWith('music.youtube.com');
+  } catch {
+    return false;
+  }
+};
+
+const resolveYtdlMode = (url: string): 'yes' | 'no' => {
+  const env = (process.env.SBTLTV_YTDL || '').toLowerCase();
+  if (env === 'no' || env === '0' || env === 'false') return 'no';
+  if (env === 'yes' || env === '1' || env === 'true') return 'yes';
+  return isYoutubeUrl(url) ? 'yes' : 'no';
+};
+
+const envFlag = (value?: string): boolean => {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+};
+
+const gstDebugEnabled = envFlag(process.env.SBTLTV_GST_DEBUG);
+
+const sanitizeUrlForLog = (rawUrl: string): Record<string, string | number | boolean> => {
+  try {
+    const parsed = new URL(rawUrl);
+    return {
+      scheme: parsed.protocol.replace(':', ''),
+      host: parsed.host,
+      pathLength: parsed.pathname.length,
+      hasQuery: parsed.search.length > 0,
+    };
+  } catch {
+    return { scheme: 'invalid', host: '', pathLength: rawUrl.length, hasQuery: false };
+  }
+};
+
+function pickYtdlpUrl(output: string): string | null {
+  const lines = output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) return null;
+  const m3u8Line = lines.find((line) => line.includes('m3u8'));
+  return m3u8Line ?? lines[0];
+}
+
+async function resolveYtdlpUrl(url: string): Promise<{ url?: string; error?: string }> {
+  const ytdlPath = process.env.SBTLTV_YTDL_PATH || 'yt-dlp';
+  const args = [
+    '-g',
+    '--no-playlist',
+    '--format',
+    'best[protocol=m3u8_native]/best[protocol=m3u8]/best',
+    url,
+  ];
+
+  return new Promise((resolve) => {
+    const child = spawn(ytdlPath, args, { shell: false });
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout?.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+    child.stderr?.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+    child.on('error', (error: Error) => {
+      const message = error.message || 'yt-dlp failed';
+      if (message.includes('ENOENT')) {
+        resolve({ error: 'yt-dlp not found (install it or set SBTLTV_YTDL_PATH)' });
+        return;
+      }
+      resolve({ error: `yt-dlp failed: ${message}` });
+    });
+    child.on('exit', (code) => {
+      if (code !== 0) {
+        const detail = stderr.trim() || 'yt-dlp exited with an error';
+        resolve({ error: detail });
+        return;
+      }
+      const resolvedUrl = pickYtdlpUrl(stdout);
+      if (!resolvedUrl) {
+        resolve({ error: 'yt-dlp returned no URL' });
+        return;
+      }
+      resolve({ url: resolvedUrl });
+    });
+  });
+}
+
+async function resolveGstLoadUrl(url: string): Promise<{ url?: string; error?: string }> {
+  const ytdlMode = resolveYtdlMode(url);
+  if (ytdlMode !== 'yes') return { url };
+  return resolveYtdlpUrl(url);
+}
+
+ipcMain.on('log-event', (_event, payload: { level?: string; tag?: string; args?: unknown[] }) => {
+  const level = (payload.level || 'info') as 'error' | 'warn' | 'info' | 'debug' | 'trace';
+  const tag = payload.tag || 'renderer';
+  const args = Array.isArray(payload.args) ? payload.args : [];
+  log(level, tag, ...args);
+});
 
 // Windows uses named pipes, Linux/macOS use Unix sockets
 const SOCKET_PATH = process.platform === 'win32'
@@ -46,33 +219,58 @@ const SOCKET_PATH = process.platform === 'win32'
 // Throttle status updates to renderer (max once per 100ms)
 let lastStatusUpdate = 0;
 const STATUS_THROTTLE_MS = 100;
+let lastGstStatusUpdate = 0;
 
 async function createWindow(): Promise<void> {
-  // On Windows, we use a transparent frameless window for mpv embedding
+  // Windows: transparent window so mpv shows through
+  // Linux: opaque window, video renders via GstVideoOverlay
   const isWindows = process.platform === 'win32';
+  const isLinux = process.platform === 'linux';
+  const useTransparent = isWindows;
+  const useFrameless = isWindows || isLinux;
 
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
-    backgroundColor: isWindows ? '#00000000' : '#000000',
-    transparent: isWindows, // Transparent on Windows so mpv shows through
-    frame: !isWindows, // Frameless on Windows (required for transparency)
+    center: true,
+    backgroundColor: useTransparent ? '#00000000' : '#000000',
+    transparent: useTransparent,
+    frame: !useFrameless, // Frameless on Windows/Linux (required for transparency)
     resizable: true, // Explicit for Electron 40
+    show: true,
     icon: path.join(__dirname, '../assets/logo-white.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
+
+  mainWindow.on('ready-to-show', () => log('info', 'window', 'ready-to-show'));
+  mainWindow.on('show', () => log('info', 'window', 'show'));
+  mainWindow.on('closed', () => log('info', 'window', 'closed'));
+
+  const wc = mainWindow.webContents;
+  wc.on('did-finish-load', () => log('info', 'window', 'did-finish-load', wc.getURL()));
+  wc.on('did-fail-load', (_event, code, desc, url, isMainFrame) => {
+    log('error', 'window', 'did-fail-load', { code, desc, url, isMainFrame });
+  });
+  wc.on('render-process-gone', (_event, details) => {
+    log('error', 'window', 'render-process-gone', details);
+  });
+  wc.on('unresponsive', () => log('warn', 'window', 'unresponsive'));
+  wc.on('responsive', () => log('info', 'window', 'responsive'));
 
   // Load the React app
   // In dev, load from Vite server; in prod, load from built files
   if (process.argv.includes('--dev')) {
     await mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    if (process.env.OPEN_DEVTOOLS !== '0') {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
   } else {
     // Packaged app: UI is in resources/ui, unpackaged: relative path
     const uiPath = app.isPackaged
@@ -84,6 +282,7 @@ async function createWindow(): Promise<void> {
   mainWindow.on('closed', () => {
     mainWindow = null;
     killMpv();
+    killGst();
   });
 }
 
@@ -103,6 +302,285 @@ function killMpv(): void {
     } catch {
       // Ignore if already gone
     }
+  }
+}
+
+function killGst(): void {
+  if (gstProcess) {
+    gstProcess.kill();
+    gstProcess = null;
+  }
+  if (gstResizeHandler && mainWindow) {
+    mainWindow.off('resize', gstResizeHandler);
+  }
+  gstResizeHandler = null;
+  gstBuffer = '';
+  gstReady = false;
+  gstStderrTail = [];
+  gstLastRect = null;
+  gstViewport = null;
+  stopFrameServer();
+  for (const [id, pending] of gstPendingRequests) {
+    pending.reject(new Error('GStreamer helper stopped'));
+    gstPendingRequests.delete(id);
+  }
+}
+
+function getGstHelperPath(): string | null {
+  const packagedPath = path.join(process.resourcesPath, 'gst-player', 'gst-player');
+  if (fs.existsSync(packagedPath)) return packagedPath;
+  const distPath = path.join(__dirname, 'gst-player', 'gst-player');
+  if (fs.existsSync(distPath)) return distPath;
+  const devPath = path.join(__dirname, '../gst-player/gst-player');
+  if (fs.existsSync(devPath)) return devPath;
+  return null;
+}
+
+function handleGstStatus(line: string): void {
+  const parts = line.split(' ');
+  for (const part of parts.slice(1)) {
+    const [key, rawValue] = part.split('=');
+    if (!key) continue;
+    switch (key) {
+      case 'playing':
+        mpvState.playing = rawValue === '1';
+        break;
+      case 'volume':
+        mpvState.volume = Number.parseInt(rawValue ?? '0', 10) || 0;
+        break;
+      case 'muted':
+        mpvState.muted = rawValue === '1';
+        break;
+      case 'position':
+        mpvState.position = Number.parseFloat(rawValue ?? '0') || 0;
+        break;
+      case 'duration':
+        mpvState.duration = Number.parseFloat(rawValue ?? '0') || 0;
+        break;
+      default:
+        break;
+    }
+  }
+  const now = Date.now();
+  if (now - lastGstStatusUpdate > STATUS_THROTTLE_MS) {
+    lastGstStatusUpdate = now;
+    sendToRenderer('mpv-status', mpvState);
+  }
+}
+
+function handleGstResult(line: string): void {
+  const match = line.match(/^result\s+(\d+)\s+(ok|error)(?:\s+(.*))?$/);
+  if (!match) return;
+  const requestId = Number.parseInt(match[1], 10);
+  const status = match[2];
+  const message = match[3];
+  const pending = gstPendingRequests.get(requestId);
+  if (!pending) return;
+  gstPendingRequests.delete(requestId);
+  if (gstDebugEnabled) {
+    log('debug', 'gst', 'result', { requestId, status, message });
+  }
+  if (status === 'ok') {
+    pending.resolve({ success: true });
+  } else {
+    pending.resolve({ error: message || 'Unknown error' });
+  }
+}
+
+function handleGstLine(line: string): void {
+  if (line.startsWith('ready')) {
+    gstReady = true;
+    sendToRenderer('mpv-ready', true);
+    return;
+  }
+  if (line.startsWith('status ')) {
+    handleGstStatus(line);
+    return;
+  }
+  if (line.startsWith('debug ')) {
+    if (gstDebugEnabled) {
+      log('debug', 'gst-helper', line.slice('debug '.length));
+    }
+    return;
+  }
+  if (line.startsWith('error ')) {
+    if (gstDebugEnabled) {
+      log('debug', 'gst-helper', 'error', line.slice('error '.length));
+    }
+    sendToRenderer('mpv-error', line.slice('error '.length));
+    return;
+  }
+  if (line.startsWith('warning ')) {
+    if (gstDebugEnabled) {
+      log('debug', 'gst-helper', 'warning', line.slice('warning '.length));
+    }
+    sendToRenderer('mpv-warning', line.slice('warning '.length));
+    return;
+  }
+  if (line.startsWith('result ')) {
+    handleGstResult(line);
+  }
+}
+
+function sendGstCommand(command: string, args: string[] = []): Promise<{ success?: boolean; error?: string }> {
+  const process = gstProcess;
+  const stdin = process?.stdin ?? null;
+  if (!process || !stdin) {
+    return Promise.resolve({ error: 'GStreamer helper not running' });
+  }
+  const id = ++gstRequestId;
+  return new Promise((resolve, reject) => {
+    gstPendingRequests.set(id, { resolve, reject });
+    try {
+      const payload = [command, id.toString(), ...args].join(' ') + '\n';
+      if (gstDebugEnabled) {
+        log('debug', 'gst', 'command', { id, command, args });
+      }
+      stdin.write(payload);
+    } catch (error) {
+      gstPendingRequests.delete(id);
+      reject(error instanceof Error ? error : new Error('Failed to write to GStreamer helper'));
+      return;
+    }
+    setTimeout(() => {
+      if (gstPendingRequests.has(id)) {
+        gstPendingRequests.delete(id);
+        reject(new Error('GStreamer command timeout'));
+      }
+    }, 5000);
+  });
+}
+
+let gstRectUpdateCount = 0;
+let gstRectUpdateTimer: NodeJS.Timeout | null = null;
+
+function noteGstRectUpdate(): void {
+  if (!gstDebugEnabled) return;
+  gstRectUpdateCount += 1;
+  if (gstRectUpdateTimer) return;
+  gstRectUpdateTimer = setTimeout(() => {
+    log('debug', 'gst', 'rect-rate', { updates: gstRectUpdateCount });
+    gstRectUpdateCount = 0;
+    gstRectUpdateTimer = null;
+  }, 1000);
+}
+
+function sendGstRect(): void {
+  if (gstUseAppsink) return;
+  if (!mainWindow || !gstProcess) return;
+  const bounds = mainWindow.getContentBounds();
+  const display = screen.getDisplayMatching(mainWindow.getBounds());
+  const scale = display?.scaleFactor || 1;
+  let x = 0;
+  let y = 0;
+  let width = bounds.width;
+  let height = bounds.height;
+
+  if (gstViewport) {
+    if (gstViewport.hidden || gstViewport.width <= 0 || gstViewport.height <= 0) {
+      x = -20000;
+      y = -20000;
+      width = 1;
+      height = 1;
+    } else {
+      x = Math.max(0, Math.round(gstViewport.x));
+      y = Math.max(0, Math.round(gstViewport.y));
+      width = Math.max(1, Math.round(gstViewport.width));
+      height = Math.max(1, Math.round(gstViewport.height));
+      const maxWidth = Math.max(1, bounds.width - x);
+      const maxHeight = Math.max(1, bounds.height - y);
+      width = Math.min(width, maxWidth);
+      height = Math.min(height, maxHeight);
+    }
+  }
+
+  const scaledX = Math.round(x * scale);
+  const scaledY = Math.round(y * scale);
+  const scaledWidth = Math.max(1, Math.round(width * scale));
+  const scaledHeight = Math.max(1, Math.round(height * scale));
+
+  if (gstLastRect && gstLastRect.x === scaledX && gstLastRect.y === scaledY &&
+    gstLastRect.width === scaledWidth && gstLastRect.height === scaledHeight && gstLastRect.scale === scale) {
+    return;
+  }
+  gstLastRect = { x: scaledX, y: scaledY, width: scaledWidth, height: scaledHeight, scale };
+  if (gstDebugEnabled) {
+    log('debug', 'gst', 'rect', { viewport: gstViewport, bounds, scale, rect: gstLastRect });
+    noteGstRectUpdate();
+  }
+  sendGstCommand('rect', [scaledX.toString(), scaledY.toString(), scaledWidth.toString(), scaledHeight.toString()])
+    .catch((error) => log('warn', 'gst', 'rect-failed', error instanceof Error ? error.message : error));
+}
+
+async function initGst(): Promise<void> {
+  if (!mainWindow) return;
+  killGst();
+  const helperPath = getGstHelperPath();
+  if (!helperPath) {
+    log('error', 'gst', 'helper-not-found');
+    sendToRenderer('mpv-error', 'GStreamer helper not found');
+    return;
+  }
+
+  if (gstUseAppsink) {
+    startFrameServer();
+  }
+
+  const env = {
+    ...process.env,
+    ...(gstFrameSocketPath ? { SBTLTV_GST_FRAME_SOCKET: gstFrameSocketPath } : {}),
+  };
+  gstProcess = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'], env });
+  gstProcess.stdout?.on('data', (data: Buffer) => {
+    gstBuffer += data.toString();
+    const lines = gstBuffer.split('\n');
+    gstBuffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.length) handleGstLine(trimmed);
+    }
+  });
+  gstProcess.stderr?.on('data', (data: Buffer) => {
+    const text = data.toString();
+    log('error', 'gst', 'stderr', text);
+    const lines = text.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
+    if (lines.length) {
+      gstStderrTail = [...gstStderrTail, ...lines].slice(-GST_STDERR_TAIL_MAX);
+    }
+  });
+  gstProcess.on('error', (error: Error) => {
+    log('error', 'gst', 'process-error', error.message);
+    sendToRenderer('mpv-error', error.message);
+  });
+  gstProcess.on('exit', (code, signal) => {
+    log('warn', 'gst', 'process-exit', { code, signal });
+    gstReady = false;
+    sendToRenderer('mpv-ready', false);
+    const exitInfo = `code ${code ?? 'unknown'}${signal ? ` signal ${signal}` : ''}`;
+    const stderrInfo = gstStderrTail.length ? `; stderr: ${gstStderrTail.join(' | ')}` : '';
+    sendToRenderer('mpv-error', `GStreamer helper exited (${exitInfo})${stderrInfo}`);
+    killGst();
+  });
+
+  if (!gstUseAppsink) {
+    await ensureWindowReadyForEmbed(mainWindow);
+    const xid = await waitForLinuxXid(mainWindow);
+    if (xid.xid <= 1) {
+      log('error', 'gst', 'invalid-xid', xid);
+      sendToRenderer('mpv-error', 'Failed to obtain X11 window handle');
+      return;
+    }
+    await sendGstCommand('window', [xid.xid.toString()]).catch((error) => {
+      log('error', 'gst', 'window-handle', error instanceof Error ? error.message : error);
+    });
+    sendGstRect();
+    gstResizeHandler = () => sendGstRect();
+    if (mainWindow) {
+      mainWindow.on('resize', gstResizeHandler);
+    }
+    log('info', 'gst', 'initialized', { helperPath, xid: xid.xid });
+  } else {
+    log('info', 'gst', 'initialized', { helperPath, mode: 'appsink' });
   }
 }
 
@@ -170,7 +648,7 @@ async function checkMpvAvailable(): Promise<boolean> {
       type: 'error',
       title: 'mpv Not Found',
       message: 'mpv media player could not be found.',
-      detail: 'The bundled mpv appears to be missing. Please reinstall the application.',
+      detail: 'Install mpv and restart the application.',
       buttons: ['OK'],
     });
   }
@@ -198,11 +676,20 @@ async function initMpv(): Promise<void> {
     }
     console.log('[mpv] Using binary:', mpvBinary);
 
+    const hwdec = 'auto-safe';
+    const ytdl = process.env.SBTLTV_YTDL || 'no';
+    const ytdlPath = process.env.SBTLTV_YTDL_PATH;
+    const isLinux = process.platform === 'linux';
+    const isMac = process.platform === 'darwin';
+    const sessionType = process.env.XDG_SESSION_TYPE;
+    const waylandDisplay = process.env.WAYLAND_DISPLAY;
+    const isWayland = isLinux && (sessionType === 'wayland' || (waylandDisplay && waylandDisplay.trim().length > 0));
     let mpvArgs = [
       `--input-ipc-server=${SOCKET_PATH}`,
       '--no-osc',
       '--no-osd-bar',
       '--osd-level=0',
+      '--script-opts=osc-idlescreen=no,osc-visibility=never',
       '--keep-open=yes',
       '--idle=yes',
       '--input-default-bindings=no',
@@ -211,35 +698,45 @@ async function initMpv(): Promise<void> {
       '--force-window=yes',
       '--no-terminal',
       '--really-quiet',
-      '--hwdec=auto',
-      '--vo=gpu',
+      `--hwdec=${hwdec}`,
       '--target-colorspace-hint=no',
       '--tone-mapping=mobius',
       '--hdr-compute-peak=no',
     ];
 
-    // Get native window handle for --wid embedding
-    const nativeHandle = mainWindow.getNativeWindowHandle();
-    let windowId: string;
-
-    if (process.platform === 'linux') {
-      windowId = nativeHandle.readUInt32LE(0).toString();
-    } else if (process.platform === 'win32') {
-      // Windows HWND - try 64-bit first, fall back to 32-bit
-      windowId = typeof nativeHandle.readBigUInt64LE === 'function'
-        ? nativeHandle.readBigUInt64LE(0).toString()
-        : nativeHandle.readUInt32LE(0).toString();
-    } else {
-      // macOS
-      windowId = typeof nativeHandle.readBigUInt64LE === 'function'
-        ? nativeHandle.readBigUInt64LE(0).toString()
-        : nativeHandle.readUInt32LE(0).toString();
+    mpvArgs.push(`--ytdl=${ytdl}`);
+    if (ytdlPath) {
+      mpvArgs.push(`--ytdl-path=${ytdlPath}`);
     }
 
-    console.log('[mpv] Native window handle:', windowId);
-    console.log('[mpv] Using --wid embedding (single window mode)');
+    const vo = isLinux && isWayland ? 'dmabuf-wayland' : 'gpu';
+    mpvArgs.push(`--vo=${vo}`);
+    if (isLinux) {
+      if (!isWayland) {
+        mpvArgs.push('--gpu-context=x11egl');
+      } else if (vo === 'gpu') {
+        mpvArgs.push('--gpu-context=wayland');
+      }
+    }
 
-    mpvArgs = [...mpvArgs, `--wid=${windowId}`];
+    const useEmbedding = process.platform === 'win32';
+    if (useEmbedding) {
+      const nativeHandle = mainWindow.getNativeWindowHandle();
+      const windowId = typeof nativeHandle.readBigUInt64LE === 'function'
+        ? nativeHandle.readBigUInt64LE(0).toString()
+        : nativeHandle.readUInt32LE(0).toString();
+      console.log('[mpv] Native window handle:', windowId);
+      console.log('[mpv] Using --wid embedding (single window mode)');
+      mpvArgs = [...mpvArgs, `--wid=${windowId}`];
+    } else {
+      console.log('[mpv] Using separate mpv window');
+      console.log(`[mpv] vo=${vo} hwdec=${hwdec}`);
+      if (isLinux) {
+        console.log(`[mpv] session=${isWayland ? 'wayland' : 'x11'}`);
+      } else if (isMac) {
+        console.log('[mpv] session=macOS');
+      }
+    }
 
     console.log('[mpv] Starting with args:', mpvArgs.join(' '));
 
@@ -269,17 +766,51 @@ async function initMpv(): Promise<void> {
       mpvProcess = null;
     });
 
-    // Wait for mpv to create the socket, then connect
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await waitForMpvSocket();
     await connectToMpvSocket();
 
-    console.log('[mpv] Initialized successfully (embedded mode)');
+    console.log(`[mpv] Initialized successfully (${useEmbedding ? 'embedded' : 'external'} mode)`);
     sendToRenderer('mpv-ready', true);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[mpv] Failed to initialize:', message);
     sendToRenderer('mpv-error', message);
   }
+}
+
+async function ensureWindowReadyForEmbed(window: BrowserWindow): Promise<void> {
+  if (window.isDestroyed()) return;
+
+  if (!window.isVisible()) {
+    await new Promise<void>((resolve) => {
+      const finish = () => resolve();
+      window.once('show', finish);
+      window.show();
+    });
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+}
+
+function readLinuxXid(window: BrowserWindow): { xid: number; bufferLen: number; hex: string } {
+  const nativeHandle = window.getNativeWindowHandle();
+  const bufferLen = nativeHandle.length;
+  const xid = bufferLen >= 4 ? nativeHandle.readUInt32LE(0) : 0;
+  return { xid, bufferLen, hex: nativeHandle.toString('hex') };
+}
+
+async function waitForLinuxXid(
+  window: BrowserWindow,
+  timeoutMs = 5000,
+  intervalMs = 50,
+): Promise<{ xid: number; bufferLen: number; hex: string }> {
+  const start = Date.now();
+  let result = readLinuxXid(window);
+  while ((result.bufferLen < 4 || result.xid <= 1) && Date.now() - start < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    result = readLinuxXid(window);
+  }
+  return result;
 }
 
 async function connectToMpvSocket(): Promise<void> {
@@ -327,6 +858,21 @@ async function connectToMpvSocket(): Promise<void> {
       console.log('[mpv] Socket closed');
     });
   });
+}
+
+async function waitForMpvSocket(timeoutMs = 5000, intervalMs = 50): Promise<void> {
+  if (process.platform === 'win32') {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return;
+  }
+
+  const start = Date.now();
+  while (!fs.existsSync(SOCKET_PATH)) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error('Timed out waiting for mpv IPC socket');
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
 }
 
 interface MpvMessage {
@@ -405,6 +951,117 @@ function sendToRenderer(channel: string, data: unknown): void {
   }
 }
 
+const FRAME_MAGIC = 0x5342544c;
+const FRAME_HEADER_SIZE = 40;
+const FRAME_FORMAT_RGBA = 1;
+
+function resetFrameBuffer(): void {
+  gstFrameBuffer = Buffer.alloc(0);
+}
+
+function scheduleFrameSend(): void {
+  if (!gstLatestFrame || gstFrameSendScheduled) return;
+  gstFrameSendScheduled = true;
+  setImmediate(() => {
+    gstFrameSendScheduled = false;
+    if (!gstLatestFrame || !mainWindow) return;
+    const payload = gstLatestFrame;
+    gstLatestFrame = null;
+    const buffer = payload.data;
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    sendToRenderer('player-frame', { info: payload.info, data: arrayBuffer });
+  });
+}
+
+function handleParsedFrame(info: MpvFrameInfo, data: Buffer): void {
+  const infoKey = `${info.width}x${info.height}:${info.stride}:${info.format}`;
+  if (infoKey !== gstLastVideoInfoKey) {
+    gstLastVideoInfoKey = infoKey;
+    sendToRenderer('player-video-info', info);
+  }
+  gstLatestFrame = { info, data };
+  scheduleFrameSend();
+}
+
+function parseFrameBuffer(): void {
+  const magicBytes = Buffer.from([0x4c, 0x54, 0x42, 0x53]);
+  while (gstFrameBuffer.length >= FRAME_HEADER_SIZE) {
+    const magic = gstFrameBuffer.readUInt32LE(0);
+    if (magic !== FRAME_MAGIC) {
+      const next = gstFrameBuffer.indexOf(magicBytes, 1);
+      if (next === -1) {
+        resetFrameBuffer();
+        return;
+      }
+      gstFrameBuffer = gstFrameBuffer.subarray(next);
+      continue;
+    }
+
+    const version = gstFrameBuffer.readUInt16LE(4);
+    const headerSize = gstFrameBuffer.readUInt16LE(6);
+    if (version !== 1 || headerSize < FRAME_HEADER_SIZE) {
+      gstFrameBuffer = gstFrameBuffer.subarray(4);
+      continue;
+    }
+
+    const width = gstFrameBuffer.readUInt32LE(8);
+    const height = gstFrameBuffer.readUInt32LE(12);
+    const stride = gstFrameBuffer.readUInt32LE(16);
+    const format = gstFrameBuffer.readUInt32LE(20);
+    const pts = Number(gstFrameBuffer.readBigUInt64LE(24));
+    const payloadSize = gstFrameBuffer.readUInt32LE(32);
+    const frameId = gstFrameBuffer.readUInt32LE(36);
+
+    const totalSize = headerSize + payloadSize;
+    if (gstFrameBuffer.length < totalSize) return;
+
+    if (format === FRAME_FORMAT_RGBA) {
+      const payload = Buffer.from(gstFrameBuffer.subarray(headerSize, totalSize));
+      handleParsedFrame({ width, height, stride, format: 'RGBA', pts, frameId }, payload);
+    }
+
+    gstFrameBuffer = gstFrameBuffer.subarray(totalSize);
+  }
+}
+
+function startFrameServer(): void {
+  if (gstFrameServer) return;
+  const socketPath = `/tmp/sbtltv-gst-frames-${process.pid}.sock`;
+  if (fs.existsSync(socketPath)) {
+    fs.unlinkSync(socketPath);
+  }
+  gstFrameSocketPath = socketPath;
+  gstFrameServer = net.createServer((socket) => {
+    resetFrameBuffer();
+    socket.on('data', (chunk: Buffer) => {
+      gstFrameBuffer = Buffer.concat([gstFrameBuffer, chunk]);
+      parseFrameBuffer();
+    });
+    socket.on('error', (error: Error) => {
+      log('warn', 'gst', 'frame-socket-error', error.message);
+    });
+  });
+  gstFrameServer.on('error', (error: Error) => {
+    log('error', 'gst', 'frame-server-error', error.message);
+  });
+  gstFrameServer.listen(socketPath);
+}
+
+function stopFrameServer(): void {
+  if (gstFrameServer) {
+    gstFrameServer.close();
+    gstFrameServer = null;
+  }
+  if (gstFrameSocketPath && fs.existsSync(gstFrameSocketPath)) {
+    fs.unlinkSync(gstFrameSocketPath);
+  }
+  gstFrameSocketPath = null;
+  gstLastVideoInfoKey = '';
+  gstLatestFrame = null;
+  gstFrameSendScheduled = false;
+  resetFrameBuffer();
+}
+
 // IPC Handlers - Window controls
 ipcMain.handle('window-minimize', () => mainWindow?.minimize());
 ipcMain.handle('window-maximize', () => {
@@ -426,13 +1083,35 @@ ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
   // Use setBounds which seems to work in both directions
   const bounds = mainWindow.getBounds();
   mainWindow.setBounds({ x: bounds.x, y: bounds.y, width: newW, height: newH });
+  sendGstRect();
 });
 
 // IPC Handlers - mpv control
 ipcMain.handle('mpv-load', async (_event, url: string) => {
+  if (process.platform === 'linux') {
+    if (gstDebugEnabled) {
+      log('debug', 'gst', 'load', sanitizeUrlForLog(url));
+    }
+    const resolved = await resolveGstLoadUrl(url);
+    if (!resolved.url) {
+      return { error: resolved.error ?? 'Failed to resolve stream URL' };
+    }
+    return sendGstCommand('load', [resolved.url]);
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
-    await sendMpvCommand('loadfile', [url]);
+    const ytdlMode = resolveYtdlMode(url);
+    const useYtdl = ytdlMode === 'yes';
+    const loadUrl = useYtdl && !url.startsWith('ytdl://') ? `ytdl://${url}` : url;
+    try {
+      await sendMpvCommand('set_property', ['ytdl', ytdlMode]);
+      if (ytdlMode === 'yes' && process.env.SBTLTV_YTDL_PATH) {
+        await sendMpvCommand('set_property', ['ytdl-path', process.env.SBTLTV_YTDL_PATH]);
+      }
+    } catch (error) {
+      console.warn('[mpv] Failed to set ytdl mode:', error instanceof Error ? error.message : error);
+    }
+    await sendMpvCommand('loadfile', [loadUrl]);
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -440,6 +1119,9 @@ ipcMain.handle('mpv-load', async (_event, url: string) => {
 });
 
 ipcMain.handle('mpv-play', async () => {
+  if (process.platform === 'linux') {
+    return sendGstCommand('play');
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('set_property', ['pause', false]);
@@ -450,6 +1132,9 @@ ipcMain.handle('mpv-play', async () => {
 });
 
 ipcMain.handle('mpv-pause', async () => {
+  if (process.platform === 'linux') {
+    return sendGstCommand('pause');
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('set_property', ['pause', true]);
@@ -460,6 +1145,9 @@ ipcMain.handle('mpv-pause', async () => {
 });
 
 ipcMain.handle('mpv-toggle-pause', async () => {
+  if (process.platform === 'linux') {
+    return sendGstCommand('toggle');
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('cycle', ['pause']);
@@ -470,6 +1158,9 @@ ipcMain.handle('mpv-toggle-pause', async () => {
 });
 
 ipcMain.handle('mpv-volume', async (_event, volume: number) => {
+  if (process.platform === 'linux') {
+    return sendGstCommand('volume', [volume.toString()]);
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('set_property', ['volume', volume]);
@@ -480,6 +1171,11 @@ ipcMain.handle('mpv-volume', async (_event, volume: number) => {
 });
 
 ipcMain.handle('mpv-toggle-mute', async () => {
+  if (process.platform === 'linux') {
+    const nextMute = !mpvState.muted;
+    mpvState.muted = nextMute;
+    return sendGstCommand('mute', [nextMute ? '1' : '0']);
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('cycle', ['mute']);
@@ -490,6 +1186,9 @@ ipcMain.handle('mpv-toggle-mute', async () => {
 });
 
 ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
+  if (process.platform === 'linux') {
+    return sendGstCommand('seek', [seconds.toString()]);
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('seek', [seconds, 'absolute']);
@@ -500,6 +1199,9 @@ ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
 });
 
 ipcMain.handle('mpv-stop', async () => {
+  if (process.platform === 'linux') {
+    return sendGstCommand('stop');
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('stop', []);
@@ -509,7 +1211,27 @@ ipcMain.handle('mpv-stop', async () => {
   }
 });
 
-ipcMain.handle('mpv-get-status', async () => mpvState);
+ipcMain.handle('mpv-get-status', async () => {
+  if (process.platform === 'linux') {
+    try {
+      await sendGstCommand('status');
+    } catch (error) {
+      log('warn', 'gst', 'status-failed', error instanceof Error ? error.message : error);
+    }
+  }
+  return mpvState;
+});
+
+ipcMain.handle('mpv-set-viewport', async (_event, rect: GstViewport) => {
+  gstViewport = rect;
+  if (process.platform === 'linux') {
+    if (gstDebugEnabled) {
+      log('debug', 'gst', 'viewport', rect);
+    }
+    sendGstRect();
+  }
+  return { success: true };
+});
 
 // IPC Handlers - Storage
 ipcMain.handle('storage-get-sources', async () => {
@@ -693,17 +1415,53 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
 
 // App lifecycle
 app.whenReady().then(async () => {
-  const mpvAvailable = await checkMpvAvailable();
+  const useExternalMpv = process.platform !== 'linux';
+  const mpvAvailable = useExternalMpv ? await checkMpvAvailable() : true;
   if (!mpvAvailable) {
     app.quit();
     return;
   }
+  if (process.platform === 'linux') {
+    const DISPLAY = process.env.DISPLAY;
+    const XDG_SESSION_TYPE = process.env.XDG_SESSION_TYPE;
+    const WAYLAND_DISPLAY = process.env.WAYLAND_DISPLAY;
+    console.log('[linux] display env DISPLAY=' + (DISPLAY ?? '') +
+      ' XDG_SESSION_TYPE=' + (XDG_SESSION_TYPE ?? '') +
+      ' WAYLAND_DISPLAY=' + (WAYLAND_DISPLAY ?? ''));
+
+    const hasX11 = typeof DISPLAY === 'string' && DISPLAY.trim().length > 0;
+    const hasWayland = XDG_SESSION_TYPE === 'wayland' ||
+      (typeof WAYLAND_DISPLAY === 'string' && WAYLAND_DISPLAY.trim().length > 0);
+
+    if (hasWayland) {
+      log('info', 'window', 'xwayland-required', { display: DISPLAY ?? '' });
+    }
+
+    if (!hasX11) {
+      const title = 'No display detected';
+      const message = 'X11 display not detected.';
+      await dialog.showMessageBox({
+        type: 'error',
+        title,
+        message,
+        detail: 'Log into an X11 session or ensure XWayland is available, then restart the application.',
+        buttons: ['OK'],
+      });
+      app.exit(1);
+      return;
+    }
+  }
   await createWindow();
-  await initMpv();
+  if (process.platform === 'linux') {
+    await initGst();
+  } else if (useExternalMpv) {
+    await initMpv();
+  }
 });
 
 app.on('window-all-closed', () => {
   killMpv();
+  killGst();
   if (process.platform !== 'darwin') {
     app.quit();
   }

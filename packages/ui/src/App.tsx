@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { MpvStatus } from './types/electron';
+import type { MpvStatus, MpvFrameInfo } from './types/electron';
 import { Settings } from './components/Settings';
 import { Sidebar, type View } from './components/Sidebar';
 import { NowPlayingBar } from './components/NowPlayingBar';
@@ -85,7 +85,7 @@ async function tryLoadWithFallbacks(
 }
 
 function App() {
-  // mpv state
+  // player state
   const [mpvReady, setMpvReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [volume, setVolume] = useState(100);
@@ -93,12 +93,13 @@ function App() {
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
   const [vodInfo, setVodInfo] = useState<VodPlayInfo | null>(null);
 
   // UI state
   const [showControls, setShowControls] = useState(true);
-  const [lastActivity, setLastActivity] = useState(Date.now());
+  const hideTimerRef = useRef<number | null>(null);
   const [activeView, setActiveView] = useState<View>('none');
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
@@ -114,8 +115,24 @@ function App() {
   // Sync state
   const [syncing, setSyncing] = useState(false);
 
-  // Track volume slider dragging to ignore mpv updates during drag
+  // Track volume slider dragging to ignore player updates during drag
   const volumeDraggingRef = useRef(false);
+  const positionRef = useRef(0);
+  const durationRef = useRef(0);
+  const POSITION_UPDATE_THRESHOLD = 0.25;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const latestFrameRef = useRef<{ info: MpvFrameInfo; data: Uint8Array } | null>(null);
+  const lastRenderedFrameIdRef = useRef(0);
+  const imageDataRef = useRef<ImageData | null>(null);
+  const canvasSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+  const glRef = useRef<WebGLRenderingContext | null>(null);
+  const glProgramRef = useRef<WebGLProgram | null>(null);
+  const glTextureRef = useRef<WebGLTexture | null>(null);
+  const glPositionBufferRef = useRef<WebGLBuffer | null>(null);
+  const glTexCoordBufferRef = useRef<WebGLBuffer | null>(null);
+  const glPackedBufferRef = useRef<Uint8Array | null>(null);
+  const glScaleLocationRef = useRef<WebGLUniformLocation | null>(null);
+  const glCanvasSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
 
   // Track seeking to prevent position flickering during scrub
   const seekingRef = useRef(false);
@@ -123,15 +140,17 @@ function App() {
   // Track if mouse is hovering over controls (prevents auto-hide)
   const controlsHoveredRef = useRef(false);
 
-  // Set up mpv event listeners
+  const viewportDebugLastRef = useRef<string | null>(null);
+
+  // Set up player event listeners
   useEffect(() => {
     if (!window.mpv) {
-      setError('mpv API not available - are you running in Electron?');
+      setError('Playback API not available - run the Electron app (pnpm dev), not the Vite browser.');
       return;
     }
 
     window.mpv.onReady((ready) => {
-      console.log('mpv ready:', ready);
+      console.log('player ready:', ready);
       setMpvReady(ready);
     });
 
@@ -144,16 +163,45 @@ function App() {
       if (status.muted !== undefined) setMuted(status.muted);
       // Skip position updates while user is seeking (prevents flickering)
       if (status.position !== undefined && !seekingRef.current) {
-        setPosition(status.position);
+        if (Math.abs(status.position - positionRef.current) >= POSITION_UPDATE_THRESHOLD) {
+          positionRef.current = status.position;
+          setPosition(status.position);
+        }
       }
       if (status.duration !== undefined) {
-        setDuration(status.duration);
+        if (Math.abs(status.duration - durationRef.current) >= POSITION_UPDATE_THRESHOLD) {
+          durationRef.current = status.duration;
+          setDuration(status.duration);
+        }
       }
     });
 
+    window.mpv.onWarning?.((warn: string) => {
+      console.warn('player warning:', warn);
+      setWarning(warn);
+    });
+
     window.mpv.onError((err) => {
-      console.error('mpv error:', err);
+      console.error('player error:', err);
       setError(err);
+    });
+
+    window.mpv.onVideoInfo?.((info: MpvFrameInfo) => {
+      if (!canvasRef.current) return;
+      const { width, height } = info;
+      if (width <= 0 || height <= 0) return;
+      if (!glRef.current) {
+        if (canvasSizeRef.current.width !== width || canvasSizeRef.current.height !== height) {
+          canvasSizeRef.current = { width, height };
+          canvasRef.current.width = width;
+          canvasRef.current.height = height;
+          imageDataRef.current = null;
+        }
+      }
+    });
+
+    window.mpv.onFrame?.((frame) => {
+      latestFrameRef.current = { info: frame.info, data: new Uint8Array(frame.data) };
     });
 
     return () => {
@@ -161,32 +209,279 @@ function App() {
     };
   }, []);
 
-  // Auto-hide controls after 3 seconds of no activity
   useEffect(() => {
-    // Don't auto-hide if not playing or if panels are open
-    if (!playing || activeView !== 'none' || categoriesOpen) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const gl = canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false });
+    if (!gl) return;
 
-    const timer = setTimeout(() => {
-      // Don't hide if mouse is hovering over controls
-      if (!controlsHoveredRef.current) {
+    const vertexSource = `
+      attribute vec2 a_position;
+      attribute vec2 a_texCoord;
+      varying vec2 v_texCoord;
+      uniform vec2 u_scale;
+      void main() {
+        v_texCoord = a_texCoord;
+        gl_Position = vec4(a_position * u_scale, 0.0, 1.0);
+      }
+    `;
+
+    const fragmentSource = `
+      precision mediump float;
+      varying vec2 v_texCoord;
+      uniform sampler2D u_texture;
+      void main() {
+        gl_FragColor = texture2D(u_texture, v_texCoord);
+      }
+    `;
+
+    const compileShader = (type: number, source: string) => {
+      const shader = gl.createShader(type);
+      if (!shader) return null;
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('Shader compile failed', gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    };
+
+    const vertexShader = compileShader(gl.VERTEX_SHADER, vertexSource);
+    const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fragmentSource);
+    if (!vertexShader || !fragmentShader) return;
+
+    const program = gl.createProgram();
+    if (!program) return;
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error('Program link failed', gl.getProgramInfoLog(program));
+      gl.deleteProgram(program);
+      return;
+    }
+
+    gl.useProgram(program);
+    glProgramRef.current = program;
+
+    glScaleLocationRef.current = gl.getUniformLocation(program, 'u_scale');
+
+    const positionBuffer = gl.createBuffer();
+    const texCoordBuffer = gl.createBuffer();
+    if (!positionBuffer || !texCoordBuffer) return;
+    glPositionBufferRef.current = positionBuffer;
+    glTexCoordBufferRef.current = texCoordBuffer;
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1, -1,
+      1, -1,
+      -1, 1,
+      1, 1,
+    ]), gl.STATIC_DRAW);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      0, 1,
+      1, 1,
+      0, 0,
+      1, 0,
+    ]), gl.STATIC_DRAW);
+
+    const positionLoc = gl.getAttribLocation(program, 'a_position');
+    const texCoordLoc = gl.getAttribLocation(program, 'a_texCoord');
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.enableVertexAttribArray(positionLoc);
+    gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.enableVertexAttribArray(texCoordLoc);
+    gl.vertexAttribPointer(texCoordLoc, 2, gl.FLOAT, false, 0, 0);
+
+    const texture = gl.createTexture();
+    if (!texture) return;
+    glTextureRef.current = texture;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+
+    glRef.current = gl;
+
+    const resize = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.round(canvas.clientWidth * dpr));
+      const height = Math.max(1, Math.round(canvas.clientHeight * dpr));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      gl.viewport(0, 0, width, height);
+      glCanvasSizeRef.current = { width, height };
+    };
+
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+    window.addEventListener('resize', resize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', resize);
+    };
+  }, []);
+
+  useEffect(() => {
+    let rafId: number | null = null;
+
+    const renderFrame = () => {
+      rafId = requestAnimationFrame(renderFrame);
+      const canvas = canvasRef.current;
+      const frame = latestFrameRef.current;
+      if (!canvas || !frame) return;
+      if (frame.info.frameId === lastRenderedFrameIdRef.current) return;
+
+      const { width, height, stride } = frame.info;
+      if (width <= 0 || height <= 0) return;
+
+      const gl = glRef.current;
+      if (gl && glProgramRef.current && glTextureRef.current) {
+        const rowBytes = width * 4;
+        let pixelData = frame.data;
+        if (stride !== rowBytes) {
+          const packedSize = rowBytes * height;
+          if (!glPackedBufferRef.current || glPackedBufferRef.current.length !== packedSize) {
+            glPackedBufferRef.current = new Uint8Array(packedSize);
+          }
+          const packed = glPackedBufferRef.current;
+          for (let y = 0; y < height; y += 1) {
+            const srcStart = y * stride;
+            const dstStart = y * rowBytes;
+            packed.set(frame.data.subarray(srcStart, srcStart + rowBytes), dstStart);
+          }
+          pixelData = packed;
+        }
+
+        const canvasSize = glCanvasSizeRef.current;
+        const canvasAspect = canvasSize.width > 0 && canvasSize.height > 0
+          ? canvasSize.width / canvasSize.height
+          : 1;
+        const videoAspect = width / height;
+        let scaleX = 1;
+        let scaleY = 1;
+        if (videoAspect > canvasAspect) {
+          scaleY = canvasAspect / videoAspect;
+        } else {
+          scaleX = videoAspect / canvasAspect;
+        }
+        if (glScaleLocationRef.current) {
+          gl.uniform2f(glScaleLocationRef.current, scaleX, scaleY);
+        }
+
+        gl.bindTexture(gl.TEXTURE_2D, glTextureRef.current);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixelData);
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        lastRenderedFrameIdRef.current = frame.info.frameId;
+        return;
+      }
+
+      if (canvasSizeRef.current.width !== width || canvasSizeRef.current.height !== height) {
+        canvasSizeRef.current = { width, height };
+        canvas.width = width;
+        canvas.height = height;
+        imageDataRef.current = null;
+      }
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      let imageData = imageDataRef.current;
+      if (!imageData || imageData.width !== width || imageData.height !== height) {
+        imageData = ctx.createImageData(width, height);
+        imageDataRef.current = imageData;
+      }
+
+      const dst = imageData.data;
+      const src = frame.data;
+      const rowBytes = width * 4;
+      if (stride === rowBytes) {
+        dst.set(src.subarray(0, rowBytes * height));
+      } else {
+        for (let y = 0; y < height; y += 1) {
+          const srcStart = y * stride;
+          const dstStart = y * rowBytes;
+          dst.set(src.subarray(srcStart, srcStart + rowBytes), dstStart);
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      lastRenderedFrameIdRef.current = frame.info.frameId;
+    };
+
+    rafId = requestAnimationFrame(renderFrame);
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
+  const armHideTimer = useCallback(() => {
+    if (hideTimerRef.current) {
+      window.clearTimeout(hideTimerRef.current);
+    }
+    hideTimerRef.current = window.setTimeout(() => {
+      if (!controlsHoveredRef.current && playing && activeView === 'none' && !categoriesOpen) {
         setShowControls(false);
       }
     }, 3000);
+  }, [playing, activeView, categoriesOpen]);
 
-    return () => clearTimeout(timer);
-  }, [lastActivity, playing, activeView, categoriesOpen]);
+  useEffect(() => {
+    if (!playing || activeView !== 'none' || categoriesOpen) {
+      if (hideTimerRef.current) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      return;
+    }
+    armHideTimer();
+    return () => {
+      if (hideTimerRef.current) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+    };
+  }, [playing, activeView, categoriesOpen, armHideTimer]);
 
-  // Show controls on mouse move and reset hide timer
-  const handleMouseMove = useCallback(() => {
-    setShowControls(true);
-    setLastActivity(Date.now()); // Always new value = resets timer
+  useEffect(() => () => {
+    if (hideTimerRef.current) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
   }, []);
+
+  const handlePointerMove = useCallback(() => {
+    setShowControls((prev) => (prev ? prev : true));
+    armHideTimer();
+  }, [armHideTimer]);
 
   // Control handlers
   const handleLoadStream = async (channel: StoredChannel) => {
     if (!window.mpv) return;
+    if (!mpvReady) {
+      setError('Player not ready yet');
+      return;
+    }
     setError(null);
+    setWarning(null);
+    console.info('[player] load live', channel.direct_url);
     const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
+    console.info('[player] load result', result);
     if (!result.success) {
       setError(result.error ?? 'Failed to load stream');
     } else {
@@ -223,6 +518,7 @@ function App() {
     await window.mpv.stop();
     setPlaying(false);
     setCurrentChannel(null);
+    setWarning(null);
   };
 
   const handleSeek = async (seconds: number) => {
@@ -242,8 +538,15 @@ function App() {
   // Play VOD content (movies/series)
   const handlePlayVod = async (info: VodPlayInfo) => {
     if (!window.mpv) return;
+    if (!mpvReady) {
+      setError('Player not ready yet');
+      return;
+    }
     setError(null);
+    setWarning(null);
+    console.info('[player] load vod', info.url);
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
+    console.info('[player] load result', result);
     if (!result.success) {
       setError(result.error ?? 'Failed to load stream');
     } else {
@@ -343,10 +646,115 @@ function App() {
   // Window control handlers
   const handleMinimize = () => window.electronWindow?.minimize();
   const handleMaximize = () => window.electronWindow?.maximize();
-  const handleClose = () => window.electronWindow?.close();
+  const handleClose = () => {
+    if (window.electronWindow?.close) {
+      window.electronWindow.close();
+      return;
+    }
+    window.close();
+  };
+
+  const isTransparent = window.platform?.isWindows;
+
+  useEffect(() => {
+    if (!window.platform?.isLinux || !window.mpv?.setViewport) return;
+
+    let rafId: number | null = null;
+    const viewportDebugEnabled = window.localStorage?.getItem('sbtltv:viewportDebug') === '1';
+
+    const updateViewport = () => {
+      const lockViewport = window.localStorage?.getItem('sbtltv:lockViewport') === '1';
+      if (!lockViewport && activeView !== 'none') {
+        window.mpv?.setViewport({ x: 0, y: 0, width: 0, height: 0, hidden: true });
+        if (viewportDebugEnabled) {
+          const payload = {
+            hidden: true,
+            activeView,
+            categoriesOpen,
+            showControls,
+            sidebarExpanded,
+            error: !!error,
+            warning: !!warning,
+          };
+          const serialized = JSON.stringify(payload);
+          if (viewportDebugLastRef.current !== serialized) {
+            viewportDebugLastRef.current = serialized;
+            console.info('[viewport]', payload);
+          }
+        }
+        return;
+      }
+
+      let topInset = 0;
+      let leftInset = 0;
+      let bottomInset = 0;
+
+      if (!lockViewport) {
+        const titleBar = document.querySelector('.title-bar') as HTMLElement | null;
+        const errorBanner = document.querySelector('.error-banner') as HTMLElement | null;
+        const sidebarNav = document.querySelector('.sidebar .sidebar-nav') as HTMLElement | null;
+        const categoryStrip = document.querySelector('.category-strip.visible') as HTMLElement | null;
+        const nowPlayingBar = document.querySelector('.now-playing-bar') as HTMLElement | null;
+
+        topInset = (titleBar?.offsetHeight ?? 0) + (errorBanner ? errorBanner.offsetHeight : 0);
+        if (categoriesOpen && categoryStrip) {
+          leftInset = categoryStrip.offsetWidth;
+        } else if (sidebarNav) {
+          leftInset = sidebarNav.offsetWidth;
+        }
+        bottomInset = nowPlayingBar ? nowPlayingBar.offsetHeight : 0;
+      }
+
+      const width = Math.max(1, Math.round(window.innerWidth - leftInset));
+      const height = Math.max(1, Math.round(window.innerHeight - topInset - bottomInset));
+      const x = Math.round(leftInset);
+      const y = Math.round(topInset);
+
+      window.mpv?.setViewport({ x, y, width, height });
+      if (viewportDebugEnabled) {
+        const payload = {
+          x,
+          y,
+          width,
+          height,
+          topInset,
+          leftInset,
+          bottomInset,
+          lockViewport,
+          activeView,
+          categoriesOpen,
+          showControls,
+          sidebarExpanded,
+          error: !!error,
+          warning: !!warning,
+        };
+        const serialized = JSON.stringify(payload);
+        if (viewportDebugLastRef.current !== serialized) {
+          viewportDebugLastRef.current = serialized;
+          console.info('[viewport]', payload);
+        }
+      }
+    };
+
+    const schedule = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        updateViewport();
+      });
+    };
+
+    schedule();
+    window.addEventListener('resize', schedule);
+    return () => {
+      window.removeEventListener('resize', schedule);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [activeView, categoriesOpen, sidebarExpanded, error, warning]);
+  const playerReady = mpvReady;
 
   return (
-    <div className="app" onMouseMove={handleMouseMove}>
+    <div className={`app${isTransparent ? ' app--transparent' : ''}`} onPointerMove={handlePointerMove}>
       {/* Custom title bar for frameless window */}
       <div className="title-bar">
         <Logo className="title-bar-logo" />
@@ -363,8 +771,9 @@ function App() {
         </div>
       </div>
 
-      {/* Background - transparent over mpv */}
+      {/* Background - transparent over video */}
       <div className="video-background">
+        <canvas ref={canvasRef} />
         {!currentChannel && (
           <div className="placeholder">
             <Logo className="placeholder__logo" />
@@ -389,10 +798,10 @@ function App() {
       </div>
 
       {/* Error display */}
-      {error && (
-        <div className="error-banner">
-          <span>Error: {error}</span>
-          <button onClick={() => setError(null)}>Dismiss</button>
+      {(error || warning) && (
+        <div className={`error-banner${warning && !error ? ' error-banner--warning' : ''}`}>
+          <span>{error ? 'Error' : 'Warning'}: {error ?? warning}</span>
+          <button onClick={() => (error ? setError(null) : setWarning(null))}>Dismiss</button>
         </div>
       )}
 
@@ -403,7 +812,7 @@ function App() {
         playing={playing}
         muted={muted}
         volume={volume}
-        mpvReady={mpvReady}
+        mpvReady={playerReady}
         position={position}
         duration={duration}
         isVod={currentChannel?.stream_id === 'vod'}
