@@ -18,7 +18,7 @@
         "height": 720,
         "minWidth": 640,
         "minHeight": 620,
-        "decorations": true,
+        "decorations": false,
         "transparent": false,
         "resizable": true,
         "devtools": true
