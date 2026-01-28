@@ -1,0 +1,32 @@
+[package]
+name = "sbtltv"
+version = "0.1.0"
+edition = "2021"
+description = "Desktop IPTV player with mpv"
+authors = ["thesubtleties"]
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-store = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-os = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["full"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+base64 = "0.22"
+url = "2"
+dirs = "6"
+log = "0.4"
+env_logger = "0.11"
+libmpv2 = { version = "5", features = ["render"] }
+khronos-egl = { version = "6", features = ["dynamic"] }
+gl = "0.14"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = []

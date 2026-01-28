@@ -8,6 +8,7 @@ import { ChannelPanel } from './components/ChannelPanel';
 import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
+import { VideoCanvas } from './components/VideoCanvas';
 import { useSelectedCategory } from './hooks/useChannels';
 import { useChannelSyncing, useVodSyncing, useTmdbMatching } from './stores/uiStore';
 import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
@@ -135,6 +136,13 @@ function App() {
       setMpvReady(ready);
     });
 
+    // Check if mpv is already ready (event may have fired before listener was registered)
+    window.mpv.getStatus().then(() => {
+      setMpvReady(true);
+    }).catch(() => {
+      // mpv not ready yet — will be set by onReady event
+    });
+
     window.mpv.onStatus((status: MpvStatus) => {
       if (status.playing !== undefined) setPlaying(status.playing);
       // Skip volume updates while user is dragging the slider
@@ -184,18 +192,25 @@ function App() {
 
   // Control handlers
   const handleLoadStream = async (channel: StoredChannel) => {
-    if (!window.mpv) return;
+    if (!window.mpv) {
+      setError('mpv not available');
+      return;
+    }
     setError(null);
-    const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
-    if (!result.success) {
-      setError(result.error ?? 'Failed to load stream');
-    } else {
-      // Update channel with working URL if fallback was used
-      setCurrentChannel(result.url !== channel.direct_url
-        ? { ...channel, direct_url: result.url }
-        : channel
-      );
-      setPlaying(true);
+    setCurrentChannel(channel);
+    try {
+      const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
+      if (!result.success) {
+        setError(result.error ?? 'Failed to load stream');
+      } else {
+        // Update channel with working URL if fallback was used
+        if (result.url !== channel.direct_url) {
+          setCurrentChannel({ ...channel, direct_url: result.url });
+        }
+        setPlaying(true);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -363,8 +378,10 @@ function App() {
         </div>
       </div>
 
-      {/* Background - transparent over mpv */}
-      <div className="video-background">
+      {/* Video background — WebGL canvas for Tauri, transparent passthrough for Electron */}
+      {/* Hidden when VOD pages are active to prevent WebKit compositor layering issues */}
+      <div className="video-background" style={activeView === 'movies' || activeView === 'series' ? { display: 'none' } : undefined}>
+        <VideoCanvas />
         {!currentChannel && (
           <div className="placeholder">
             <Logo className="placeholder__logo" />

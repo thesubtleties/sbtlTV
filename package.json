@@ -9,13 +9,11 @@
     "email": "thesubtleties@users.noreply.github.com"
   },
   "scripts": {
-    "dev": "pnpm --filter @sbtltv/electron dev",
-    "build": "pnpm -r build",
+    "dev": "cd packages/tauri && cargo tauri dev",
+    "build": "pnpm -r build && cd packages/tauri && cargo tauri build",
     "typecheck": "pnpm -r typecheck",
-    "dist": "pnpm build && pnpm --filter @sbtltv/electron dist",
-    "dist:win": "pnpm build && pnpm --filter @sbtltv/electron dist:win",
-    "dist:mac": "pnpm build && pnpm --filter @sbtltv/electron dist:mac",
-    "dist:linux": "pnpm build && pnpm --filter @sbtltv/electron dist:linux"
+    "dev:electron": "pnpm --filter @sbtltv/electron dev",
+    "dist:electron": "pnpm build && pnpm --filter @sbtltv/electron dist"
   },
   "devDependencies": {
     "typescript": "^5.3.0"

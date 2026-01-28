@@ -172,8 +172,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // No hard limit - user controls via Settings which genres to show
   const genresToShow = useMemo(() => {
     if (!genres.length) return [];
-    // If no enabled genres defined yet (undefined), show all genres
-    if (enabledGenreIds === undefined) {
+    // If no enabled genres defined yet (undefined/null), show all genres
+    if (enabledGenreIds == null) {
       return genres;
     }
     // Show all enabled genres (user chose these in Settings)

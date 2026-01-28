@@ -65,7 +65,7 @@
   background: #e81123;
 }
 
-/* Video layer - mpv renders BEHIND this via --wid embedding */
+/* Video layer — WebGL canvas in Tauri, transparent passthrough in Electron */
 .video-background {
   position: absolute;
   top: 0;
@@ -77,6 +77,16 @@
   justify-content: center;
   background: transparent;
   pointer-events: none;
+}
+
+.video-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  z-index: 0;
 }
 
 /* Placeholder shown before any stream is loaded */

@@ -12,6 +12,7 @@
   "dependencies": {
     "@sbtltv/core": "workspace:*",
     "@sbtltv/local-adapter": "workspace:*",
+    "@tauri-apps/api": "^2",
     "dexie": "^4.0.0",
     "dexie-react-hooks": "^4.2.0",
     "react": "^19.2.3",
