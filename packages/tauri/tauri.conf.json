@@ -20,7 +20,8 @@
         "minHeight": 620,
         "decorations": true,
         "transparent": false,
-        "resizable": true
+        "resizable": true,
+        "devtools": true
       }
     ],
     "security": {
