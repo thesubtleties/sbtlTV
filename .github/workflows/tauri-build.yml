@@ -14,7 +14,7 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             platform: linux
           - os: windows-latest
             platform: win
@@ -59,15 +59,32 @@ jobs:
             libegl1-mesa-dev \
             libgl-dev
 
-      # macOS: install mpv via Homebrew
+      # macOS: install mpv via Homebrew and expose library paths
       - name: Install macOS deps
         if: matrix.platform == 'mac'
-        run: brew install mpv
+        run: |
+          brew install mpv
+          echo "LIBRARY_PATH=$(brew --prefix mpv)/lib" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix mpv)/lib/pkgconfig" >> "$GITHUB_ENV"
 
-      # Windows: install mpv
+      # Windows: download mpv dev SDK (choco mpvio only has the player, not mpv.lib)
       - name: Install Windows deps
         if: matrix.platform == 'win'
-        run: choco install mpvio -y
+        shell: pwsh
+        run: |
+          $MPV_DEV_URL = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260122/mpv-dev-x86_64-20260122-git-6e54aa3.7z"
+          $MPV_DIR = "$env:RUNNER_TEMP\mpv-dev"
+          New-Item -ItemType Directory -Force -Path $MPV_DIR | Out-Null
+          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$MPV_DIR\mpv-dev.7z"
+          7z x "$MPV_DIR\mpv-dev.7z" -o"$MPV_DIR" -y
+          # Generate mpv.lib from the .def file for MSVC linker
+          $defFile = Get-ChildItem -Path $MPV_DIR -Recurse -Filter "*.def" | Select-Object -First 1
+          if ($defFile) {
+            & lib /def:"$($defFile.FullName)" /machine:x64 /out:"$MPV_DIR\mpv.lib"
+          }
+          # Add to linker search paths
+          echo "LIB=$MPV_DIR" >> $env:GITHUB_ENV
+          echo "INCLUDE=$MPV_DIR\include" >> $env:GITHUB_ENV
 
       - name: Build UI
         run: pnpm --filter @sbtltv/ui build
