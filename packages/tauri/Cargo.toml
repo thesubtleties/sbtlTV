@@ -22,6 +22,7 @@ log = "0.4"
 env_logger = "0.11"
 libmpv2 = { version = "5", features = ["render"] }
 gl = "0.14"
+euclid = "0.22"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 surfman = { version = "0.10", features = ["sm-x11"] }

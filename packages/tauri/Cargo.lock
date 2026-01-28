@@ -3309,6 +3309,7 @@ dependencies = [
  "base64 0.22.1",
  "dirs",
  "env_logger",
+ "euclid",
  "gl",
  "keyring",
  "libmpv2",

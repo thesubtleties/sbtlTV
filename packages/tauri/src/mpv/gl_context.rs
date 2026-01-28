@@ -1,11 +1,16 @@
 use std::ffi::c_void;
-use surfman::{Connection, Context, ContextAttributes, ContextAttributeFlags, Device, GLVersion};
+use surfman::{
+    Connection, Context, ContextAttributes, ContextAttributeFlags,
+    Device, GLVersion, SurfaceAccess, SurfaceType,
+};
+use euclid::default::Size2D;
 
 /// Headless OpenGL context for offscreen rendering.
 /// Uses Surfman for cross-platform support (Linux/Windows/macOS).
 pub struct HeadlessGLContext {
     device: Device,
     context: Context,
+    // Surface is bound to context - context owns it while bound
 }
 
 impl HeadlessGLContext {
@@ -31,9 +36,23 @@ impl HeadlessGLContext {
         let context_descriptor = device.create_context_descriptor(&context_attributes)
             .map_err(|e| format!("Surfman context descriptor failed: {:?}", e))?;
 
-        let context = device.create_context(&context_descriptor, None)
+        let mut context = device.create_context(&context_descriptor, None)
             .map_err(|e| format!("Surfman context creation failed: {:?}", e))?;
 
+        // Create a small generic surface (required for GL commands to work)
+        // We render to our own FBO, not this surface, so 1x1 is fine
+        let surface = device.create_surface(
+            &context,
+            SurfaceAccess::GPUOnly,
+            SurfaceType::Generic { size: Size2D::new(1, 1) },
+        ).map_err(|e| format!("Surfman surface creation failed: {:?}", e))?;
+
+        // Bind surface to context - GL commands won't work without this!
+        // The context now owns the surface
+        device.bind_surface_to_context(&mut context, surface)
+            .map_err(|(e, _)| format!("Surfman bind_surface failed: {:?}", e))?;
+
+        // Make context current
         device.make_context_current(&context)
             .map_err(|e| format!("Surfman make_current failed: {:?}", e))?;
 
@@ -53,7 +72,11 @@ impl HeadlessGLContext {
 
 impl Drop for HeadlessGLContext {
     fn drop(&mut self) {
-        // Surfman handles cleanup when Device and Context drop
+        // Unbind and destroy surface before context is dropped
+        if let Ok(Some(mut surface)) = self.device.unbind_surface_from_context(&mut self.context) {
+            let _ = self.device.destroy_surface(&mut self.context, &mut surface);
+        }
+        // Context and device will be dropped automatically
     }
 }
 
