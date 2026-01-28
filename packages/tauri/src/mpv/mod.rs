@@ -100,7 +100,7 @@ pub fn init_mpv(app: &AppHandle) -> Result<(), String> {
     let app_handle = app.clone();
     std::thread::spawn(move || {
         if let Err(e) = render_thread(mpv, shutdown, app_handle) {
-            eprintln!("[sbtlTV] Render thread error: {}", e);
+            log::error!("[VIDEO] Render thread error: {}", e);
         }
     });
 
