@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
+import { initLogging, log } from './logger.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +15,10 @@ const __dirname = path.dirname(__filename);
 // Minimum window dimensions
 const MIN_WIDTH = 640;
 const MIN_HEIGHT = 620;
+
+initLogging('main');
+process.on('uncaughtException', (error) => log('error', 'process', 'uncaughtException', error));
+process.on('unhandledRejection', (reason) => log('error', 'process', 'unhandledRejection', reason));
 
 let mainWindow: BrowserWindow | null = null;
 let mpvProcess: ChildProcess | null = null;
@@ -38,6 +43,77 @@ const mpvState: MpvState = {
   duration: 0,
 };
 
+const isYoutubeUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return host.endsWith('youtube.com') ||
+      host.endsWith('youtu.be') ||
+      host.endsWith('youtube-nocookie.com') ||
+      host.endsWith('music.youtube.com');
+  } catch {
+    return false;
+  }
+};
+
+const resolveYtdlMode = (url: string): 'yes' | 'no' => {
+  const env = (process.env.SBTLTV_YTDL || '').toLowerCase();
+  if (env === 'no' || env === '0' || env === 'false') return 'no';
+  if (env === 'yes' || env === '1' || env === 'true') return 'yes';
+  return isYoutubeUrl(url) ? 'yes' : 'no';
+};
+
+const appendEnvPath = (key: string, value: string): void => {
+  if (!value || !fs.existsSync(value)) return;
+  const current = process.env[key];
+  const parts = current ? current.split(path.delimiter) : [];
+  if (!parts.includes(value)) {
+    process.env[key] = [value, ...parts].filter(Boolean).join(path.delimiter);
+  }
+};
+
+const setupBundledLibsEnv = (): void => {
+  if (process.env.SBTLTV_USE_SYSTEM_LIBMPV === '1') return;
+  const isLinux = process.platform === 'linux';
+  const isMac = process.platform === 'darwin';
+  if (!isLinux && !isMac) return;
+
+  const packagedLibDir = path.join(process.resourcesPath, 'native', 'lib');
+  if (fs.existsSync(packagedLibDir)) {
+    if (isLinux) appendEnvPath('LD_LIBRARY_PATH', packagedLibDir);
+    if (isMac) appendEnvPath('DYLD_LIBRARY_PATH', packagedLibDir);
+    return;
+  }
+
+  const devDistLibDir = path.join(__dirname, '..', 'dist', 'native', 'lib');
+  if (fs.existsSync(devDistLibDir)) {
+    if (isLinux) appendEnvPath('LD_LIBRARY_PATH', devDistLibDir);
+    if (isMac) appendEnvPath('DYLD_LIBRARY_PATH', devDistLibDir);
+    return;
+  }
+
+  const platformDir = isLinux ? 'linux' : 'macos';
+  const devBundleRoot = path.join(__dirname, '..', 'mpv-bundle', platformDir);
+  const ffmpegLib = path.join(devBundleRoot, 'ffmpeg', 'lib');
+  const mpvLib = path.join(devBundleRoot, 'mpv', 'lib');
+  if (isLinux) {
+    appendEnvPath('LD_LIBRARY_PATH', ffmpegLib);
+    appendEnvPath('LD_LIBRARY_PATH', mpvLib);
+  } else if (isMac) {
+    appendEnvPath('DYLD_LIBRARY_PATH', ffmpegLib);
+    appendEnvPath('DYLD_LIBRARY_PATH', mpvLib);
+  }
+};
+
+setupBundledLibsEnv();
+
+ipcMain.on('log-event', (_event, payload: { level?: string; tag?: string; args?: unknown[] }) => {
+  const level = (payload.level || 'info') as 'error' | 'warn' | 'info' | 'debug' | 'trace';
+  const tag = payload.tag || 'renderer';
+  const args = Array.isArray(payload.args) ? payload.args : [];
+  log(level, tag, ...args);
+});
+
 // Windows uses named pipes, Linux/macOS use Unix sockets
 const SOCKET_PATH = process.platform === 'win32'
   ? `\\\\.\\pipe\\mpv-socket-${process.pid}`
@@ -48,31 +124,53 @@ let lastStatusUpdate = 0;
 const STATUS_THROTTLE_MS = 100;
 
 async function createWindow(): Promise<void> {
-  // On Windows, we use a transparent frameless window for mpv embedding
+  // On Windows and Linux, use a transparent window so mpv shows through
   const isWindows = process.platform === 'win32';
+  const isLinux = process.platform === 'linux';
+  const useTransparent = isWindows;
+  const useFrameless = isWindows || isLinux;
 
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
-    backgroundColor: isWindows ? '#00000000' : '#000000',
-    transparent: isWindows, // Transparent on Windows so mpv shows through
-    frame: !isWindows, // Frameless on Windows (required for transparency)
+    backgroundColor: useTransparent ? '#00000000' : '#000000',
+    transparent: useTransparent, // Transparent on Windows/Linux so mpv shows through
+    frame: !useFrameless, // Frameless on Windows/Linux (required for transparency)
     resizable: true, // Explicit for Electron 40
+    show: true,
     icon: path.join(__dirname, '../assets/logo-white.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
+
+  mainWindow.on('ready-to-show', () => log('info', 'window', 'ready-to-show'));
+  mainWindow.on('show', () => log('info', 'window', 'show'));
+  mainWindow.on('closed', () => log('info', 'window', 'closed'));
+
+  const wc = mainWindow.webContents;
+  wc.on('did-finish-load', () => log('info', 'window', 'did-finish-load', wc.getURL()));
+  wc.on('did-fail-load', (_event, code, desc, url, isMainFrame) => {
+    log('error', 'window', 'did-fail-load', { code, desc, url, isMainFrame });
+  });
+  wc.on('render-process-gone', (_event, details) => {
+    log('error', 'window', 'render-process-gone', details);
+  });
+  wc.on('unresponsive', () => log('warn', 'window', 'unresponsive'));
+  wc.on('responsive', () => log('info', 'window', 'responsive'));
 
   // Load the React app
   // In dev, load from Vite server; in prod, load from built files
   if (process.argv.includes('--dev')) {
     await mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    if (process.env.OPEN_DEVTOOLS !== '0') {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
   } else {
     // Packaged app: UI is in resources/ui, unpackaged: relative path
     const uiPath = app.isPackaged
@@ -198,11 +296,15 @@ async function initMpv(): Promise<void> {
     }
     console.log('[mpv] Using binary:', mpvBinary);
 
+    const hwdec = process.env.SBTLTV_HWDEC || 'auto-safe';
+    const ytdl = process.env.SBTLTV_YTDL || 'no';
+    const ytdlPath = process.env.SBTLTV_YTDL_PATH;
     let mpvArgs = [
       `--input-ipc-server=${SOCKET_PATH}`,
       '--no-osc',
       '--no-osd-bar',
       '--osd-level=0',
+      '--script-opts=osc-idlescreen=no,osc-visibility=never',
       '--keep-open=yes',
       '--idle=yes',
       '--input-default-bindings=no',
@@ -211,25 +313,48 @@ async function initMpv(): Promise<void> {
       '--force-window=yes',
       '--no-terminal',
       '--really-quiet',
-      '--hwdec=auto',
+      `--hwdec=${hwdec}`,
       '--vo=gpu',
       '--target-colorspace-hint=no',
       '--tone-mapping=mobius',
       '--hdr-compute-peak=no',
     ];
 
-    // Get native window handle for --wid embedding
-    const nativeHandle = mainWindow.getNativeWindowHandle();
+    mpvArgs.push(`--ytdl=${ytdl}`);
+    if (ytdlPath) {
+      mpvArgs.push(`--ytdl-path=${ytdlPath}`);
+    }
+
+    if (process.platform === 'linux') {
+      mpvArgs.push('--gpu-context=x11');
+    }
+
     let windowId: string;
 
     if (process.platform === 'linux') {
-      windowId = nativeHandle.readUInt32LE(0).toString();
+      await ensureWindowReadyForEmbed(mainWindow);
+      const { xid, bufferLen, hex } = await waitForLinuxXid(mainWindow);
+      console.log(`[mpv] linux-xid bufferLen=${bufferLen} xid=${xid} hex=${hex}`);
+      if (bufferLen < 4 || xid <= 1) {
+        await dialog.showMessageBox({
+          type: 'error',
+          title: 'mpv Embed Failed',
+          message: 'Failed to obtain a valid X11 window ID for mpv embedding.',
+          detail: `bufferLen=${bufferLen} xid=${xid} hex=${hex}`,
+          buttons: ['OK'],
+        });
+        app.exit(1);
+        return;
+      }
+      windowId = xid.toString();
     } else if (process.platform === 'win32') {
+      const nativeHandle = mainWindow.getNativeWindowHandle();
       // Windows HWND - try 64-bit first, fall back to 32-bit
       windowId = typeof nativeHandle.readBigUInt64LE === 'function'
         ? nativeHandle.readBigUInt64LE(0).toString()
         : nativeHandle.readUInt32LE(0).toString();
     } else {
+      const nativeHandle = mainWindow.getNativeWindowHandle();
       // macOS
       windowId = typeof nativeHandle.readBigUInt64LE === 'function'
         ? nativeHandle.readBigUInt64LE(0).toString()
@@ -269,8 +394,7 @@ async function initMpv(): Promise<void> {
       mpvProcess = null;
     });
 
-    // Wait for mpv to create the socket, then connect
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await waitForMpvSocket();
     await connectToMpvSocket();
 
     console.log('[mpv] Initialized successfully (embedded mode)');
@@ -280,6 +404,41 @@ async function initMpv(): Promise<void> {
     console.error('[mpv] Failed to initialize:', message);
     sendToRenderer('mpv-error', message);
   }
+}
+
+async function ensureWindowReadyForEmbed(window: BrowserWindow): Promise<void> {
+  if (window.isDestroyed()) return;
+
+  if (!window.isVisible()) {
+    await new Promise<void>((resolve) => {
+      const finish = () => resolve();
+      window.once('show', finish);
+      window.show();
+    });
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+}
+
+function readLinuxXid(window: BrowserWindow): { xid: number; bufferLen: number; hex: string } {
+  const nativeHandle = window.getNativeWindowHandle();
+  const bufferLen = nativeHandle.length;
+  const xid = bufferLen >= 4 ? nativeHandle.readUInt32LE(0) : 0;
+  return { xid, bufferLen, hex: nativeHandle.toString('hex') };
+}
+
+async function waitForLinuxXid(
+  window: BrowserWindow,
+  timeoutMs = 5000,
+  intervalMs = 50,
+): Promise<{ xid: number; bufferLen: number; hex: string }> {
+  const start = Date.now();
+  let result = readLinuxXid(window);
+  while ((result.bufferLen < 4 || result.xid <= 1) && Date.now() - start < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    result = readLinuxXid(window);
+  }
+  return result;
 }
 
 async function connectToMpvSocket(): Promise<void> {
@@ -327,6 +486,21 @@ async function connectToMpvSocket(): Promise<void> {
       console.log('[mpv] Socket closed');
     });
   });
+}
+
+async function waitForMpvSocket(timeoutMs = 5000, intervalMs = 50): Promise<void> {
+  if (process.platform === 'win32') {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return;
+  }
+
+  const start = Date.now();
+  while (!fs.existsSync(SOCKET_PATH)) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error('Timed out waiting for mpv IPC socket');
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
 }
 
 interface MpvMessage {
@@ -432,6 +606,15 @@ ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
 ipcMain.handle('mpv-load', async (_event, url: string) => {
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
+    const ytdlMode = resolveYtdlMode(url);
+    try {
+      await sendMpvCommand('set_property', ['ytdl', ytdlMode]);
+      if (ytdlMode === 'yes' && process.env.SBTLTV_YTDL_PATH) {
+        await sendMpvCommand('set_property', ['ytdl-path', process.env.SBTLTV_YTDL_PATH]);
+      }
+    } catch (error) {
+      console.warn('[mpv] Failed to set ytdl mode:', error instanceof Error ? error.message : error);
+    }
     await sendMpvCommand('loadfile', [url]);
     return { success: true };
   } catch (error) {
@@ -691,15 +874,49 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
   }
 });
 
+if (process.platform === 'linux') {
+  const ozoneHint = process.env.ELECTRON_OZONE_PLATFORM_HINT ?? 'auto';
+  app.commandLine.appendSwitch('ozone-platform-hint', ozoneHint);
+  console.log(`[electron] Ozone platform hint=${ozoneHint}`);
+}
+
 // App lifecycle
 app.whenReady().then(async () => {
-  const mpvAvailable = await checkMpvAvailable();
+  const mpvAvailable = process.platform === 'linux' ? true : await checkMpvAvailable();
   if (!mpvAvailable) {
     app.quit();
     return;
   }
+  if (process.platform === 'linux') {
+    const DISPLAY = process.env.DISPLAY;
+    const XDG_SESSION_TYPE = process.env.XDG_SESSION_TYPE;
+    const WAYLAND_DISPLAY = process.env.WAYLAND_DISPLAY;
+    console.log('[linux] display env DISPLAY=' + (DISPLAY ?? '') +
+      ' XDG_SESSION_TYPE=' + (XDG_SESSION_TYPE ?? '') +
+      ' WAYLAND_DISPLAY=' + (WAYLAND_DISPLAY ?? ''));
+
+    const hasX11 = typeof DISPLAY === 'string' && DISPLAY.trim().length > 0;
+    const hasWayland = XDG_SESSION_TYPE === 'wayland' ||
+      (typeof WAYLAND_DISPLAY === 'string' && WAYLAND_DISPLAY.trim().length > 0);
+
+    if (!hasX11 && !hasWayland) {
+      const title = 'No display detected';
+      const message = 'X11 or Wayland display not detected.';
+      await dialog.showMessageBox({
+        type: 'error',
+        title,
+        message,
+        detail: 'Log into an X11 or Wayland session, then restart the application.',
+        buttons: ['OK'],
+      });
+      app.exit(1);
+      return;
+    }
+  }
   await createWindow();
-  await initMpv();
+  if (process.platform !== 'linux') {
+    await initMpv();
+  }
 });
 
 app.on('window-all-closed', () => {

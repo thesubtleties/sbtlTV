@@ -93,6 +93,7 @@ function App() {
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
   const [vodInfo, setVodInfo] = useState<VodPlayInfo | null>(null);
 
@@ -126,7 +127,7 @@ function App() {
   // Set up mpv event listeners
   useEffect(() => {
     if (!window.mpv) {
-      setError('mpv API not available - are you running in Electron?');
+      setError('mpv API not available - run the Electron app (pnpm dev), not the Vite browser.');
       return;
     }
 
@@ -151,6 +152,11 @@ function App() {
       }
     });
 
+    window.mpv.onWarning?.((warn: string) => {
+      console.warn('mpv warning:', warn);
+      setWarning(warn);
+    });
+
     window.mpv.onError((err) => {
       console.error('mpv error:', err);
       setError(err);
@@ -159,6 +165,14 @@ function App() {
     return () => {
       window.mpv?.removeAllListeners();
     };
+  }, []);
+
+  useEffect(() => {
+    if (!window.platform?.isLinux || !window.mpv?.isLibmpv || !window.mpv?.attachCanvas) return;
+    const ok = window.mpv.attachCanvas('mpv-canvas');
+    if (!ok) {
+      setError('Failed to attach mpv canvas');
+    }
   }, []);
 
   // Auto-hide controls after 3 seconds of no activity
@@ -185,8 +199,15 @@ function App() {
   // Control handlers
   const handleLoadStream = async (channel: StoredChannel) => {
     if (!window.mpv) return;
+    if (!mpvReady) {
+      setError('mpv not ready yet');
+      return;
+    }
     setError(null);
+    setWarning(null);
+    console.info('[mpv] load live', channel.direct_url);
     const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
+    console.info('[mpv] load result', result);
     if (!result.success) {
       setError(result.error ?? 'Failed to load stream');
     } else {
@@ -223,6 +244,7 @@ function App() {
     await window.mpv.stop();
     setPlaying(false);
     setCurrentChannel(null);
+    setWarning(null);
   };
 
   const handleSeek = async (seconds: number) => {
@@ -242,8 +264,15 @@ function App() {
   // Play VOD content (movies/series)
   const handlePlayVod = async (info: VodPlayInfo) => {
     if (!window.mpv) return;
+    if (!mpvReady) {
+      setError('mpv not ready yet');
+      return;
+    }
     setError(null);
+    setWarning(null);
+    console.info('[mpv] load vod', info.url);
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
+    console.info('[mpv] load result', result);
     if (!result.success) {
       setError(result.error ?? 'Failed to load stream');
     } else {
@@ -343,10 +372,19 @@ function App() {
   // Window control handlers
   const handleMinimize = () => window.electronWindow?.minimize();
   const handleMaximize = () => window.electronWindow?.maximize();
-  const handleClose = () => window.electronWindow?.close();
+  const handleClose = () => {
+    if (window.electronWindow?.close) {
+      window.electronWindow.close();
+      return;
+    }
+    window.close();
+  };
+
+  const isTransparent = window.platform?.isWindows;
+  const playerReady = mpvReady;
 
   return (
-    <div className="app" onMouseMove={handleMouseMove}>
+    <div className={`app${isTransparent ? ' app--transparent' : ''}`} onMouseMove={handleMouseMove}>
       {/* Custom title bar for frameless window */}
       <div className="title-bar">
         <Logo className="title-bar-logo" />
@@ -365,6 +403,9 @@ function App() {
 
       {/* Background - transparent over mpv */}
       <div className="video-background">
+        {window.platform?.isLinux && window.mpv?.isLibmpv && (
+          <canvas className="video-canvas" id="mpv-canvas" />
+        )}
         {!currentChannel && (
           <div className="placeholder">
             <Logo className="placeholder__logo" />
@@ -389,10 +430,10 @@ function App() {
       </div>
 
       {/* Error display */}
-      {error && (
-        <div className="error-banner">
-          <span>Error: {error}</span>
-          <button onClick={() => setError(null)}>Dismiss</button>
+      {(error || warning) && (
+        <div className={`error-banner${warning && !error ? ' error-banner--warning' : ''}`}>
+          <span>{error ? 'Error' : 'Warning'}: {error ?? warning}</span>
+          <button onClick={() => (error ? setError(null) : setWarning(null))}>Dismiss</button>
         </div>
       )}
 
@@ -403,7 +444,7 @@ function App() {
         playing={playing}
         muted={muted}
         volume={volume}
-        mpvReady={mpvReady}
+        mpvReady={playerReady}
         position={position}
         duration={duration}
         isVod={currentChannel?.stream_id === 'vod'}

@@ -38,6 +38,17 @@ sudo dnf install mpv
 sudo pacman -S mpv
 ```
 
+### Linux (libmpv GPU renderer)
+
+On Linux, sbtlTV uses a native libmpv addon (no external mpv process). It creates an OpenGL context via EGL and renders frames through libmpv into a shared buffer that the UI draws to a canvas. Context priority is `x11egl → wayland → x11`.
+
+Build/runtime requirements (names vary by distro):
+- libmpv development headers
+- EGL/OpenGL development headers (Mesa)
+- X11 and Wayland client headers
+
+Run in dev with `pnpm dev`. Wayland sessions are supported; Electron uses an ozone hint of `auto` by default.
+
 ## Building from Source
 
 ### Prerequisites
@@ -75,6 +86,33 @@ pnpm dist:linux  # Linux
 ```
 
 Output files will be in the `release/` directory.
+
+### Bundling FFmpeg + libmpv (Linux/macOS)
+
+For custom IPTV-focused builds, use:
+
+```bash
+bash scripts/build-ffmpeg.sh
+bash scripts/build-libmpv.sh
+bash scripts/download-licenses.sh
+```
+
+Details, codec/protocol list, and licensing notes (GPL FFmpeg + OpenSSL): `docs/mpv-bundling.md`.
+
+### Troubleshooting (Linux libmpv):
+
+- Verify the URL with system mpv:
+  - `mpv --no-config --msg-level=all=v "<URL>"`
+- If it fails there too, it is likely the stream, headers, or geo/TLS.
+- Increase libmpv log verbosity:
+  - `SBTLTV_MPV_LOG_LEVEL=debug pnpm dev`
+- Persist mpv logs to a file:
+  - `SBTLTV_MPV_LOG_FILE=/tmp/sbtltv-mpv.log pnpm dev`
+- If system FFmpeg is loaded first, force bundled FFmpeg in dev:
+  - `SBTLTV_PRELOAD_FFMPEG=1 pnpm dev`
+- App log file + level (main + renderer):
+  - `SBTLTV_LOG_FILE=/tmp/sbtltv-app.log SBTLTV_LOG_LEVEL=debug pnpm dev`
+- Full env/flags list: see `docs/env.md`.
 
 ## Configuration
 

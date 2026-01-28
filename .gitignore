@@ -3,9 +3,15 @@ node_modules/
 .pnpm-store/
 
 # Build outputs
+*.o
 dist/
 out/
 *.tsbuildinfo
+*.node
+*.pdb
+*.ilk
+*.dSYM/
+.build/
 
 # IDE
 .idea/
@@ -29,6 +35,7 @@ pnpm-debug.log*
 # Electron
 release/
 packages/electron/mpv-bundle/
+packages/electron/native/mpv/build/
 *.dmg
 *.exe
 *.AppImage
@@ -44,6 +51,7 @@ coverage/
 .tldr/
 .tldrignore
 .claude/
+AGENTS.md
 
 # Development notes
 thoughts/

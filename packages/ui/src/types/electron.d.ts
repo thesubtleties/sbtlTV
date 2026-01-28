@@ -6,6 +6,16 @@ export interface MpvStatus {
   muted: boolean;
   position: number;
   duration: number;
+  hwdec?: string;
+  hwdecSetting?: string;
+  hwdecInterop?: string;
+  hwdecAvailable?: string;
+  hwdecCodecs?: string;
+  gpuHwdecInterop?: string;
+  vo?: string;
+  gpuApi?: string;
+  gpuContext?: string;
+  videoCodec?: string;
 }
 
 export interface MpvResult {
@@ -23,8 +33,16 @@ export interface MpvApi {
   toggleMute: () => Promise<MpvResult>;
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
+  getBuildInfo?: () => string;
+  initRenderer?: (width: number, height: number) => { buffer: ArrayBuffer; width: number; height: number; stride: number } | null;
+  setSize?: (width: number, height: number) => { buffer: ArrayBuffer; width: number; height: number; stride: number } | null;
+  renderFrame?: () => boolean;
+  needsRender?: () => boolean;
+  attachCanvas?: (canvasId: string) => boolean;
+  isLibmpv?: boolean;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
+  onWarning?: (callback: (warning: string) => void) => void;
   onError: (callback: (error: string) => void) => void;
   removeAllListeners: () => void;
 }
@@ -102,6 +120,18 @@ export interface PlatformApi {
   isLinux: boolean;
 }
 
+export interface AppConfig {
+  render: {
+    fps: number;
+    maxWidth: number;
+    maxHeight: number;
+  };
+  hwdec: {
+    required: boolean;
+    graceMs: number;
+  };
+}
+
 declare global {
   interface Window {
     mpv?: MpvApi;
@@ -109,6 +139,7 @@ declare global {
     storage?: StorageApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
+    appConfig?: AppConfig;
   }
 }
 
