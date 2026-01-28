@@ -77,23 +77,27 @@ jobs:
           New-Item -ItemType Directory -Force -Path $MPV_DIR | Out-Null
           Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$MPV_DIR\mpv-dev.7z"
           7z x "$MPV_DIR\mpv-dev.7z" -o"$MPV_DIR" -y
-          # Show extracted contents for debugging
+          # SDK contains libmpv.dll.a (MinGW) + libmpv-2.dll but no .def
+          # Generate mpv.lib for MSVC from the DLL using dumpbin + lib
           Get-ChildItem -Path $MPV_DIR -Recurse | Select-Object FullName
-          # Generate mpv.lib from the .def file using MSVC lib.exe via vcvarsall
-          $defFile = Get-ChildItem -Path $MPV_DIR -Recurse -Filter "*.def" | Select-Object -First 1
-          if ($defFile) {
-            $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-            $vsPath = & $vsWhere -latest -property installationPath
-            $vcvars = "$vsPath\VC\Auxiliary\Build\vcvarsall.bat"
-            cmd /c "`"$vcvars`" x64 && lib /def:`"$($defFile.FullName)`" /machine:x64 /out:`"$MPV_DIR\mpv.lib`""
-            if (Test-Path "$MPV_DIR\mpv.lib") {
-              Write-Host "mpv.lib created successfully"
-            } else {
-              Write-Host "::error::mpv.lib was not created"
-              exit 1
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vsWhere -latest -property installationPath
+          $vcvars = "$vsPath\VC\Auxiliary\Build\vcvarsall.bat"
+          # Export symbols from DLL to .def, then create .lib
+          $defContent = "LIBRARY libmpv-2`nEXPORTS`n"
+          $dumpOutput = cmd /c "`"$vcvars`" x64 >nul 2>&1 && dumpbin /exports `"$MPV_DIR\libmpv-2.dll`"" 2>&1
+          $dumpOutput | ForEach-Object {
+            if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') {
+              $defContent += "  $($Matches[1])`n"
             }
+          }
+          Set-Content -Path "$MPV_DIR\mpv.def" -Value $defContent
+          Write-Host "Generated mpv.def with exports"
+          cmd /c "`"$vcvars`" x64 >nul 2>&1 && lib /def:`"$MPV_DIR\mpv.def`" /machine:x64 /out:`"$MPV_DIR\mpv.lib`""
+          if (Test-Path "$MPV_DIR\mpv.lib") {
+            Write-Host "mpv.lib created successfully"
           } else {
-            Write-Host "::error::No .def file found in mpv dev SDK"
+            Write-Host "::error::mpv.lib was not created"
             exit 1
           }
           # Append to LIB path (don't overwrite existing)
