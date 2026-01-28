@@ -103,6 +103,10 @@ jobs:
           # Append to LIB path (don't overwrite existing)
           echo "LIB=$MPV_DIR;$env:LIB" >> $env:GITHUB_ENV
           echo "INCLUDE=$MPV_DIR\include;$env:INCLUDE" >> $env:GITHUB_ENV
+          # Copy runtime DLL into tauri libs/ for bundling via tauri.windows.conf.json
+          New-Item -ItemType Directory -Force -Path "packages\tauri\libs" | Out-Null
+          Copy-Item "$MPV_DIR\libmpv-2.dll" "packages\tauri\libs\"
+          Write-Host "Copied libmpv-2.dll to packages/tauri/libs/"
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"
