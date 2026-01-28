@@ -24,7 +24,7 @@ const renderFps = parseEnvInt(process.env.SBTLTV_RENDER_FPS, 30);
 const renderMaxWidth = parseEnvInt(process.env.SBTLTV_RENDER_MAX_WIDTH, 1920);
 const renderMaxHeight = parseEnvInt(process.env.SBTLTV_RENDER_MAX_HEIGHT, 1080);
 const hwdecGraceMs = parseEnvInt(process.env.SBTLTV_HWDEC_GRACE_MS, 5000);
-const allowSwDec = process.env.SBTLTV_ALLOW_SWDEC === '1';
+const allowSwDec = process.env.SBTLTV_ALLOW_SWDEC !== '0';
 const enforceHwdec = process.env.SBTLTV_HWDEC_ENFORCE !== '0';
 
 const serializeArg = (arg: unknown): unknown => {
@@ -107,6 +107,8 @@ export interface MpvStatus {
   hwdec?: string;
   hwdecSetting?: string;
   hwdecInterop?: string;
+  hwdecAvailable?: string;
+  hwdecCodecs?: string;
   gpuHwdecInterop?: string;
   vo?: string;
   gpuApi?: string;
@@ -136,6 +138,7 @@ export interface MpvApi {
   isLibmpv?: boolean;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
+  onWarning?: (callback: (warning: string) => void) => void;
   onError: (callback: (error: string) => void) => void;
   removeAllListeners: () => void;
 }
@@ -204,6 +207,7 @@ type MpvFrame = { buffer: ArrayBuffer; width: number; height: number; stride: nu
 const readyListeners = new Set<(ready: boolean) => void>();
 const statusListeners = new Set<(status: MpvStatus) => void>();
 const errorListeners = new Set<(error: string) => void>();
+const warningListeners = new Set<(warning: string) => void>();
 
 let mpvReady = false;
 let mpvPollTimer: NodeJS.Timeout | null = null;
@@ -214,6 +218,7 @@ const lastMpvStatusMeta: Record<string, string> = {};
 let hwdecDeadline = 0;
 let hwdecSatisfied = false;
 let lastHwdecError = '';
+let hwdecWarned = false;
 type PendingLoad = {
   resolve: (result: MpvResult) => void;
   deadline: number;
@@ -288,6 +293,10 @@ const emitStatus = (status: MpvStatus) => {
 
 const emitError = (message: string) => {
   errorListeners.forEach((callback) => callback(message));
+};
+
+const emitWarning = (message: string) => {
+  warningListeners.forEach((callback) => callback(message));
 };
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
@@ -401,9 +410,10 @@ const startStatusPolling = () => {
       if (events?.lastLog) {
         console.warn('[mpv]', events.lastLog);
       }
-      if (events?.fileLoaded && !allowSwDec) {
+      if (events?.fileLoaded) {
         hwdecDeadline = Date.now() + hwdecGraceMs;
         hwdecSatisfied = false;
+        hwdecWarned = false;
       }
       if (events?.endFileError) {
         if (events?.lastErrorLog) lastMpvErrorLog = events.lastErrorLog;
@@ -430,6 +440,8 @@ const startStatusPolling = () => {
           ['hwdec', status.hwdec],
           ['hwdecSetting', status.hwdecSetting],
           ['hwdecInterop', status.hwdecInterop],
+          ['hwdecAvailable', status.hwdecAvailable],
+          ['hwdecCodecs', status.hwdecCodecs],
           ['gpuHwdecInterop', status.gpuHwdecInterop],
           ['vo', status.vo],
           ['gpuApi', status.gpuApi],
@@ -443,9 +455,9 @@ const startStatusPolling = () => {
             logPreload('info', 'mpv status', { key, value });
           }
         }
-        if (!allowSwDec && !hwdecSatisfied && !hwdecDeadline && status.position >= 0) {
+        if (!hwdecSatisfied && !hwdecDeadline && status.position >= 0) {
           hwdecDeadline = Date.now() + hwdecGraceMs;
-          logPreload('info', 'hwdec enforcement armed', {
+          logPreload('info', 'hwdec grace armed', {
             hwdecCurrent: status.hwdec ?? 'no',
             graceMs: hwdecGraceMs,
           });
@@ -463,25 +475,38 @@ const startStatusPolling = () => {
           hwdecSatisfied = true;
           hwdecDeadline = 0;
           lastHwdecError = '';
-        } else if (!allowSwDec && !hwdecSatisfied && hwdecDeadline && Date.now() > hwdecDeadline) {
-          const message = `Hardware decode required but inactive (hwdec-current: ${status.hwdec ?? 'no'})`;
-          if (message !== lastHwdecError) {
-            lastHwdecError = message;
-            if (enforceHwdec) {
-              emitError(message);
+        } else if (!hwdecSatisfied && hwdecDeadline && Date.now() > hwdecDeadline) {
+          if (allowSwDec) {
+            if (!hwdecWarned) {
+              hwdecWarned = true;
+              emitWarning(`Hardware decode inactive; falling back to software decode (hwdec-current: ${status.hwdec ?? 'no'})`);
+              logPreload('warn', 'hwdec fallback', {
+                hwdecCurrent: status.hwdec ?? 'no',
+                hwdecSetting: status.hwdecSetting ?? 'unknown',
+                videoCodec: status.videoCodec ?? 'unknown',
+                graceMs: hwdecGraceMs,
+              });
             }
-            logPreload(enforceHwdec ? 'warn' : 'info', 'hwdec enforcement', {
-              enforced: enforceHwdec,
-              hwdecCurrent: status.hwdec ?? 'no',
-              allowSwDec,
-              graceMs: hwdecGraceMs,
-            });
-          }
-          if (enforceHwdec) {
-            try {
-              mpvNative?.stop?.();
-            } catch (error) {
-              logPreload('error', 'mpv stop failed', error);
+          } else {
+            const message = `Hardware decode required but inactive (hwdec-current: ${status.hwdec ?? 'no'})`;
+            if (message !== lastHwdecError) {
+              lastHwdecError = message;
+              if (enforceHwdec) {
+                emitError(message);
+              }
+              logPreload(enforceHwdec ? 'warn' : 'info', 'hwdec enforcement', {
+                enforced: enforceHwdec,
+                hwdecCurrent: status.hwdec ?? 'no',
+                allowSwDec,
+                graceMs: hwdecGraceMs,
+              });
+            }
+            if (enforceHwdec) {
+              try {
+                mpvNative?.stop?.();
+              } catch (error) {
+                logPreload('error', 'mpv stop failed', error);
+              }
             }
           }
           hwdecDeadline = 0;
@@ -510,11 +535,10 @@ const mpvApi: MpvApi = isLinux
         return { error: detail ? `mpv load failed: ${detail}` : 'mpv load failed' };
       }
       lastMpvErrorLog = '';
-      if (!allowSwDec) {
-        hwdecDeadline = 0;
-        hwdecSatisfied = false;
-        lastHwdecError = '';
-      }
+      hwdecDeadline = 0;
+      hwdecSatisfied = false;
+      lastHwdecError = '';
+      hwdecWarned = false;
       startStatusPolling();
       return await new Promise<MpvResult>((resolve) => {
         if (pendingLoad) {
@@ -615,12 +639,16 @@ const mpvApi: MpvApi = isLinux
     onStatus: (callback: (status: MpvStatus) => void) => {
       statusListeners.add(callback);
     },
+    onWarning: (callback: (warning: string) => void) => {
+      warningListeners.add(callback);
+    },
     onError: (callback: (error: string) => void) => {
       errorListeners.add(callback);
     },
     removeAllListeners: () => {
       readyListeners.clear();
       statusListeners.clear();
+      warningListeners.clear();
       errorListeners.clear();
       if (mpvPollTimer) {
         clearInterval(mpvPollTimer);
@@ -648,6 +676,9 @@ const mpvApi: MpvApi = isLinux
     },
     onStatus: (callback: (status: MpvStatus) => void) => {
       ipcRenderer.on('mpv-status', (_event: IpcRendererEvent, data: MpvStatus) => callback(data));
+    },
+    onWarning: () => {
+      // No-op on non-Linux fallback.
     },
     onError: (callback: (error: string) => void) => {
       ipcRenderer.on('mpv-error', (_event: IpcRendererEvent, data: string) => callback(data));

@@ -138,7 +138,6 @@ function App() {
 
     window.mpv.onStatus((status: MpvStatus) => {
       if (status.playing !== undefined) setPlaying(status.playing);
-      if (status.playing === false) setWarning(null);
       // Skip volume updates while user is dragging the slider
       if (status.volume !== undefined && !volumeDraggingRef.current) {
         setVolume(status.volume);
@@ -151,18 +150,11 @@ function App() {
       if (status.duration !== undefined) {
         setDuration(status.duration);
       }
-      if (status.hwdec !== undefined) {
-        if (status.playing) {
-          const hwdecValue = (status.hwdec ?? '').toLowerCase();
-          if (!hwdecValue || hwdecValue === 'no') {
-            setWarning(`Hardware decode inactive (hwdec-current: ${status.hwdec ?? 'unknown'})`);
-          } else {
-            setWarning(null);
-          }
-        } else {
-          setWarning(null);
-        }
-      }
+    });
+
+    window.mpv.onWarning?.((warn: string) => {
+      console.warn('mpv warning:', warn);
+      setWarning(warn);
     });
 
     window.mpv.onError((err) => {
@@ -212,6 +204,7 @@ function App() {
       return;
     }
     setError(null);
+    setWarning(null);
     console.info('[mpv] load live', channel.direct_url);
     const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
     console.info('[mpv] load result', result);
@@ -251,6 +244,7 @@ function App() {
     await window.mpv.stop();
     setPlaying(false);
     setCurrentChannel(null);
+    setWarning(null);
   };
 
   const handleSeek = async (seconds: number) => {
@@ -275,6 +269,7 @@ function App() {
       return;
     }
     setError(null);
+    setWarning(null);
     console.info('[mpv] load vod', info.url);
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
     console.info('[mpv] load result', result);

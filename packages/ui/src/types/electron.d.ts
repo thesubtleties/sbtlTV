@@ -9,6 +9,9 @@ export interface MpvStatus {
   hwdec?: string;
   hwdecSetting?: string;
   hwdecInterop?: string;
+  hwdecAvailable?: string;
+  hwdecCodecs?: string;
+  gpuHwdecInterop?: string;
   vo?: string;
   gpuApi?: string;
   gpuContext?: string;
@@ -39,6 +42,7 @@ export interface MpvApi {
   isLibmpv?: boolean;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
+  onWarning?: (callback: (warning: string) => void) => void;
   onError: (callback: (error: string) => void) => void;
   removeAllListeners: () => void;
 }
