@@ -56,6 +56,8 @@ impl HeadlessGLContext {
         device.make_context_current(&context)
             .map_err(|e| format!("Surfman make_current failed: {:?}", e))?;
 
+        log::info!("[VIDEO] Surfman GL context created and made current");
+
         Ok(Self { device, context })
     }
 

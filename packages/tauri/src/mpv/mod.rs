@@ -108,12 +108,15 @@ pub fn init_mpv(app: &AppHandle) -> Result<(), String> {
 }
 
 fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Result<(), String> {
+    log::info!("[VIDEO] Render thread starting...");
+
     // Create headless GL context on this thread
     let gl_ctx = HeadlessGLContext::new()?;
     gl_ctx.make_current()?;
 
     // Load GL function pointers
     gl::load_with(|s| gl_ctx.get_proc_address(s) as *const _);
+    log::info!("[VIDEO] GL function pointers loaded");
 
     // Create mpv render context with OpenGL
     let mpv_ptr = Arc::as_ptr(&mpv) as *mut Mpv;
@@ -130,6 +133,7 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
         )
         .map_err(|e| format!("Failed to create render context: {}", e))?
     };
+    log::info!("[VIDEO] mpv render context created");
 
     // Set up render update callback
     let render_pending = Arc::new(AtomicBool::new(false));
@@ -143,10 +147,13 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
 
     if !fbo_ok {
         log::error!("FBO incomplete — video rendering disabled (GPU limitation)");
+    } else {
+        log::info!("[VIDEO] FBO created successfully, {}x{}", offscreen.width(), offscreen.height());
     }
 
     // Emit ready event
     let _ = app.emit("mpv-ready", true);
+    log::info!("[VIDEO] mpv-ready event emitted");
 
     // Status tracking
     let mut last_status_time = Instant::now();
@@ -178,6 +185,21 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
 
                 // Read back and convert to YUV420
                 let (y, u, v) = offscreen.read_as_yuv420();
+
+                // Debug: check if we got actual pixel data
+                let y_sum: u64 = y.iter().map(|&x| x as u64).sum();
+                let frame_num = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() % 10000)
+                    .unwrap_or(0);
+
+                // Log every ~2 seconds (frame_num % 2000 < 20 catches ~20ms window)
+                if frame_num % 2000 < 20 {
+                    log::info!(
+                        "[VIDEO] Frame {}x{}, Y-sum={} (0=black), emitting mpv-frame",
+                        offscreen.width(), offscreen.height(), y_sum
+                    );
+                }
 
                 let frame = FrameData {
                     width: offscreen.width(),
