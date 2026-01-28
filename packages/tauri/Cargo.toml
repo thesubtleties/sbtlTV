@@ -28,7 +28,9 @@ euclid = "0.22"
 surfman = { version = "0.10", features = ["sm-x11"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-surfman = { version = "0.10", features = ["sm-angle-default"] }
+# Note: sm-angle-default hangs on headless device creation
+# Using default WGL backend instead
+surfman = { version = "0.10" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 surfman = { version = "0.10" }
