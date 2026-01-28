@@ -45,7 +45,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Linux: install system deps for Tauri + mpv
+      # Linux: install system deps for Tauri + mpv + surfman (X11/GLX)
       - name: Install Linux deps
         if: matrix.platform == 'linux'
         run: |
@@ -56,7 +56,7 @@ jobs:
             librsvg2-dev \
             patchelf \
             libmpv-dev \
-            libegl1-mesa-dev \
+            libx11-dev \
             libgl-dev
 
       # macOS: install mpv via Homebrew and expose library paths

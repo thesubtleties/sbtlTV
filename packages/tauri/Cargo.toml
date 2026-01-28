@@ -21,8 +21,16 @@ dirs = "6"
 log = "0.4"
 env_logger = "0.11"
 libmpv2 = { version = "5", features = ["render"] }
-khronos-egl = { version = "6", features = ["dynamic"] }
 gl = "0.14"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+surfman = { version = "0.10", features = ["sm-x11"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+surfman = { version = "0.10", features = ["sm-angle-default"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+surfman = { version = "0.10" }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
