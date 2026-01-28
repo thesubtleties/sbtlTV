@@ -159,6 +159,11 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
     let mut last_status_time = Instant::now();
     let status_throttle = Duration::from_millis(100);
 
+    // Frame rate limiting - target 30fps to reduce IPC load
+    // Video content is typically 24-30fps anyway
+    let mut last_frame_time = Instant::now();
+    let frame_interval = Duration::from_millis(33); // ~30fps
+
     // Render loop
     while !shutdown.load(Ordering::SeqCst) {
         if render_pending.swap(false, Ordering::SeqCst) {
@@ -201,15 +206,20 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
                     );
                 }
 
-                let frame = FrameData {
-                    width: offscreen.width(),
-                    height: offscreen.height(),
-                    y,
-                    u,
-                    v,
-                };
+                // Throttle frame emission to reduce IPC load
+                if last_frame_time.elapsed() >= frame_interval {
+                    last_frame_time = Instant::now();
 
-                let _ = app.emit("mpv-frame", frame);
+                    let frame = FrameData {
+                        width: offscreen.width(),
+                        height: offscreen.height(),
+                        y,
+                        u,
+                        v,
+                    };
+
+                    let _ = app.emit("mpv-frame", frame);
+                }
             } else {
                 // FBO broken — render to dummy target so mpv's clock advances
                 let _ = render_ctx.render::<HeadlessGLContext>(0, 1, 1, true);
