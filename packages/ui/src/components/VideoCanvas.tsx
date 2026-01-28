@@ -4,9 +4,19 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 interface FrameData {
   width: number;
   height: number;
-  y: number[];
-  u: number[];
-  v: number[];
+  y: string;  // base64 encoded
+  u: string;  // base64 encoded
+  v: string;  // base64 encoded
+}
+
+// Decode base64 to Uint8Array
+function decodeBase64(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 const VERTEX_SHADER = `#version 300 es
@@ -163,20 +173,20 @@ export function VideoCanvas() {
       gl.viewport(0, 0, width, height);
     }
 
-    // Upload Y plane (full resolution)
-    const yData = new Uint8Array(frame.y);
+    // Decode base64 and upload Y plane (full resolution)
+    const yData = decodeBase64(frame.y);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texY);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, width, height, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, yData);
 
-    // Upload U plane (half resolution)
-    const uData = new Uint8Array(frame.u);
+    // Decode base64 and upload U plane (half resolution)
+    const uData = decodeBase64(frame.u);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, texU);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, halfW, halfH, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, uData);
 
-    // Upload V plane (half resolution)
-    const vData = new Uint8Array(frame.v);
+    // Decode base64 and upload V plane (half resolution)
+    const vData = decodeBase64(frame.v);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, texV);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, halfW, halfH, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, vData);
@@ -206,7 +216,7 @@ export function VideoCanvas() {
         frameCount++;
         // Log every 60 frames (~1 second at 60fps)
         if (frameCount % 60 === 1) {
-          console.log(`[VideoCanvas] Received frame #${frameCount}: ${event.payload.width}x${event.payload.height}, Y[0]=${event.payload.y[0]}`);
+          console.log(`[VideoCanvas] Received frame #${frameCount}: ${event.payload.width}x${event.payload.height}, Y.length=${event.payload.y.length}`);
         }
       }).then((fn) => {
         unlisten = fn;

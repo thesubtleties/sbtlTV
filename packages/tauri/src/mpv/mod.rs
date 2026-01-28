@@ -13,14 +13,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
 /// Frame data sent to the frontend via Tauri events
+/// Y/U/V planes are base64 encoded to avoid JSON array bloat
 #[derive(Clone, Serialize)]
 pub struct FrameData {
     pub width: u32,
     pub height: u32,
-    pub y: Vec<u8>,
-    pub u: Vec<u8>,
-    pub v: Vec<u8>,
+    pub y: String,  // base64 encoded
+    pub u: String,  // base64 encoded
+    pub v: String,  // base64 encoded
 }
 
 /// mpv status sent to the frontend
@@ -213,9 +216,9 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
                     let frame = FrameData {
                         width: offscreen.width(),
                         height: offscreen.height(),
-                        y,
-                        u,
-                        v,
+                        y: BASE64.encode(&y),
+                        u: BASE64.encode(&u),
+                        v: BASE64.encode(&v),
                     };
 
                     let _ = app.emit("mpv-frame", frame);
