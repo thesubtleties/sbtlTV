@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.sbtltv.app",
   "build": {
-    "frontendDist": "ui/dist",
+    "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "cd ui && pnpm dev",
-    "beforeBuildCommand": "cd ui && pnpm build"
+    "beforeDevCommand": "pnpm --filter @sbtltv/ui dev",
+    "beforeBuildCommand": "pnpm --filter @sbtltv/ui build"
   },
   "app": {
     "withGlobalTauri": false,

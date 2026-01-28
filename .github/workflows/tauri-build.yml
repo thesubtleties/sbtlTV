@@ -77,26 +77,45 @@ jobs:
           New-Item -ItemType Directory -Force -Path $MPV_DIR | Out-Null
           Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$MPV_DIR\mpv-dev.7z"
           7z x "$MPV_DIR\mpv-dev.7z" -o"$MPV_DIR" -y
-          # Generate mpv.lib from the .def file for MSVC linker
+          # Show extracted contents for debugging
+          Get-ChildItem -Path $MPV_DIR -Recurse | Select-Object FullName
+          # Generate mpv.lib from the .def file using MSVC lib.exe via vcvarsall
           $defFile = Get-ChildItem -Path $MPV_DIR -Recurse -Filter "*.def" | Select-Object -First 1
           if ($defFile) {
-            & lib /def:"$($defFile.FullName)" /machine:x64 /out:"$MPV_DIR\mpv.lib"
+            $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            $vsPath = & $vsWhere -latest -property installationPath
+            $vcvars = "$vsPath\VC\Auxiliary\Build\vcvarsall.bat"
+            cmd /c "`"$vcvars`" x64 && lib /def:`"$($defFile.FullName)`" /machine:x64 /out:`"$MPV_DIR\mpv.lib`""
+            if (Test-Path "$MPV_DIR\mpv.lib") {
+              Write-Host "mpv.lib created successfully"
+            } else {
+              Write-Host "::error::mpv.lib was not created"
+              exit 1
+            }
+          } else {
+            Write-Host "::error::No .def file found in mpv dev SDK"
+            exit 1
           }
-          # Add to linker search paths
-          echo "LIB=$MPV_DIR" >> $env:GITHUB_ENV
-          echo "INCLUDE=$MPV_DIR\include" >> $env:GITHUB_ENV
+          # Append to LIB path (don't overwrite existing)
+          echo "LIB=$MPV_DIR;$env:LIB" >> $env:GITHUB_ENV
+          echo "INCLUDE=$MPV_DIR\include;$env:INCLUDE" >> $env:GITHUB_ENV
 
-      - name: Build UI
-        run: pnpm --filter @sbtltv/ui build
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2"
 
-      - name: Build Tauri
-        run: cargo build --release --manifest-path packages/tauri/Cargo.toml
+      - name: Build Tauri bundle
+        working-directory: packages/tauri
+        run: cargo tauri build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: tauri-${{ matrix.platform }}
           path: |
-            packages/tauri/target/release/sbtltv
-            packages/tauri/target/release/sbtltv.exe
+            packages/tauri/target/release/bundle/dmg/*.dmg
+            packages/tauri/target/release/bundle/macos/*.app
+            packages/tauri/target/release/bundle/nsis/*.exe
+            packages/tauri/target/release/bundle/msi/*.msi
+            packages/tauri/target/release/bundle/appimage/*.AppImage
+            packages/tauri/target/release/bundle/deb/*.deb
           if-no-files-found: warn
