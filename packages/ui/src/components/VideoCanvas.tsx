@@ -79,9 +79,10 @@ export function VideoCanvas() {
 
     const gl = canvas.getContext('webgl2', { alpha: false, desynchronized: true });
     if (!gl) {
-      console.error('WebGL2 not supported');
+      console.error('[VideoCanvas] WebGL2 not supported');
       return;
     }
+    console.log('[VideoCanvas] WebGL2 context created');
 
     // Clear to black immediately — undefined GPU memory can show as white
     gl.clearColor(0, 0, 0, 1);
@@ -137,6 +138,7 @@ export function VideoCanvas() {
     const texV = createTexture(gl)!;
 
     glRef.current = { gl, program, texY, texU, texV };
+    console.log('[VideoCanvas] WebGL setup complete');
   }, []);
 
   const renderFrame = useCallback(() => {
@@ -181,6 +183,12 @@ export function VideoCanvas() {
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
+    // Check for WebGL errors
+    const error = gl.getError();
+    if (error !== gl.NO_ERROR) {
+      console.error('[VideoCanvas] WebGL error:', error);
+    }
+
     rafRef.current = requestAnimationFrame(renderFrame);
   }, []);
 
@@ -192,11 +200,20 @@ export function VideoCanvas() {
 
     // Only listen for frames if running in Tauri
     if ('__TAURI_INTERNALS__' in window) {
+      let frameCount = 0;
       listen<FrameData>('mpv-frame', (event) => {
         pendingFrame.current = event.payload;
+        frameCount++;
+        // Log every 60 frames (~1 second at 60fps)
+        if (frameCount % 60 === 1) {
+          console.log(`[VideoCanvas] Received frame #${frameCount}: ${event.payload.width}x${event.payload.height}, Y[0]=${event.payload.y[0]}`);
+        }
       }).then((fn) => {
         unlisten = fn;
+        console.log('[VideoCanvas] Listening for mpv-frame events');
       });
+    } else {
+      console.log('[VideoCanvas] Not in Tauri, skipping frame listener');
     }
 
     return () => {
