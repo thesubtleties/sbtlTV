@@ -696,7 +696,7 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   const char *hwdec = getenv("SBTLTV_HWDEC");
   const char *enforce_env = getenv("SBTLTV_HWDEC_ENFORCE");
   int enforce_hwdec = !env_is_falsey(enforce_env);
-  if (!hwdec || !hwdec[0]) hwdec = enforce_hwdec ? "vaapi-copy" : "auto-copy";
+  if (!hwdec || !hwdec[0]) hwdec = enforce_hwdec ? "auto-copy" : "auto-safe";
   set_option_string_optional("hwdec", hwdec);
   const char *hwdec_interop = getenv("SBTLTV_HWDEC_INTEROP");
   if (!hwdec_interop || !hwdec_interop[0]) hwdec_interop = "auto";
@@ -1108,8 +1108,22 @@ static napi_value mpv_load(napi_env env, napi_callback_info info) {
     }
   }
 
-  const char *cmd_args[3] = { "loadfile", url, NULL };
+  const char *load_url = url;
+  char *wrapped = NULL;
+  int is_http = (strncasecmp(url, "http://", 7) == 0) || (strncasecmp(url, "https://", 8) == 0);
+  if (use_ytdl && is_http && strncasecmp(url, "ytdl://", 7) != 0) {
+    size_t url_len = strlen(url);
+    wrapped = (char *)malloc(url_len + 8);
+    if (wrapped) {
+      memcpy(wrapped, "ytdl://", 7);
+      memcpy(wrapped + 7, url, url_len + 1);
+      load_url = wrapped;
+    }
+  }
+
+  const char *cmd_args[3] = { "loadfile", load_url, NULL };
   int res = mpv_command(mpv_instance, cmd_args);
+  if (wrapped) free(wrapped);
   free(url);
   if (res < 0) {
     set_last_error_from_mpv("loadfile", res);

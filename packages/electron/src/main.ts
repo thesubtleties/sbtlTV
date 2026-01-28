@@ -299,6 +299,13 @@ async function initMpv(): Promise<void> {
     const hwdec = process.env.SBTLTV_HWDEC || 'auto-safe';
     const ytdl = process.env.SBTLTV_YTDL || 'no';
     const ytdlPath = process.env.SBTLTV_YTDL_PATH;
+    const isLinux = process.platform === 'linux';
+    const isMac = process.platform === 'darwin';
+    const sessionType = process.env.XDG_SESSION_TYPE;
+    const waylandDisplay = process.env.WAYLAND_DISPLAY;
+    const isWayland = isLinux && (sessionType === 'wayland' || (waylandDisplay && waylandDisplay.trim().length > 0));
+    const voOverride = process.env.SBTLTV_MPV_VO;
+    const gpuContextOverride = process.env.SBTLTV_MPV_GPU_CONTEXT;
     let mpvArgs = [
       `--input-ipc-server=${SOCKET_PATH}`,
       '--no-osc',
@@ -314,7 +321,6 @@ async function initMpv(): Promise<void> {
       '--no-terminal',
       '--really-quiet',
       `--hwdec=${hwdec}`,
-      '--vo=gpu',
       '--target-colorspace-hint=no',
       '--tone-mapping=mobius',
       '--hdr-compute-peak=no',
@@ -325,46 +331,36 @@ async function initMpv(): Promise<void> {
       mpvArgs.push(`--ytdl-path=${ytdlPath}`);
     }
 
-    if (process.platform === 'linux') {
-      mpvArgs.push('--gpu-context=x11');
-    }
-
-    let windowId: string;
-
-    if (process.platform === 'linux') {
-      await ensureWindowReadyForEmbed(mainWindow);
-      const { xid, bufferLen, hex } = await waitForLinuxXid(mainWindow);
-      console.log(`[mpv] linux-xid bufferLen=${bufferLen} xid=${xid} hex=${hex}`);
-      if (bufferLen < 4 || xid <= 1) {
-        await dialog.showMessageBox({
-          type: 'error',
-          title: 'mpv Embed Failed',
-          message: 'Failed to obtain a valid X11 window ID for mpv embedding.',
-          detail: `bufferLen=${bufferLen} xid=${xid} hex=${hex}`,
-          buttons: ['OK'],
-        });
-        app.exit(1);
-        return;
+    const vo = voOverride || (isLinux && isWayland ? 'dmabuf-wayland' : 'gpu');
+    mpvArgs.push(`--vo=${vo}`);
+    if (gpuContextOverride) {
+      mpvArgs.push(`--gpu-context=${gpuContextOverride}`);
+    } else if (isLinux) {
+      if (!isWayland) {
+        mpvArgs.push('--gpu-context=x11egl');
+      } else if (vo === 'gpu' || vo === 'gpu-next') {
+        mpvArgs.push('--gpu-context=wayland');
       }
-      windowId = xid.toString();
-    } else if (process.platform === 'win32') {
-      const nativeHandle = mainWindow.getNativeWindowHandle();
-      // Windows HWND - try 64-bit first, fall back to 32-bit
-      windowId = typeof nativeHandle.readBigUInt64LE === 'function'
-        ? nativeHandle.readBigUInt64LE(0).toString()
-        : nativeHandle.readUInt32LE(0).toString();
-    } else {
-      const nativeHandle = mainWindow.getNativeWindowHandle();
-      // macOS
-      windowId = typeof nativeHandle.readBigUInt64LE === 'function'
-        ? nativeHandle.readBigUInt64LE(0).toString()
-        : nativeHandle.readUInt32LE(0).toString();
     }
 
-    console.log('[mpv] Native window handle:', windowId);
-    console.log('[mpv] Using --wid embedding (single window mode)');
-
-    mpvArgs = [...mpvArgs, `--wid=${windowId}`];
+    const useEmbedding = process.platform === 'win32';
+    if (useEmbedding) {
+      const nativeHandle = mainWindow.getNativeWindowHandle();
+      const windowId = typeof nativeHandle.readBigUInt64LE === 'function'
+        ? nativeHandle.readBigUInt64LE(0).toString()
+        : nativeHandle.readUInt32LE(0).toString();
+      console.log('[mpv] Native window handle:', windowId);
+      console.log('[mpv] Using --wid embedding (single window mode)');
+      mpvArgs = [...mpvArgs, `--wid=${windowId}`];
+    } else {
+      console.log('[mpv] Using separate mpv window');
+      console.log(`[mpv] vo=${vo} hwdec=${hwdec}`);
+      if (isLinux) {
+        console.log(`[mpv] session=${isWayland ? 'wayland' : 'x11'} gpu-context=${gpuContextOverride || 'auto'}`);
+      } else if (isMac) {
+        console.log('[mpv] session=macOS');
+      }
+    }
 
     console.log('[mpv] Starting with args:', mpvArgs.join(' '));
 
@@ -397,7 +393,7 @@ async function initMpv(): Promise<void> {
     await waitForMpvSocket();
     await connectToMpvSocket();
 
-    console.log('[mpv] Initialized successfully (embedded mode)');
+    console.log(`[mpv] Initialized successfully (${useEmbedding ? 'embedded' : 'external'} mode)`);
     sendToRenderer('mpv-ready', true);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -607,6 +603,8 @@ ipcMain.handle('mpv-load', async (_event, url: string) => {
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     const ytdlMode = resolveYtdlMode(url);
+    const useYtdl = ytdlMode === 'yes';
+    const loadUrl = useYtdl && !url.startsWith('ytdl://') ? `ytdl://${url}` : url;
     try {
       await sendMpvCommand('set_property', ['ytdl', ytdlMode]);
       if (ytdlMode === 'yes' && process.env.SBTLTV_YTDL_PATH) {
@@ -615,7 +613,7 @@ ipcMain.handle('mpv-load', async (_event, url: string) => {
     } catch (error) {
       console.warn('[mpv] Failed to set ytdl mode:', error instanceof Error ? error.message : error);
     }
-    await sendMpvCommand('loadfile', [url]);
+    await sendMpvCommand('loadfile', [loadUrl]);
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -882,7 +880,8 @@ if (process.platform === 'linux') {
 
 // App lifecycle
 app.whenReady().then(async () => {
-  const mpvAvailable = process.platform === 'linux' ? true : await checkMpvAvailable();
+  const useExternalMpv = process.platform !== 'linux' || process.env.SBTLTV_DISABLE_LIBMPV === '1';
+  const mpvAvailable = useExternalMpv ? await checkMpvAvailable() : true;
   if (!mpvAvailable) {
     app.quit();
     return;
@@ -914,7 +913,10 @@ app.whenReady().then(async () => {
     }
   }
   await createWindow();
-  if (process.platform !== 'linux') {
+  if (useExternalMpv) {
+    if (process.platform === 'linux' && process.env.SBTLTV_DISABLE_LIBMPV === '1') {
+      log('info', 'mpv', 'libmpv disabled; using external mpv');
+    }
     await initMpv();
   }
 });

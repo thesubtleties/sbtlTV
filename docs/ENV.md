@@ -10,7 +10,7 @@ read_when: adding/changing runtime flags or debugging playback/render issues
 
 ## libmpv / FFmpeg
 - `SBTLTV_USE_SYSTEM_LIBMPV=1` use system libmpv instead of bundled
-- `SBTLTV_DISABLE_LIBMPV=1` disable libmpv path (fallback to external mpv)
+- `SBTLTV_DISABLE_LIBMPV=1` disable libmpv path (use external mpv with its own window on Linux/macOS)
 - `SBTLTV_PRELOAD_FFMPEG=0` dev only: disable bundled FFmpeg preload (default: enabled)
 - `SBTLTV_LIBMPV_PATH=/path/to/libmpv.so.2` override libmpv path
 
@@ -20,12 +20,16 @@ read_when: adding/changing runtime flags or debugging playback/render issues
   - Unset: auto-enable for YouTube URLs only
 
 ## Hardware decode
-- `SBTLTV_HWDEC=auto|auto-safe|auto-copy|vaapi|vaapi-copy|vdpau|nvdec|<list>` (default: vaapi-copy when enforced; auto-copy otherwise)
+- `SBTLTV_HWDEC=auto|auto-safe|auto-copy|vaapi|vaapi-copy|vdpau|nvdec|<list>` (default: auto-copy when enforced; auto-safe otherwise)
 - `SBTLTV_HWDEC_INTEROP=auto|vaapi|drmprime|no` (default: auto)
 - `SBTLTV_HWDEC_CODECS=all|<list>` override mpv hwdec codec allowlist (optional)
 - `SBTLTV_HWDEC_GRACE_MS=5000` grace window before enforcing hwdec
 - `SBTLTV_ALLOW_SWDEC=0` require hardware decode (default: allow software decode)
 - `SBTLTV_HWDEC_ENFORCE=0` disable enforcement (default: enforced)
+
+## External mpv (IPC)
+- `SBTLTV_MPV_VO=<name>` override `--vo` when using external mpv (examples: `gpu`, `gpu-next`, `vaapi`, `dmabuf-wayland`)
+- `SBTLTV_MPV_GPU_CONTEXT=<name>` override `--gpu-context` for external mpv (examples: `x11egl`, `wayland`)
 
 ## Renderer (Linux libmpv)
 - `SBTLTV_RENDER_FPS=30` cap render loop fps

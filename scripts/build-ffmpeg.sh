@@ -63,6 +63,7 @@ if [ "${#EXTRA_PKGCONFIG[@]}" -gt 0 ]; then
 fi
 
 HWACCEL_FLAGS=()
+FEATURE_FLAGS=()
 if [ "$PLATFORM" = "linux" ]; then
 	if pkg-config --exists libva; then
 		HWACCEL_FLAGS+=("--enable-vaapi")
@@ -84,6 +85,18 @@ fi
 if [ "$PLATFORM" = "macos" ]; then
 	HWACCEL_FLAGS+=("--enable-videotoolbox")
 fi
+
+DEMUXERS=(hls mpegts mpegtsraw mov aac mp3)
+if pkg-config --exists libxml-2.0; then
+	FEATURE_FLAGS+=("--enable-libxml2")
+	DEMUXERS+=(dash)
+else
+	echo "libxml2 not found; DASH demuxer disabled" >&2
+fi
+DEMUXER_LIST=$(
+	IFS=,
+	echo "${DEMUXERS[*]}"
+)
 
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN || sysctl -n hw.ncpu || echo 4)}"
 
@@ -113,11 +126,12 @@ echo "Configuring FFmpeg..."
 	--enable-version3 \
 	--disable-gnutls \
 	--enable-protocol=file,pipe,http,https,tcp,tls,crypto,udp \
-	--enable-demuxer=hls,mpegts,mpegtsraw,mov,aac,mp3,dash \
+	--enable-demuxer="$DEMUXER_LIST" \
 	--enable-decoder=h264,hevc,aac,mp3,opus,vorbis,mpeg2video \
 	--enable-parser=h264,hevc,aac,opus,vorbis,mpegaudio \
 	--enable-bsf=aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb \
 	"${HWACCEL_FLAGS[@]}" \
+	"${FEATURE_FLAGS[@]}" \
 	--extra-cflags="${EXTRA_CFLAGS[*]}" \
 	--extra-ldflags="${EXTRA_LDFLAGS[*]}"
 

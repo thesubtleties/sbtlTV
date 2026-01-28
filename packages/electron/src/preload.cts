@@ -201,6 +201,7 @@ contextBridge.exposeInMainWorld('electronWindow', {
 } satisfies ElectronWindowApi);
 
 const isLinux = process.platform === 'linux';
+const useLibmpv = isLinux && process.env.SBTLTV_DISABLE_LIBMPV !== '1';
 
 type MpvFrame = { buffer: ArrayBuffer; width: number; height: number; stride: number };
 
@@ -524,7 +525,7 @@ const startStatusPolling = () => {
   }, 250);
 };
 
-const mpvApi: MpvApi = isLinux
+const mpvApi: MpvApi = useLibmpv
   ? {
     load: async (url: string) => {
       if (!ensureMpvNative()) return { error: 'libmpv not available' };
@@ -677,6 +678,7 @@ const mpvApi: MpvApi = isLinux
     onStatus: (callback: (status: MpvStatus) => void) => {
       ipcRenderer.on('mpv-status', (_event: IpcRendererEvent, data: MpvStatus) => callback(data));
     },
+    isLibmpv: false,
     onWarning: () => {
       // No-op on non-Linux fallback.
     },
