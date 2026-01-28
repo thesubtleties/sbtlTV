@@ -1,4 +1,6 @@
 use gl::types::*;
+use image::{ImageBuffer, Rgba, codecs::jpeg::JpegEncoder};
+use std::io::Cursor;
 
 /// Manages an OpenGL FBO for offscreen mpv rendering
 /// and reads back pixel data for transfer to the frontend.
@@ -170,6 +172,37 @@ impl OffscreenRenderer {
         }
 
         (y_plane, u_plane, v_plane)
+    }
+
+    /// Read pixels and encode as JPEG for efficient IPC transfer.
+    /// Returns the JPEG bytes. Quality 80 gives good visual quality at ~50-100KB per frame.
+    pub fn read_as_jpeg(&mut self, quality: u8) -> Vec<u8> {
+        self.read_pixels();
+
+        let w = self.width as usize;
+        let h = self.height as usize;
+
+        // Flip vertically (OpenGL reads bottom-up) and create image buffer
+        let mut flipped = vec![0u8; w * h * 4];
+        for row in 0..h {
+            let src_row = h - 1 - row;
+            let src_start = src_row * w * 4;
+            let dst_start = row * w * 4;
+            flipped[dst_start..dst_start + w * 4]
+                .copy_from_slice(&self.pixel_buffer[src_start..src_start + w * 4]);
+        }
+
+        // Create image buffer from RGBA data
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_raw(self.width, self.height, flipped)
+                .expect("Failed to create image buffer");
+
+        // Encode as JPEG
+        let mut jpeg_bytes = Cursor::new(Vec::new());
+        let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_bytes, quality);
+        encoder.encode_image(&img).expect("Failed to encode JPEG");
+
+        jpeg_bytes.into_inner()
     }
 }
 

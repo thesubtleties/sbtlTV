@@ -4,9 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 interface FrameData {
   width: number;
   height: number;
-  y: string;  // base64 encoded
-  u: string;  // base64 encoded
-  v: string;  // base64 encoded
+  jpeg: string;  // base64 encoded JPEG
 }
 
 // Decode base64 to Uint8Array
@@ -28,23 +26,14 @@ void main() {
   v_texCoord = a_texCoord;
 }`;
 
-// BT.709 YUV→RGB conversion
+// Simple RGB passthrough shader (JPEG decodes to RGB)
 const FRAGMENT_SHADER = `#version 300 es
 precision mediump float;
 in vec2 v_texCoord;
 out vec4 fragColor;
-uniform sampler2D u_textureY;
-uniform sampler2D u_textureU;
-uniform sampler2D u_textureV;
+uniform sampler2D u_texture;
 void main() {
-  float y = texture(u_textureY, v_texCoord).r;
-  float u = texture(u_textureU, v_texCoord).r - 0.5;
-  float v = texture(u_textureV, v_texCoord).r - 0.5;
-  // BT.709 matrix
-  float r = y + 1.5748 * v;
-  float g = y - 0.1873 * u - 0.4681 * v;
-  float b = y + 1.8556 * u;
-  fragColor = vec4(clamp(r, 0.0, 1.0), clamp(g, 0.0, 1.0), clamp(b, 0.0, 1.0), 1.0);
+  fragColor = texture(u_texture, v_texCoord);
 }`;
 
 function createShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
@@ -60,28 +49,16 @@ function createShader(gl: WebGL2RenderingContext, type: number, source: string):
   return shader;
 }
 
-function createTexture(gl: WebGL2RenderingContext): WebGLTexture | null {
-  const tex = gl.createTexture();
-  if (!tex) return null;
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return tex;
-}
-
 export function VideoCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<{
     gl: WebGL2RenderingContext;
     program: WebGLProgram;
-    texY: WebGLTexture;
-    texU: WebGLTexture;
-    texV: WebGLTexture;
+    texture: WebGLTexture;
   } | null>(null);
   const rafRef = useRef<number>(0);
-  const pendingFrame = useRef<FrameData | null>(null);
+  const pendingFrame = useRef<ImageBitmap | null>(null);
+  const pendingSize = useRef<{ width: number; height: number } | null>(null);
 
   const initGL = useCallback(() => {
     const canvas = canvasRef.current;
@@ -138,32 +115,35 @@ export function VideoCanvas() {
     gl.enableVertexAttribArray(texLoc);
     gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
 
-    // Bind texture units
-    gl.uniform1i(gl.getUniformLocation(program, 'u_textureY'), 0);
-    gl.uniform1i(gl.getUniformLocation(program, 'u_textureU'), 1);
-    gl.uniform1i(gl.getUniformLocation(program, 'u_textureV'), 2);
+    // Single texture for JPEG frames
+    gl.uniform1i(gl.getUniformLocation(program, 'u_texture'), 0);
 
-    const texY = createTexture(gl)!;
-    const texU = createTexture(gl)!;
-    const texV = createTexture(gl)!;
+    const texture = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    glRef.current = { gl, program, texY, texU, texV };
+    glRef.current = { gl, program, texture };
     console.log('[VideoCanvas] WebGL setup complete');
   }, []);
 
   const renderFrame = useCallback(() => {
-    const frame = pendingFrame.current;
+    const bitmap = pendingFrame.current;
+    const size = pendingSize.current;
     const ctx = glRef.current;
-    if (!frame || !ctx) {
+
+    if (!bitmap || !size || !ctx) {
       rafRef.current = requestAnimationFrame(renderFrame);
       return;
     }
     pendingFrame.current = null;
+    pendingSize.current = null;
 
-    const { gl, texY, texU, texV } = ctx;
-    const { width, height } = frame;
-    const halfW = width >> 1;
-    const halfH = height >> 1;
+    const { gl, texture } = ctx;
+    const { width, height } = size;
 
     // Resize canvas if needed
     const canvas = canvasRef.current!;
@@ -173,23 +153,13 @@ export function VideoCanvas() {
       gl.viewport(0, 0, width, height);
     }
 
-    // Decode base64 and upload Y plane (full resolution)
-    const yData = decodeBase64(frame.y);
+    // Upload ImageBitmap to texture (GPU-accelerated JPEG decode)
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texY);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, width, height, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, yData);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
 
-    // Decode base64 and upload U plane (half resolution)
-    const uData = decodeBase64(frame.u);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, texU);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, halfW, halfH, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, uData);
-
-    // Decode base64 and upload V plane (half resolution)
-    const vData = decodeBase64(frame.v);
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, texV);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, halfW, halfH, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, vData);
+    // Clean up the ImageBitmap
+    bitmap.close();
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
@@ -211,12 +181,28 @@ export function VideoCanvas() {
     // Only listen for frames if running in Tauri
     if ('__TAURI_INTERNALS__' in window) {
       let frameCount = 0;
-      listen<FrameData>('mpv-frame', (event) => {
-        pendingFrame.current = event.payload;
+      listen<FrameData>('mpv-frame', async (event) => {
+        const { width, height, jpeg } = event.payload;
+
         frameCount++;
-        // Log every 60 frames (~1 second at 60fps)
+        // Log every 60 frames (~2 seconds at 30fps)
         if (frameCount % 60 === 1) {
-          console.log(`[VideoCanvas] Received frame #${frameCount}: ${event.payload.width}x${event.payload.height}, Y.length=${event.payload.y.length}`);
+          console.log(`[VideoCanvas] Received frame #${frameCount}: ${width}x${height}, JPEG ${(jpeg.length / 1024).toFixed(1)}KB`);
+        }
+
+        try {
+          // Decode base64 to bytes
+          const bytes = decodeBase64(jpeg);
+
+          // Create blob and decode JPEG using browser's GPU-accelerated decoder
+          const blob = new Blob([bytes as BlobPart], { type: 'image/jpeg' });
+          const bitmap = await createImageBitmap(blob);
+
+          // Store for next render frame
+          pendingFrame.current = bitmap;
+          pendingSize.current = { width, height };
+        } catch (err) {
+          console.error('[VideoCanvas] Failed to decode frame:', err);
         }
       }).then((fn) => {
         unlisten = fn;

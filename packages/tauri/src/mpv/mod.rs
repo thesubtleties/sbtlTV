@@ -16,14 +16,12 @@ use tauri::{AppHandle, Emitter, Manager};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 /// Frame data sent to the frontend via Tauri events
-/// Y/U/V planes are base64 encoded to avoid JSON array bloat
+/// JPEG encoded for efficient IPC (~50-100KB vs ~4MB for base64 YUV)
 #[derive(Clone, Serialize)]
 pub struct FrameData {
     pub width: u32,
     pub height: u32,
-    pub y: String,  // base64 encoded
-    pub u: String,  // base64 encoded
-    pub v: String,  // base64 encoded
+    pub jpeg: String,  // base64 encoded JPEG
 }
 
 /// mpv status sent to the frontend
@@ -191,34 +189,30 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
                     continue;
                 }
 
-                // Read back and convert to YUV420
-                let (y, u, v) = offscreen.read_as_yuv420();
-
-                // Debug: check if we got actual pixel data
-                let y_sum: u64 = y.iter().map(|&x| x as u64).sum();
-                let frame_num = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis() % 10000)
-                    .unwrap_or(0);
-
-                // Log every ~2 seconds (frame_num % 2000 < 20 catches ~20ms window)
-                if frame_num % 2000 < 20 {
-                    log::info!(
-                        "[VIDEO] Frame {}x{}, Y-sum={} (0=black), emitting mpv-frame",
-                        offscreen.width(), offscreen.height(), y_sum
-                    );
-                }
-
                 // Throttle frame emission to reduce IPC load
                 if last_frame_time.elapsed() >= frame_interval {
                     last_frame_time = Instant::now();
 
+                    // Encode as JPEG (quality 80 = good balance of quality/size)
+                    let jpeg_bytes = offscreen.read_as_jpeg(80);
+
+                    // Debug: log every ~2 seconds
+                    let frame_num = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() % 10000)
+                        .unwrap_or(0);
+
+                    if frame_num % 2000 < 20 {
+                        log::info!(
+                            "[VIDEO] Frame {}x{}, JPEG {}KB, emitting mpv-frame",
+                            offscreen.width(), offscreen.height(), jpeg_bytes.len() / 1024
+                        );
+                    }
+
                     let frame = FrameData {
                         width: offscreen.width(),
                         height: offscreen.height(),
-                        y: BASE64.encode(&y),
-                        u: BASE64.encode(&u),
-                        v: BASE64.encode(&v),
+                        jpeg: BASE64.encode(&jpeg_bytes),
                     };
 
                     let _ = app.emit("mpv-frame", frame);
