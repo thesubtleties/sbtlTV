@@ -22,8 +22,9 @@ read_when: adding/changing runtime flags or debugging playback/render issues
 ## Hardware decode
 - `SBTLTV_HWDEC=auto|auto-safe|auto-copy|vaapi|vaapi-copy|vdpau|nvdec|<list>` (default: vaapi-copy when enforced; auto-copy otherwise)
 - `SBTLTV_HWDEC_INTEROP=auto|vaapi|drmprime|no` (default: auto)
+- `SBTLTV_HWDEC_CODECS=all|<list>` override mpv hwdec codec allowlist (optional)
 - `SBTLTV_HWDEC_GRACE_MS=5000` grace window before enforcing hwdec
-- `SBTLTV_ALLOW_SWDEC=1` allow software decode fallback
+- `SBTLTV_ALLOW_SWDEC=0` require hardware decode (default: allow software decode)
 - `SBTLTV_HWDEC_ENFORCE=0` disable enforcement (default: enforced)
 
 ## Renderer (Linux libmpv)

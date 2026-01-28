@@ -78,6 +78,8 @@ static char g_last_hwdec_current[64] = {0};
 static char g_last_hwdec_interop[64] = {0};
 static char g_last_gpu_hwdec_interop[64] = {0};
 static char g_last_hwdec[64] = {0};
+static char g_last_hwdec_available[256] = {0};
+static char g_last_hwdec_codecs[256] = {0};
 static char g_last_vo[64] = {0};
 static char g_last_gpu_api[64] = {0};
 static char g_last_gpu_context[64] = {0};
@@ -700,6 +702,10 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
   if (!hwdec_interop || !hwdec_interop[0]) hwdec_interop = "auto";
   set_option_string_optional("hwdec-interop", hwdec_interop);
   set_option_string_optional("gpu-hwdec-interop", hwdec_interop);
+  const char *hwdec_codecs = getenv("SBTLTV_HWDEC_CODECS");
+  if (hwdec_codecs && hwdec_codecs[0]) {
+    set_option_string_optional("hwdec-codecs", hwdec_codecs);
+  }
   {
     char summary[256];
     snprintf(summary, sizeof(summary), "[libmpv] options: vo=libmpv gpu-api=opengl gpu-context=%s hwdec=%s hwdec-interop=%s",
@@ -774,11 +780,35 @@ static napi_value mpv_init(napi_env env, napi_callback_info info) {
     .get_proc_address_ctx = NULL,
   };
 
-  mpv_render_param params[] = {
-    { MPV_RENDER_PARAM_API_TYPE, (void *)MPV_RENDER_API_TYPE_OPENGL },
-    { MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init },
-    { MPV_RENDER_PARAM_INVALID, NULL },
-  };
+  mpv_render_param display_param = { MPV_RENDER_PARAM_INVALID, NULL };
+  const char *display_label = NULL;
+  if (gl_ctx == CTX_EGL_WAYLAND && egl_wl_display) {
+    display_param.type = MPV_RENDER_PARAM_WL_DISPLAY;
+    display_param.data = (void *)egl_wl_display;
+    display_label = "wl_display";
+  } else if (gl_ctx == CTX_EGL_X11 && egl_x11_display) {
+    display_param.type = MPV_RENDER_PARAM_X11_DISPLAY;
+    display_param.data = (void *)egl_x11_display;
+    display_label = "x11_display";
+  } else if (gl_ctx == CTX_GLX && glx_display) {
+    display_param.type = MPV_RENDER_PARAM_X11_DISPLAY;
+    display_param.data = (void *)glx_display;
+    display_label = "x11_display";
+  }
+  if (display_label) {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "[libmpv] render display param: %s", display_label);
+    log_info_message(msg);
+  }
+
+  mpv_render_param params[4];
+  int param_count = 0;
+  params[param_count++] = (mpv_render_param){ MPV_RENDER_PARAM_API_TYPE, (void *)MPV_RENDER_API_TYPE_OPENGL };
+  params[param_count++] = (mpv_render_param){ MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init };
+  if (display_param.type != MPV_RENDER_PARAM_INVALID) {
+    params[param_count++] = display_param;
+  }
+  params[param_count++] = (mpv_render_param){ MPV_RENDER_PARAM_INVALID, NULL };
 
   {
     int render_res = mpv_render_context_create(&mpv_render, mpv_instance, params);
@@ -971,10 +1001,8 @@ static napi_value mpv_render_frame(napi_env env, napi_callback_info info) {
     .internal_format = 0,
   };
 
-  int flip = 1;
   mpv_render_param params[] = {
     { MPV_RENDER_PARAM_OPENGL_FBO, &target },
-    { MPV_RENDER_PARAM_FLIP_Y, &flip },
     { MPV_RENDER_PARAM_INVALID, NULL },
   };
 
@@ -1174,6 +1202,8 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   char hwdec_value[64] = "no";
   char hwdec_setting[64] = "";
   char hwdec_interop[64] = "";
+  char hwdec_available[256] = "";
+  char hwdec_codecs[256] = "";
   char gpu_hwdec_interop[64] = "";
   char vo_value[64] = "";
   char gpu_api_value[64] = "";
@@ -1194,6 +1224,8 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   get_string_property("hwdec", hwdec_setting, sizeof(hwdec_setting));
   get_string_property("hwdec-interop", hwdec_interop, sizeof(hwdec_interop));
   get_string_property("gpu-hwdec-interop", gpu_hwdec_interop, sizeof(gpu_hwdec_interop));
+  get_string_property("hwdec-available", hwdec_available, sizeof(hwdec_available));
+  get_string_property("hwdec-codecs", hwdec_codecs, sizeof(hwdec_codecs));
   get_string_property("vo", vo_value, sizeof(vo_value));
   get_string_property("gpu-api", gpu_api_value, sizeof(gpu_api_value));
   get_string_property("gpu-context", gpu_context_value, sizeof(gpu_context_value));
@@ -1210,6 +1242,12 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
     }
     if (get_string_property("hwdec", buf, sizeof(buf))) {
       log_prop_change("[libmpv] hwdec=", buf, g_last_hwdec, sizeof(g_last_hwdec));
+    }
+    if (get_string_property("hwdec-available", buf, sizeof(buf))) {
+      log_prop_change("[libmpv] hwdec-available=", buf, g_last_hwdec_available, sizeof(g_last_hwdec_available));
+    }
+    if (get_string_property("hwdec-codecs", buf, sizeof(buf))) {
+      log_prop_change("[libmpv] hwdec-codecs=", buf, g_last_hwdec_codecs, sizeof(g_last_hwdec_codecs));
     }
     if (get_string_property("vo", buf, sizeof(buf))) {
       log_prop_change("[libmpv] vo=", buf, g_last_vo, sizeof(g_last_vo));
@@ -1236,6 +1274,8 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   napi_value hwdec_val;
   napi_value hwdec_setting_val;
   napi_value hwdec_interop_val;
+  napi_value hwdec_available_val;
+  napi_value hwdec_codecs_val;
   napi_value gpu_hwdec_interop_val;
   napi_value vo_val;
   napi_value gpu_api_val;
@@ -1250,6 +1290,8 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   if (napi_create_string_utf8(env, hwdec_value, NAPI_AUTO_LENGTH, &hwdec_val) != napi_ok) return make_null(env);
   if (napi_create_string_utf8(env, hwdec_setting, NAPI_AUTO_LENGTH, &hwdec_setting_val) != napi_ok) return make_null(env);
   if (napi_create_string_utf8(env, hwdec_interop, NAPI_AUTO_LENGTH, &hwdec_interop_val) != napi_ok) return make_null(env);
+  if (napi_create_string_utf8(env, hwdec_available, NAPI_AUTO_LENGTH, &hwdec_available_val) != napi_ok) return make_null(env);
+  if (napi_create_string_utf8(env, hwdec_codecs, NAPI_AUTO_LENGTH, &hwdec_codecs_val) != napi_ok) return make_null(env);
   if (napi_create_string_utf8(env, gpu_hwdec_interop, NAPI_AUTO_LENGTH, &gpu_hwdec_interop_val) != napi_ok) return make_null(env);
   if (napi_create_string_utf8(env, vo_value, NAPI_AUTO_LENGTH, &vo_val) != napi_ok) return make_null(env);
   if (napi_create_string_utf8(env, gpu_api_value, NAPI_AUTO_LENGTH, &gpu_api_val) != napi_ok) return make_null(env);
@@ -1264,6 +1306,8 @@ static napi_value mpv_get_status(napi_env env, napi_callback_info info) {
   if (napi_set_named_property(env, obj, "hwdec", hwdec_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "hwdecSetting", hwdec_setting_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "hwdecInterop", hwdec_interop_val) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "hwdecAvailable", hwdec_available_val) != napi_ok) return make_null(env);
+  if (napi_set_named_property(env, obj, "hwdecCodecs", hwdec_codecs_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "gpuHwdecInterop", gpu_hwdec_interop_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "vo", vo_val) != napi_ok) return make_null(env);
   if (napi_set_named_property(env, obj, "gpuApi", gpu_api_val) != napi_ok) return make_null(env);
