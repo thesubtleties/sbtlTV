@@ -254,11 +254,14 @@ function App() {
 
   // Control handlers
   const handleLoadStream = async (channel: StoredChannel) => {
+    console.log('[App] handleLoadStream called, platform:', platform, 'useNativeVideo:', useNativeVideo);
+    console.log('[App] Channel URL:', channel.direct_url);
     setError(null);
     setCurrentChannel(channel);
 
     // For native video, just set the URL directly
     if (useNativeVideo) {
+      console.log('[App] Using native video, setting URL');
       setCurrentStreamUrl(channel.direct_url);
       setPlaying(true);
       return;

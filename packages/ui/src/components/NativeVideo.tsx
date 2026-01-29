@@ -32,6 +32,7 @@ export const NativeVideo = forwardRef<HTMLVideoElement, NativeVideoProps>(functi
   onError,
   onReady,
 }, ref) {
+  console.log('[NativeVideo] Render - url:', url, 'playing:', playing);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Expose the video element via ref
