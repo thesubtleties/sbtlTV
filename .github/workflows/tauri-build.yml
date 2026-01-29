@@ -65,7 +65,8 @@ jobs:
         if: matrix.platform == 'win'
         shell: pwsh
         run: |
-          $MPV_URL = "https://downloads.sourceforge.net/project/mpv-player-windows/64bit/mpv-x86_64-20250119-git-ab78d7b.7z"
+          # Use direct SourceForge mirror URL with proper redirect handling
+          $MPV_URL = "https://sourceforge.net/projects/mpv-player-windows/files/64bit/mpv-x86_64-20250119-git-ab78d7b.7z/download"
           $TEMP_DIR = "$env:RUNNER_TEMP\mpv-download"
           $BUNDLE_DIR = "packages\tauri\mpv-bundle"
 
@@ -73,7 +74,15 @@ jobs:
           New-Item -ItemType Directory -Force -Path $BUNDLE_DIR | Out-Null
 
           Write-Host "Downloading mpv..."
-          Invoke-WebRequest -Uri $MPV_URL -OutFile "$TEMP_DIR\mpv.7z"
+          # Use curl which handles redirects properly
+          curl -L -o "$TEMP_DIR\mpv.7z" $MPV_URL
+
+          $fileSize = (Get-Item "$TEMP_DIR\mpv.7z").Length
+          Write-Host "Downloaded file size: $fileSize bytes"
+          if ($fileSize -lt 1000000) {
+            Write-Host "::error::Download too small - likely got HTML redirect page"
+            exit 1
+          }
 
           Write-Host "Extracting..."
           7z x "$TEMP_DIR\mpv.7z" -o"$TEMP_DIR\extract" -y
