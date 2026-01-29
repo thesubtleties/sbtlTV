@@ -187,11 +187,13 @@ pub fn start_reader_thread<F>(
 where
     F: FnMut(MpvEvent) + Send + 'static,
 {
+    // Windows: Clone the existing file handle - can't open a second connection to the pipe
     #[cfg(target_os = "windows")]
-    let stream = OpenOptions::new()
-        .read(true)
-        .open(socket_path)
-        .map_err(|e| format!("Failed to open mpv pipe for reading: {}", e))?;
+    let stream = {
+        let writer = ipc.writer.lock().unwrap();
+        writer.try_clone()
+            .map_err(|e| format!("Failed to clone pipe handle for reading: {}", e))?
+    };
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     let stream = UnixStream::connect(socket_path)
