@@ -56,12 +56,12 @@ impl HeadlessGLContext {
             .map_err(|e| format!("Surfman context creation failed: {:?}", e))?;
         log::info!("[VIDEO] Context created");
 
-        // On Windows WGL, skip surface creation/binding - it hangs.
-        // FBO rendering should work without a bound surface on WGL.
-        // On other platforms, create and bind a surface as required.
-        #[cfg(not(target_os = "windows"))]
+        // On Windows and macOS, skip surface creation/binding - it causes issues.
+        // FBO rendering works without a bound surface.
+        // On Linux/X11, we need a surface for the context to work properly.
+        #[cfg(target_os = "linux")]
         {
-            log::info!("[VIDEO] Creating surface...");
+            log::info!("[VIDEO] Creating surface (Linux requires it)...");
             let surface = device.create_surface(
                 &context,
                 SurfaceAccess::GPUOnly,
@@ -77,6 +77,9 @@ impl HeadlessGLContext {
 
         #[cfg(target_os = "windows")]
         log::info!("[VIDEO] Skipping surface binding on Windows (WGL doesn't need it for FBO)");
+
+        #[cfg(target_os = "macos")]
+        log::info!("[VIDEO] Skipping surface binding on macOS (CGL doesn't need it for FBO)");
 
         // Make context current
         log::info!("[VIDEO] Making context current...");
@@ -101,8 +104,8 @@ impl HeadlessGLContext {
 
 impl Drop for HeadlessGLContext {
     fn drop(&mut self) {
-        // Unbind and destroy surface before context is dropped (not needed on Windows)
-        #[cfg(not(target_os = "windows"))]
+        // Unbind and destroy surface before context is dropped (only needed on Linux)
+        #[cfg(target_os = "linux")]
         if let Ok(Some(mut surface)) = self.device.unbind_surface_from_context(&mut self.context) {
             let _ = self.device.destroy_surface(&mut self.context, &mut surface);
         }

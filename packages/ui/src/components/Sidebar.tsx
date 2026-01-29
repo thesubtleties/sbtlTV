@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react';
-import type { Source } from '../types/electron';
+import { useHasXtreamSource } from '../stores/uiStore';
 import './Sidebar.css';
 
 // Tabler Icons (from tabler.io/icons)
@@ -76,19 +75,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeView, onViewChange, visible, categoriesOpen, onCategoriesToggle, onCategoriesClose, expanded, onExpandedToggle }: SidebarProps) {
-  const [hasXtream, setHasXtream] = useState(false);
-
-  // Check if user has Xtream sources (for showing Movies/Series)
-  useEffect(() => {
-    async function checkSources() {
-      if (!window.storage) return;
-      const result = await window.storage.getSources();
-      if (result.data) {
-        setHasXtream(result.data.some((s: Source) => s.type === 'xtream'));
-      }
-    }
-    checkSources();
-  }, [activeView]); // Re-check when view changes (in case settings added a source)
+  const hasXtream = useHasXtreamSource();
 
   const handleClick = (view: View) => {
     if (activeView === view) {

@@ -23,6 +23,10 @@ interface UIState {
   setChannelSyncing: (value: boolean) => void;
   setVodSyncing: (value: boolean) => void;
   setTmdbMatching: (value: boolean) => void;
+
+  // Source state - tracks if user has Xtream sources (for Movies/Series nav)
+  hasXtreamSource: boolean;
+  setHasXtreamSource: (value: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -41,6 +45,10 @@ export const useUIStore = create<UIState>((set) => ({
   setChannelSyncing: (value) => set({ channelSyncing: value }),
   setVodSyncing: (value) => set({ vodSyncing: value }),
   setTmdbMatching: (value) => set({ tmdbMatching: value }),
+
+  // Source state
+  hasXtreamSource: false,
+  setHasXtreamSource: (value) => set({ hasXtreamSource: value }),
 }));
 
 // Selectors for cleaner component code
@@ -57,3 +65,7 @@ export const useVodSyncing = () => useUIStore((s) => s.vodSyncing);
 export const useSetVodSyncing = () => useUIStore((s) => s.setVodSyncing);
 export const useTmdbMatching = () => useUIStore((s) => s.tmdbMatching);
 export const useSetTmdbMatching = () => useUIStore((s) => s.setTmdbMatching);
+
+// Source state selectors
+export const useHasXtreamSource = () => useUIStore((s) => s.hasXtreamSource);
+export const useSetHasXtreamSource = () => useUIStore((s) => s.setHasXtreamSource);

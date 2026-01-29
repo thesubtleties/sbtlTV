@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Source } from '../types/electron';
+import { useSetHasXtreamSource } from '../stores/uiStore';
 import { SourcesTab } from './settings/SourcesTab';
 import { TmdbTab } from './settings/TmdbTab';
 import { DataRefreshTab } from './settings/DataRefreshTab';
@@ -34,6 +35,7 @@ const TABS: Tab[] = [
 export function Settings({ onClose }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<TabId>('sources');
   const [sources, setSources] = useState<Source[]>([]);
+  const setHasXtreamSource = useSetHasXtreamSource();
   const [isEncryptionAvailable, setIsEncryptionAvailable] = useState(true);
 
   // TMDB API key state
@@ -72,6 +74,8 @@ export function Settings({ onClose }: SettingsProps) {
     const result = await window.storage.getSources();
     if (result.data) {
       setSources(result.data);
+      // Update global store so Sidebar knows about Xtream sources
+      setHasXtreamSource(result.data.some(s => s.type === 'xtream' && s.enabled));
     }
   }
 
