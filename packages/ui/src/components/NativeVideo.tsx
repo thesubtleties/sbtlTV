@@ -43,8 +43,21 @@ export const NativeVideo = forwardRef<HTMLVideoElement, NativeVideoProps>(functi
     if (!video) return;
 
     if (url) {
+      console.log('[NativeVideo] Loading URL:', url);
       video.src = url;
-      onReady?.();
+      video.load();
+
+      // Wait for video to be ready before signaling
+      const handleCanPlay = () => {
+        console.log('[NativeVideo] Can play');
+        onReady?.();
+        video.removeEventListener('canplay', handleCanPlay);
+      };
+      video.addEventListener('canplay', handleCanPlay);
+
+      return () => {
+        video.removeEventListener('canplay', handleCanPlay);
+      };
     } else {
       video.removeAttribute('src');
       video.load();
@@ -57,9 +70,23 @@ export const NativeVideo = forwardRef<HTMLVideoElement, NativeVideoProps>(functi
     if (!video || !url) return;
 
     if (playing && video.paused) {
-      video.play().catch((e) => {
-        console.error('[NativeVideo] Play failed:', e);
-      });
+      console.log('[NativeVideo] Attempting play, readyState:', video.readyState);
+      // Wait for enough data before playing
+      if (video.readyState >= 2) {
+        video.play().catch((e) => {
+          console.error('[NativeVideo] Play failed:', e);
+        });
+      } else {
+        const handleCanPlay = () => {
+          console.log('[NativeVideo] Now can play, starting...');
+          video.play().catch((e) => {
+            console.error('[NativeVideo] Play failed after canplay:', e);
+          });
+          video.removeEventListener('canplay', handleCanPlay);
+        };
+        video.addEventListener('canplay', handleCanPlay);
+        return () => video.removeEventListener('canplay', handleCanPlay);
+      }
     } else if (!playing && !video.paused) {
       video.pause();
     }
@@ -121,6 +148,12 @@ export const NativeVideo = forwardRef<HTMLVideoElement, NativeVideoProps>(functi
     const error = video.error;
     let message = 'Unknown video error';
 
+    console.error('[NativeVideo] Error event fired');
+    console.error('[NativeVideo] Video src:', video.src);
+    console.error('[NativeVideo] Error object:', error);
+    console.error('[NativeVideo] Network state:', video.networkState);
+    console.error('[NativeVideo] Ready state:', video.readyState);
+
     if (error) {
       switch (error.code) {
         case MediaError.MEDIA_ERR_ABORTED:
@@ -148,11 +181,16 @@ export const NativeVideo = forwardRef<HTMLVideoElement, NativeVideoProps>(functi
       className="native-video"
       autoPlay={playing}
       playsInline
+      onLoadStart={() => console.log('[NativeVideo] Load started')}
+      onWaiting={() => console.log('[NativeVideo] Waiting for data')}
+      onStalled={() => console.log('[NativeVideo] Stalled')}
+      onSuspend={() => console.log('[NativeVideo] Suspended')}
       onTimeUpdate={handleTimeUpdate}
       onPlay={handlePlay}
       onPause={handlePause}
       onError={handleError}
       onLoadedMetadata={() => {
+        console.log('[NativeVideo] Metadata loaded');
         const video = videoRef.current;
         if (video && onStatusChange) {
           onStatusChange({

@@ -57,6 +57,8 @@ fn find_mpv_binary(app: &tauri::AppHandle) -> Option<String> {
         let paths = [
             r"C:\Program Files\mpv\mpv.exe",
             r"C:\Program Files (x86)\mpv\mpv.exe",
+            // Chocolatey install location (choco install mpvio)
+            r"C:\ProgramData\chocolatey\lib\mpvio.install\tools\mpv.exe",
         ];
         for path in paths {
             if std::path::Path::new(path).exists() {

@@ -429,6 +429,10 @@ function App() {
       if (!window.storage) return;
       const result = await window.storage.getSources();
       if (result.data && result.data.length > 0) {
+        // Check for Xtream sources immediately (before sync)
+        const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
+        setHasXtreamSource(xtreamSources.length > 0);
+
         setSyncing(true);
         await syncAllSources();
 
@@ -437,8 +441,6 @@ function App() {
         const vodRefreshHours = settingsResult.data?.vodRefreshHours ?? 24;
 
         // Sync VOD only for Xtream sources that are stale
-        const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
-        setHasXtreamSource(xtreamSources.length > 0);
         for (const source of xtreamSources) {
           const stale = await isVodStale(source.id, vodRefreshHours);
           if (stale) {

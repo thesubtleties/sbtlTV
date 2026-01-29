@@ -94,19 +94,34 @@ pub fn init_mpv(app: &AppHandle) -> Result<(), String> {
     log::info!("[MPV] Windows: Using external mpv with --wid embedding");
 
     // Get the main window for HWND
-    let window = app.get_webview_window("main")
-        .ok_or_else(|| "Main window not found".to_string())?;
+    let window = match app.get_webview_window("main") {
+        Some(w) => w,
+        None => {
+            log::error!("[MPV] Main window not found - registering empty state");
+            app.manage(MpvState {
+                external: Mutex::new(ExternalMpvState::new()),
+            });
+            return Err("Main window not found".to_string());
+        }
+    };
 
     // Spawn external mpv embedded in window
-    let mpv = ExternalMpv::new_embedded(&window, app.clone())?;
-
-    // Store state
-    let state = MpvState {
-        external: Mutex::new(ExternalMpvState { mpv: Some(mpv) }),
-    };
-    app.manage(state);
-
-    Ok(())
+    match ExternalMpv::new_embedded(&window, app.clone()) {
+        Ok(mpv) => {
+            let state = MpvState {
+                external: Mutex::new(ExternalMpvState { mpv: Some(mpv) }),
+            };
+            app.manage(state);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("[MPV] Failed to spawn mpv: {} - registering empty state", e);
+            app.manage(MpvState {
+                external: Mutex::new(ExternalMpvState::new()),
+            });
+            Err(e)
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
