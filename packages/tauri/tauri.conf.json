@@ -40,7 +40,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "mpv-bundle/*": "mpv/"
+      "mpv-bundle/**/*": "mpv/"
     },
     "macOS": {
       "infoPlist": "Info.plist"

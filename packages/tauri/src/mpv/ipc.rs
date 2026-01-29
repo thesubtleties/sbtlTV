@@ -1,7 +1,7 @@
 //! IPC client for communicating with external mpv process.
 //!
-//! Windows: TCP socket (127.0.0.1:PORT) - named pipes have blocking issues
-//! Linux/macOS: Unix sockets (/tmp/mpv-socket-{pid})
+//! Windows: Named pipes (\\.\pipe\mpv-socket-{pid}) with polling (no reader thread)
+//! Linux/macOS: Unix sockets (/tmp/mpv-socket-{pid}) with reader thread
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,7 +11,9 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
 #[cfg(target_os = "windows")]
-use std::net::TcpStream;
+use std::fs::OpenOptions;
+#[cfg(target_os = "windows")]
+use std::os::windows::fs::OpenOptionsExt;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::os::unix::net::UnixStream;
@@ -51,7 +53,7 @@ pub struct MpvEvent {
 pub struct MpvIpcClient {
     request_id: AtomicU64,
     #[cfg(target_os = "windows")]
-    writer: Arc<Mutex<TcpStream>>,
+    writer: Arc<Mutex<std::fs::File>>,
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     writer: Arc<Mutex<UnixStream>>,
     pending: Arc<Mutex<HashMap<u64, std::sync::mpsc::Sender<MpvResponse>>>>,
@@ -59,16 +61,20 @@ pub struct MpvIpcClient {
 
 impl MpvIpcClient {
     /// Connect to mpv's IPC socket
-    /// Windows: TCP socket (e.g., "127.0.0.1:9876")
+    /// Windows: Named pipe (e.g., "\\.\pipe\mpv-socket-123")
     /// Unix: Unix socket path (e.g., "/tmp/mpv-socket-123")
     pub fn connect(socket_path: &str) -> Result<Self, String> {
         log::info!("[MPV-IPC] Connecting to {}", socket_path);
 
         #[cfg(target_os = "windows")]
         let stream = {
-            // Windows: Use TCP socket (named pipes have blocking issues)
-            TcpStream::connect(socket_path)
-                .map_err(|e| format!("Failed to connect to mpv TCP socket: {}", e))?
+            // Windows named pipe
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .custom_flags(0)
+                .open(socket_path)
+                .map_err(|e| format!("Failed to connect to mpv pipe: {}", e))?
         };
 
         #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -175,6 +181,8 @@ impl MpvIpcClient {
 }
 
 /// Start a reader thread that processes mpv messages
+/// NOTE: Only use on Unix - Windows uses polling instead (named pipe reader causes hang)
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn start_reader_thread<F>(
     socket_path: &str,
     ipc: Arc<MpvIpcClient>,
@@ -183,15 +191,6 @@ pub fn start_reader_thread<F>(
 where
     F: FnMut(MpvEvent) + Send + 'static,
 {
-    // Windows: Clone the TCP stream - TCP sockets support this properly
-    #[cfg(target_os = "windows")]
-    let stream = {
-        let writer = ipc.writer.lock().unwrap();
-        writer.try_clone()
-            .map_err(|e| format!("Failed to clone TCP socket for reading: {}", e))?
-    };
-
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let stream = UnixStream::connect(socket_path)
         .map_err(|e| format!("Failed to connect to mpv socket for reading: {}", e))?;
 

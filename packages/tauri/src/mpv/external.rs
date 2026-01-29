@@ -16,31 +16,13 @@ use tauri::{AppHandle, Emitter, Manager};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 /// Socket path for mpv IPC
-/// Windows: TCP socket address (127.0.0.1:PORT)
+/// Windows: Named pipe (\\.\pipe\mpv-socket-{pid})
 /// Unix: Unix socket path (/tmp/mpv-socket-{pid})
 fn get_socket_path() -> String {
     let pid = std::process::id();
     #[cfg(target_os = "windows")]
     {
-        // Use TCP socket on Windows - named pipes have blocking issues with reader thread
-        // Port = 9800 + (pid % 100) to avoid conflicts
-        let port = 9800 + (pid % 100);
-        format!("127.0.0.1:{}", port)
-    }
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    {
-        format!("/tmp/mpv-socket-{}", pid)
-    }
-}
-
-/// Get the mpv --input-ipc-server argument value
-/// Windows needs tcp:// prefix, Unix uses raw path
-fn get_mpv_ipc_arg() -> String {
-    let pid = std::process::id();
-    #[cfg(target_os = "windows")]
-    {
-        let port = 9800 + (pid % 100);
-        format!("tcp://127.0.0.1:{}", port)
+        format!(r"\\.\pipe\mpv-socket-{}", pid)
     }
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
@@ -147,11 +129,10 @@ impl ExternalMpv {
         log::info!("[MPV-EXT] Using mpv: {}", mpv_path);
 
         let socket_path = get_socket_path();
-        let ipc_arg = get_mpv_ipc_arg();
-        log::info!("[MPV-EXT] Socket path: {} (IPC arg: {})", socket_path, ipc_arg);
+        log::info!("[MPV-EXT] Socket path: {}", socket_path);
 
         let args = vec![
-            format!("--input-ipc-server={}", ipc_arg),
+            format!("--input-ipc-server={}", socket_path),
             format!("--wid={}", hwnd),
             "--no-osc".to_string(),
             "--no-osd-bar".to_string(),
@@ -180,32 +161,33 @@ impl ExternalMpv {
 
         log::info!("[MPV-EXT] mpv process spawned, PID: {}", process.id());
 
-        // Wait for socket to be available
+        // Wait for pipe to be available
         std::thread::sleep(Duration::from_millis(500));
 
-        // Connect IPC via TCP socket
+        // Connect IPC via named pipe
         let ipc = Arc::new(MpvIpcClient::connect(&socket_path)?);
         let shutdown = Arc::new(AtomicBool::new(false));
 
-        // Start reader thread for events (TCP sockets work properly, unlike named pipes)
+        // Windows: Use polling instead of reader thread (named pipe reader causes hang)
+        // Start a polling thread that emits status updates every 200ms
         let ipc_clone = ipc.clone();
         let app_clone = app.clone();
         let shutdown_clone = shutdown.clone();
-        let reader_handle = start_reader_thread(&socket_path, ipc_clone.clone(), move |event| {
-            if shutdown_clone.load(Ordering::SeqCst) {
-                return;
+        let reader_handle = std::thread::spawn(move || {
+            log::info!("[MPV-EXT] Starting status polling thread");
+            while !shutdown_clone.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(200));
+
+                // Just emit a property-change event to trigger frontend status refresh
+                // The frontend will call mpv_get_status to get actual values
+                let _ = app_clone.emit("mpv-property-change", ());
             }
-            handle_mpv_event(&app_clone, event);
-        })?;
+            log::info!("[MPV-EXT] Polling thread exiting");
+        });
 
-        // Observe properties
-        ipc.observe_property(1, "pause")?;
-        ipc.observe_property(2, "volume")?;
-        ipc.observe_property(3, "mute")?;
-        ipc.observe_property(4, "time-pos")?;
-        ipc.observe_property(5, "duration")?;
+        // Skip observe_property - we're polling instead
 
-        log::info!("[MPV-EXT] Initialized successfully with TCP IPC");
+        log::info!("[MPV-EXT] Initialized successfully (polling mode)");
 
         // Emit ready event
         let _ = app.emit("mpv-ready", true);
