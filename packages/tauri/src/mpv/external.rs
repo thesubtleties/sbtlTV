@@ -120,7 +120,7 @@ impl ExternalMpv {
     #[cfg(target_os = "windows")]
     pub fn new_embedded(window: &tauri::WebviewWindow, app: AppHandle) -> Result<Self, String> {
         let hwnd = get_hwnd(window)?;
-        log::info!("[MPV-EXT] Got HWND: {}", hwnd);
+        log::info!("[MPV-EXT] Got HWND: {} (NOT using --wid for now, testing standalone)", hwnd);
 
         let mpv_path = find_mpv_binary(&app)
             .ok_or_else(|| "mpv not found - install mpv or check bundled resources".to_string())?;
@@ -129,9 +129,12 @@ impl ExternalMpv {
         let socket_path = get_socket_path();
         log::info!("[MPV-EXT] Socket path: {}", socket_path);
 
+        // TODO: --wid embedding causes "not responding" on Windows with Tauri/WebView2
+        // For now, run mpv as a separate window (like Linux standalone mode)
+        // User will need to position windows manually
         let args = vec![
             format!("--input-ipc-server={}", socket_path),
-            format!("--wid={}", hwnd),
+            // format!("--wid={}", hwnd),  // Disabled - causes hang with WebView2
             "--no-osc".to_string(),
             "--no-osd-bar".to_string(),
             "--osd-level=0".to_string(),
