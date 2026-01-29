@@ -60,39 +60,16 @@ jobs:
       # macOS: no extra deps needed (uses native AVFoundation video)
       # Users can install mpv via Homebrew if they want external player
 
-      # Windows: download mpv player binary for bundling (external process with --wid)
-      - name: Download mpv for Windows
+      # Windows: install mpv via Chocolatey (same as Electron workflow)
+      - name: Install mpv (Windows)
         if: matrix.platform == 'win'
-        shell: pwsh
+        shell: bash
         run: |
-          # Use direct SourceForge mirror URL with proper redirect handling
-          $MPV_URL = "https://sourceforge.net/projects/mpv-player-windows/files/64bit/mpv-x86_64-20250119-git-ab78d7b.7z/download"
-          $TEMP_DIR = "$env:RUNNER_TEMP\mpv-download"
-          $BUNDLE_DIR = "packages\tauri\mpv-bundle"
-
-          New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
-          New-Item -ItemType Directory -Force -Path $BUNDLE_DIR | Out-Null
-
-          Write-Host "Downloading mpv..."
-          # Use curl which handles redirects properly
-          curl -L -o "$TEMP_DIR\mpv.7z" $MPV_URL
-
-          $fileSize = (Get-Item "$TEMP_DIR\mpv.7z").Length
-          Write-Host "Downloaded file size: $fileSize bytes"
-          if ($fileSize -lt 1000000) {
-            Write-Host "::error::Download too small - likely got HTML redirect page"
-            exit 1
-          }
-
-          Write-Host "Extracting..."
-          7z x "$TEMP_DIR\mpv.7z" -o"$TEMP_DIR\extract" -y
-
-          # Copy mpv.exe and required DLLs
-          Copy-Item "$TEMP_DIR\extract\mpv.exe" "$BUNDLE_DIR\"
-          Copy-Item "$TEMP_DIR\extract\*.dll" "$BUNDLE_DIR\" -ErrorAction SilentlyContinue
-
-          Write-Host "mpv bundled to $BUNDLE_DIR"
-          Get-ChildItem $BUNDLE_DIR
+          choco install mpvio -y
+          mkdir -p packages/tauri/mpv-bundle
+          cp "C:/ProgramData/chocolatey/lib/mpvio.install/tools/"*.exe packages/tauri/mpv-bundle/
+          cp "C:/ProgramData/chocolatey/lib/mpvio.install/tools/"*.dll packages/tauri/mpv-bundle/
+          ls -la packages/tauri/mpv-bundle/
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"
