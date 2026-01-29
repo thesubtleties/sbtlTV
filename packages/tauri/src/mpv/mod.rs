@@ -120,21 +120,37 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
     log::info!("[VIDEO] GL function pointers loaded");
 
     // Create mpv render context with OpenGL
+    log::info!("[VIDEO] Creating mpv render context...");
     let mpv_ptr = Arc::as_ptr(&mpv) as *mut Mpv;
-    let mut render_ctx = unsafe {
-        RenderContext::new(
-            (*mpv_ptr).ctx.as_mut(),
-            vec![
-                RenderParam::ApiType(RenderParamApiType::OpenGl),
-                RenderParam::InitParams(OpenGLInitParams {
-                    get_proc_address,
-                    ctx: gl_ctx,
-                }),
-            ],
-        )
-        .map_err(|e| format!("Failed to create render context: {}", e))?
+    let render_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        unsafe {
+            RenderContext::new(
+                (*mpv_ptr).ctx.as_mut(),
+                vec![
+                    RenderParam::ApiType(RenderParamApiType::OpenGl),
+                    RenderParam::InitParams(OpenGLInitParams {
+                        get_proc_address,
+                        ctx: gl_ctx,
+                    }),
+                ],
+            )
+        }
+    }));
+
+    let mut render_ctx = match render_result {
+        Ok(Ok(ctx)) => {
+            log::info!("[VIDEO] mpv render context created successfully");
+            ctx
+        }
+        Ok(Err(e)) => {
+            log::error!("[VIDEO] mpv render context creation failed: {:?}", e);
+            return Err(format!("Failed to create render context: {:?}", e));
+        }
+        Err(panic) => {
+            log::error!("[VIDEO] mpv render context creation panicked: {:?}", panic);
+            return Err(format!("Render context creation panicked"));
+        }
     };
-    log::info!("[VIDEO] mpv render context created");
 
     // Set up render update callback
     let render_pending = Arc::new(AtomicBool::new(false));

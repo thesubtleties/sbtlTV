@@ -20,6 +20,7 @@
         "minHeight": 620,
         "decorations": false,
         "transparent": false,
+        "backgroundColor": "#000000",
         "resizable": true,
         "devtools": true
       }
@@ -37,7 +38,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "infoPlist": "Info.plist"
+    }
   },
   "plugins": {}
 
