@@ -520,7 +520,8 @@ fn get_nsview(window: &tauri::WebviewWindow) -> Result<isize, String> {
     }
 }
 
-/// Handle mpv property change events
+/// Handle mpv property change events (Linux/macOS only - Windows uses polling)
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn handle_mpv_event(app: &AppHandle, event: MpvEvent) {
     if event.event != "property-change" {
         return;
