@@ -221,8 +221,9 @@ async function initMpv(): Promise<void> {
       '--no-input-cursor',
       '--cursor-autohide=no',
       '--force-window=yes',
-      '--no-terminal',
-      '--really-quiet',
+      // DEBUG: Enable verbose logging for Linux debugging
+      '--terminal=yes',
+      '--msg-level=all=v',
       '--hwdec=auto',
       '--vo=gpu',
       '--target-colorspace-hint=no',

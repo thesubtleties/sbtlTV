@@ -1,6 +1,6 @@
 {
   "name": "sbtltv",
-  "version": "0.1.0",
+  "version": "0.1.1-debug.1",
   "private": true,
   "description": "Desktop IPTV player with mpv",
   "homepage": "https://github.com/thesubtleties/sbtlTV",
