@@ -1,11 +1,13 @@
 //! External mpv process management for platform-native video rendering.
 //!
-//! Windows: Spawns mpv with --wid to render directly into the app's HWND
+//! Windows: Spawns mpv with --wid to render directly into the app's HWND (polling mode)
+//! macOS: Spawns mpv with --wid to render into NSView (reader thread mode)
 //! Linux: Spawns mpv as standalone window (optional power-user setting)
 
-use super::ipc::{MpvIpcClient, MpvEvent, start_reader_thread};
+use super::ipc::MpvIpcClient;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use super::ipc::{MpvEvent, start_reader_thread};
 use super::{MpvResult, MpvStatus};
-use serde_json::Value;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
