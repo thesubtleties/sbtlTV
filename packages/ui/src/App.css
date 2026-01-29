@@ -75,7 +75,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: black;
+  /* Transparent so mpv --wid video shows through on Windows */
+  background: transparent;
   pointer-events: none;
 }
 
