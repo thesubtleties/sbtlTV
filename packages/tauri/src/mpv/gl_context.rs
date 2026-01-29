@@ -1,4 +1,4 @@
-use std::ffi::c_void;
+use std::ffi::{c_void, CString};
 use surfman::{
     Connection, Context, ContextAttributes, ContextAttributeFlags,
     Device, GLVersion, SurfaceAccess, SurfaceType,
@@ -98,7 +98,21 @@ impl HeadlessGLContext {
 
     /// Get OpenGL proc address for mpv's render context.
     pub fn get_proc_address(&self, name: &str) -> *mut c_void {
-        self.device.get_proc_address(&self.context, name) as *mut c_void
+        // On macOS, use dlsym to get GL functions (like Celluloid does)
+        #[cfg(target_os = "macos")]
+        {
+            extern "C" {
+                fn dlsym(handle: *mut c_void, symbol: *const i8) -> *mut c_void;
+            }
+            const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
+            let c_name = CString::new(name).unwrap();
+            unsafe { dlsym(RTLD_DEFAULT, c_name.as_ptr()) }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            self.device.get_proc_address(&self.context, name) as *mut c_void
+        }
     }
 }
 
