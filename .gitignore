@@ -47,3 +47,5 @@ coverage/
 
 # Development notes
 thoughts/
+.worktrees/
+.worktrees/

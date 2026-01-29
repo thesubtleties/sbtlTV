@@ -1,16 +1,14 @@
 //! mpv integration module.
 //!
 //! Platform rendering strategies:
-//! - Windows: External mpv process with --wid (renders to HWND)
-//! - macOS: Native <video> tag (mpv GL broken, frontend handles)
+//! - Windows: External mpv process with --wid (renders to HWND) via TCP IPC
+//! - macOS: External mpv process with --wid (renders to NSView) via Unix socket
 //! - Linux: Native <video> tag by default, optional external mpv window
 //!
 //! FBO fallback (feature-gated) for debugging or if native doesn't work.
 
-// External process-based mpv (Windows + Linux)
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+// External process-based mpv (all platforms)
 pub mod external;
-#[cfg(any(target_os = "windows", target_os = "linux"))]
 pub mod ipc;
 
 // FBO-based rendering (fallback, feature-gated)
@@ -23,7 +21,7 @@ use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use external::{ExternalMpv, ExternalMpvState};
 
 #[cfg(target_os = "linux")]
@@ -68,17 +66,9 @@ impl MpvResult {
 // Platform-specific State
 // ============================================================================
 
-/// State for external mpv process (Windows/Linux)
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+/// State for external mpv process (Windows/macOS/Linux)
 pub struct MpvState {
     external: Mutex<ExternalMpvState>,
-}
-
-/// State for native video (macOS - mpv not used on backend)
-#[cfg(target_os = "macos")]
-pub struct MpvState {
-    // macOS uses native <video> tag, no backend mpv needed
-    _phantom: std::marker::PhantomData<()>,
 }
 
 // ============================================================================
@@ -126,18 +116,37 @@ pub fn init_mpv(app: &AppHandle) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 pub fn init_mpv(app: &AppHandle) -> Result<(), String> {
-    log::info!("[MPV] macOS: Using native video playback (frontend <video> tag)");
+    log::info!("[MPV] macOS: Using external mpv with --wid embedding");
 
-    // macOS doesn't need backend mpv - frontend handles video natively
-    let state = MpvState {
-        _phantom: std::marker::PhantomData,
+    // Get the main window for NSView handle
+    let window = match app.get_webview_window("main") {
+        Some(w) => w,
+        None => {
+            log::error!("[MPV] Main window not found - registering empty state");
+            app.manage(MpvState {
+                external: Mutex::new(ExternalMpvState::new()),
+            });
+            return Err("Main window not found".to_string());
+        }
     };
-    app.manage(state);
 
-    // Emit ready immediately - frontend handles playback
-    let _ = app.emit("mpv-ready", true);
-
-    Ok(())
+    // Spawn external mpv embedded in window
+    match ExternalMpv::new_embedded(&window, app.clone()) {
+        Ok(mpv) => {
+            let state = MpvState {
+                external: Mutex::new(ExternalMpvState { mpv: Some(mpv) }),
+            };
+            app.manage(state);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("[MPV] Failed to spawn mpv: {} - registering empty state", e);
+            app.manage(MpvState {
+                external: Mutex::new(ExternalMpvState::new()),
+            });
+            Err(e)
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -257,68 +266,102 @@ pub fn mpv_get_status(state: State<MpvState>) -> MpvStatus {
 }
 
 // ============================================================================
-// Tauri Commands - macOS (Native Video - No-op backend)
+// Tauri Commands - macOS (External MPV with --wid embedding)
 // ============================================================================
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn mpv_load(_url: String, _state: State<MpvState>) -> MpvResult {
-    // macOS: Frontend handles video via native <video> tag
-    MpvResult::ok()
+pub fn mpv_load(url: String, state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.load(&url),
+        None => MpvResult::err("mpv not initialized"),
+    }
 }
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn mpv_play(_state: State<MpvState>) -> MpvResult {
-    MpvResult::ok()
+pub fn mpv_play(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.play(),
+        None => MpvResult::err("mpv not initialized"),
+    }
 }
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn mpv_pause(_state: State<MpvState>) -> MpvResult {
-    MpvResult::ok()
+pub fn mpv_pause(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.pause(),
+        None => MpvResult::err("mpv not initialized"),
+    }
 }
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn mpv_toggle_pause(_state: State<MpvState>) -> MpvResult {
-    MpvResult::ok()
+pub fn mpv_toggle_pause(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.toggle_pause(),
+        None => MpvResult::err("mpv not initialized"),
+    }
 }
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn mpv_stop(_state: State<MpvState>) -> MpvResult {
-    MpvResult::ok()
+pub fn mpv_stop(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.stop(),
+        None => MpvResult::err("mpv not initialized"),
+    }
 }
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn mpv_set_volume(_volume: f64, _state: State<MpvState>) -> MpvResult {
-    MpvResult::ok()
+pub fn mpv_set_volume(volume: f64, state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.set_volume(volume),
+        None => MpvResult::err("mpv not initialized"),
+    }
 }
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn mpv_toggle_mute(_state: State<MpvState>) -> MpvResult {
-    MpvResult::ok()
+pub fn mpv_toggle_mute(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.toggle_mute(),
+        None => MpvResult::err("mpv not initialized"),
+    }
 }
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn mpv_seek(_seconds: f64, _state: State<MpvState>) -> MpvResult {
-    MpvResult::ok()
+pub fn mpv_seek(seconds: f64, state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.seek(seconds),
+        None => MpvResult::err("mpv not initialized"),
+    }
 }
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn mpv_get_status(_state: State<MpvState>) -> MpvStatus {
-    // macOS: Frontend tracks status via HTML5 video events
-    MpvStatus {
-        playing: false,
-        volume: 100.0,
-        muted: false,
-        position: 0.0,
-        duration: 0.0,
+pub fn mpv_get_status(state: State<MpvState>) -> MpvStatus {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.get_status(),
+        None => MpvStatus {
+            playing: false,
+            volume: 100.0,
+            muted: false,
+            position: 0.0,
+            duration: 0.0,
+        },
     }
 }
 

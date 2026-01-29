@@ -45,7 +45,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Linux: install Tauri deps only (native video uses GStreamer which is preinstalled)
+      # Linux: install Tauri deps only
       # mpv installed via package manager by users, not bundled
       - name: Install Linux deps
         if: matrix.platform == 'linux'
@@ -57,8 +57,10 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      # macOS: no extra deps needed (uses native AVFoundation video)
-      # Users can install mpv via Homebrew if they want external player
+      # macOS: Download mpv bundle (Apple Silicon only)
+      - name: Download mpv (macOS)
+        if: matrix.platform == 'mac'
+        run: bash scripts/download-mpv.sh tauri
 
       # Windows: install mpv via Chocolatey (same as Electron workflow)
       - name: Install mpv (Windows)

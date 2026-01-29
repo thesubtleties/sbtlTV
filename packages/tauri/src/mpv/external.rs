@@ -12,15 +12,35 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 /// Socket path for mpv IPC
+/// Windows: TCP socket address (127.0.0.1:PORT)
+/// Unix: Unix socket path (/tmp/mpv-socket-{pid})
 fn get_socket_path() -> String {
     let pid = std::process::id();
     #[cfg(target_os = "windows")]
     {
-        format!(r"\\.\pipe\mpv-socket-{}", pid)
+        // Use TCP socket on Windows - named pipes have blocking issues with reader thread
+        // Port = 9800 + (pid % 100) to avoid conflicts
+        let port = 9800 + (pid % 100);
+        format!("127.0.0.1:{}", port)
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        format!("/tmp/mpv-socket-{}", pid)
+    }
+}
+
+/// Get the mpv --input-ipc-server argument value
+/// Windows needs tcp:// prefix, Unix uses raw path
+fn get_mpv_ipc_arg() -> String {
+    let pid = std::process::id();
+    #[cfg(target_os = "windows")]
+    {
+        let port = 9800 + (pid % 100);
+        format!("tcp://127.0.0.1:{}", port)
     }
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
@@ -127,11 +147,11 @@ impl ExternalMpv {
         log::info!("[MPV-EXT] Using mpv: {}", mpv_path);
 
         let socket_path = get_socket_path();
-        log::info!("[MPV-EXT] Socket path: {}", socket_path);
+        let ipc_arg = get_mpv_ipc_arg();
+        log::info!("[MPV-EXT] Socket path: {} (IPC arg: {})", socket_path, ipc_arg);
 
-        // Re-enabling --wid now that reader thread is disabled
         let args = vec![
-            format!("--input-ipc-server={}", socket_path),
+            format!("--input-ipc-server={}", ipc_arg),
             format!("--wid={}", hwnd),
             "--no-osc".to_string(),
             "--no-osd-bar".to_string(),
@@ -163,20 +183,113 @@ impl ExternalMpv {
         // Wait for socket to be available
         std::thread::sleep(Duration::from_millis(500));
 
-        // Connect IPC
+        // Connect IPC via TCP socket
         let ipc = Arc::new(MpvIpcClient::connect(&socket_path)?);
         let shutdown = Arc::new(AtomicBool::new(false));
 
-        // WINDOWS: Skip reader thread - cloned pipe handle causes app hang
-        // The reader thread blocking on read somehow affects the main thread
-        // Commands still work via send_command_async, just no property events
-        log::warn!("[MPV-EXT] Windows: Skipping reader thread (causes app hang)");
-        let reader_handle = std::thread::spawn(|| {});
+        // Start reader thread for events (TCP sockets work properly, unlike named pipes)
+        let ipc_clone = ipc.clone();
+        let app_clone = app.clone();
+        let shutdown_clone = shutdown.clone();
+        let reader_handle = start_reader_thread(&socket_path, ipc_clone.clone(), move |event| {
+            if shutdown_clone.load(Ordering::SeqCst) {
+                return;
+            }
+            handle_mpv_event(&app_clone, event);
+        })?;
 
-        // Skip observe_property since we have no reader to process responses
-        log::info!("[MPV-EXT] Windows: Skipping property observers");
+        // Observe properties
+        ipc.observe_property(1, "pause")?;
+        ipc.observe_property(2, "volume")?;
+        ipc.observe_property(3, "mute")?;
+        ipc.observe_property(4, "time-pos")?;
+        ipc.observe_property(5, "duration")?;
 
-        log::info!("[MPV-EXT] Initialized successfully (limited mode)");
+        log::info!("[MPV-EXT] Initialized successfully with TCP IPC");
+
+        // Emit ready event
+        let _ = app.emit("mpv-ready", true);
+
+        Ok(Self {
+            process,
+            ipc,
+            shutdown,
+            reader_handle,
+        })
+    }
+
+    /// Spawn mpv embedded in a window (macOS with --wid using NSView)
+    #[cfg(target_os = "macos")]
+    pub fn new_embedded(window: &tauri::WebviewWindow, app: AppHandle) -> Result<Self, String> {
+        let nsview = get_nsview(window)?;
+        log::info!("[MPV-EXT] Got NSView: {}", nsview);
+
+        let mpv_path = find_mpv_binary(&app)
+            .ok_or_else(|| "mpv not found - install via homebrew: brew install mpv".to_string())?;
+        log::info!("[MPV-EXT] Using mpv: {}", mpv_path);
+
+        let socket_path = get_socket_path();
+        log::info!("[MPV-EXT] Socket path: {}", socket_path);
+
+        // Clean up old socket if exists
+        let _ = std::fs::remove_file(&socket_path);
+
+        let args = vec![
+            format!("--input-ipc-server={}", socket_path),
+            format!("--wid={}", nsview),
+            "--no-osc".to_string(),
+            "--no-osd-bar".to_string(),
+            "--osd-level=0".to_string(),
+            "--keep-open=yes".to_string(),
+            "--idle=yes".to_string(),
+            "--input-default-bindings=no".to_string(),
+            "--no-input-cursor".to_string(),
+            "--cursor-autohide=no".to_string(),
+            "--no-terminal".to_string(),
+            "--really-quiet".to_string(),
+            "--hwdec=auto".to_string(),
+            "--vo=gpu".to_string(),
+            "--tone-mapping=mobius".to_string(),
+        ];
+
+        log::info!("[MPV-EXT] Starting with args: {:?}", args);
+
+        let process = Command::new(&mpv_path)
+            .args(&args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn mpv: {}", e))?;
+
+        log::info!("[MPV-EXT] mpv process spawned, PID: {}", process.id());
+
+        // Wait for socket to be available
+        std::thread::sleep(Duration::from_millis(500));
+
+        // Connect IPC via Unix socket
+        let ipc = Arc::new(MpvIpcClient::connect(&socket_path)?);
+        let shutdown = Arc::new(AtomicBool::new(false));
+
+        // Start reader thread for events
+        let ipc_clone = ipc.clone();
+        let app_clone = app.clone();
+        let shutdown_clone = shutdown.clone();
+        let reader_handle = start_reader_thread(&socket_path, ipc_clone.clone(), move |event| {
+            if shutdown_clone.load(Ordering::SeqCst) {
+                return;
+            }
+            handle_mpv_event(&app_clone, event);
+        })?;
+
+        // Observe properties
+        ipc.observe_property(1, "pause")?;
+        ipc.observe_property(2, "volume")?;
+        ipc.observe_property(3, "mute")?;
+        ipc.observe_property(4, "time-pos")?;
+        ipc.observe_property(5, "duration")?;
+
+        log::info!("[MPV-EXT] Initialized successfully");
 
         // Emit ready event
         let _ = app.emit("mpv-ready", true);
@@ -403,6 +516,23 @@ fn get_hwnd(window: &tauri::WebviewWindow) -> Result<isize, String> {
             Ok(win32.hwnd.get() as isize)
         }
         _ => Err("Not a Win32 window".to_string()),
+    }
+}
+
+/// Get NSView pointer from Tauri window (macOS only)
+#[cfg(target_os = "macos")]
+fn get_nsview(window: &tauri::WebviewWindow) -> Result<isize, String> {
+    use raw_window_handle::RawWindowHandle;
+
+    let handle = window.window_handle()
+        .map_err(|e| format!("Failed to get window handle: {}", e))?;
+
+    match handle.as_raw() {
+        RawWindowHandle::AppKit(appkit) => {
+            // ns_view is a NonNull<c_void> pointer to the NSView
+            Ok(appkit.ns_view.as_ptr() as isize)
+        }
+        _ => Err("Not an AppKit window".to_string()),
     }
 }
 
