@@ -169,25 +169,16 @@ impl ExternalMpv {
         let ipc = Arc::new(MpvIpcClient::connect(&socket_path)?);
         let shutdown = Arc::new(AtomicBool::new(false));
 
-        // Start reader thread for events
-        let ipc_clone = ipc.clone();
-        let app_clone = app.clone();
-        let shutdown_clone = shutdown.clone();
-        let reader_handle = start_reader_thread(&socket_path, ipc_clone.clone(), move |event| {
-            if shutdown_clone.load(Ordering::SeqCst) {
-                return;
-            }
-            handle_mpv_event(&app_clone, event);
-        })?;
+        // WINDOWS: Skip reader thread - cloned pipe handle causes app hang
+        // The reader thread blocking on read somehow affects the main thread
+        // Commands still work via send_command_async, just no property events
+        log::warn!("[MPV-EXT] Windows: Skipping reader thread (causes app hang)");
+        let reader_handle = std::thread::spawn(|| {});
 
-        // Observe properties
-        ipc.observe_property(1, "pause")?;
-        ipc.observe_property(2, "volume")?;
-        ipc.observe_property(3, "mute")?;
-        ipc.observe_property(4, "time-pos")?;
-        ipc.observe_property(5, "duration")?;
+        // Skip observe_property since we have no reader to process responses
+        log::info!("[MPV-EXT] Windows: Skipping property observers");
 
-        log::info!("[MPV-EXT] Initialized successfully");
+        log::info!("[MPV-EXT] Initialized successfully (limited mode)");
 
         // Emit ready event
         let _ = app.emit("mpv-ready", true);
