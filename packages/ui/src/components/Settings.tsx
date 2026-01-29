@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Source } from '../types/electron';
-import { useSetHasXtreamSource } from '../stores/uiStore';
+import { useSetHasXtreamSource, useUseMpvWindow, useSetUseMpvWindow } from '../stores/uiStore';
 import { SourcesTab } from './settings/SourcesTab';
 import { TmdbTab } from './settings/TmdbTab';
 import { DataRefreshTab } from './settings/DataRefreshTab';
@@ -8,13 +8,14 @@ import { MoviesTab } from './settings/MoviesTab';
 import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
+import { VideoTab } from './settings/VideoTab';
 import './Settings.css';
 
 interface SettingsProps {
   onClose: () => void;
 }
 
-type TabId = 'sources' | 'tmdb' | 'refresh' | 'movies' | 'series' | 'posterdb' | 'security';
+type TabId = 'sources' | 'tmdb' | 'refresh' | 'movies' | 'series' | 'posterdb' | 'security' | 'video';
 
 interface Tab {
   id: TabId;
@@ -30,6 +31,7 @@ const TABS: Tab[] = [
   { id: 'series', label: 'Series', requiresXtream: true },
   { id: 'posterdb', label: 'RPDB' },
   { id: 'security', label: 'Security' },
+  { id: 'video', label: 'Video' },
 ];
 
 export function Settings({ onClose }: SettingsProps) {
@@ -37,6 +39,10 @@ export function Settings({ onClose }: SettingsProps) {
   const [sources, setSources] = useState<Source[]>([]);
   const setHasXtreamSource = useSetHasXtreamSource();
   const [isEncryptionAvailable, setIsEncryptionAvailable] = useState(true);
+
+  // Linux mpv window mode
+  const useMpvWindow = useUseMpvWindow();
+  const setUseMpvWindow = useSetUseMpvWindow();
 
   // TMDB API key state
   const [tmdbApiKey, setTmdbApiKey] = useState('');
@@ -222,6 +228,13 @@ export function Settings({ onClose }: SettingsProps) {
           <SecurityTab
             allowLanSources={allowLanSources}
             onAllowLanSourcesChange={setAllowLanSources}
+          />
+        );
+      case 'video':
+        return (
+          <VideoTab
+            useMpvWindow={useMpvWindow}
+            onUseMpvWindowChange={setUseMpvWindow}
           />
         );
       default:

@@ -3354,6 +3354,7 @@ dependencies = [
  "keyring",
  "libmpv2",
  "log",
+ "raw-window-handle",
  "reqwest",
  "serde",
  "serde_json",

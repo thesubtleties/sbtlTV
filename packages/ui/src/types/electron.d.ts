@@ -109,6 +109,8 @@ declare global {
     storage?: StorageApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
+    // Tauri injects this when running in Tauri context
+    __TAURI__?: unknown;
   }
 }
 

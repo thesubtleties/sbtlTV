@@ -45,7 +45,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Linux: install system deps for Tauri + mpv + surfman (X11/GLX)
+      # Linux: install Tauri deps only (native video uses GStreamer which is preinstalled)
+      # mpv installed via package manager by users, not bundled
       - name: Install Linux deps
         if: matrix.platform == 'linux'
         run: |
@@ -54,59 +55,35 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf \
-            libmpv-dev \
-            libx11-dev \
-            libgl-dev
+            patchelf
 
-      # macOS: install mpv via Homebrew and expose library paths
-      - name: Install macOS deps
-        if: matrix.platform == 'mac'
-        run: |
-          brew install mpv
-          echo "LIBRARY_PATH=$(brew --prefix mpv)/lib" >> "$GITHUB_ENV"
-          echo "PKG_CONFIG_PATH=$(brew --prefix mpv)/lib/pkgconfig" >> "$GITHUB_ENV"
+      # macOS: no extra deps needed (uses native AVFoundation video)
+      # Users can install mpv via Homebrew if they want external player
 
-      # Windows: download mpv dev SDK (choco mpvio only has the player, not mpv.lib)
-      - name: Install Windows deps
+      # Windows: download mpv player binary for bundling (external process with --wid)
+      - name: Download mpv for Windows
         if: matrix.platform == 'win'
         shell: pwsh
         run: |
-          $MPV_DEV_URL = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260122/mpv-dev-x86_64-20260122-git-6e54aa3.7z"
-          $MPV_DIR = "$env:RUNNER_TEMP\mpv-dev"
-          New-Item -ItemType Directory -Force -Path $MPV_DIR | Out-Null
-          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$MPV_DIR\mpv-dev.7z"
-          7z x "$MPV_DIR\mpv-dev.7z" -o"$MPV_DIR" -y
-          # SDK contains libmpv.dll.a (MinGW) + libmpv-2.dll but no .def
-          # Generate mpv.lib for MSVC from the DLL using dumpbin + lib
-          Get-ChildItem -Path $MPV_DIR -Recurse | Select-Object FullName
-          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath = & $vsWhere -latest -property installationPath
-          $vcvars = "$vsPath\VC\Auxiliary\Build\vcvarsall.bat"
-          # Export symbols from DLL to .def, then create .lib
-          $defContent = "LIBRARY libmpv-2`nEXPORTS`n"
-          $dumpOutput = cmd /c "`"$vcvars`" x64 >nul 2>&1 && dumpbin /exports `"$MPV_DIR\libmpv-2.dll`"" 2>&1
-          $dumpOutput | ForEach-Object {
-            if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') {
-              $defContent += "  $($Matches[1])`n"
-            }
-          }
-          Set-Content -Path "$MPV_DIR\mpv.def" -Value $defContent
-          Write-Host "Generated mpv.def with exports"
-          cmd /c "`"$vcvars`" x64 >nul 2>&1 && lib /def:`"$MPV_DIR\mpv.def`" /machine:x64 /out:`"$MPV_DIR\mpv.lib`""
-          if (Test-Path "$MPV_DIR\mpv.lib") {
-            Write-Host "mpv.lib created successfully"
-          } else {
-            Write-Host "::error::mpv.lib was not created"
-            exit 1
-          }
-          # Append to LIB path (don't overwrite existing)
-          echo "LIB=$MPV_DIR;$env:LIB" >> $env:GITHUB_ENV
-          echo "INCLUDE=$MPV_DIR\include;$env:INCLUDE" >> $env:GITHUB_ENV
-          # Copy runtime DLL into tauri libs/ for bundling via tauri.windows.conf.json
-          New-Item -ItemType Directory -Force -Path "packages\tauri\libs" | Out-Null
-          Copy-Item "$MPV_DIR\libmpv-2.dll" "packages\tauri\libs\"
-          Write-Host "Copied libmpv-2.dll to packages/tauri/libs/"
+          $MPV_URL = "https://downloads.sourceforge.net/project/mpv-player-windows/64bit/mpv-x86_64-20250119-git-ab78d7b.7z"
+          $TEMP_DIR = "$env:RUNNER_TEMP\mpv-download"
+          $BUNDLE_DIR = "packages\tauri\mpv-bundle"
+
+          New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
+          New-Item -ItemType Directory -Force -Path $BUNDLE_DIR | Out-Null
+
+          Write-Host "Downloading mpv..."
+          Invoke-WebRequest -Uri $MPV_URL -OutFile "$TEMP_DIR\mpv.7z"
+
+          Write-Host "Extracting..."
+          7z x "$TEMP_DIR\mpv.7z" -o"$TEMP_DIR\extract" -y
+
+          # Copy mpv.exe and required DLLs
+          Copy-Item "$TEMP_DIR\extract\mpv.exe" "$BUNDLE_DIR\"
+          Copy-Item "$TEMP_DIR\extract\*.dll" "$BUNDLE_DIR\" -ErrorAction SilentlyContinue
+
+          Write-Host "mpv bundled to $BUNDLE_DIR"
+          Get-ChildItem $BUNDLE_DIR
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"

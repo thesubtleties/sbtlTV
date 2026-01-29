@@ -9,11 +9,15 @@ import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
 import { VideoCanvas } from './components/VideoCanvas';
+import { NativeVideo } from './components/NativeVideo';
 import { useSelectedCategory } from './hooks/useChannels';
-import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetHasXtreamSource } from './stores/uiStore';
+import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetHasXtreamSource, useUseMpvWindow, useSetUseMpvWindow } from './stores/uiStore';
 import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
+
+// Platform detection type
+type Platform = 'windows' | 'macos' | 'linux' | 'unknown';
 
 /**
  * Generate fallback stream URLs when primary fails.
@@ -86,6 +90,9 @@ async function tryLoadWithFallbacks(
 }
 
 function App() {
+  // Platform detection
+  const [platform, setPlatform] = useState<Platform>('unknown');
+
   // mpv state
   const [mpvReady, setMpvReady] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -96,6 +103,12 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
   const [vodInfo, setVodInfo] = useState<VodPlayInfo | null>(null);
+
+  // Current stream URL for native video
+  const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
+
+  // Native video ref for seeking
+  const nativeVideoRef = useRef<HTMLVideoElement>(null);
 
   // UI state
   const [showControls, setShowControls] = useState(true);
@@ -113,6 +126,16 @@ function App() {
   const tmdbMatching = useTmdbMatching();
   const setHasXtreamSource = useSetHasXtreamSource();
 
+  // Linux mpv window mode setting
+  const useMpvWindow = useUseMpvWindow();
+  const setUseMpvWindow = useSetUseMpvWindow();
+
+  // Determine if we should use native video
+  // Windows: never (mpv renders via --wid)
+  // macOS: always (native video)
+  // Linux: unless mpv window mode is enabled
+  const useNativeVideo = platform === 'macos' || (platform === 'linux' && !useMpvWindow);
+
   // Sync state
   const [syncing, setSyncing] = useState(false);
 
@@ -124,6 +147,44 @@ function App() {
 
   // Track if mouse is hovering over controls (prevents auto-hide)
   const controlsHoveredRef = useRef(false);
+
+  // Detect platform on mount
+  useEffect(() => {
+    const detectPlatform = async () => {
+      // Try Tauri API first
+      if (window.__TAURI__) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const info = await invoke<{ is_windows: boolean; is_mac: boolean; is_linux: boolean }>('get_platform');
+          if (info.is_windows) setPlatform('windows');
+          else if (info.is_mac) setPlatform('macos');
+          else if (info.is_linux) setPlatform('linux');
+          else setPlatform('unknown');
+          return;
+        } catch (e) {
+          console.warn('[Platform] Tauri detection failed:', e);
+        }
+      }
+
+      // Fall back to window.platform (Electron)
+      if (window.platform) {
+        if (window.platform.isWindows) setPlatform('windows');
+        else if (window.platform.isMac) setPlatform('macos');
+        else if (window.platform.isLinux) setPlatform('linux');
+        else setPlatform('unknown');
+        return;
+      }
+
+      // Last resort: user agent detection
+      const ua = navigator.userAgent.toLowerCase();
+      if (ua.includes('win')) setPlatform('windows');
+      else if (ua.includes('mac')) setPlatform('macos');
+      else if (ua.includes('linux')) setPlatform('linux');
+      else setPlatform('unknown');
+    };
+
+    detectPlatform();
+  }, []);
 
   // Set up mpv event listeners
   useEffect(() => {
@@ -193,12 +254,21 @@ function App() {
 
   // Control handlers
   const handleLoadStream = async (channel: StoredChannel) => {
+    setError(null);
+    setCurrentChannel(channel);
+
+    // For native video, just set the URL directly
+    if (useNativeVideo) {
+      setCurrentStreamUrl(channel.direct_url);
+      setPlaying(true);
+      return;
+    }
+
+    // For mpv backend
     if (!window.mpv) {
       setError('mpv not available');
       return;
     }
-    setError(null);
-    setCurrentChannel(channel);
     try {
       const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
       if (!result.success) {
@@ -216,6 +286,17 @@ function App() {
   };
 
   const handleTogglePlay = async () => {
+    if (useNativeVideo) {
+      const video = nativeVideoRef.current;
+      if (video) {
+        if (video.paused) {
+          await video.play();
+        } else {
+          video.pause();
+        }
+      }
+      return;
+    }
     if (!window.mpv) return;
     await window.mpv.togglePause();
   };
@@ -223,18 +304,40 @@ function App() {
   const handleVolumeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseInt(e.target.value);
     setVolume(newVolume);
+
+    if (useNativeVideo) {
+      const video = nativeVideoRef.current;
+      if (video) {
+        video.volume = newVolume / 100;
+      }
+      return;
+    }
     if (window.mpv) {
       await window.mpv.setVolume(newVolume);
     }
   };
 
   const handleToggleMute = async () => {
+    if (useNativeVideo) {
+      const video = nativeVideoRef.current;
+      if (video) {
+        video.muted = !video.muted;
+        setMuted(video.muted);
+      }
+      return;
+    }
     if (!window.mpv) return;
     await window.mpv.toggleMute();
     // UI state updated via mpv status callback
   };
 
   const handleStop = async () => {
+    if (useNativeVideo) {
+      setCurrentStreamUrl(null);
+      setPlaying(false);
+      setCurrentChannel(null);
+      return;
+    }
     if (!window.mpv) return;
     await window.mpv.stop();
     setPlaying(false);
@@ -242,6 +345,16 @@ function App() {
   };
 
   const handleSeek = async (seconds: number) => {
+    if (useNativeVideo) {
+      const video = nativeVideoRef.current;
+      if (video) {
+        seekingRef.current = true;
+        setPosition(seconds);
+        video.currentTime = seconds;
+        setTimeout(() => { seekingRef.current = false; }, 200);
+      }
+      return;
+    }
     if (!window.mpv) return;
     seekingRef.current = true;
     setPosition(seconds); // Optimistic update
@@ -257,8 +370,28 @@ function App() {
 
   // Play VOD content (movies/series)
   const handlePlayVod = async (info: VodPlayInfo) => {
-    if (!window.mpv) return;
     setError(null);
+
+    // For native video, just set the URL directly
+    if (useNativeVideo) {
+      setCurrentStreamUrl(info.url);
+      setCurrentChannel({
+        stream_id: 'vod',
+        name: info.title,
+        stream_icon: '',
+        epg_channel_id: '',
+        category_ids: [],
+        direct_url: info.url,
+        source_id: 'vod',
+      });
+      setVodInfo(info);
+      setPlaying(true);
+      setActiveView('none');
+      return;
+    }
+
+    // For mpv backend
+    if (!window.mpv) return;
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
     if (!result.success) {
       setError(result.error ?? 'Failed to load stream');
@@ -380,10 +513,41 @@ function App() {
         </div>
       </div>
 
-      {/* Video background — WebGL canvas for Tauri, transparent passthrough for Electron */}
-      {/* Hidden when VOD pages are active to prevent WebKit compositor layering issues */}
+      {/* Video background — platform-specific rendering */}
+      {/* Windows: transparent placeholder (mpv renders via --wid) */}
+      {/* macOS/Linux: native <video> tag with HLS.js */}
+      {/* Hidden when VOD pages are active to prevent compositor layering issues */}
       <div className="video-background" style={activeView === 'movies' || activeView === 'series' ? { display: 'none' } : undefined}>
-        <VideoCanvas />
+        {platform === 'windows' ? (
+          // Windows: mpv renders directly to HWND behind the webview
+          // Just show a transparent placeholder
+          <div className="video-placeholder" />
+        ) : useNativeVideo ? (
+          // macOS/Linux: native video element
+          <NativeVideo
+            ref={nativeVideoRef}
+            url={currentStreamUrl}
+            playing={playing}
+            volume={volume}
+            muted={muted}
+            onStatusChange={(status) => {
+              if (!volumeDraggingRef.current) {
+                setVolume(status.volume);
+              }
+              if (!seekingRef.current) {
+                setPosition(status.position);
+              }
+              setPlaying(status.playing);
+              setMuted(status.muted);
+              setDuration(status.duration);
+            }}
+            onError={(err) => setError(err)}
+            onReady={() => setMpvReady(true)}
+          />
+        ) : (
+          // FBO fallback (feature-gated) or Linux with external mpv window
+          <VideoCanvas />
+        )}
         {!currentChannel && (
           <div className="placeholder">
             <Logo className="placeholder__logo" />

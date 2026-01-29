@@ -1,28 +1,37 @@
+//! mpv integration module.
+//!
+//! Platform rendering strategies:
+//! - Windows: External mpv process with --wid (renders to HWND)
+//! - macOS: Native <video> tag (mpv GL broken, frontend handles)
+//! - Linux: Native <video> tag by default, optional external mpv window
+//!
+//! FBO fallback (feature-gated) for debugging or if native doesn't work.
+
+// External process-based mpv (Windows + Linux)
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub mod external;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub mod ipc;
+
+// FBO-based rendering (fallback, feature-gated)
+#[cfg(feature = "fbo-fallback")]
 pub mod gl_context;
+#[cfg(feature = "fbo-fallback")]
 pub mod renderer;
 
-use gl_context::HeadlessGLContext;
-use renderer::OffscreenRenderer;
-
-use libmpv2::render::{OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType};
-use libmpv2::Mpv;
 use serde::Serialize;
-use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager};
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, Manager, State};
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+#[cfg(target_os = "windows")]
+use external::{ExternalMpv, ExternalMpvState};
 
-/// Frame data sent to the frontend via Tauri events
-/// JPEG encoded for efficient IPC (~50-100KB vs ~4MB for base64 YUV)
-#[derive(Clone, Serialize)]
-pub struct FrameData {
-    pub width: u32,
-    pub height: u32,
-    pub jpeg: String,  // base64 encoded JPEG
-}
+#[cfg(target_os = "linux")]
+use external::ExternalMpvState;
+
+// ============================================================================
+// Shared Types
+// ============================================================================
 
 /// mpv status sent to the frontend
 #[derive(Clone, Serialize)]
@@ -41,13 +50,13 @@ pub struct MpvResult {
 }
 
 impl MpvResult {
-    fn ok() -> Self {
+    pub fn ok() -> Self {
         Self {
             success: Some(true),
             error: None,
         }
     }
-    fn err(msg: impl Into<String>) -> Self {
+    pub fn err(msg: impl Into<String>) -> Self {
         Self {
             success: None,
             error: Some(msg.into()),
@@ -55,75 +64,488 @@ impl MpvResult {
     }
 }
 
-/// State managed by Tauri — holds the mpv handle for commands
+// ============================================================================
+// Platform-specific State
+// ============================================================================
+
+/// State for external mpv process (Windows/Linux)
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 pub struct MpvState {
-    mpv: Arc<Mpv>,
-    shutdown: Arc<AtomicBool>,
+    external: Mutex<ExternalMpvState>,
 }
 
-impl Drop for MpvState {
-    fn drop(&mut self) {
-        self.shutdown.store(true, Ordering::SeqCst);
-    }
+/// State for native video (macOS - mpv not used on backend)
+#[cfg(target_os = "macos")]
+pub struct MpvState {
+    // macOS uses native <video> tag, no backend mpv needed
+    _phantom: std::marker::PhantomData<()>,
 }
 
-/// get_proc_address callback matching libmpv2's expected signature
-fn get_proc_address(ctx: &HeadlessGLContext, name: &str) -> *mut c_void {
-    ctx.get_proc_address(name)
-}
+// ============================================================================
+// Initialization
+// ============================================================================
 
-/// Initialize mpv with offscreen rendering.
-/// Spawns a dedicated render thread that emits frames and status to the frontend.
+/// Initialize mpv for the platform.
+/// Windows: Spawns external mpv with --wid embedding
+/// macOS: No-op (frontend uses native video)
+/// Linux: No-op by default (frontend uses native video), external mpv on demand
+#[cfg(target_os = "windows")]
 pub fn init_mpv(app: &AppHandle) -> Result<(), String> {
-    let mpv = Mpv::with_initializer(|init| {
-        init.set_property("vo", "libmpv")?;
-        init.set_property("osc", "no")?;
-        init.set_property("osd-level", 0i64)?;
-        init.set_property("keep-open", "yes")?;
-        init.set_property("idle", "yes")?;
-        init.set_property("input-default-bindings", "no")?;
-        init.set_property("hwdec", "auto")?;
-        init.set_property("tone-mapping", "mobius")?;
-        Ok(())
-    })
-    .map_err(|e| format!("Failed to create mpv: {}", e))?;
+    log::info!("[MPV] Windows: Using external mpv with --wid embedding");
 
-    let mpv = Arc::new(mpv);
-    let shutdown = Arc::new(AtomicBool::new(false));
+    // Get the main window for HWND
+    let window = app.get_webview_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
 
+    // Spawn external mpv embedded in window
+    let mpv = ExternalMpv::new_embedded(&window, app.clone())?;
+
+    // Store state
     let state = MpvState {
-        mpv: mpv.clone(),
-        shutdown: shutdown.clone(),
+        external: Mutex::new(ExternalMpvState { mpv: Some(mpv) }),
     };
     app.manage(state);
-
-    // Spawn render thread
-    let app_handle = app.clone();
-    std::thread::spawn(move || {
-        if let Err(e) = render_thread(mpv, shutdown, app_handle) {
-            log::error!("[VIDEO] Render thread error: {}", e);
-        }
-    });
 
     Ok(())
 }
 
-fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Result<(), String> {
-    log::info!("[VIDEO] Render thread starting...");
+#[cfg(target_os = "macos")]
+pub fn init_mpv(app: &AppHandle) -> Result<(), String> {
+    log::info!("[MPV] macOS: Using native video playback (frontend <video> tag)");
 
-    // Create headless GL context on this thread
-    let gl_ctx = HeadlessGLContext::new()?;
-    gl_ctx.make_current()?;
+    // macOS doesn't need backend mpv - frontend handles video natively
+    let state = MpvState {
+        _phantom: std::marker::PhantomData,
+    };
+    app.manage(state);
 
-    // Load GL function pointers
-    gl::load_with(|s| gl_ctx.get_proc_address(s) as *const _);
-    log::info!("[VIDEO] GL function pointers loaded");
+    // Emit ready immediately - frontend handles playback
+    let _ = app.emit("mpv-ready", true);
 
-    // Create mpv render context with OpenGL
-    log::info!("[VIDEO] Creating mpv render context...");
-    let mpv_ptr = Arc::as_ptr(&mpv) as *mut Mpv;
-    let render_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        unsafe {
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub fn init_mpv(app: &AppHandle) -> Result<(), String> {
+    log::info!("[MPV] Linux: Native video by default, external mpv available on demand");
+
+    // Linux starts with native video; external mpv spawned when user enables it
+    let state = MpvState {
+        external: Mutex::new(ExternalMpvState::new()),
+    };
+    app.manage(state);
+
+    // Emit ready immediately - frontend handles playback by default
+    let _ = app.emit("mpv-ready", true);
+
+    Ok(())
+}
+
+// ============================================================================
+// Tauri Commands - Windows (External MPV)
+// ============================================================================
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn mpv_load(url: String, state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.load(&url),
+        None => MpvResult::err("mpv not initialized"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn mpv_play(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.play(),
+        None => MpvResult::err("mpv not initialized"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn mpv_pause(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.pause(),
+        None => MpvResult::err("mpv not initialized"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn mpv_toggle_pause(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.toggle_pause(),
+        None => MpvResult::err("mpv not initialized"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn mpv_stop(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.stop(),
+        None => MpvResult::err("mpv not initialized"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn mpv_set_volume(volume: f64, state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.set_volume(volume),
+        None => MpvResult::err("mpv not initialized"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn mpv_toggle_mute(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.toggle_mute(),
+        None => MpvResult::err("mpv not initialized"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn mpv_seek(seconds: f64, state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.seek(seconds),
+        None => MpvResult::err("mpv not initialized"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn mpv_get_status(state: State<MpvState>) -> MpvStatus {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.get_status(),
+        None => MpvStatus {
+            playing: false,
+            volume: 100.0,
+            muted: false,
+            position: 0.0,
+            duration: 0.0,
+        },
+    }
+}
+
+// ============================================================================
+// Tauri Commands - macOS (Native Video - No-op backend)
+// ============================================================================
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn mpv_load(_url: String, _state: State<MpvState>) -> MpvResult {
+    // macOS: Frontend handles video via native <video> tag
+    MpvResult::ok()
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn mpv_play(_state: State<MpvState>) -> MpvResult {
+    MpvResult::ok()
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn mpv_pause(_state: State<MpvState>) -> MpvResult {
+    MpvResult::ok()
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn mpv_toggle_pause(_state: State<MpvState>) -> MpvResult {
+    MpvResult::ok()
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn mpv_stop(_state: State<MpvState>) -> MpvResult {
+    MpvResult::ok()
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn mpv_set_volume(_volume: f64, _state: State<MpvState>) -> MpvResult {
+    MpvResult::ok()
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn mpv_toggle_mute(_state: State<MpvState>) -> MpvResult {
+    MpvResult::ok()
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn mpv_seek(_seconds: f64, _state: State<MpvState>) -> MpvResult {
+    MpvResult::ok()
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn mpv_get_status(_state: State<MpvState>) -> MpvStatus {
+    // macOS: Frontend tracks status via HTML5 video events
+    MpvStatus {
+        playing: false,
+        volume: 100.0,
+        muted: false,
+        position: 0.0,
+        duration: 0.0,
+    }
+}
+
+// ============================================================================
+// Tauri Commands - Linux (Native Video + Optional External MPV)
+// ============================================================================
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_load(url: String, state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.load(&url),
+        None => {
+            // No external mpv - frontend uses native video
+            MpvResult::ok()
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_play(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.play(),
+        None => MpvResult::ok(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_pause(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.pause(),
+        None => MpvResult::ok(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_toggle_pause(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.toggle_pause(),
+        None => MpvResult::ok(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_stop(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.stop(),
+        None => MpvResult::ok(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_set_volume(volume: f64, state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.set_volume(volume),
+        None => MpvResult::ok(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_toggle_mute(state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.toggle_mute(),
+        None => MpvResult::ok(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_seek(seconds: f64, state: State<MpvState>) -> MpvResult {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.seek(seconds),
+        None => MpvResult::ok(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_get_status(state: State<MpvState>) -> MpvStatus {
+    let guard = state.external.lock().unwrap();
+    match &guard.mpv {
+        Some(mpv) => mpv.get_status(),
+        None => MpvStatus {
+            playing: false,
+            volume: 100.0,
+            muted: false,
+            position: 0.0,
+            duration: 0.0,
+        },
+    }
+}
+
+/// Enable external mpv window mode on Linux (power-user setting)
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_enable_external_window(app: AppHandle, state: State<MpvState>) -> MpvResult {
+    use external::ExternalMpv;
+
+    let mut guard = state.external.lock().unwrap();
+    if guard.mpv.is_some() {
+        return MpvResult::err("External mpv already running");
+    }
+
+    match ExternalMpv::new_standalone(app) {
+        Ok(mpv) => {
+            guard.mpv = Some(mpv);
+            MpvResult::ok()
+        }
+        Err(e) => MpvResult::err(e),
+    }
+}
+
+/// Disable external mpv window mode on Linux
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn mpv_disable_external_window(state: State<MpvState>) -> MpvResult {
+    let mut guard = state.external.lock().unwrap();
+    guard.mpv = None; // Drop will clean up the process
+    MpvResult::ok()
+}
+
+// Stub commands for non-Linux platforms
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn mpv_enable_external_window(_app: AppHandle, _state: State<MpvState>) -> MpvResult {
+    MpvResult::err("External window mode only available on Linux")
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn mpv_disable_external_window(_state: State<MpvState>) -> MpvResult {
+    MpvResult::err("External window mode only available on Linux")
+}
+
+// ============================================================================
+// FBO Fallback (feature-gated)
+// ============================================================================
+
+#[cfg(feature = "fbo-fallback")]
+pub use fbo_fallback::*;
+
+#[cfg(feature = "fbo-fallback")]
+mod fbo_fallback {
+    //! FBO-based rendering using libmpv.
+    //! This is the original approach - kept as fallback for debugging.
+
+    use super::*;
+    use crate::mpv::gl_context::HeadlessGLContext;
+    use crate::mpv::renderer::OffscreenRenderer;
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use libmpv2::render::{OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType};
+    use libmpv2::Mpv;
+    use std::ffi::c_void;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+    use tauri::Emitter;
+
+    /// Frame data sent to the frontend via Tauri events
+    #[derive(Clone, Serialize)]
+    pub struct FrameData {
+        pub width: u32,
+        pub height: u32,
+        pub jpeg: String,
+    }
+
+    pub struct FboMpvState {
+        mpv: Arc<Mpv>,
+        shutdown: Arc<AtomicBool>,
+    }
+
+    impl Drop for FboMpvState {
+        fn drop(&mut self) {
+            self.shutdown.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn get_proc_address(ctx: &HeadlessGLContext, name: &str) -> *mut c_void {
+        ctx.get_proc_address(name)
+    }
+
+    pub fn init_mpv_fbo(app: &AppHandle) -> Result<(), String> {
+        let mpv = Mpv::with_initializer(|init| {
+            init.set_property("vo", "libmpv")?;
+            init.set_property("osc", "no")?;
+            init.set_property("osd-level", 0i64)?;
+            init.set_property("keep-open", "yes")?;
+            init.set_property("idle", "yes")?;
+            init.set_property("input-default-bindings", "no")?;
+            init.set_property("hwdec", "auto")?;
+            init.set_property("tone-mapping", "mobius")?;
+            Ok(())
+        })
+        .map_err(|e| format!("Failed to create mpv: {}", e))?;
+
+        let mpv = Arc::new(mpv);
+        let shutdown = Arc::new(AtomicBool::new(false));
+
+        let state = FboMpvState {
+            mpv: mpv.clone(),
+            shutdown: shutdown.clone(),
+        };
+        app.manage(state);
+
+        let app_handle = app.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = render_thread_fbo(mpv, shutdown, app_handle) {
+                log::error!("[VIDEO-FBO] Render thread error: {}", e);
+            }
+        });
+
+        Ok(())
+    }
+
+    fn render_thread_fbo(
+        mpv: Arc<Mpv>,
+        shutdown: Arc<AtomicBool>,
+        app: AppHandle,
+    ) -> Result<(), String> {
+        log::info!("[VIDEO-FBO] Render thread starting...");
+
+        let gl_ctx = HeadlessGLContext::new()?;
+        gl_ctx.make_current()?;
+
+        gl::load_with(|s| gl_ctx.get_proc_address(s) as *const _);
+
+        let mpv_ptr = Arc::as_ptr(&mpv) as *mut Mpv;
+        let render_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
             RenderContext::new(
                 (*mpv_ptr).ctx.as_mut(),
                 vec![
@@ -134,235 +556,52 @@ fn render_thread(mpv: Arc<Mpv>, shutdown: Arc<AtomicBool>, app: AppHandle) -> Re
                     }),
                 ],
             )
-        }
-    }));
+        }));
 
-    let mut render_ctx = match render_result {
-        Ok(Ok(ctx)) => {
-            log::info!("[VIDEO] mpv render context created successfully");
-            ctx
-        }
-        Ok(Err(e)) => {
-            log::error!("[VIDEO] mpv render context creation failed: {:?}", e);
-            return Err(format!("Failed to create render context: {:?}", e));
-        }
-        Err(panic) => {
-            log::error!("[VIDEO] mpv render context creation panicked: {:?}", panic);
-            return Err(format!("Render context creation panicked"));
-        }
-    };
+        let mut render_ctx = match render_result {
+            Ok(Ok(ctx)) => ctx,
+            Ok(Err(e)) => return Err(format!("Failed to create render context: {:?}", e)),
+            Err(_) => return Err("Render context creation panicked".to_string()),
+        };
 
-    // Set up render update callback
-    let render_pending = Arc::new(AtomicBool::new(false));
-    let render_pending_cb = render_pending.clone();
-    render_ctx.set_update_callback(move || {
-        render_pending_cb.store(true, Ordering::SeqCst);
-    });
+        let render_pending = Arc::new(AtomicBool::new(false));
+        let render_pending_cb = render_pending.clone();
+        render_ctx.set_update_callback(move || {
+            render_pending_cb.store(true, Ordering::SeqCst);
+        });
 
-    let mut offscreen = OffscreenRenderer::new(1920, 1080);
-    let fbo_ok = offscreen.is_complete();
+        let mut offscreen = OffscreenRenderer::new(1920, 1080);
+        let fbo_ok = offscreen.is_complete();
 
-    if !fbo_ok {
-        log::error!("FBO incomplete — video rendering disabled (GPU limitation)");
-    } else {
-        log::info!("[VIDEO] FBO created successfully, {}x{}", offscreen.width(), offscreen.height());
-    }
+        let _ = app.emit("mpv-ready", true);
 
-    // Emit ready event
-    let _ = app.emit("mpv-ready", true);
-    log::info!("[VIDEO] mpv-ready event emitted");
+        let mut last_frame_time = Instant::now();
+        let frame_interval = Duration::from_millis(33);
 
-    // Status tracking
-    let mut last_status_time = Instant::now();
-    let status_throttle = Duration::from_millis(100);
-
-    // Frame rate limiting - match video FPS (capped at 30fps for IPC)
-    let mut last_frame_time = Instant::now();
-    let mut frame_interval = Duration::from_millis(33); // default ~30fps
-    let mut last_fps_check = Instant::now();
-    let fps_check_interval = Duration::from_secs(1);
-
-    // Render loop
-    while !shutdown.load(Ordering::SeqCst) {
-        if render_pending.swap(false, Ordering::SeqCst) {
-            let _flags = render_ctx.update();
-
-            if fbo_ok {
-                // Check video dimensions and resize if needed
-                if let Ok(w) = mpv.get_property::<i64>("width") {
-                    if let Ok(h) = mpv.get_property::<i64>("height") {
-                        if w > 0 && h > 0 {
-                            offscreen.resize(w as u32, h as u32);
-                        }
-                    }
-                }
-
+        while !shutdown.load(Ordering::SeqCst) {
+            if render_pending.swap(false, Ordering::SeqCst) && fbo_ok {
                 let fbo_id = offscreen.fbo() as i32;
                 let w = offscreen.width() as i32;
                 let h = offscreen.height() as i32;
 
-                if let Err(e) = render_ctx.render::<HeadlessGLContext>(fbo_id, w, h, true) {
-                    log::error!("mpv render failed: {}", e);
-                    continue;
-                }
-
-                // Update frame interval based on video FPS (check every second)
-                if last_fps_check.elapsed() >= fps_check_interval {
-                    last_fps_check = Instant::now();
-                    // Try container-fps first, fall back to estimated-vf-fps
-                    let fps = mpv.get_property::<f64>("container-fps")
-                        .or_else(|_| mpv.get_property::<f64>("estimated-vf-fps"))
-                        .unwrap_or(30.0);
-
-                    // Cap at 60fps max for IPC, min 10fps to avoid issues
-                    let capped_fps = fps.clamp(10.0, 60.0);
-                    let interval_ms = (1000.0 / capped_fps) as u64;
-                    frame_interval = Duration::from_millis(interval_ms);
-
-                    log::info!("[VIDEO] Video FPS: {:.2}, using {:.2}fps ({:.0}ms interval)",
-                        fps, capped_fps, interval_ms as f64);
-                }
-
-                // Throttle frame emission to match video FPS
-                if last_frame_time.elapsed() >= frame_interval {
+                if render_ctx
+                    .render::<HeadlessGLContext>(fbo_id, w, h, true)
+                    .is_ok()
+                    && last_frame_time.elapsed() >= frame_interval
+                {
                     last_frame_time = Instant::now();
-
-                    // Encode as JPEG (quality 80 = good balance of quality/size)
                     let jpeg_bytes = offscreen.read_as_jpeg(80);
-
-                    // Debug: log every ~2 seconds
-                    let frame_num = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() % 10000)
-                        .unwrap_or(0);
-
-                    if frame_num % 2000 < 20 {
-                        log::info!(
-                            "[VIDEO] Frame {}x{}, JPEG {}KB, emitting mpv-frame",
-                            offscreen.width(), offscreen.height(), jpeg_bytes.len() / 1024
-                        );
-                    }
-
                     let frame = FrameData {
                         width: offscreen.width(),
                         height: offscreen.height(),
                         jpeg: BASE64.encode(&jpeg_bytes),
                     };
-
                     let _ = app.emit("mpv-frame", frame);
                 }
-            } else {
-                // FBO broken — render to dummy target so mpv's clock advances
-                let _ = render_ctx.render::<HeadlessGLContext>(0, 1, 1, true);
             }
+            std::thread::sleep(Duration::from_millis(8));
         }
 
-        // Emit status updates (throttled)
-        if last_status_time.elapsed() >= status_throttle {
-            last_status_time = Instant::now();
-
-            let status = MpvStatus {
-                playing: !mpv.get_property::<bool>("pause").unwrap_or(true),
-                volume: mpv.get_property::<f64>("volume").unwrap_or(100.0),
-                muted: mpv.get_property::<bool>("mute").unwrap_or(false),
-                position: mpv.get_property::<f64>("time-pos").unwrap_or(0.0),
-                duration: mpv.get_property::<f64>("duration").unwrap_or(0.0),
-            };
-
-            let _ = app.emit("mpv-status", &status);
-        }
-
-        // Sleep to avoid busy-waiting (~60fps check rate)
-        std::thread::sleep(Duration::from_millis(8));
-    }
-
-    Ok(())
-}
-
-// ============================================================================
-// Tauri Commands
-// ============================================================================
-
-#[tauri::command]
-pub fn mpv_load(url: String, state: tauri::State<MpvState>) -> MpvResult {
-    match state.mpv.command("loadfile", &[&url]) {
-        Ok(_) => MpvResult::ok(),
-        Err(e) => MpvResult::err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn mpv_play(state: tauri::State<MpvState>) -> MpvResult {
-    match state.mpv.set_property("pause", false) {
-        Ok(_) => MpvResult::ok(),
-        Err(e) => MpvResult::err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn mpv_pause(state: tauri::State<MpvState>) -> MpvResult {
-    match state.mpv.set_property("pause", true) {
-        Ok(_) => MpvResult::ok(),
-        Err(e) => MpvResult::err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn mpv_toggle_pause(state: tauri::State<MpvState>) -> MpvResult {
-    match state.mpv.command("cycle", &["pause"]) {
-        Ok(_) => MpvResult::ok(),
-        Err(e) => MpvResult::err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn mpv_stop(state: tauri::State<MpvState>) -> MpvResult {
-    match state.mpv.command("stop", &[]) {
-        Ok(_) => MpvResult::ok(),
-        Err(e) => MpvResult::err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn mpv_set_volume(volume: f64, state: tauri::State<MpvState>) -> MpvResult {
-    match state.mpv.set_property("volume", volume) {
-        Ok(_) => MpvResult::ok(),
-        Err(e) => MpvResult::err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn mpv_toggle_mute(state: tauri::State<MpvState>) -> MpvResult {
-    match state.mpv.command("cycle", &["mute"]) {
-        Ok(_) => MpvResult::ok(),
-        Err(e) => MpvResult::err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn mpv_seek(seconds: f64, state: tauri::State<MpvState>) -> MpvResult {
-    match state
-        .mpv
-        .command("seek", &[&seconds.to_string(), "absolute"])
-    {
-        Ok(_) => MpvResult::ok(),
-        Err(e) => MpvResult::err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn mpv_get_status(state: tauri::State<MpvState>) -> MpvStatus {
-    MpvStatus {
-        playing: !state.mpv.get_property::<bool>("pause").unwrap_or(true),
-        volume: state.mpv.get_property::<f64>("volume").unwrap_or(100.0),
-        muted: state.mpv.get_property::<bool>("mute").unwrap_or(false),
-        position: state
-            .mpv
-            .get_property::<f64>("time-pos")
-            .unwrap_or(0.0),
-        duration: state
-            .mpv
-            .get_property::<f64>("duration")
-            .unwrap_or(0.0),
+        Ok(())
     }
 }

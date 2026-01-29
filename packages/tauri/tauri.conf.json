@@ -19,8 +19,8 @@
         "minWidth": 640,
         "minHeight": 620,
         "decorations": false,
-        "transparent": false,
-        "backgroundColor": "#000000",
+        "transparent": true,
+        "backgroundColor": "#00000000",
         "resizable": true,
         "devtools": true
       }
@@ -41,6 +41,11 @@
     ],
     "macOS": {
       "infoPlist": "Info.plist"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
     }
   },
   "plugins": {}

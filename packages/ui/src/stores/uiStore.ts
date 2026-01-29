@@ -27,6 +27,10 @@ interface UIState {
   // Source state - tracks if user has Xtream sources (for Movies/Series nav)
   hasXtreamSource: boolean;
   setHasXtreamSource: (value: boolean) => void;
+
+  // Linux: use external mpv window instead of native video (power-user setting)
+  useMpvWindow: boolean;
+  setUseMpvWindow: (value: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -49,6 +53,10 @@ export const useUIStore = create<UIState>((set) => ({
   // Source state
   hasXtreamSource: false,
   setHasXtreamSource: (value) => set({ hasXtreamSource: value }),
+
+  // Linux mpv window mode
+  useMpvWindow: false,
+  setUseMpvWindow: (value) => set({ useMpvWindow: value }),
 }));
 
 // Selectors for cleaner component code
@@ -69,3 +77,7 @@ export const useSetTmdbMatching = () => useUIStore((s) => s.setTmdbMatching);
 // Source state selectors
 export const useHasXtreamSource = () => useUIStore((s) => s.hasXtreamSource);
 export const useSetHasXtreamSource = () => useUIStore((s) => s.setHasXtreamSource);
+
+// Linux mpv window mode selectors
+export const useUseMpvWindow = () => useUIStore((s) => s.useMpvWindow);
+export const useSetUseMpvWindow = () => useUIStore((s) => s.setUseMpvWindow);

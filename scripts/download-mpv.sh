@@ -50,9 +50,45 @@ verify_checksum() {
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUNDLE_DIR="$REPO_ROOT/packages/electron/mpv-bundle"
 
-mkdir -p "$BUNDLE_DIR"
+# Support both Electron and Tauri bundling
+# Usage: ./download-mpv.sh [electron|tauri|both]
+TARGET="${1:-both}"
+
+ELECTRON_BUNDLE_DIR="$REPO_ROOT/packages/electron/mpv-bundle"
+TAURI_BUNDLE_DIR="$REPO_ROOT/packages/tauri/mpv-bundle"
+
+setup_dirs() {
+  case "$TARGET" in
+    electron)
+      mkdir -p "$ELECTRON_BUNDLE_DIR"
+      ;;
+    tauri)
+      mkdir -p "$TAURI_BUNDLE_DIR"
+      ;;
+    both|*)
+      mkdir -p "$ELECTRON_BUNDLE_DIR"
+      mkdir -p "$TAURI_BUNDLE_DIR"
+      ;;
+  esac
+}
+
+# Copy to appropriate bundle directories
+copy_to_bundles() {
+  local src_dir="$1"
+
+  if [ "$TARGET" = "electron" ] || [ "$TARGET" = "both" ]; then
+    cp -R "$src_dir"/* "$ELECTRON_BUNDLE_DIR/" 2>/dev/null || true
+    echo "  → Copied to $ELECTRON_BUNDLE_DIR"
+  fi
+
+  if [ "$TARGET" = "tauri" ] || [ "$TARGET" = "both" ]; then
+    cp -R "$src_dir"/* "$TAURI_BUNDLE_DIR/" 2>/dev/null || true
+    echo "  → Copied to $TAURI_BUNDLE_DIR"
+  fi
+}
+
+setup_dirs
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*|Windows_NT)
@@ -68,12 +104,17 @@ case "$(uname -s)" in
     # Extract with 7z (available in GitHub Actions Windows runners)
     7z x "$TEMP_DIR/mpv.7z" -o"$TEMP_DIR/mpv-extract" -y
 
-    # Copy only what we need
-    cp "$TEMP_DIR/mpv-extract/mpv.exe" "$BUNDLE_DIR/"
-    cp "$TEMP_DIR/mpv-extract/"*.dll "$BUNDLE_DIR/" 2>/dev/null || true
+    # Create staging directory with just what we need
+    STAGING_DIR="$TEMP_DIR/staging"
+    mkdir -p "$STAGING_DIR"
+    cp "$TEMP_DIR/mpv-extract/mpv.exe" "$STAGING_DIR/"
+    cp "$TEMP_DIR/mpv-extract/"*.dll "$STAGING_DIR/" 2>/dev/null || true
+
+    # Copy to bundle directories
+    copy_to_bundles "$STAGING_DIR"
 
     rm -rf "$TEMP_DIR"
-    echo "mpv for Windows downloaded to $BUNDLE_DIR"
+    echo "mpv for Windows downloaded"
     ;;
 
   Darwin)
@@ -99,27 +140,36 @@ case "$(uname -s)" in
     fi
     echo "Found app bundle: $MPV_APP"
 
-    # Copy mpv binary and dylibs preserving relative path structure
+    # Create staging directory with mpv binary and dylibs
     # stolendata builds have libs in MacOS/lib/, not Frameworks/
-    mkdir -p "$BUNDLE_DIR/MacOS"
-    cp "$MPV_APP/Contents/MacOS/mpv" "$BUNDLE_DIR/MacOS/"
+    STAGING_DIR="$TEMP_DIR/staging"
+    mkdir -p "$STAGING_DIR/MacOS"
+    cp "$MPV_APP/Contents/MacOS/mpv" "$STAGING_DIR/MacOS/"
     # Copy dylibs (in MacOS/lib/ for stolendata builds)
     if [ -d "$MPV_APP/Contents/MacOS/lib" ]; then
-      cp -R "$MPV_APP/Contents/MacOS/lib" "$BUNDLE_DIR/MacOS/"
+      cp -R "$MPV_APP/Contents/MacOS/lib" "$STAGING_DIR/MacOS/"
     fi
     # Also check Frameworks (other builds may use this)
     if [ -d "$MPV_APP/Contents/Frameworks" ]; then
-      cp -R "$MPV_APP/Contents/Frameworks" "$BUNDLE_DIR/"
+      cp -R "$MPV_APP/Contents/Frameworks" "$STAGING_DIR/"
     fi
 
+    # Copy to bundle directories
+    copy_to_bundles "$STAGING_DIR"
+
     rm -rf "$TEMP_DIR"
-    echo "mpv for macOS (Apple Silicon) downloaded to $BUNDLE_DIR"
+    echo "mpv for macOS (Apple Silicon) downloaded"
     ;;
 
   Linux)
     echo "Linux does not bundle mpv - users should install via package manager"
-    # Create empty marker file so electron-builder doesn't fail
-    touch "$BUNDLE_DIR/.linux-no-bundle"
+    # Create empty marker files so builds don't fail
+    if [ "$TARGET" = "electron" ] || [ "$TARGET" = "both" ]; then
+      touch "$ELECTRON_BUNDLE_DIR/.linux-no-bundle"
+    fi
+    if [ "$TARGET" = "tauri" ] || [ "$TARGET" = "both" ]; then
+      touch "$TAURI_BUNDLE_DIR/.linux-no-bundle"
+    fi
     ;;
 
   *)

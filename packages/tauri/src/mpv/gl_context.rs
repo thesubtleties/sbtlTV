@@ -1,8 +1,13 @@
-use std::ffi::{c_void, CString};
+use std::ffi::c_void;
+#[cfg(target_os = "macos")]
+use std::ffi::CString;
 use surfman::{
     Connection, Context, ContextAttributes, ContextAttributeFlags,
-    Device, GLVersion, SurfaceAccess, SurfaceType,
+    Device, GLVersion,
 };
+#[cfg(target_os = "linux")]
+use surfman::{SurfaceAccess, SurfaceType};
+#[cfg(target_os = "linux")]
 use euclid::default::Size2D;
 
 /// Headless OpenGL context for offscreen rendering.
@@ -52,6 +57,7 @@ impl HeadlessGLContext {
         log::info!("[VIDEO] Context descriptor created");
 
         log::info!("[VIDEO] Creating context...");
+        #[allow(unused_mut)] // mut only needed on Linux for surface binding
         let mut context = device.create_context(&context_descriptor, None)
             .map_err(|e| format!("Surfman context creation failed: {:?}", e))?;
         log::info!("[VIDEO] Context created");

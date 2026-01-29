@@ -21,20 +21,26 @@ url = "2"
 dirs = "6"
 log = "0.4"
 env_logger = "0.11"
-libmpv2 = { version = "5", features = ["render"] }
-gl = "0.14"
-euclid = "0.22"
 
+# mpv integration - libmpv2 for FBO fallback, external process for native rendering
+libmpv2 = { version = "5", features = ["render"], optional = true }
+gl = { version = "0.14", optional = true }
+euclid = { version = "0.22", optional = true }
+
+# Window handle for embedding mpv on Windows
+raw-window-handle = "0.6"
+
+# FBO fallback dependencies (platform-specific)
 [target.'cfg(target_os = "linux")'.dependencies]
-surfman = { version = "0.10", features = ["sm-x11"] }
+surfman = { version = "0.10", features = ["sm-x11"], optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # Note: sm-angle-default hangs on headless device creation
 # Using default WGL backend instead
-surfman = { version = "0.10" }
+surfman = { version = "0.10", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-surfman = { version = "0.10" }
+surfman = { version = "0.10", optional = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -42,3 +48,7 @@ tauri-build = { version = "2", features = [] }
 [features]
 default = ["custom-protocol"]
 custom-protocol = []
+
+# Enable FBO-based rendering fallback (libmpv + OpenGL offscreen)
+# Use this if platform-native rendering doesn't work
+fbo-fallback = ["libmpv2", "gl", "euclid", "surfman"]

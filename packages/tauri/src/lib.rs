@@ -63,6 +63,9 @@ pub fn run() {
             mpv::mpv_toggle_mute,
             mpv::mpv_seek,
             mpv::mpv_get_status,
+            // Linux-specific mpv window control
+            mpv::mpv_enable_external_window,
+            mpv::mpv_disable_external_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
