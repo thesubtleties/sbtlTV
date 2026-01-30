@@ -250,12 +250,15 @@ async function initMpv(): Promise<void> {
 
     console.log('[mpv] Native window handle:', windowId);
 
-    // Wayland doesn't support --wid embedding, use separate window mode
+    // Wayland and macOS don't support --wid embedding, use separate window mode
     const isWayland = process.platform === 'linux' &&
       (process.env.XDG_SESSION_TYPE === 'wayland' || !!process.env.WAYLAND_DISPLAY);
+    const isMac = process.platform === 'darwin';
+    const useSeparateWindow = isWayland || isMac;
 
-    if (isWayland) {
-      console.log('[mpv] Wayland detected, using separate window mode (--wid not supported)');
+    if (useSeparateWindow) {
+      const reason = isMac ? 'macOS' : 'Wayland';
+      console.log(`[mpv] ${reason} detected, using separate window mode (--wid not supported)`);
     } else {
       console.log('[mpv] Using --wid embedding (single window mode)');
       mpvArgs = [...mpvArgs, `--wid=${windowId}`];
