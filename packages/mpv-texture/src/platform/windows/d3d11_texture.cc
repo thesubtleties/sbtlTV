@@ -369,7 +369,9 @@ TextureHandle D3D11Texture::GetHandle() const {
 
 // Factory implementation for Windows
 std::unique_ptr<SharedTextureManager> SharedTextureManager::Create(PlatformGLContext* gl_context) {
-  auto* windows_ctx = dynamic_cast<WindowsGLContext*>(gl_context);
+  // On Windows, the context is always WindowsGLContext, so static_cast is safe
+  // (dynamic_cast requires RTTI which is disabled in node-gyp builds)
+  auto* windows_ctx = static_cast<WindowsGLContext*>(gl_context);
   if (!windows_ctx) {
     std::cerr << "[mpv-texture] Invalid GL context type for Windows" << std::endl;
     return nullptr;

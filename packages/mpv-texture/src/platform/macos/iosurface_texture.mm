@@ -207,7 +207,9 @@ TextureHandle IOSurfaceTexture::GetHandle() const {
 
 // Factory implementation for macOS
 std::unique_ptr<SharedTextureManager> SharedTextureManager::Create(PlatformGLContext* gl_context) {
-  auto* macos_ctx = dynamic_cast<MacOSGLContext*>(gl_context);
+  // On macOS, the context is always MacOSGLContext, so static_cast is safe
+  // (dynamic_cast requires RTTI which is disabled in node-gyp builds)
+  auto* macos_ctx = static_cast<MacOSGLContext*>(gl_context);
   if (!macos_ctx) {
     std::cerr << "[mpv-texture] Invalid GL context type for macOS" << std::endl;
     return nullptr;
