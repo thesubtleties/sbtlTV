@@ -20,7 +20,7 @@ jobs:
           - os: macos-latest
             platform: mac
             arch: arm64
-          - os: macos-13
+          - os: macos-15-large
             platform: mac
             arch: x64
           - os: windows-latest
@@ -56,28 +56,27 @@ jobs:
 
       - name: Install mpv (Windows)
         if: matrix.platform == 'win'
-        shell: bash
+        shell: pwsh
         run: |
           # Install mpv via chocolatey for runtime binaries
           choco install mpvio -y
 
           # Download mpv dev files for compilation (headers + lib)
-          # Use GitHub API to get the latest release's mpv-dev-x86_64 asset URL
-          TEMP_DIR="$RUNNER_TEMP/mpv-dev"
-          mkdir -p "$TEMP_DIR"
+          $TEMP_DIR = "$env:RUNNER_TEMP\mpv-dev"
+          New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
 
-          echo "Fetching latest mpv-dev release URL..."
-          MPV_DEV_URL=$(curl -s https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest | \
-            grep -o '"browser_download_url": *"[^"]*mpv-dev-x86_64-[^v][^"]*\.7z"' | \
-            head -1 | sed 's/"browser_download_url": *"//' | sed 's/"$//')
+          Write-Host "Fetching latest mpv-dev release URL..."
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -match "^mpv-dev-x86_64-[^v].*\.7z$" } | Select-Object -First 1
+          $MPV_DEV_URL = $asset.browser_download_url
 
-          echo "Downloading: $MPV_DEV_URL"
-          curl -L "$MPV_DEV_URL" -o "$TEMP_DIR/mpv-dev.7z"
-          7z x "$TEMP_DIR/mpv-dev.7z" -o"$TEMP_DIR" -y
+          Write-Host "Downloading: $MPV_DEV_URL"
+          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$TEMP_DIR\mpv-dev.7z"
+          7z x "$TEMP_DIR\mpv-dev.7z" -o"$TEMP_DIR" -y
 
-          echo "MPV_INCLUDE_DIR=$TEMP_DIR/include" >> "$GITHUB_ENV"
-          echo "MPV_LIB_DIR=$TEMP_DIR" >> "$GITHUB_ENV"
-          echo "MPV_DLL_PATH=$TEMP_DIR/libmpv-2.dll" >> "$GITHUB_ENV"
+          echo "MPV_INCLUDE_DIR=$TEMP_DIR\include" >> $env:GITHUB_ENV
+          echo "MPV_LIB_DIR=$TEMP_DIR" >> $env:GITHUB_ENV
+          echo "MPV_DLL_PATH=$TEMP_DIR\libmpv-2.dll" >> $env:GITHUB_ENV
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -178,24 +177,23 @@ jobs:
           cache: 'pnpm'
 
       - name: Install mpv dev files
-        shell: bash
+        shell: pwsh
         run: |
-          TEMP_DIR="$RUNNER_TEMP/mpv-dev"
-          mkdir -p "$TEMP_DIR"
+          $TEMP_DIR = "$env:RUNNER_TEMP\mpv-dev"
+          New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
 
-          # Use GitHub API to get the latest mpv-dev-x86_64 asset URL
-          echo "Fetching latest mpv-dev release URL..."
-          MPV_DEV_URL=$(curl -s https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest | \
-            grep -o '"browser_download_url": *"[^"]*mpv-dev-x86_64-[^v][^"]*\.7z"' | \
-            head -1 | sed 's/"browser_download_url": *"//' | sed 's/"$//')
+          Write-Host "Fetching latest mpv-dev release URL..."
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -match "^mpv-dev-x86_64-[^v].*\.7z$" } | Select-Object -First 1
+          $MPV_DEV_URL = $asset.browser_download_url
 
-          echo "Downloading: $MPV_DEV_URL"
-          curl -L "$MPV_DEV_URL" -o "$TEMP_DIR/mpv-dev.7z"
-          7z x "$TEMP_DIR/mpv-dev.7z" -o"$TEMP_DIR" -y
+          Write-Host "Downloading: $MPV_DEV_URL"
+          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$TEMP_DIR\mpv-dev.7z"
+          7z x "$TEMP_DIR\mpv-dev.7z" -o"$TEMP_DIR" -y
 
-          echo "MPV_INCLUDE_DIR=$TEMP_DIR/include" >> "$GITHUB_ENV"
-          echo "MPV_LIB_DIR=$TEMP_DIR" >> "$GITHUB_ENV"
-          echo "MPV_DLL_PATH=$TEMP_DIR/libmpv-2.dll" >> "$GITHUB_ENV"
+          echo "MPV_INCLUDE_DIR=$TEMP_DIR\include" >> $env:GITHUB_ENV
+          echo "MPV_LIB_DIR=$TEMP_DIR" >> $env:GITHUB_ENV
+          echo "MPV_DLL_PATH=$TEMP_DIR\libmpv-2.dll" >> $env:GITHUB_ENV
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
