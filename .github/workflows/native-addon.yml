@@ -56,20 +56,28 @@ jobs:
 
       - name: Install mpv (Windows)
         if: matrix.platform == 'win'
-        shell: pwsh
+        shell: bash
         run: |
-          $MPV_VERSION = "20250126"
-          $MPV_DEV_URL = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/$MPV_VERSION/mpv-dev-x86_64-$MPV_VERSION-git-0f317db.7z"
-          $TEMP_DIR = "$env:RUNNER_TEMP\mpv-dev"
-          New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
+          # Install mpv via chocolatey for runtime binaries
+          choco install mpvio -y
 
-          Write-Host "Downloading mpv dev package..."
-          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$TEMP_DIR\mpv-dev.7z"
-          7z x "$TEMP_DIR\mpv-dev.7z" -o"$TEMP_DIR" -y
+          # Download mpv dev files for compilation (headers + lib)
+          # Use GitHub API to get the latest release's mpv-dev-x86_64 asset URL
+          TEMP_DIR="$RUNNER_TEMP/mpv-dev"
+          mkdir -p "$TEMP_DIR"
 
-          echo "MPV_INCLUDE_DIR=$TEMP_DIR\include" >> $env:GITHUB_ENV
-          echo "MPV_LIB_DIR=$TEMP_DIR" >> $env:GITHUB_ENV
-          echo "MPV_DLL_PATH=$TEMP_DIR\libmpv-2.dll" >> $env:GITHUB_ENV
+          echo "Fetching latest mpv-dev release URL..."
+          MPV_DEV_URL=$(curl -s https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest | \
+            grep -o '"browser_download_url": *"[^"]*mpv-dev-x86_64-[^v][^"]*\.7z"' | \
+            head -1 | sed 's/"browser_download_url": *"//' | sed 's/"$//')
+
+          echo "Downloading: $MPV_DEV_URL"
+          curl -L "$MPV_DEV_URL" -o "$TEMP_DIR/mpv-dev.7z"
+          7z x "$TEMP_DIR/mpv-dev.7z" -o"$TEMP_DIR" -y
+
+          echo "MPV_INCLUDE_DIR=$TEMP_DIR/include" >> "$GITHUB_ENV"
+          echo "MPV_LIB_DIR=$TEMP_DIR" >> "$GITHUB_ENV"
+          echo "MPV_DLL_PATH=$TEMP_DIR/libmpv-2.dll" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -170,17 +178,24 @@ jobs:
           cache: 'pnpm'
 
       - name: Install mpv dev files
-        shell: pwsh
+        shell: bash
         run: |
-          $MPV_VERSION = "20250126"
-          $MPV_DEV_URL = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/$MPV_VERSION/mpv-dev-x86_64-$MPV_VERSION-git-0f317db.7z"
-          $TEMP_DIR = "$env:RUNNER_TEMP\mpv-dev"
-          New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
-          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$TEMP_DIR\mpv-dev.7z"
-          7z x "$TEMP_DIR\mpv-dev.7z" -o"$TEMP_DIR" -y
-          echo "MPV_INCLUDE_DIR=$TEMP_DIR\include" >> $env:GITHUB_ENV
-          echo "MPV_LIB_DIR=$TEMP_DIR" >> $env:GITHUB_ENV
-          echo "MPV_DLL_PATH=$TEMP_DIR\libmpv-2.dll" >> $env:GITHUB_ENV
+          TEMP_DIR="$RUNNER_TEMP/mpv-dev"
+          mkdir -p "$TEMP_DIR"
+
+          # Use GitHub API to get the latest mpv-dev-x86_64 asset URL
+          echo "Fetching latest mpv-dev release URL..."
+          MPV_DEV_URL=$(curl -s https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest | \
+            grep -o '"browser_download_url": *"[^"]*mpv-dev-x86_64-[^v][^"]*\.7z"' | \
+            head -1 | sed 's/"browser_download_url": *"//' | sed 's/"$//')
+
+          echo "Downloading: $MPV_DEV_URL"
+          curl -L "$MPV_DEV_URL" -o "$TEMP_DIR/mpv-dev.7z"
+          7z x "$TEMP_DIR/mpv-dev.7z" -o"$TEMP_DIR" -y
+
+          echo "MPV_INCLUDE_DIR=$TEMP_DIR/include" >> "$GITHUB_ENV"
+          echo "MPV_LIB_DIR=$TEMP_DIR" >> "$GITHUB_ENV"
+          echo "MPV_DLL_PATH=$TEMP_DIR/libmpv-2.dll" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
