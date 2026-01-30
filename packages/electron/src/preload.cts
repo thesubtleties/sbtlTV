@@ -79,6 +79,12 @@ export interface FetchProxyApi {
   fetchBinary: (url: string) => Promise<StorageResult<string>>; // Returns base64-encoded data
 }
 
+export interface DebugApi {
+  getLogPath: () => Promise<StorageResult<string>>;
+  logFromRenderer: (message: string) => Promise<StorageResult>;
+  openLogFolder: () => Promise<StorageResult>;
+}
+
 // Expose window control API
 contextBridge.exposeInMainWorld('electronWindow', {
   minimize: () => ipcRenderer.invoke('window-minimize'),
@@ -146,3 +152,10 @@ contextBridge.exposeInMainWorld('platform', {
   isMac: process.platform === 'darwin',
   isLinux: process.platform === 'linux',
 });
+
+// Expose debug API for logging
+contextBridge.exposeInMainWorld('debug', {
+  getLogPath: () => ipcRenderer.invoke('debug-get-log-path'),
+  logFromRenderer: (message: string) => ipcRenderer.invoke('debug-log-renderer', message),
+  openLogFolder: () => ipcRenderer.invoke('debug-open-log-folder'),
+} satisfies DebugApi);

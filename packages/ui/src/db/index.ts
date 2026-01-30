@@ -193,6 +193,30 @@ export async function clearVodData(sourceId: string): Promise<void> {
   });
 }
 
+// Helper to clear ALL cached data (channels, EPG, VOD, metadata)
+// Keeps: prefs (user preferences), electron-store settings, source configs
+export async function clearAllCachedData(): Promise<void> {
+  await db.transaction('rw', [
+    db.channels,
+    db.categories,
+    db.sourcesMeta,
+    db.programs,
+    db.vodMovies,
+    db.vodSeries,
+    db.vodEpisodes,
+    db.vodCategories,
+  ], async () => {
+    await db.channels.clear();
+    await db.categories.clear();
+    await db.sourcesMeta.clear();
+    await db.programs.clear();
+    await db.vodMovies.clear();
+    await db.vodSeries.clear();
+    await db.vodEpisodes.clear();
+    await db.vodCategories.clear();
+  });
+}
+
 // Helper to get last selected category
 export async function getLastCategory(): Promise<string | null> {
   const pref = await db.prefs.get('lastCategory');

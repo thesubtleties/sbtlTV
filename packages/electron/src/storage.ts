@@ -33,6 +33,7 @@ interface AppSettings {
   posterDbApiKey?: string;         // RatingPosterDB API key
   rpdbBackdropsEnabled?: boolean;  // Use RPDB for backdrop images (tier 2+)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF protection bypass)
+  debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
 }
 
 // Internal storage format (encrypted)
@@ -47,6 +48,7 @@ interface StoredSettings {
   encryptedPosterDbApiKey?: string; // Base64 encoded encrypted buffer
   rpdbBackdropsEnabled?: boolean;   // Use RPDB for backdrop images
   allowLanSources?: boolean;        // Allow requests to LAN IPs
+  debugLoggingEnabled?: boolean;    // Write verbose logs to file
 }
 
 const store = new Store<StoreSchema>({
@@ -183,6 +185,7 @@ export function getSettings(): AppSettings {
   }
   result.rpdbBackdropsEnabled = stored.rpdbBackdropsEnabled ?? false;
   result.allowLanSources = stored.allowLanSources ?? false;
+  result.debugLoggingEnabled = stored.debugLoggingEnabled ?? false;
   return result;
 }
 
@@ -210,6 +213,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.allowLanSources !== undefined) {
     updated.allowLanSources = settings.allowLanSources;
+  }
+  if (settings.debugLoggingEnabled !== undefined) {
+    updated.debugLoggingEnabled = settings.debugLoggingEnabled;
   }
 
   store.set('settings', updated);

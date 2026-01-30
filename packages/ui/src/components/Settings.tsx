@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Source } from '../types/electron';
+import { SettingsSidebar, type SettingsTabId } from './settings/SettingsSidebar';
 import { SourcesTab } from './settings/SourcesTab';
 import { TmdbTab } from './settings/TmdbTab';
 import { DataRefreshTab } from './settings/DataRefreshTab';
@@ -7,32 +8,15 @@ import { MoviesTab } from './settings/MoviesTab';
 import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
+import { DebugTab } from './settings/DebugTab';
 import './Settings.css';
 
 interface SettingsProps {
   onClose: () => void;
 }
 
-type TabId = 'sources' | 'tmdb' | 'refresh' | 'movies' | 'series' | 'posterdb' | 'security';
-
-interface Tab {
-  id: TabId;
-  label: string;
-  requiresXtream?: boolean;
-}
-
-const TABS: Tab[] = [
-  { id: 'sources', label: 'Sources' },
-  { id: 'tmdb', label: 'TMDB' },
-  { id: 'refresh', label: 'Refresh' },
-  { id: 'movies', label: 'Movies', requiresXtream: true },
-  { id: 'series', label: 'Series', requiresXtream: true },
-  { id: 'posterdb', label: 'RPDB' },
-  { id: 'security', label: 'Security' },
-];
-
 export function Settings({ onClose }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('sources');
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('sources');
   const [sources, setSources] = useState<Source[]>([]);
   const [isEncryptionAvailable, setIsEncryptionAvailable] = useState(true);
 
@@ -55,6 +39,12 @@ export function Settings({ onClose }: SettingsProps) {
 
   // Security state
   const [allowLanSources, setAllowLanSources] = useState(false);
+
+  // Debug state
+  const [debugLoggingEnabled, setDebugLoggingEnabled] = useState(false);
+
+  // Loading state for settings
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // Load sources and check encryption on mount
   useEffect(() => {
@@ -102,6 +92,7 @@ export function Settings({ onClose }: SettingsProps) {
         posterDbApiKey?: string;
         rpdbBackdropsEnabled?: boolean;
         allowLanSources?: boolean;
+        debugLoggingEnabled?: boolean;
       };
 
       // Load TMDB API key
@@ -133,21 +124,23 @@ export function Settings({ onClose }: SettingsProps) {
 
       // Load security settings
       setAllowLanSources(settings.allowLanSources ?? false);
+
+      // Load debug settings
+      setDebugLoggingEnabled(settings.debugLoggingEnabled ?? false);
     }
+    setSettingsLoaded(true);
   }
 
-  // Check if any Xtream source exists
+  // Check if any Xtream source exists (for showing Movies/Series tabs)
   const hasXtreamSource = sources.some(s => s.type === 'xtream');
 
-  // Filter tabs based on whether Xtream source exists
-  const visibleTabs = TABS.filter(tab => !tab.requiresXtream || hasXtreamSource);
-
-  // Ensure active tab is visible
+  // Reset to sources tab if current tab becomes hidden
   useEffect(() => {
-    if (!visibleTabs.find(t => t.id === activeTab)) {
+    const libraryTabs: SettingsTabId[] = ['movies', 'series'];
+    if (libraryTabs.includes(activeTab) && !hasXtreamSource) {
       setActiveTab('sources');
     }
-  }, [visibleTabs, activeTab]);
+  }, [hasXtreamSource, activeTab]);
 
   // Memoized callbacks for genre changes
   const handleMovieGenresChange = useCallback((genres: number[]) => {
@@ -192,6 +185,7 @@ export function Settings({ onClose }: SettingsProps) {
             tmdbApiKey={tmdbApiKey || null}
             enabledGenres={movieGenresEnabled}
             onEnabledGenresChange={handleMovieGenresChange}
+            settingsLoaded={settingsLoaded}
           />
         );
       case 'series':
@@ -200,6 +194,7 @@ export function Settings({ onClose }: SettingsProps) {
             tmdbApiKey={tmdbApiKey || null}
             enabledGenres={seriesGenresEnabled}
             onEnabledGenresChange={handleSeriesGenresChange}
+            settingsLoaded={settingsLoaded}
           />
         );
       case 'posterdb':
@@ -220,6 +215,13 @@ export function Settings({ onClose }: SettingsProps) {
             onAllowLanSourcesChange={setAllowLanSources}
           />
         );
+      case 'debug':
+        return (
+          <DebugTab
+            debugLoggingEnabled={debugLoggingEnabled}
+            onDebugLoggingChange={setDebugLoggingEnabled}
+          />
+        );
       default:
         return null;
     }
@@ -227,7 +229,7 @@ export function Settings({ onClose }: SettingsProps) {
 
   return (
     <div className="settings-overlay">
-      <div className="settings-panel">
+      <div className="settings-panel settings-panel--sidebar">
         <div className="settings-header">
           <h2>Settings</h2>
           <button className="close-btn" onClick={onClose}>✕</button>
@@ -245,22 +247,18 @@ export function Settings({ onClose }: SettingsProps) {
           </div>
         )}
 
-        {/* Tab Navigation */}
-        <div className="settings-tabs">
-          {visibleTabs.map(tab => (
-            <button
-              key={tab.id}
-              className={`settings-tab ${activeTab === tab.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <div className="settings-body">
+          {/* Sidebar Navigation */}
+          <SettingsSidebar
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            hasXtreamSource={hasXtreamSource}
+          />
 
-        {/* Tab Content */}
-        <div className="settings-tab-panel">
-          {renderTabContent()}
+          {/* Tab Content */}
+          <div className="settings-content">
+            {renderTabContent()}
+          </div>
         </div>
       </div>
     </div>

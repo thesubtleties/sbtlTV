@@ -54,6 +54,7 @@ export interface AppSettings {
   posterDbApiKey?: string;         // RatingPosterDB API key for rating posters
   rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
+  debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
 }
 
 export interface Source {
@@ -102,6 +103,12 @@ export interface PlatformApi {
   isLinux: boolean;
 }
 
+export interface DebugApi {
+  getLogPath: () => Promise<StorageResult<string>>;
+  logFromRenderer: (message: string) => Promise<StorageResult>;
+  openLogFolder: () => Promise<StorageResult>;
+}
+
 declare global {
   interface Window {
     mpv?: MpvApi;
@@ -109,6 +116,7 @@ declare global {
     storage?: StorageApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
+    debug?: DebugApi;
   }
 }
 
