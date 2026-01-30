@@ -114,6 +114,7 @@ jobs:
   # Build full distributable for macOS
   dist-mac:
     needs: build
+    if: ${{ !cancelled() }}  # Run even if Windows build fails
     runs-on: macos-latest
 
     steps:
@@ -165,6 +166,7 @@ jobs:
   # Build full distributable for Windows
   dist-win:
     needs: build
+    if: ${{ !cancelled() }}  # Run even if macOS build fails
     runs-on: windows-latest
 
     steps:
