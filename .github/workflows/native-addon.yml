@@ -20,9 +20,7 @@ jobs:
           - os: macos-latest
             platform: mac
             arch: arm64
-          - os: macos-15-large
-            platform: mac
-            arch: x64
+          # Note: macOS x64 builds removed - macos-13 retired, macos-15-large requires billing
           - os: windows-latest
             platform: win
             arch: x64
@@ -62,7 +60,7 @@ jobs:
           choco install mpvio -y
 
           # Download mpv dev files for compilation (headers + lib)
-          $TEMP_DIR = "$env:RUNNER_TEMP\mpv-dev"
+          $TEMP_DIR = Join-Path $env:RUNNER_TEMP "mpv-dev"
           New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
 
           Write-Host "Fetching latest mpv-dev release URL..."
@@ -71,12 +69,16 @@ jobs:
           $MPV_DEV_URL = $asset.browser_download_url
 
           Write-Host "Downloading: $MPV_DEV_URL"
-          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$TEMP_DIR\mpv-dev.7z"
-          7z x "$TEMP_DIR\mpv-dev.7z" -o"$TEMP_DIR" -y
+          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile (Join-Path $TEMP_DIR "mpv-dev.7z")
+          7z x (Join-Path $TEMP_DIR "mpv-dev.7z") -o"$TEMP_DIR" -y
 
-          echo "MPV_INCLUDE_DIR=$TEMP_DIR\include" >> $env:GITHUB_ENV
-          echo "MPV_LIB_DIR=$TEMP_DIR" >> $env:GITHUB_ENV
-          echo "MPV_DLL_PATH=$TEMP_DIR\libmpv-2.dll" >> $env:GITHUB_ENV
+          # Write to GITHUB_ENV using Add-Content to preserve backslashes
+          Add-Content -Path $env:GITHUB_ENV -Value "MPV_INCLUDE_DIR=$(Join-Path $TEMP_DIR 'include')"
+          Add-Content -Path $env:GITHUB_ENV -Value "MPV_LIB_DIR=$TEMP_DIR"
+          Add-Content -Path $env:GITHUB_ENV -Value "MPV_DLL_PATH=$(Join-Path $TEMP_DIR 'libmpv-2.dll')"
+
+          Write-Host "MPV dev files installed to: $TEMP_DIR"
+          Get-ChildItem $TEMP_DIR
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -179,7 +181,7 @@ jobs:
       - name: Install mpv dev files
         shell: pwsh
         run: |
-          $TEMP_DIR = "$env:RUNNER_TEMP\mpv-dev"
+          $TEMP_DIR = Join-Path $env:RUNNER_TEMP "mpv-dev"
           New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
 
           Write-Host "Fetching latest mpv-dev release URL..."
@@ -188,12 +190,15 @@ jobs:
           $MPV_DEV_URL = $asset.browser_download_url
 
           Write-Host "Downloading: $MPV_DEV_URL"
-          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$TEMP_DIR\mpv-dev.7z"
-          7z x "$TEMP_DIR\mpv-dev.7z" -o"$TEMP_DIR" -y
+          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile (Join-Path $TEMP_DIR "mpv-dev.7z")
+          7z x (Join-Path $TEMP_DIR "mpv-dev.7z") -o"$TEMP_DIR" -y
 
-          echo "MPV_INCLUDE_DIR=$TEMP_DIR\include" >> $env:GITHUB_ENV
-          echo "MPV_LIB_DIR=$TEMP_DIR" >> $env:GITHUB_ENV
-          echo "MPV_DLL_PATH=$TEMP_DIR\libmpv-2.dll" >> $env:GITHUB_ENV
+          Add-Content -Path $env:GITHUB_ENV -Value "MPV_INCLUDE_DIR=$(Join-Path $TEMP_DIR 'include')"
+          Add-Content -Path $env:GITHUB_ENV -Value "MPV_LIB_DIR=$TEMP_DIR"
+          Add-Content -Path $env:GITHUB_ENV -Value "MPV_DLL_PATH=$(Join-Path $TEMP_DIR 'libmpv-2.dll')"
+
+          Write-Host "MPV dev files installed to: $TEMP_DIR"
+          Get-ChildItem $TEMP_DIR
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
