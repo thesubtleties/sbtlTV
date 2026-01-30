@@ -146,3 +146,58 @@ contextBridge.exposeInMainWorld('platform', {
   isMac: process.platform === 'darwin',
   isLinux: process.platform === 'linux',
 });
+
+// Expose sharedTexture API for zero-copy GPU video rendering (macOS/Windows)
+// This is used by SharedTextureVideo.tsx component
+let sharedTextureModule: typeof import('electron').sharedTexture | null = null;
+try {
+  // sharedTexture is only available in Electron 40+ with certain GPU configurations
+  const electron = require('electron');
+  if ('sharedTexture' in electron) {
+    sharedTextureModule = electron.sharedTexture;
+  }
+} catch {
+  // Not available
+}
+
+if (sharedTextureModule) {
+  contextBridge.exposeInMainWorld('electron', {
+    sharedTexture: {
+      setSharedTextureReceiver: (callback: Function) => {
+        sharedTextureModule!.setSharedTextureReceiver(callback as any);
+      },
+    },
+  });
+} else {
+  // Expose empty object if not available
+  contextBridge.exposeInMainWorld('electron', {
+    sharedTexture: null,
+  });
+}
+
+// Expose shared texture mpv API (alternative to IPC-based mpv)
+export interface SharedMpvApi {
+  isActive: () => Promise<boolean>;
+  load: (url: string) => Promise<{ success: boolean; error?: string }>;
+  play: () => Promise<{ success: boolean; error?: string }>;
+  pause: () => Promise<{ success: boolean; error?: string }>;
+  togglePause: () => Promise<{ success: boolean; error?: string }>;
+  stop: () => Promise<{ success: boolean; error?: string }>;
+  setVolume: (volume: number) => Promise<{ success: boolean; error?: string }>;
+  toggleMute: () => Promise<{ success: boolean; error?: string }>;
+  seek: (seconds: number) => Promise<{ success: boolean; error?: string }>;
+  getStatus: () => Promise<MpvStatus>;
+}
+
+contextBridge.exposeInMainWorld('mpvShared', {
+  isActive: () => ipcRenderer.invoke('mpv-shared:is-active'),
+  load: (url: string) => ipcRenderer.invoke('mpv-shared:load', url),
+  play: () => ipcRenderer.invoke('mpv-shared:play'),
+  pause: () => ipcRenderer.invoke('mpv-shared:pause'),
+  togglePause: () => ipcRenderer.invoke('mpv-shared:toggle-pause'),
+  stop: () => ipcRenderer.invoke('mpv-shared:stop'),
+  setVolume: (volume: number) => ipcRenderer.invoke('mpv-shared:volume', volume),
+  toggleMute: () => ipcRenderer.invoke('mpv-shared:toggle-mute'),
+  seek: (seconds: number) => ipcRenderer.invoke('mpv-shared:seek', seconds),
+  getStatus: () => ipcRenderer.invoke('mpv-shared:get-status'),
+} satisfies SharedMpvApi);

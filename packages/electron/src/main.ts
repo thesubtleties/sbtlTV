@@ -7,6 +7,10 @@ import { fileURLToPath } from 'url';
 import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
 
+// Shared texture mode imports (optional - may not be available on all platforms)
+import type * as SharedTextureMpv from './mpv-shared-texture.js';
+let sharedTextureMpv: typeof SharedTextureMpv | null = null;
+
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +27,7 @@ const pendingRequests = new Map<number, { resolve: (data: unknown) => void; reje
 
 // Track mpv state
 let isShuttingDown = false; // Track if we're intentionally closing
+let useSharedTextureMode = false; // Track if using shared texture mode (macOS)
 interface MpvState {
   playing: boolean;
   volume: number;
@@ -84,7 +89,12 @@ async function createWindow(): Promise<void> {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
-    killMpv();
+    // Clean up mpv based on which mode is active
+    if (useSharedTextureMode && sharedTextureMpv) {
+      sharedTextureMpv.destroySharedTextureMpv();
+    } else {
+      killMpv();
+    }
   });
 }
 
@@ -740,12 +750,50 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
+
   await createWindow();
+
+  // Try shared texture mode on macOS (zero-copy GPU rendering)
+  if (process.platform === 'darwin') {
+    try {
+      sharedTextureMpv = await import('./mpv-shared-texture.js');
+      const isSupported = await sharedTextureMpv.isSharedTextureSupported();
+
+      if (isSupported && mainWindow) {
+        console.log('[mpv] Using shared texture mode (zero-copy GPU rendering)');
+        const [width, height] = mainWindow.getContentSize();
+
+        // Register IPC handlers for shared texture mode
+        sharedTextureMpv.registerSharedTextureIpcHandlers();
+
+        // Initialize shared texture mpv
+        await sharedTextureMpv.initSharedTextureMpv(mainWindow, {
+          width,
+          height,
+          frameRate: 60,
+        });
+
+        useSharedTextureMode = true;
+        return; // Don't initialize IPC-based mpv
+      }
+    } catch (error) {
+      console.log('[mpv] Shared texture mode not available:', error);
+      // Fall through to IPC-based mpv
+    }
+  }
+
+  // Use IPC-based mpv (default for Windows/Linux, fallback for macOS)
   await initMpv();
 });
 
 app.on('window-all-closed', () => {
-  killMpv();
+  // Clean up mpv based on which mode is active
+  if (useSharedTextureMode && sharedTextureMpv) {
+    sharedTextureMpv.destroySharedTextureMpv();
+  } else {
+    killMpv();
+  }
+
   if (process.platform !== 'darwin') {
     app.quit();
   }

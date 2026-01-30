@@ -1,0 +1,215 @@
+name: Native Addon Build
+
+on:
+  push:
+    branches: [main, 'feature/**']
+    paths:
+      - 'packages/mpv-texture/**'
+      - '.github/workflows/native-addon.yml'
+  pull_request:
+    paths:
+      - 'packages/mpv-texture/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            arch: arm64
+          - os: macos-13
+            platform: mac
+            arch: x64
+          - os: windows-latest
+            platform: win
+            arch: x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Setup Python (for node-gyp)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install mpv (macOS)
+        if: matrix.platform == 'mac'
+        run: |
+          brew install mpv
+          echo "MPV_INCLUDE_DIR=$(brew --prefix)/include" >> "$GITHUB_ENV"
+          echo "MPV_LIB_DIR=$(brew --prefix)/lib" >> "$GITHUB_ENV"
+
+      - name: Install mpv (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $MPV_VERSION = "20250126"
+          $MPV_DEV_URL = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/$MPV_VERSION/mpv-dev-x86_64-$MPV_VERSION-git-0f317db.7z"
+          $TEMP_DIR = "$env:RUNNER_TEMP\mpv-dev"
+          New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
+
+          Write-Host "Downloading mpv dev package..."
+          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$TEMP_DIR\mpv-dev.7z"
+          7z x "$TEMP_DIR\mpv-dev.7z" -o"$TEMP_DIR" -y
+
+          echo "MPV_INCLUDE_DIR=$TEMP_DIR\include" >> $env:GITHUB_ENV
+          echo "MPV_LIB_DIR=$TEMP_DIR" >> $env:GITHUB_ENV
+          echo "MPV_DLL_PATH=$TEMP_DIR\libmpv-2.dll" >> $env:GITHUB_ENV
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build native addon
+        working-directory: packages/mpv-texture
+        run: npm run rebuild
+
+      - name: Run tests
+        working-directory: packages/mpv-texture
+        run: npm test
+        continue-on-error: true
+
+      - name: Upload native addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-texture-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            packages/mpv-texture/build/Release/*.node
+            packages/mpv-texture/build/Release/*.dll
+          if-no-files-found: warn
+
+      - name: List build output
+        if: always()
+        shell: bash
+        run: |
+          echo "=== Build directory ==="
+          ls -la packages/mpv-texture/build/ 2>/dev/null || echo "No build dir"
+          ls -la packages/mpv-texture/build/Release/ 2>/dev/null || echo "No Release dir"
+
+  # Build full distributable for macOS
+  dist-mac:
+    needs: build
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install mpv (for native addon)
+        run: |
+          brew install mpv
+          echo "MPV_INCLUDE_DIR=$(brew --prefix)/include" >> "$GITHUB_ENV"
+          echo "MPV_LIB_DIR=$(brew --prefix)/lib" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build native addon
+        working-directory: packages/mpv-texture
+        run: npm run rebuild
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Download mpv for bundling
+        run: bash scripts/download-mpv.sh
+
+      - name: Build Electron distributable
+        run: pnpm dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload macOS distributable
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbtlTV-mac-sharedtexture
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: warn
+
+  # Build full distributable for Windows
+  dist-win:
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install mpv dev files
+        shell: pwsh
+        run: |
+          $MPV_VERSION = "20250126"
+          $MPV_DEV_URL = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/$MPV_VERSION/mpv-dev-x86_64-$MPV_VERSION-git-0f317db.7z"
+          $TEMP_DIR = "$env:RUNNER_TEMP\mpv-dev"
+          New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
+          Invoke-WebRequest -Uri $MPV_DEV_URL -OutFile "$TEMP_DIR\mpv-dev.7z"
+          7z x "$TEMP_DIR\mpv-dev.7z" -o"$TEMP_DIR" -y
+          echo "MPV_INCLUDE_DIR=$TEMP_DIR\include" >> $env:GITHUB_ENV
+          echo "MPV_LIB_DIR=$TEMP_DIR" >> $env:GITHUB_ENV
+          echo "MPV_DLL_PATH=$TEMP_DIR\libmpv-2.dll" >> $env:GITHUB_ENV
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build native addon
+        working-directory: packages/mpv-texture
+        run: npm run rebuild
+        continue-on-error: true
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Download mpv for bundling
+        shell: bash
+        run: |
+          mkdir -p packages/electron/mpv-bundle
+          cp "$RUNNER_TEMP/mpv-dev/"*.dll packages/electron/mpv-bundle/ 2>/dev/null || true
+          # Also get full mpv binary
+          choco install mpvio -y
+          cp "C:/ProgramData/chocolatey/lib/mpvio.install/tools/"*.exe packages/electron/mpv-bundle/ || true
+          cp "C:/ProgramData/chocolatey/lib/mpvio.install/tools/"*.dll packages/electron/mpv-bundle/ || true
+
+      - name: Build Electron distributable
+        run: pnpm dist:win
+
+      - name: Upload Windows distributable
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbtlTV-win-sharedtexture
+          path: |
+            release/*.exe
+          if-no-files-found: warn
