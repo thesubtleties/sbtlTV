@@ -51,10 +51,30 @@ const STATUS_THROTTLE_MS = 100;
 // Debug logging infrastructure
 let debugLogStream: fs.WriteStream | null = null;
 let debugLoggingEnabled = false;
+const DEBUG_LOG_MAX_SIZE = 10 * 1024 * 1024; // 10MB max log size
 
 function getDebugLogPath(): string {
   const logDir = app.getPath('logs');
   return path.join(logDir, 'sbtltv-debug.log');
+}
+
+function rotateLogIfNeeded(): void {
+  const logPath = getDebugLogPath();
+  try {
+    if (fs.existsSync(logPath)) {
+      const stats = fs.statSync(logPath);
+      if (stats.size > DEBUG_LOG_MAX_SIZE) {
+        // Rotate: rename current log to .old, delete previous .old
+        const oldLogPath = logPath + '.old';
+        if (fs.existsSync(oldLogPath)) {
+          fs.unlinkSync(oldLogPath);
+        }
+        fs.renameSync(logPath, oldLogPath);
+      }
+    }
+  } catch {
+    // Ignore rotation errors - logging should never crash the app
+  }
 }
 
 function initDebugLogging(enabled: boolean): void {
@@ -67,6 +87,8 @@ function initDebugLogging(enabled: boolean): void {
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
+    // Rotate log if it's too large
+    rotateLogIfNeeded();
     // Open log file in append mode
     debugLogStream = fs.createWriteStream(logPath, { flags: 'a' });
     debugLog('='.repeat(60));
@@ -84,9 +106,13 @@ function initDebugLogging(enabled: boolean): void {
 
 function debugLog(message: string, category = 'app'): void {
   if (!debugLoggingEnabled || !debugLogStream) return;
-  const timestamp = new Date().toISOString();
-  const line = `[${timestamp}] [${category}] ${message}\n`;
-  debugLogStream.write(line);
+  try {
+    const timestamp = new Date().toISOString();
+    const line = `[${timestamp}] [${category}] ${message}\n`;
+    debugLogStream.write(line);
+  } catch {
+    // Silently fail - logging should never crash the app
+  }
 }
 
 async function createWindow(): Promise<void> {
@@ -269,7 +295,7 @@ async function initMpv(): Promise<void> {
 
     // Check mpv version for feature compatibility
     const mpvVersion = getMpvVersion(mpvBinary);
-    const hasHdrOptions = mpvVersion && (mpvVersion[0] > 0 || mpvVersion[1] >= 35);
+    const hasHdrOptions = mpvVersion && (mpvVersion[0] > 0 || (mpvVersion[0] === 0 && mpvVersion[1] >= 35));
     const versionStr = mpvVersion ? `${mpvVersion[0]}.${mpvVersion[1]}` : 'unknown';
     console.log('[mpv] Version:', versionStr);
     debugLog(`Version: ${versionStr}`, 'mpv');

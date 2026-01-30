@@ -14,6 +14,9 @@ import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/s
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
 
+// Auto-hide controls after this many milliseconds of inactivity
+const CONTROLS_AUTO_HIDE_MS = 3000;
+
 /**
  * Generate fallback stream URLs when primary fails.
  * Live TV: .ts → .m3u8 → .m3u
@@ -171,7 +174,7 @@ function App() {
       if (!controlsHoveredRef.current) {
         setShowControls(false);
       }
-    }, 3000);
+    }, CONTROLS_AUTO_HIDE_MS);
 
     return () => clearTimeout(timer);
   }, [lastActivity, playing, activeView, categoriesOpen]);
