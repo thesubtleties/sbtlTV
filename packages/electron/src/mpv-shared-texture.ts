@@ -242,7 +242,7 @@ export async function loadFile(url: string): Promise<void> {
 /**
  * Send an mpv command
  */
-export async function sendCommand(cmd: string, ...args: unknown[]): Promise<void> {
+export async function sendCommand(cmd: string, ...args: (string | number | boolean)[]): Promise<void> {
   if (!controller) {
     throw new Error('mpv not initialized');
   }
