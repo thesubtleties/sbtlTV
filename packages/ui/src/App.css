@@ -26,9 +26,13 @@
   transition: opacity 0.2s;
 }
 
-.app:hover .title-bar,
-.title-bar:hover {
+.title-bar.visible {
   opacity: 1;
+}
+
+/* Hide cursor when controls are hidden */
+.app.controls-hidden {
+  cursor: none;
 }
 
 .title-bar-logo {
@@ -234,12 +238,12 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
-/* Show when app is being interacted with (same as title-bar) */
-.app:hover .resize-grip {
+/* Show when controls are visible */
+.resize-grip.visible {
   opacity: 0.5;
 }
 
-.resize-grip:hover {
+.resize-grip.visible:hover {
   opacity: 1;
 }
 

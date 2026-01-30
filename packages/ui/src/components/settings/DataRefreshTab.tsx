@@ -96,42 +96,38 @@ export function DataRefreshTab({
           Your sources and settings will be preserved.
         </p>
 
-        {!showConfirm ? (
-          <button
-            className="sync-btn danger"
-            onClick={() => setShowConfirm(true)}
-            style={{ marginTop: '0.75rem' }}
-          >
-            Clear All Cached Data
-          </button>
-        ) : (
-          <div className="confirm-action" style={{ marginTop: '0.75rem' }}>
-            <p className="warning-text" style={{
-              color: '#ff9900',
-              fontSize: '0.85rem',
-              marginBottom: '0.75rem'
-            }}>
-              This will delete all channels, EPG, movies, and series data.
-              You'll need to re-sync all sources after clearing.
-            </p>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                className="sync-btn danger"
-                onClick={handleClearCache}
-                disabled={isClearing}
-              >
-                {isClearing ? 'Clearing...' : 'Yes, Clear Cache'}
-              </button>
-              <button
-                className="sync-btn"
-                onClick={() => setShowConfirm(false)}
-                disabled={isClearing}
-              >
-                Cancel
-              </button>
+        <div style={{ marginTop: '0.75rem' }}>
+          {!showConfirm ? (
+            <button
+              className="sync-btn danger"
+              onClick={() => setShowConfirm(true)}
+            >
+              Clear All Cached Data
+            </button>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <span style={{ color: '#ff9900', fontSize: '0.85rem' }}>
+                Delete all cached data?
+              </span>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  className="sync-btn danger"
+                  onClick={handleClearCache}
+                  disabled={isClearing}
+                >
+                  {isClearing ? 'Clearing...' : 'Yes, Clear'}
+                </button>
+                <button
+                  className="sync-btn"
+                  onClick={() => setShowConfirm(false)}
+                  disabled={isClearing}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

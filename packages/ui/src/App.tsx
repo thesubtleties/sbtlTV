@@ -346,9 +346,9 @@ function App() {
   const handleClose = () => window.electronWindow?.close();
 
   return (
-    <div className="app" onMouseMove={handleMouseMove}>
+    <div className={`app${showControls ? '' : ' controls-hidden'}`} onMouseMove={handleMouseMove}>
       {/* Custom title bar for frameless window */}
-      <div className="title-bar">
+      <div className={`title-bar${showControls ? ' visible' : ''}`}>
         <Logo className="title-bar-logo" />
         <div className="window-controls">
           <button onClick={handleMinimize} title="Minimize">
@@ -471,7 +471,7 @@ function App() {
       {/* Resize grip for frameless window (Windows only - frameless windows lack native resize) */}
       {window.platform?.isWindows && (
       <div
-        className="resize-grip"
+        className={`resize-grip${showControls ? ' visible' : ''}`}
         onMouseDown={(e) => {
           e.preventDefault();
           if (!window.electronWindow) return;
