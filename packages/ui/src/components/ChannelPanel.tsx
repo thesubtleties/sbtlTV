@@ -3,6 +3,7 @@ import { Virtuoso } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { ChannelRow } from './ChannelRow';
+import { useChannelSortOrder } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import './ChannelPanel.css';
 
@@ -26,7 +27,8 @@ export function ChannelPanel({
   onPlayChannel,
   onClose,
 }: ChannelPanelProps) {
-  const channels = useChannels(categoryId);
+  const channelSortOrder = useChannelSortOrder();
+  const channels = useChannels(categoryId, channelSortOrder);
   const categories = useCategories();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [availableWidth, setAvailableWidth] = useState(800);
@@ -253,6 +255,7 @@ export function ChannelPanel({
             <ChannelRow
               channel={channel}
               index={index}
+              sortOrder={channelSortOrder}
               programs={programs.get(channel.stream_id) ?? []}
               windowStart={windowStart}
               windowEnd={windowEnd}

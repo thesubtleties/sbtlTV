@@ -25,6 +25,10 @@ interface UIState {
   setVodSyncing: (value: boolean) => void;
   setTmdbMatching: (value: boolean) => void;
   setCacheClearing: (value: boolean) => void;
+
+  // Channel display settings
+  channelSortOrder: 'alphabetical' | 'number';
+  setChannelSortOrder: (value: 'alphabetical' | 'number') => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -45,6 +49,10 @@ export const useUIStore = create<UIState>((set) => ({
   setVodSyncing: (value) => set({ vodSyncing: value }),
   setTmdbMatching: (value) => set({ tmdbMatching: value }),
   setCacheClearing: (value) => set({ cacheClearing: value }),
+
+  // Channel display settings
+  channelSortOrder: 'alphabetical',
+  setChannelSortOrder: (value) => set({ channelSortOrder: value }),
 }));
 
 // Selectors for cleaner component code
@@ -63,3 +71,7 @@ export const useTmdbMatching = () => useUIStore((s) => s.tmdbMatching);
 export const useSetTmdbMatching = () => useUIStore((s) => s.setTmdbMatching);
 export const useCacheClearing = () => useUIStore((s) => s.cacheClearing);
 export const useSetCacheClearing = () => useUIStore((s) => s.setCacheClearing);
+
+// Channel display settings selectors
+export const useChannelSortOrder = () => useUIStore((s) => s.channelSortOrder);
+export const useSetChannelSortOrder = () => useUIStore((s) => s.setChannelSortOrder);

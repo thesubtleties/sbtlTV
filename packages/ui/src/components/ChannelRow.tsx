@@ -8,6 +8,7 @@ const CHANNEL_COLUMN_WIDTH = 280;
 interface ChannelRowProps {
   channel: StoredChannel;
   index: number;
+  sortOrder: 'alphabetical' | 'number';
   programs: StoredProgram[];
   windowStart: Date;
   windowEnd: Date;
@@ -19,6 +20,7 @@ interface ChannelRowProps {
 export const ChannelRow = memo(function ChannelRow({
   channel,
   index,
+  sortOrder,
   programs,
   windowStart,
   windowEnd,
@@ -26,6 +28,11 @@ export const ChannelRow = memo(function ChannelRow({
   visibleHours,
   onPlay,
 }: ChannelRowProps) {
+  // Show channel_num when sorting by number, otherwise show list position
+  const displayNumber = sortOrder === 'number' && channel.channel_num !== undefined
+    ? channel.channel_num
+    : index + 1;
+
   return (
     <div className="guide-channel-row">
       {/* Channel info column */}
@@ -34,7 +41,7 @@ export const ChannelRow = memo(function ChannelRow({
         style={{ width: CHANNEL_COLUMN_WIDTH, minWidth: CHANNEL_COLUMN_WIDTH }}
         onClick={onPlay}
       >
-        <span className="guide-channel-number">{index + 1}</span>
+        <span className="guide-channel-number">{displayNumber}</span>
         <div className="guide-channel-logo">
           {channel.stream_icon ? (
             <img

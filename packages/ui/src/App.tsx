@@ -9,7 +9,7 @@ import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
 import { useSelectedCategory } from './hooks/useChannels';
-import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing } from './stores/uiStore';
+import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useSetChannelSortOrder } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
@@ -133,6 +133,7 @@ function App() {
   const tmdbMatching = useTmdbMatching();
   const setChannelSyncing = useSetChannelSyncing();
   const setVodSyncing = useSetVodSyncing();
+  const setChannelSortOrder = useSetChannelSortOrder();
 
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
@@ -320,6 +321,10 @@ function App() {
         const settingsResult = await window.storage.getSettings();
         const epgRefreshHours = settingsResult.data?.epgRefreshHours ?? 6;
         const vodRefreshHours = settingsResult.data?.vodRefreshHours ?? 24;
+        // Load channel sort order preference
+        if (settingsResult.data?.channelSortOrder) {
+          setChannelSortOrder(settingsResult.data.channelSortOrder);
+        }
 
         // Sync channels/EPG only for stale sources
         const enabledSources = result.data.filter(s => s.enabled);

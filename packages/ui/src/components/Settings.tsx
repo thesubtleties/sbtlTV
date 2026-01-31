@@ -4,6 +4,7 @@ import { SettingsSidebar, type SettingsTabId } from './settings/SettingsSidebar'
 import { SourcesTab } from './settings/SourcesTab';
 import { TmdbTab } from './settings/TmdbTab';
 import { DataRefreshTab } from './settings/DataRefreshTab';
+import { ChannelsTab } from './settings/ChannelsTab';
 import { MoviesTab } from './settings/MoviesTab';
 import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
@@ -42,6 +43,9 @@ export function Settings({ onClose }: SettingsProps) {
 
   // Debug state
   const [debugLoggingEnabled, setDebugLoggingEnabled] = useState(false);
+
+  // Channel display state
+  const [channelSortOrder, setChannelSortOrder] = useState<'alphabetical' | 'number'>('alphabetical');
 
   // Loading state for settings
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -93,6 +97,7 @@ export function Settings({ onClose }: SettingsProps) {
         rpdbBackdropsEnabled?: boolean;
         allowLanSources?: boolean;
         debugLoggingEnabled?: boolean;
+        channelSortOrder?: 'alphabetical' | 'number';
       };
 
       // Load TMDB API key
@@ -127,6 +132,9 @@ export function Settings({ onClose }: SettingsProps) {
 
       // Load debug settings
       setDebugLoggingEnabled(settings.debugLoggingEnabled ?? false);
+
+      // Load channel display settings
+      setChannelSortOrder(settings.channelSortOrder ?? 'alphabetical');
     }
     setSettingsLoaded(true);
   }
@@ -177,6 +185,13 @@ export function Settings({ onClose }: SettingsProps) {
             epgRefreshHours={epgRefreshHours}
             onVodRefreshChange={setVodRefreshHours}
             onEpgRefreshChange={setEpgRefreshHours}
+          />
+        );
+      case 'channels':
+        return (
+          <ChannelsTab
+            channelSortOrder={channelSortOrder}
+            onChannelSortOrderChange={setChannelSortOrder}
           />
         );
       case 'movies':

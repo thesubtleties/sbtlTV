@@ -23,6 +23,7 @@ interface ExtInfMetadata {
   tvgId: string;
   tvgName: string;
   tvgLogo: string;
+  tvgChno: number | null;  // Channel number for ordering
   groupTitle: string;
   displayName: string;
 }
@@ -85,6 +86,7 @@ export function parseM3U(content: string, sourceId: string): M3UParseResult {
         category_ids: categoryId ? [categoryId] : [],
         direct_url: line,
         source_id: sourceId,
+        ...(currentMetadata.tvgChno !== null && { channel_num: currentMetadata.tvgChno }),
       };
 
       channels.push(channel);
@@ -130,6 +132,7 @@ function parseExtInf(line: string): ExtInfMetadata {
     tvgId: '',
     tvgName: '',
     tvgLogo: '',
+    tvgChno: null,
     groupTitle: '',
     displayName: '',
   };
@@ -174,6 +177,15 @@ function parseExtInf(line: string): ExtInfMetadata {
   const groupTitleMatch = attrPart.match(/group-title="([^"]*)"/i);
   if (groupTitleMatch) {
     metadata.groupTitle = groupTitleMatch[1];
+  }
+
+  // Extract tvg-chno (channel number for ordering)
+  const tvgChnoMatch = attrPart.match(/tvg-chno="([^"]*)"/i);
+  if (tvgChnoMatch) {
+    const num = parseInt(tvgChnoMatch[1], 10);
+    if (!isNaN(num)) {
+      metadata.tvgChno = num;
+    }
   }
 
   return metadata;

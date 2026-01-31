@@ -55,6 +55,7 @@ export interface AppSettings {
   rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
+  channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
 }
 
 export interface Source {

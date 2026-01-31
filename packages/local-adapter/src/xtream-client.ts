@@ -150,6 +150,7 @@ export class XtreamClient {
       direct_url: this.buildStreamUrl('live', stream.stream_id),
       source_id: this.sourceId,
       tv_archive: stream.tv_archive === 1,
+      channel_num: stream.num,
     }));
   }
 
@@ -333,6 +334,7 @@ interface XtreamCategory {
 }
 
 interface XtreamStream {
+  num: number;            // Channel order from provider
   stream_id: number;
   name: string;
   stream_icon: string;
