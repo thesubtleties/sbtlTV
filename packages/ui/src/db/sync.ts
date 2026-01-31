@@ -1,5 +1,5 @@
 import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory } from './index';
-import { fetchAndParseM3U, XtreamClient } from '@sbtltv/local-adapter';
+import { fetchAndParseM3U, XtreamClient, parseXmltv, type XmltvProgram } from '@sbtltv/local-adapter';
 import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
 import { getEnrichedMovieExports, getEnrichedTvExports, findBestMatch, extractMatchParams } from '../services/tmdb-exports';
 import { useUIStore } from '../stores/uiStore';
@@ -69,7 +69,101 @@ function endTmdbMatching() {
   }
 }
 
-// Sync EPG for all channels from a source using XMLTV
+// Fetch XMLTV from a URL and parse it
+async function fetchXmltvFromUrl(epgUrl: string): Promise<XmltvProgram[]> {
+  debugLog(`Fetching XMLTV from: ${epgUrl}`, 'epg');
+
+  if (!window.fetchProxy) {
+    throw new Error('fetchProxy not available');
+  }
+
+  const response = await window.fetchProxy.fetch(epgUrl);
+  if (!response.data?.ok) {
+    throw new Error(`Failed to fetch XMLTV: ${response.data?.status || 'unknown error'}`);
+  }
+
+  const xmlText = response.data.text;
+  debugLog(`Received ${xmlText.length} bytes of XMLTV data`, 'epg');
+
+  const programs = parseXmltv(xmlText);
+  debugLog(`Parsed ${programs.length} programs from XMLTV`, 'epg');
+
+  return programs;
+}
+
+// Sync EPG from XMLTV URL for M3U sources
+async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[]): Promise<number> {
+  debugLog(`Starting M3U EPG sync from: ${epgUrl}`, 'epg');
+
+  try {
+    const xmltvPrograms = await fetchXmltvFromUrl(epgUrl);
+
+    if (xmltvPrograms.length === 0) {
+      debugLog('No programs found in XMLTV, keeping existing data', 'epg');
+      return 0;
+    }
+
+    // Build a map of epg_channel_id -> stream_id for matching
+    const channelMap = new Map<string, string>();
+    let channelsWithEpgId = 0;
+    for (const ch of channels) {
+      if (ch.epg_channel_id) {
+        channelMap.set(ch.epg_channel_id, ch.stream_id);
+        channelsWithEpgId++;
+      }
+    }
+    debugLog(`${channelsWithEpgId}/${channels.length} channels have epg_channel_id`, 'epg');
+
+    // Convert XMLTV programs to stored format
+    const storedPrograms: StoredProgram[] = [];
+    const unmatchedChannels = new Set<string>();
+
+    for (const prog of xmltvPrograms) {
+      const streamId = channelMap.get(prog.channel_id);
+      if (streamId) {
+        storedPrograms.push({
+          id: `${source.id}-${streamId}-${prog.start.getTime()}`,
+          stream_id: streamId,
+          title: prog.title,
+          description: prog.description,
+          start: prog.start,
+          end: prog.stop,
+          source_id: source.id,
+        });
+      } else {
+        unmatchedChannels.add(prog.channel_id);
+      }
+    }
+
+    debugLog(`Matched ${storedPrograms.length}/${xmltvPrograms.length} programs (${unmatchedChannels.size} unmatched EPG channels)`, 'epg');
+
+    // SAFETY: Only clear old data if we have new data to replace it
+    if (storedPrograms.length === 0) {
+      debugLog('WARNING: No programs matched! Keeping existing EPG data to avoid data loss', 'epg');
+      return 0;
+    }
+
+    // Clear old and store new
+    debugLog('Clearing old EPG data and storing new...', 'epg');
+    await db.programs.where('source_id').equals(source.id).delete();
+
+    // Store in batches
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < storedPrograms.length; i += BATCH_SIZE) {
+      const batch = storedPrograms.slice(i, i + BATCH_SIZE);
+      await db.programs.bulkPut(batch);
+    }
+
+    debugLog(`M3U EPG sync complete: ${storedPrograms.length} programs stored`, 'epg');
+    return storedPrograms.length;
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    debugLog(`M3U EPG fetch FAILED: ${errMsg}`, 'epg');
+    return 0;
+  }
+}
+
+// Sync EPG for Xtream source using built-in endpoint
 async function syncEpgForSource(source: Source, channels: Channel[]): Promise<number> {
   if (!source.username || !source.password) return 0;
 
@@ -281,14 +375,16 @@ export async function syncSource(source: Source): Promise<SyncResult> {
       debugLog(`EPG sync complete: ${programCount} programs`, 'epg');
     } else if (shouldLoadEpg && epgUrl) {
       // M3U with EPG URL: fetch XMLTV from the EPG URL
-      // TODO: Implement XMLTV fetch for M3U sources
-      debugLog(`M3U EPG URL detected but not implemented: ${epgUrl}`, 'epg');
+      debugLog('Syncing EPG for M3U source...', 'epg');
+      programCount = await syncEpgFromUrl(source, epgUrl, channels);
+      debugLog(`M3U EPG sync complete: ${programCount} programs`, 'epg');
     }
 
-    // If user provided a manual EPG URL override, use that instead
+    // If user provided a manual EPG URL override, use that
     if (source.epg_url && !shouldLoadEpg) {
-      // TODO: Implement manual XMLTV fetch
-      debugLog(`Manual EPG URL override not implemented: ${source.epg_url}`, 'epg');
+      debugLog('Syncing EPG from manual URL override...', 'epg');
+      programCount = await syncEpgFromUrl(source, source.epg_url, channels);
+      debugLog(`Manual EPG sync complete: ${programCount} programs`, 'epg');
     }
 
     debugLog(`Sync complete for ${source.name}: ${channels.length} channels, ${categories.length} categories, ${programCount} programs`, 'sync');

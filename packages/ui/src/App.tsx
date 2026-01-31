@@ -10,7 +10,7 @@ import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
 import { useSelectedCategory } from './hooks/useChannels';
 import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing } from './stores/uiStore';
-import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
+import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
 
@@ -316,28 +316,53 @@ function App() {
       if (!window.storage) return;
       const result = await window.storage.getSources();
       if (result.data && result.data.length > 0) {
-        setChannelSyncing(true);
-        await syncAllSources();
-        setChannelSyncing(false);
-
         // Get user's configured refresh settings
         const settingsResult = await window.storage.getSettings();
+        const epgRefreshHours = settingsResult.data?.epgRefreshHours ?? 6;
         const vodRefreshHours = settingsResult.data?.vodRefreshHours ?? 24;
+
+        // Sync channels/EPG only for stale sources
+        const enabledSources = result.data.filter(s => s.enabled);
+        const staleSources = [];
+        for (const source of enabledSources) {
+          const stale = await isEpgStale(source.id, epgRefreshHours);
+          if (stale) {
+            staleSources.push(source);
+          } else {
+            debugLog(`Source ${source.name} is fresh, skipping channel/EPG sync`, 'sync');
+          }
+        }
+
+        if (staleSources.length > 0) {
+          setChannelSyncing(true);
+          for (const source of staleSources) {
+            debugLog(`Source ${source.name} is stale, syncing...`, 'sync');
+            await syncSource(source);
+          }
+          setChannelSyncing(false);
+        }
 
         // Sync VOD only for Xtream sources that are stale
         const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
         if (xtreamSources.length > 0) {
-          setVodSyncing(true);
+          const staleVodSources = [];
           for (const source of xtreamSources) {
             const stale = await isVodStale(source.id, vodRefreshHours);
             if (stale) {
-              console.log(`[VOD] Source ${source.name} is stale, syncing...`);
-              await syncVodForSource(source);
+              staleVodSources.push(source);
             } else {
-              console.log(`[VOD] Source ${source.name} is fresh, skipping sync`);
+              debugLog(`Source ${source.name} is fresh, skipping VOD sync`, 'vod');
             }
           }
-          setVodSyncing(false);
+
+          if (staleVodSources.length > 0) {
+            setVodSyncing(true);
+            for (const source of staleVodSources) {
+              debugLog(`Source ${source.name} is stale, syncing VOD...`, 'vod');
+              await syncVodForSource(source);
+            }
+            setVodSyncing(false);
+          }
         }
       }
     };
