@@ -9,7 +9,7 @@ import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
 import { useSelectedCategory } from './hooks/useChannels';
-import { useChannelSyncing, useVodSyncing, useTmdbMatching } from './stores/uiStore';
+import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing } from './stores/uiStore';
 import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
@@ -113,9 +113,8 @@ function App() {
   const channelSyncing = useChannelSyncing();
   const vodSyncing = useVodSyncing();
   const tmdbMatching = useTmdbMatching();
-
-  // Sync state
-  const [syncing, setSyncing] = useState(false);
+  const setChannelSyncing = useSetChannelSyncing();
+  const setVodSyncing = useSetVodSyncing();
 
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
@@ -283,8 +282,9 @@ function App() {
       if (!window.storage) return;
       const result = await window.storage.getSources();
       if (result.data && result.data.length > 0) {
-        setSyncing(true);
+        setChannelSyncing(true);
         await syncAllSources();
+        setChannelSyncing(false);
 
         // Get user's configured refresh settings
         const settingsResult = await window.storage.getSettings();
@@ -292,20 +292,23 @@ function App() {
 
         // Sync VOD only for Xtream sources that are stale
         const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
-        for (const source of xtreamSources) {
-          const stale = await isVodStale(source.id, vodRefreshHours);
-          if (stale) {
-            console.log(`[VOD] Source ${source.name} is stale, syncing...`);
-            await syncVodForSource(source);
-          } else {
-            console.log(`[VOD] Source ${source.name} is fresh, skipping sync`);
+        if (xtreamSources.length > 0) {
+          setVodSyncing(true);
+          for (const source of xtreamSources) {
+            const stale = await isVodStale(source.id, vodRefreshHours);
+            if (stale) {
+              console.log(`[VOD] Source ${source.name} is stale, syncing...`);
+              await syncVodForSource(source);
+            } else {
+              console.log(`[VOD] Source ${source.name} is fresh, skipping sync`);
+            }
           }
+          setVodSyncing(false);
         }
-        setSyncing(false);
       }
     };
     doInitialSync();
-  }, []);
+  }, [setChannelSyncing, setVodSyncing]);
 
   // Keyboard shortcuts
   useEffect(() => {

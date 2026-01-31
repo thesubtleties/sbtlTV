@@ -4,6 +4,16 @@ import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
 import { getEnrichedMovieExports, getEnrichedTvExports, findBestMatch, extractMatchParams } from '../services/tmdb-exports';
 import { useUIStore } from '../stores/uiStore';
 
+// Debug logging helper - logs to console and optionally to debug file
+function debugLog(message: string, category = 'sync'): void {
+  const logMsg = `[${category}] ${message}`;
+  console.log(logMsg);
+  // Also send to main process debug log if available
+  if (window.debug?.logFromRenderer) {
+    window.debug.logFromRenderer(logMsg).catch(() => {});
+  }
+}
+
 export interface SyncResult {
   success: boolean;
   channelCount: number;
@@ -63,7 +73,7 @@ function endTmdbMatching() {
 async function syncEpgForSource(source: Source, channels: Channel[]): Promise<number> {
   if (!source.username || !source.password) return 0;
 
-  console.log('[EPG] Starting sync for source:', source.name || source.id);
+  debugLog(`Starting EPG sync for source: ${source.name || source.id}`, 'epg');
 
   const client = new XtreamClient(
     { baseUrl: source.url, username: source.username, password: source.password },
@@ -72,25 +82,29 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<nu
 
   try {
     // Fetch full XMLTV data FIRST (don't delete old data until we have new)
-    console.log('[EPG] Fetching XMLTV data...');
+    debugLog('Fetching XMLTV data...', 'epg');
     const xmltvPrograms = await client.getXmltvEpg();
-    console.log('[EPG] Received', xmltvPrograms.length, 'programs from XMLTV');
+    debugLog(`Received ${xmltvPrograms.length} programs from XMLTV`, 'epg');
 
     if (xmltvPrograms.length === 0) {
-      console.log('[EPG] No programs found, keeping existing data');
+      debugLog('No programs found in XMLTV, keeping existing data', 'epg');
       return 0;
     }
 
     // Build a map of epg_channel_id -> stream_id for matching
     const channelMap = new Map<string, string>();
+    let channelsWithEpgId = 0;
     for (const ch of channels) {
       if (ch.epg_channel_id) {
         channelMap.set(ch.epg_channel_id, ch.stream_id);
+        channelsWithEpgId++;
       }
     }
+    debugLog(`${channelsWithEpgId}/${channels.length} channels have epg_channel_id`, 'epg');
 
     // Convert XMLTV programs to stored format
     const storedPrograms: StoredProgram[] = [];
+    const unmatchedChannels = new Set<string>();
 
     for (const prog of xmltvPrograms) {
       const streamId = channelMap.get(prog.channel_id);
@@ -104,10 +118,21 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<nu
           end: prog.stop,
           source_id: source.id,
         });
+      } else {
+        unmatchedChannels.add(prog.channel_id);
       }
     }
 
-    // Only clear old data after successful fetch
+    debugLog(`Matched ${storedPrograms.length}/${xmltvPrograms.length} programs (${unmatchedChannels.size} unmatched EPG channels)`, 'epg');
+
+    // SAFETY: Only clear old data if we have new data to replace it
+    if (storedPrograms.length === 0) {
+      debugLog('WARNING: No programs matched! Keeping existing EPG data to avoid data loss', 'epg');
+      return 0;
+    }
+
+    // Clear old and store new
+    debugLog('Clearing old EPG data and storing new...', 'epg');
     await db.programs.where('source_id').equals(source.id).delete();
 
     // Store in batches
@@ -117,10 +142,12 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<nu
       await db.programs.bulkPut(batch);
     }
 
-    console.log('[EPG] Sync complete:', storedPrograms.length, 'programs stored');
+    debugLog(`EPG sync complete: ${storedPrograms.length} programs stored`, 'epg');
     return storedPrograms.length;
   } catch (err) {
-    console.error('[EPG] Fetch failed, keeping existing data:', err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    debugLog(`EPG fetch FAILED: ${errMsg}`, 'epg');
+    debugLog('Keeping existing EPG data', 'epg');
     return 0;
   }
 }
@@ -153,8 +180,10 @@ export async function isVodStale(sourceId: string, refreshHours: number = DEFAUL
 
 // Sync a single source - fetches data and stores in Dexie
 export async function syncSource(source: Source): Promise<SyncResult> {
+  debugLog(`Starting sync for source: ${source.name} (${source.type})`, 'sync');
   try {
     // Clear existing data for this source first
+    debugLog(`Clearing existing data for source: ${source.id}`, 'sync');
     await clearSourceData(source.id);
 
     let channels: Channel[] = [];
@@ -163,16 +192,19 @@ export async function syncSource(source: Source): Promise<SyncResult> {
 
     if (source.type === 'm3u') {
       // M3U source - fetch and parse
+      debugLog(`Fetching M3U from: ${source.url}`, 'sync');
       const result = await fetchAndParseM3U(source.url, source.id);
       channels = result.channels;
       categories = result.categories;
       epgUrl = result.epgUrl ?? undefined;
+      debugLog(`M3U parsed: ${channels.length} channels, ${categories.length} categories`, 'sync');
     } else if (source.type === 'xtream') {
       // Xtream source - use client
       if (!source.username || !source.password) {
         throw new Error('Xtream source requires username and password');
       }
 
+      debugLog(`Creating Xtream client for: ${source.url}`, 'sync');
       const client = new XtreamClient(
         {
           baseUrl: source.url,
@@ -183,14 +215,22 @@ export async function syncSource(source: Source): Promise<SyncResult> {
       );
 
       // Test connection first
+      debugLog('Testing Xtream connection...', 'sync');
       const connTest = await client.testConnection();
       if (!connTest.success) {
+        debugLog(`Connection test failed: ${connTest.error}`, 'sync');
         throw new Error(connTest.error ?? 'Connection failed');
       }
+      debugLog('Connection test passed', 'sync');
 
       // Fetch categories and channels
+      debugLog('Fetching live categories...', 'sync');
       categories = await client.getLiveCategories();
+      debugLog(`Got ${categories.length} categories`, 'sync');
+
+      debugLog('Fetching live streams...', 'sync');
       channels = await client.getLiveStreams();
+      debugLog(`Got ${channels.length} channels`, 'sync');
 
       // Get server info for EPG URL if available
       if (connTest.info?.server_info) {
@@ -204,11 +244,12 @@ export async function syncSource(source: Source): Promise<SyncResult> {
 
     // Check if source was deleted during sync
     if (isSourceDeleted(source.id)) {
-      console.log(`[Sync] Source ${source.id} was deleted during sync, skipping write`);
+      debugLog(`Source ${source.id} was deleted during sync, skipping write`, 'sync');
       return { success: false, channelCount: 0, categoryCount: 0, programCount: 0, error: 'Source deleted' };
     }
 
     // Store channels and categories in Dexie
+    debugLog(`Storing ${channels.length} channels and ${categories.length} categories in DB...`, 'sync');
     await db.transaction('rw', [db.channels, db.categories, db.sourcesMeta], async () => {
       if (channels.length > 0) {
         await db.channels.bulkPut(channels);
@@ -227,6 +268,7 @@ export async function syncSource(source: Source): Promise<SyncResult> {
       };
       await db.sourcesMeta.put(meta);
     });
+    debugLog('Channels and categories stored successfully', 'sync');
 
     // Fetch EPG if enabled
     let programCount = 0;
@@ -234,19 +276,22 @@ export async function syncSource(source: Source): Promise<SyncResult> {
 
     if (shouldLoadEpg && source.type === 'xtream' && source.username && source.password) {
       // Xtream: use built-in EPG endpoint (or override if provided)
+      debugLog('Syncing EPG for Xtream source...', 'epg');
       programCount = await syncEpgForSource(source, channels);
+      debugLog(`EPG sync complete: ${programCount} programs`, 'epg');
     } else if (shouldLoadEpg && epgUrl) {
       // M3U with EPG URL: fetch XMLTV from the EPG URL
       // TODO: Implement XMLTV fetch for M3U sources
-      console.log('[EPG] M3U EPG URL detected:', epgUrl);
+      debugLog(`M3U EPG URL detected but not implemented: ${epgUrl}`, 'epg');
     }
 
     // If user provided a manual EPG URL override, use that instead
     if (source.epg_url && !shouldLoadEpg) {
       // TODO: Implement manual XMLTV fetch
-      console.log('[EPG] Manual EPG URL override:', source.epg_url);
+      debugLog(`Manual EPG URL override not implemented: ${source.epg_url}`, 'epg');
     }
 
+    debugLog(`Sync complete for ${source.name}: ${channels.length} channels, ${categories.length} categories, ${programCount} programs`, 'sync');
     return {
       success: true,
       channelCount: channels.length,
@@ -255,19 +300,26 @@ export async function syncSource(source: Source): Promise<SyncResult> {
       epgUrl,
     };
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : '';
+    debugLog(`Sync FAILED for ${source.name}: ${errorMsg}`, 'sync');
+    debugLog(`Stack trace: ${errorStack}`, 'sync');
 
     // Don't write error if source was deleted during sync
     if (!isSourceDeleted(source.id)) {
-      await db.sourcesMeta.put({
-        source_id: source.id,
-        last_synced: new Date(),
-        channel_count: 0,
-        category_count: 0,
-        error: errorMsg,
-      });
+      try {
+        await db.sourcesMeta.put({
+          source_id: source.id,
+          last_synced: new Date(),
+          channel_count: 0,
+          category_count: 0,
+          error: errorMsg,
+        });
+      } catch (dbError) {
+        debugLog(`Failed to write error to sourcesMeta: ${dbError}`, 'sync');
+      }
     } else {
-      console.log(`[Sync] Source ${source.id} was deleted during sync, skipping error write`);
+      debugLog(`Source ${source.id} was deleted during sync, skipping error write`, 'sync');
     }
 
     return {
@@ -282,30 +334,35 @@ export async function syncSource(source: Source): Promise<SyncResult> {
 
 // Sync all enabled sources
 export async function syncAllSources(): Promise<Map<string, SyncResult>> {
+  debugLog('Starting syncAllSources...', 'sync');
   const results = new Map<string, SyncResult>();
 
   // Get sources from electron storage
   if (!window.storage) {
-    console.error('Storage API not available');
-    return results;
+    debugLog('ERROR: Storage API not available', 'sync');
+    throw new Error('Storage API not available');
   }
 
+  debugLog('Fetching sources from storage...', 'sync');
   const sourcesResult = await window.storage.getSources();
   if (!sourcesResult.data) {
-    console.error('Failed to get sources:', sourcesResult.error);
-    return results;
+    debugLog(`ERROR: Failed to get sources: ${sourcesResult.error}`, 'sync');
+    throw new Error(sourcesResult.error || 'Failed to get sources');
   }
+  debugLog(`Found ${sourcesResult.data.length} sources`, 'sync');
 
   // Sync each enabled source
-  for (const source of sourcesResult.data) {
-    if (source.enabled) {
-      console.log(`Syncing source: ${source.name} (${source.type})`);
-      const result = await syncSource(source);
-      results.set(source.id, result);
-      console.log(`  → ${result.success ? 'OK' : 'FAILED'}: ${result.channelCount} channels, ${result.categoryCount} categories`);
-    }
+  const enabledSources = sourcesResult.data.filter(s => s.enabled);
+  debugLog(`${enabledSources.length} sources enabled for sync`, 'sync');
+
+  for (const source of enabledSources) {
+    debugLog(`Syncing source: ${source.name} (${source.type})`, 'sync');
+    const result = await syncSource(source);
+    results.set(source.id, result);
+    debugLog(`Source ${source.name}: ${result.success ? 'OK' : 'FAILED'} - ${result.channelCount} channels, ${result.categoryCount} categories`, 'sync');
   }
 
+  debugLog('syncAllSources complete', 'sync');
   return results;
 }
 
