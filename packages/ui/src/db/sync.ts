@@ -96,6 +96,12 @@ function getEpgWorker(): Worker {
     };
     epgWorker.onerror = (err) => {
       debugLog(`EPG Worker error: ${err.message}`, 'epg');
+      // Reject all pending callbacks - worker is dead
+      for (const [, callback] of epgWorkerCallbacks) {
+        callback.reject(new Error(`EPG Worker crashed: ${err.message}`));
+      }
+      epgWorkerCallbacks.clear();
+      epgWorker = null; // Force recreation on next use
     };
   }
   return epgWorker;

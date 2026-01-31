@@ -39,6 +39,7 @@ export function DataRefreshTab({
     } catch (error) {
       console.error('[Settings] Failed to clear cache:', error);
       setCacheClearing(false);
+      setChannelSyncing(false);
     }
   }
 

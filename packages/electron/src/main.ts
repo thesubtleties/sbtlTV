@@ -58,7 +58,7 @@ function getDebugLogPath(): string {
   return path.join(logDir, 'sbtltv-debug.log');
 }
 
-function rotateLogIfNeeded(): void {
+function rotateLogIfNeeded(): boolean {
   const logPath = getDebugLogPath();
   try {
     if (fs.existsSync(logPath)) {
@@ -72,8 +72,10 @@ function rotateLogIfNeeded(): void {
         fs.renameSync(logPath, oldLogPath);
       }
     }
+    return true;
   } catch {
-    // Ignore rotation errors - logging should never crash the app
+    // Rotation failed - caller will log this, continue with existing file
+    return false;
   }
 }
 
@@ -88,11 +90,14 @@ function initDebugLogging(enabled: boolean): void {
       fs.mkdirSync(logDir, { recursive: true });
     }
     // Rotate log if it's too large
-    rotateLogIfNeeded();
+    const rotationSucceeded = rotateLogIfNeeded();
     // Open log file in append mode
     debugLogStream = fs.createWriteStream(logPath, { flags: 'a' });
     debugLog('='.repeat(60));
     debugLog(`Debug logging started - sbtlTV v${app.getVersion()}`);
+    if (!rotationSucceeded) {
+      debugLog('Warning: Log rotation failed, continuing with existing file', 'system');
+    }
     debugLog(`Platform: ${process.platform} ${process.arch}`);
     debugLog(`Electron: ${process.versions.electron}`);
     debugLog(`Node: ${process.versions.node}`);

@@ -315,60 +315,67 @@ function App() {
   useEffect(() => {
     const doInitialSync = async () => {
       if (!window.storage) return;
-      const result = await window.storage.getSources();
-      if (result.data && result.data.length > 0) {
-        // Get user's configured refresh settings
-        const settingsResult = await window.storage.getSettings();
-        const epgRefreshHours = settingsResult.data?.epgRefreshHours ?? 6;
-        const vodRefreshHours = settingsResult.data?.vodRefreshHours ?? 24;
-        // Load channel sort order preference
-        if (settingsResult.data?.channelSortOrder) {
-          setChannelSortOrder(settingsResult.data.channelSortOrder);
-        }
-
-        // Sync channels/EPG only for stale sources
-        const enabledSources = result.data.filter(s => s.enabled);
-        const staleSources = [];
-        for (const source of enabledSources) {
-          const stale = await isEpgStale(source.id, epgRefreshHours);
-          if (stale) {
-            staleSources.push(source);
-          } else {
-            debugLog(`Source ${source.name} is fresh, skipping channel/EPG sync`, 'sync');
+      try {
+        const result = await window.storage.getSources();
+        if (result.data && result.data.length > 0) {
+          // Get user's configured refresh settings
+          const settingsResult = await window.storage.getSettings();
+          const epgRefreshHours = settingsResult.data?.epgRefreshHours ?? 6;
+          const vodRefreshHours = settingsResult.data?.vodRefreshHours ?? 24;
+          // Load channel sort order preference
+          if (settingsResult.data?.channelSortOrder) {
+            setChannelSortOrder(settingsResult.data.channelSortOrder);
           }
-        }
 
-        if (staleSources.length > 0) {
-          setChannelSyncing(true);
-          for (const source of staleSources) {
-            debugLog(`Source ${source.name} is stale, syncing...`, 'sync');
-            await syncSource(source);
-          }
-          setChannelSyncing(false);
-        }
-
-        // Sync VOD only for Xtream sources that are stale
-        const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
-        if (xtreamSources.length > 0) {
-          const staleVodSources = [];
-          for (const source of xtreamSources) {
-            const stale = await isVodStale(source.id, vodRefreshHours);
+          // Sync channels/EPG only for stale sources
+          const enabledSources = result.data.filter(s => s.enabled);
+          const staleSources = [];
+          for (const source of enabledSources) {
+            const stale = await isEpgStale(source.id, epgRefreshHours);
             if (stale) {
-              staleVodSources.push(source);
+              staleSources.push(source);
             } else {
-              debugLog(`Source ${source.name} is fresh, skipping VOD sync`, 'vod');
+              debugLog(`Source ${source.name} is fresh, skipping channel/EPG sync`, 'sync');
             }
           }
 
-          if (staleVodSources.length > 0) {
-            setVodSyncing(true);
-            for (const source of staleVodSources) {
-              debugLog(`Source ${source.name} is stale, syncing VOD...`, 'vod');
-              await syncVodForSource(source);
+          if (staleSources.length > 0) {
+            setChannelSyncing(true);
+            for (const source of staleSources) {
+              debugLog(`Source ${source.name} is stale, syncing...`, 'sync');
+              await syncSource(source);
             }
-            setVodSyncing(false);
+          }
+
+          // Sync VOD only for Xtream sources that are stale
+          const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
+          if (xtreamSources.length > 0) {
+            const staleVodSources = [];
+            for (const source of xtreamSources) {
+              const stale = await isVodStale(source.id, vodRefreshHours);
+              if (stale) {
+                staleVodSources.push(source);
+              } else {
+                debugLog(`Source ${source.name} is fresh, skipping VOD sync`, 'vod');
+              }
+            }
+
+            if (staleVodSources.length > 0) {
+              setVodSyncing(true);
+              for (const source of staleVodSources) {
+                debugLog(`Source ${source.name} is stale, syncing VOD...`, 'vod');
+                await syncVodForSource(source);
+              }
+            }
           }
         }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        debugLog(`Initial sync failed: ${errMsg}`, 'sync');
+        console.error('[App] Initial sync failed:', err);
+      } finally {
+        setChannelSyncing(false);
+        setVodSyncing(false);
       }
     };
     doInitialSync();
