@@ -19,18 +19,36 @@ export function useCategoriesForSource(sourceId: string | null) {
 }
 
 // Hook to get channels for a category (or all if categoryId is null)
-export function useChannels(categoryId: string | null) {
+// sortOrder: 'alphabetical' (default) or 'number' (by channel_num from provider)
+export function useChannels(categoryId: string | null, sortOrder: 'alphabetical' | 'number' = 'alphabetical') {
   const channels = useLiveQuery(
-    () => {
+    async () => {
+      let results: StoredChannel[];
       if (!categoryId) {
-        // All channels, sorted by name
-        return db.channels.orderBy('name').toArray();
+        results = await db.channels.toArray();
+      } else {
+        // Channels in this category
+        results = await db.channels.where('category_ids').equals(categoryId).toArray();
       }
-      // Channels in this category
-      // category_ids is an array, so we use anyOf pattern
-      return db.channels.where('category_ids').equals(categoryId).sortBy('name');
+
+      // Sort based on preference
+      if (sortOrder === 'number') {
+        // Sort by channel_num, with channels lacking a number at the end (alphabetically)
+        return results.sort((a, b) => {
+          const aNum = a.channel_num;
+          const bNum = b.channel_num;
+          if (aNum !== undefined && bNum !== undefined) {
+            return aNum - bNum;
+          }
+          if (aNum !== undefined) return -1; // a has number, b doesn't
+          if (bNum !== undefined) return 1;  // b has number, a doesn't
+          return a.name.localeCompare(b.name); // both lack numbers, sort alphabetically
+        });
+      }
+      // Default: alphabetical
+      return results.sort((a, b) => a.name.localeCompare(b.name));
     },
-    [categoryId]
+    [categoryId, sortOrder]
   );
   return channels ?? [];
 }

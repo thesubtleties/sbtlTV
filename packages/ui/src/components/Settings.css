@@ -28,6 +28,26 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
+/* Sidebar layout variant */
+.settings-panel--sidebar {
+  max-width: 750px;
+}
+
+.settings-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .settings-header {
   display: flex;
   justify-content: space-between;
@@ -145,6 +165,17 @@
 .sync-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.sync-btn.danger {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.4);
+}
+
+.sync-btn.danger:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: rgba(255, 107, 107, 0.6);
+  color: #ff6b6b;
 }
 
 .add-btn {
@@ -843,7 +874,7 @@
 /* Disclaimer text */
 .settings-disclaimer {
   margin-top: auto;
-  padding-top: 16px;
+  padding: 16px 12px 0;
   font-size: 0.7rem;
   color: rgba(255, 255, 255, 0.4);
   text-align: center;

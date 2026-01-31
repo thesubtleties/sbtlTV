@@ -5,12 +5,14 @@ interface MoviesTabProps {
   tmdbApiKey: string | null;
   enabledGenres: number[] | undefined;
   onEnabledGenresChange: (genres: number[]) => void;
+  settingsLoaded: boolean;
 }
 
 export function MoviesTab({
   tmdbApiKey,
   enabledGenres,
   onEnabledGenresChange,
+  settingsLoaded,
 }: MoviesTabProps) {
   const { genres, loading } = useMovieGenres(tmdbApiKey);
 
@@ -83,7 +85,7 @@ export function MoviesTab({
           Each selected genre will appear as a Netflix-style row.
         </p>
 
-        {loading || countsLoading ? (
+        {!settingsLoaded || loading || countsLoading ? (
           <div className="loading-state">Loading genres...</div>
         ) : genres.length === 0 ? (
           <div className="empty-state">

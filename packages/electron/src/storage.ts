@@ -33,6 +33,8 @@ interface AppSettings {
   posterDbApiKey?: string;         // RatingPosterDB API key
   rpdbBackdropsEnabled?: boolean;  // Use RPDB for backdrop images (tier 2+)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF protection bypass)
+  debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
+  channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering (default: alphabetical)
 }
 
 // Internal storage format (encrypted)
@@ -47,6 +49,8 @@ interface StoredSettings {
   encryptedPosterDbApiKey?: string; // Base64 encoded encrypted buffer
   rpdbBackdropsEnabled?: boolean;   // Use RPDB for backdrop images
   allowLanSources?: boolean;        // Allow requests to LAN IPs
+  debugLoggingEnabled?: boolean;    // Write verbose logs to file
+  channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
 }
 
 const store = new Store<StoreSchema>({
@@ -183,6 +187,8 @@ export function getSettings(): AppSettings {
   }
   result.rpdbBackdropsEnabled = stored.rpdbBackdropsEnabled ?? false;
   result.allowLanSources = stored.allowLanSources ?? false;
+  result.debugLoggingEnabled = stored.debugLoggingEnabled ?? false;
+  result.channelSortOrder = stored.channelSortOrder ?? 'alphabetical';
   return result;
 }
 
@@ -210,6 +216,12 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.allowLanSources !== undefined) {
     updated.allowLanSources = settings.allowLanSources;
+  }
+  if (settings.debugLoggingEnabled !== undefined) {
+    updated.debugLoggingEnabled = settings.debugLoggingEnabled;
+  }
+  if (settings.channelSortOrder !== undefined) {
+    updated.channelSortOrder = settings.channelSortOrder;
   }
 
   store.set('settings', updated);

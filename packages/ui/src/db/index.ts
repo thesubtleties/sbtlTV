@@ -160,6 +160,19 @@ class SbtltvDatabase extends Dexie {
       vodEpisodes: 'id, series_id, season_num, episode_num',
       vodCategories: 'category_id, source_id, name, type',
     });
+
+    // Add channel_num index for channel ordering (Xtream num / M3U tvg-chno)
+    this.version(7).stores({
+      channels: 'stream_id, source_id, *category_ids, name, channel_num',
+      categories: 'category_id, source_id, category_name',
+      sourcesMeta: 'source_id',
+      prefs: 'key',
+      programs: 'id, stream_id, source_id, start, end, [stream_id+start]',
+      vodMovies: 'stream_id, source_id, *category_ids, name, tmdb_id, added, popularity, [source_id+tmdb_id]',
+      vodSeries: 'series_id, source_id, *category_ids, name, tmdb_id, added, popularity, [source_id+tmdb_id]',
+      vodEpisodes: 'id, series_id, season_num, episode_num',
+      vodCategories: 'category_id, source_id, name, type',
+    });
   }
 }
 
@@ -190,6 +203,30 @@ export async function clearVodData(sourceId: string): Promise<void> {
       await db.vodEpisodes.where('series_id').equals(seriesId).delete();
     }
     await db.vodCategories.where('source_id').equals(sourceId).delete();
+  });
+}
+
+// Helper to clear ALL cached data (channels, EPG, VOD, metadata)
+// Keeps: prefs (user preferences), electron-store settings, source configs
+export async function clearAllCachedData(): Promise<void> {
+  await db.transaction('rw', [
+    db.channels,
+    db.categories,
+    db.sourcesMeta,
+    db.programs,
+    db.vodMovies,
+    db.vodSeries,
+    db.vodEpisodes,
+    db.vodCategories,
+  ], async () => {
+    await db.channels.clear();
+    await db.categories.clear();
+    await db.sourcesMeta.clear();
+    await db.programs.clear();
+    await db.vodMovies.clear();
+    await db.vodSeries.clear();
+    await db.vodEpisodes.clear();
+    await db.vodCategories.clear();
   });
 }
 

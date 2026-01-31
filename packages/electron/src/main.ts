@@ -48,6 +48,78 @@ const SOCKET_PATH = process.platform === 'win32'
 let lastStatusUpdate = 0;
 const STATUS_THROTTLE_MS = 100;
 
+// Debug logging infrastructure
+let debugLogStream: fs.WriteStream | null = null;
+let debugLoggingEnabled = false;
+const DEBUG_LOG_MAX_SIZE = 10 * 1024 * 1024; // 10MB max log size
+
+function getDebugLogPath(): string {
+  const logDir = app.getPath('logs');
+  return path.join(logDir, 'sbtltv-debug.log');
+}
+
+function rotateLogIfNeeded(): boolean {
+  const logPath = getDebugLogPath();
+  try {
+    if (fs.existsSync(logPath)) {
+      const stats = fs.statSync(logPath);
+      if (stats.size > DEBUG_LOG_MAX_SIZE) {
+        // Rotate: rename current log to .old, delete previous .old
+        const oldLogPath = logPath + '.old';
+        if (fs.existsSync(oldLogPath)) {
+          fs.unlinkSync(oldLogPath);
+        }
+        fs.renameSync(logPath, oldLogPath);
+      }
+    }
+    return true;
+  } catch {
+    // Rotation failed - caller will log this, continue with existing file
+    return false;
+  }
+}
+
+function initDebugLogging(enabled: boolean): void {
+  debugLoggingEnabled = enabled;
+
+  if (enabled && !debugLogStream) {
+    const logPath = getDebugLogPath();
+    // Ensure logs directory exists
+    const logDir = path.dirname(logPath);
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    // Rotate log if it's too large
+    const rotationSucceeded = rotateLogIfNeeded();
+    // Open log file in append mode
+    debugLogStream = fs.createWriteStream(logPath, { flags: 'a' });
+    debugLog('='.repeat(60));
+    debugLog(`Debug logging started - sbtlTV v${app.getVersion()}`);
+    if (!rotationSucceeded) {
+      debugLog('Warning: Log rotation failed, continuing with existing file', 'system');
+    }
+    debugLog(`Platform: ${process.platform} ${process.arch}`);
+    debugLog(`Electron: ${process.versions.electron}`);
+    debugLog(`Node: ${process.versions.node}`);
+    debugLog('='.repeat(60));
+  } else if (!enabled && debugLogStream) {
+    debugLog('Debug logging disabled');
+    debugLogStream.end();
+    debugLogStream = null;
+  }
+}
+
+function debugLog(message: string, category = 'app'): void {
+  if (!debugLoggingEnabled || !debugLogStream) return;
+  try {
+    const timestamp = new Date().toISOString();
+    const line = `[${timestamp}] [${category}] ${message}\n`;
+    debugLogStream.write(line);
+  } catch {
+    // Silently fail - logging should never crash the app
+  }
+}
+
 async function createWindow(): Promise<void> {
   // On Windows, we use a transparent frameless window for mpv embedding
   const isWindows = process.platform === 'win32';
@@ -157,6 +229,21 @@ function findMpvBinary(): string | null {
   }
 }
 
+// Get mpv version as [major, minor] tuple, or null if can't detect
+function getMpvVersion(mpvPath: string): [number, number] | null {
+  try {
+    const output = execFileSync(mpvPath, ['--version'], { encoding: 'utf-8' });
+    // Parse "mpv 0.34.1" or "mpv 0.35.0" etc.
+    const match = output.match(/mpv\s+(\d+)\.(\d+)/);
+    if (match) {
+      return [parseInt(match[1], 10), parseInt(match[2], 10)];
+    }
+  } catch {
+    // Failed to get version
+  }
+  return null;
+}
+
 // Check if mpv is available and show error dialog if not
 async function checkMpvAvailable(): Promise<boolean> {
   const mpvPath = findMpvBinary();
@@ -209,6 +296,14 @@ async function initMpv(): Promise<void> {
       return;
     }
     console.log('[mpv] Using binary:', mpvBinary);
+    debugLog(`Using binary: ${mpvBinary}`, 'mpv');
+
+    // Check mpv version for feature compatibility
+    const mpvVersion = getMpvVersion(mpvBinary);
+    const hasHdrOptions = mpvVersion && (mpvVersion[0] > 0 || (mpvVersion[0] === 0 && mpvVersion[1] >= 35));
+    const versionStr = mpvVersion ? `${mpvVersion[0]}.${mpvVersion[1]}` : 'unknown';
+    console.log('[mpv] Version:', versionStr);
+    debugLog(`Version: ${versionStr}`, 'mpv');
 
     let mpvArgs = [
       `--input-ipc-server=${SOCKET_PATH}`,
@@ -225,10 +320,19 @@ async function initMpv(): Promise<void> {
       '--really-quiet',
       '--hwdec=auto',
       '--vo=gpu',
-      '--target-colorspace-hint=no',
-      '--tone-mapping=mobius',
-      '--hdr-compute-peak=no',
     ];
+
+    // HDR options require mpv 0.35+
+    if (hasHdrOptions) {
+      mpvArgs.push(
+        '--target-colorspace-hint=no',
+        '--tone-mapping=mobius',
+        '--hdr-compute-peak=no',
+      );
+      console.log('[mpv] HDR options enabled (mpv 0.35+)');
+    } else {
+      console.log('[mpv] HDR options skipped (requires mpv 0.35+)');
+    }
 
     // Get native window handle for --wid embedding
     const nativeHandle = mainWindow.getNativeWindowHandle();
@@ -264,7 +368,9 @@ async function initMpv(): Promise<void> {
       mpvArgs = [...mpvArgs, `--wid=${windowId}`];
     }
 
-    console.log('[mpv] Starting with args:', mpvArgs.join(' '));
+    const argsStr = mpvArgs.join(' ');
+    console.log('[mpv] Starting with args:', argsStr);
+    debugLog(`Starting with args: ${argsStr}`, 'mpv');
 
     mpvProcess = spawn(mpvBinary, mpvArgs, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -272,22 +378,29 @@ async function initMpv(): Promise<void> {
     });
 
     mpvProcess.stdout?.on('data', (data: Buffer) => {
-      const str = data.toString();
+      const str = data.toString().trim();
+      // Always log to debug file if enabled
+      if (str) debugLog(str, 'mpv-stdout');
+      // Only console.log non-status lines
       if (!str.includes('AV:') && !str.includes('A:') && !str.includes('V:')) {
         console.log('[mpv stdout]', str);
       }
     });
 
     mpvProcess.stderr?.on('data', (data: Buffer) => {
-      console.log('[mpv stderr]', data.toString());
+      const str = data.toString().trim();
+      if (str) debugLog(str, 'mpv-stderr');
+      console.log('[mpv stderr]', str);
     });
 
     mpvProcess.on('error', (error: Error) => {
+      debugLog(`Process error: ${error.message}`, 'mpv');
       console.error('[mpv] Process error:', error.message);
       sendToRenderer('mpv-error', error.message);
     });
 
     mpvProcess.on('exit', (code) => {
+      debugLog(`Process exited with code: ${code}`, 'mpv');
       console.log('[mpv] Process exited with code:', code);
       mpvProcess = null;
 
@@ -472,12 +585,20 @@ ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
 
 // IPC Handlers - mpv control
 ipcMain.handle('mpv-load', async (_event, url: string) => {
-  if (!mpvSocket) return { error: 'mpv not initialized' };
+  debugLog(`mpv-load called with URL: ${url}`, 'mpv');
+  if (!mpvSocket) {
+    debugLog('mpv-load FAILED: mpv not initialized (no socket)', 'mpv');
+    return { error: 'mpv not initialized' };
+  }
   try {
+    debugLog('Sending loadfile command to mpv...', 'mpv');
     await sendMpvCommand('loadfile', [url]);
+    debugLog('mpv-load SUCCESS', 'mpv');
     return { success: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Unknown error' };
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    debugLog(`mpv-load FAILED: ${errMsg}`, 'mpv');
+    return { error: errMsg };
   }
 });
 
@@ -542,12 +663,16 @@ ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
 });
 
 ipcMain.handle('mpv-stop', async () => {
+  debugLog('mpv-stop called', 'mpv');
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('stop', []);
+    debugLog('mpv-stop SUCCESS', 'mpv');
     return { success: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Unknown error' };
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    debugLog(`mpv-stop FAILED: ${errMsg}`, 'mpv');
+    return { error: errMsg };
   }
 });
 
@@ -599,6 +724,10 @@ ipcMain.handle('storage-get-settings', async () => {
 ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<typeof storage.updateSettings>[0]) => {
   try {
     storage.updateSettings(settings);
+    // Update debug logging if that setting changed
+    if (settings.debugLoggingEnabled !== undefined) {
+      initDebugLogging(settings.debugLoggingEnabled);
+    }
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -607,6 +736,23 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
 
 ipcMain.handle('storage-is-encryption-available', async () => {
   return { success: true, data: storage.isEncryptionAvailable() };
+});
+
+// Debug logging IPC handlers
+ipcMain.handle('debug-get-log-path', async () => {
+  return { success: true, data: getDebugLogPath() };
+});
+
+ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
+  debugLog(message, 'renderer');
+  return { success: true };
+});
+
+ipcMain.handle('debug-open-log-folder', async () => {
+  const { shell } = await import('electron');
+  const logPath = getDebugLogPath();
+  shell.showItemInFolder(logPath);
+  return { success: true };
 });
 
 // IPC Handler - Import M3U file via file dialog
@@ -637,15 +783,17 @@ ipcMain.handle('import-m3u-file', async () => {
   }
 });
 
-// URL allowlist for fetch-binary (TMDB exports only) - prevents SSRF attacks
-const ALLOWED_BINARY_FETCH_DOMAINS = [
-  'files.tmdb.org',       // TMDB daily exports (gzipped)
-];
-
-function isAllowedBinaryUrl(url: string): boolean {
+// Check if URL is allowed for binary fetch
+// Uses same SSRF protection as fetch-proxy (respects allowLanSources setting)
+function isAllowedBinaryUrl(url: string, allowLan: boolean): boolean {
+  // Check SSRF protection (unless LAN sources are allowed)
+  if (!allowLan && isBlockedUrl(url)) {
+    return false;
+  }
+  // Allow any HTTP/HTTPS URL
   try {
     const parsed = new URL(url);
-    return ALLOWED_BINARY_FETCH_DOMAINS.some(domain => parsed.hostname === domain || parsed.hostname.endsWith('.' + domain));
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
   } catch {
     return false;
   }
@@ -705,11 +853,12 @@ ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: s
   }
 });
 
-// Fetch binary - for gzipped/binary content, returns base64
-// Restricted to TMDB exports only (prevents SSRF with binary data)
+// Fetch binary - for gzipped/binary content (EPG files, TMDB exports), returns base64
+// Uses same SSRF protection as fetch-proxy (respects allowLanSources setting)
 ipcMain.handle('fetch-binary', async (_event, url: string) => {
-  if (!isAllowedBinaryUrl(url)) {
-    return { success: false, error: `Domain not allowed for binary fetch: ${new URL(url).hostname}` };
+  const settings = storage.getSettings();
+  if (!isAllowedBinaryUrl(url, settings.allowLanSources ?? false)) {
+    return { success: false, error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > Security if you trust this source.' };
   }
   try {
     const response = await electronNet.fetch(url);
@@ -735,6 +884,10 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
 
 // App lifecycle
 app.whenReady().then(async () => {
+  // Initialize debug logging from saved settings
+  const settings = storage.getSettings();
+  initDebugLogging(settings.debugLoggingEnabled ?? false);
+
   const mpvAvailable = await checkMpvAvailable();
   if (!mpvAvailable) {
     app.quit();

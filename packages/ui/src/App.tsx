@@ -9,10 +9,22 @@ import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
 import { useSelectedCategory } from './hooks/useChannels';
-import { useChannelSyncing, useVodSyncing, useTmdbMatching } from './stores/uiStore';
-import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
+import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useSetChannelSortOrder } from './stores/uiStore';
+import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
+
+// Auto-hide controls after this many milliseconds of inactivity
+const CONTROLS_AUTO_HIDE_MS = 3000;
+
+// Debug logging helper for UI playback
+function debugLog(message: string, category = 'play'): void {
+  const logMsg = `[${category}] ${message}`;
+  console.log(logMsg);
+  if (window.debug?.logFromRenderer) {
+    window.debug.logFromRenderer(logMsg).catch(() => {});
+  }
+}
 
 /**
  * Generate fallback stream URLs when primary fails.
@@ -65,22 +77,31 @@ async function tryLoadWithFallbacks(
   isLive: boolean,
   mpv: NonNullable<typeof window.mpv>
 ): Promise<{ success: boolean; url: string; error?: string }> {
+  debugLog(`Attempting to load: ${primaryUrl} (isLive: ${isLive})`);
+
   // Try primary URL first
   const result = await mpv.load(primaryUrl);
   if (!result.error) {
+    debugLog(`Primary URL loaded successfully`);
     return { success: true, url: primaryUrl };
   }
+  debugLog(`Primary URL failed: ${result.error}`);
 
   // Try fallbacks
   const fallbacks = getStreamFallbacks(primaryUrl, isLive);
+  debugLog(`Trying ${fallbacks.length} fallback URLs...`);
   for (const fallbackUrl of fallbacks) {
+    debugLog(`Trying fallback: ${fallbackUrl}`);
     const fallbackResult = await mpv.load(fallbackUrl);
     if (!fallbackResult.error) {
+      debugLog(`Fallback succeeded: ${fallbackUrl}`);
       return { success: true, url: fallbackUrl };
     }
+    debugLog(`Fallback failed: ${fallbackResult.error}`);
   }
 
   // All failed - return original error
+  debugLog(`All URLs failed, returning error: ${result.error}`);
   return { success: false, url: primaryUrl, error: result.error };
 }
 
@@ -110,9 +131,9 @@ function App() {
   const channelSyncing = useChannelSyncing();
   const vodSyncing = useVodSyncing();
   const tmdbMatching = useTmdbMatching();
-
-  // Sync state
-  const [syncing, setSyncing] = useState(false);
+  const setChannelSyncing = useSetChannelSyncing();
+  const setVodSyncing = useSetVodSyncing();
+  const setChannelSortOrder = useSetChannelSortOrder();
 
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
@@ -171,7 +192,7 @@ function App() {
       if (!controlsHoveredRef.current) {
         setShowControls(false);
       }
-    }, 3000);
+    }, CONTROLS_AUTO_HIDE_MS);
 
     return () => clearTimeout(timer);
   }, [lastActivity, playing, activeView, categoriesOpen]);
@@ -184,12 +205,19 @@ function App() {
 
   // Control handlers
   const handleLoadStream = async (channel: StoredChannel) => {
-    if (!window.mpv) return;
+    debugLog(`handleLoadStream: ${channel.name} (${channel.stream_id})`);
+    debugLog(`  URL: ${channel.direct_url}`);
+    if (!window.mpv) {
+      debugLog('  ABORT: window.mpv not available');
+      return;
+    }
     setError(null);
     const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
     if (!result.success) {
+      debugLog(`  FAILED: ${result.error}`);
       setError(result.error ?? 'Failed to load stream');
     } else {
+      debugLog(`  SUCCESS: playing`);
       // Update channel with working URL if fallback was used
       setCurrentChannel(result.url !== channel.direct_url
         ? { ...channel, direct_url: result.url }
@@ -219,8 +247,10 @@ function App() {
   };
 
   const handleStop = async () => {
+    debugLog('handleStop called');
     if (!window.mpv) return;
     await window.mpv.stop();
+    debugLog('handleStop: mpv.stop() completed');
     setPlaying(false);
     setCurrentChannel(null);
   };
@@ -241,12 +271,19 @@ function App() {
 
   // Play VOD content (movies/series)
   const handlePlayVod = async (info: VodPlayInfo) => {
-    if (!window.mpv) return;
+    debugLog(`handlePlayVod: ${info.title} (${info.type})`);
+    debugLog(`  URL: ${info.url}`);
+    if (!window.mpv) {
+      debugLog('  ABORT: window.mpv not available');
+      return;
+    }
     setError(null);
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
     if (!result.success) {
+      debugLog(`  FAILED: ${result.error}`);
       setError(result.error ?? 'Failed to load stream');
     } else {
+      debugLog(`  SUCCESS: playing`);
       // Create a pseudo-channel for the now playing bar
       const workingUrl = result.url;
       setCurrentChannel({
@@ -278,31 +315,71 @@ function App() {
   useEffect(() => {
     const doInitialSync = async () => {
       if (!window.storage) return;
-      const result = await window.storage.getSources();
-      if (result.data && result.data.length > 0) {
-        setSyncing(true);
-        await syncAllSources();
+      try {
+        const result = await window.storage.getSources();
+        if (result.data && result.data.length > 0) {
+          // Get user's configured refresh settings
+          const settingsResult = await window.storage.getSettings();
+          const epgRefreshHours = settingsResult.data?.epgRefreshHours ?? 6;
+          const vodRefreshHours = settingsResult.data?.vodRefreshHours ?? 24;
+          // Load channel sort order preference
+          if (settingsResult.data?.channelSortOrder) {
+            setChannelSortOrder(settingsResult.data.channelSortOrder);
+          }
 
-        // Get user's configured refresh settings
-        const settingsResult = await window.storage.getSettings();
-        const vodRefreshHours = settingsResult.data?.vodRefreshHours ?? 24;
+          // Sync channels/EPG only for stale sources
+          const enabledSources = result.data.filter(s => s.enabled);
+          const staleSources = [];
+          for (const source of enabledSources) {
+            const stale = await isEpgStale(source.id, epgRefreshHours);
+            if (stale) {
+              staleSources.push(source);
+            } else {
+              debugLog(`Source ${source.name} is fresh, skipping channel/EPG sync`, 'sync');
+            }
+          }
 
-        // Sync VOD only for Xtream sources that are stale
-        const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
-        for (const source of xtreamSources) {
-          const stale = await isVodStale(source.id, vodRefreshHours);
-          if (stale) {
-            console.log(`[VOD] Source ${source.name} is stale, syncing...`);
-            await syncVodForSource(source);
-          } else {
-            console.log(`[VOD] Source ${source.name} is fresh, skipping sync`);
+          if (staleSources.length > 0) {
+            setChannelSyncing(true);
+            for (const source of staleSources) {
+              debugLog(`Source ${source.name} is stale, syncing...`, 'sync');
+              await syncSource(source);
+            }
+          }
+
+          // Sync VOD only for Xtream sources that are stale
+          const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
+          if (xtreamSources.length > 0) {
+            const staleVodSources = [];
+            for (const source of xtreamSources) {
+              const stale = await isVodStale(source.id, vodRefreshHours);
+              if (stale) {
+                staleVodSources.push(source);
+              } else {
+                debugLog(`Source ${source.name} is fresh, skipping VOD sync`, 'vod');
+              }
+            }
+
+            if (staleVodSources.length > 0) {
+              setVodSyncing(true);
+              for (const source of staleVodSources) {
+                debugLog(`Source ${source.name} is stale, syncing VOD...`, 'vod');
+                await syncVodForSource(source);
+              }
+            }
           }
         }
-        setSyncing(false);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        debugLog(`Initial sync failed: ${errMsg}`, 'sync');
+        console.error('[App] Initial sync failed:', err);
+      } finally {
+        setChannelSyncing(false);
+        setVodSyncing(false);
       }
     };
     doInitialSync();
-  }, []);
+  }, [setChannelSyncing, setVodSyncing]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -346,9 +423,9 @@ function App() {
   const handleClose = () => window.electronWindow?.close();
 
   return (
-    <div className="app" onMouseMove={handleMouseMove}>
+    <div className={`app${showControls ? '' : ' controls-hidden'}`} onMouseMove={handleMouseMove}>
       {/* Custom title bar for frameless window */}
-      <div className="title-bar">
+      <div className={`title-bar${showControls ? ' visible' : ''}`}>
         <Logo className="title-bar-logo" />
         <div className="window-controls">
           <button onClick={handleMinimize} title="Minimize">
@@ -471,7 +548,7 @@ function App() {
       {/* Resize grip for frameless window (Windows only - frameless windows lack native resize) */}
       {window.platform?.isWindows && (
       <div
-        className="resize-grip"
+        className={`resize-grip${showControls ? ' visible' : ''}`}
         onMouseDown={(e) => {
           e.preventDefault();
           if (!window.electronWindow) return;

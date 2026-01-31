@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-01-31
+
+### Added
+- Debug logging with file output and log rotation (Settings → Debug)
+- Settings sidebar with organized tabs (General, Library, Debug)
+- Clear all cached data button for troubleshooting
+- Auto-hide UI controls and cursor during playback inactivity
+- M3U EPG sync from external URLs (gzip supported)
+- Web Worker for EPG parsing to prevent UI freezing on large files
+- Channel number ordering - sort by provider's channel numbers (tvg-chno / Xtream num)
+- Configurable staleness intervals for EPG and VOD auto-refresh
+
+### Changed
+- Settings UI reorganized into sidebar navigation
+- XMLTV parser extracted to shared local-adapter module
+
 ## [0.1.0] - 2026-01-25
 
 ### Added
