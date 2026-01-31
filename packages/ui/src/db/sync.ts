@@ -1,5 +1,5 @@
 import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory } from './index';
-import { fetchAndParseM3U, XtreamClient, parseXmltv, type XmltvProgram } from '@sbtltv/local-adapter';
+import { fetchAndParseM3U, XtreamClient, type XmltvProgram } from '@sbtltv/local-adapter';
 import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
 import { getEnrichedMovieExports, getEnrichedTvExports, findBestMatch, extractMatchParams } from '../services/tmdb-exports';
 import { useUIStore } from '../stores/uiStore';
@@ -69,34 +69,185 @@ function endTmdbMatching() {
   }
 }
 
-// Fetch XMLTV from a URL and parse it
+// Safety limits for EPG fetching
+// Large files (>50MB) cause UI freezing due to IPC overhead - TODO: implement streaming
+const MAX_COMPRESSED_SIZE_MB = 50;   // Max 50MB compressed (~500MB uncompressed)
+const MAX_COMPRESSED_BYTES = MAX_COMPRESSED_SIZE_MB * 1024 * 1024;
+
+// EPG Parser Web Worker - handles decompression and parsing off main thread
+let epgWorker: Worker | null = null;
+let epgWorkerIdCounter = 0;
+const epgWorkerCallbacks = new Map<number, { resolve: (programs: XmltvProgram[]) => void; reject: (err: Error) => void }>();
+
+function getEpgWorker(): Worker {
+  if (!epgWorker) {
+    epgWorker = new Worker(new URL('../workers/epg-parser.worker.ts', import.meta.url), { type: 'module' });
+    epgWorker.onmessage = (event) => {
+      const { type, id, programs, error } = event.data;
+      const callback = epgWorkerCallbacks.get(id);
+      if (callback) {
+        epgWorkerCallbacks.delete(id);
+        if (type === 'result') {
+          callback.resolve(programs || []);
+        } else {
+          callback.reject(new Error(error || 'Worker error'));
+        }
+      }
+    };
+    epgWorker.onerror = (err) => {
+      debugLog(`EPG Worker error: ${err.message}`, 'epg');
+    };
+  }
+  return epgWorker;
+}
+
+// Convert string to Uint8Array in chunks (avoids blocking for large strings)
+async function stringToBufferChunked(str: string): Promise<Uint8Array> {
+  const encoder = new TextEncoder();
+  const CHUNK_SIZE = 1_000_000; // 1MB chunks
+
+  if (str.length <= CHUNK_SIZE) {
+    return encoder.encode(str);
+  }
+
+  // For large strings, encode in chunks with yields
+  const chunks: Uint8Array[] = [];
+  for (let i = 0; i < str.length; i += CHUNK_SIZE) {
+    const chunk = str.slice(i, i + CHUNK_SIZE);
+    chunks.push(encoder.encode(chunk));
+    // Yield to event loop
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  // Combine chunks
+  const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
+// Parse EPG data using Web Worker (off main thread)
+// Uses Transferable for large data to avoid blocking structured clone
+async function parseEpgInWorker(data: string, isGzipped: boolean): Promise<XmltvProgram[]> {
+  return new Promise(async (resolve, reject) => {
+    const id = ++epgWorkerIdCounter;
+    epgWorkerCallbacks.set(id, { resolve, reject });
+
+    // For large data, convert to ArrayBuffer and transfer (avoids copy)
+    if (data.length > 1_000_000) { // > 1MB
+      debugLog(`Large EPG data (${Math.round(data.length / 1024 / 1024)}MB), using chunked transfer...`, 'epg');
+      const buffer = await stringToBufferChunked(data);
+      getEpgWorker().postMessage(
+        { type: 'parse', id, buffer, isGzipped, isBuffer: true },
+        [buffer.buffer] // Transfer ownership
+      );
+    } else {
+      getEpgWorker().postMessage({ type: 'parse', id, data, isGzipped });
+    }
+  });
+}
+
+// Fetch XMLTV from a single URL and parse it (parsing happens in worker)
 async function fetchXmltvFromUrl(epgUrl: string): Promise<XmltvProgram[]> {
-  debugLog(`Fetching XMLTV from: ${epgUrl}`, 'epg');
+  const url = epgUrl.trim();
+  debugLog(`Fetching XMLTV from: ${url}`, 'epg');
 
   if (!window.fetchProxy) {
     throw new Error('fetchProxy not available');
   }
 
-  const response = await window.fetchProxy.fetch(epgUrl);
-  if (!response.data?.ok) {
-    throw new Error(`Failed to fetch XMLTV: ${response.data?.status || 'unknown error'}`);
+  // Handle gzipped files
+  if (url.endsWith('.gz')) {
+    debugLog('Detected gzipped file, fetching binary...', 'epg');
+    const response = await window.fetchProxy.fetchBinary(url);
+    if (!response.data) {
+      throw new Error(`Failed to fetch gzipped XMLTV: ${response.error || 'unknown error'}`);
+    }
+
+    // Check compressed size before processing (large files freeze UI)
+    const estimatedCompressedSize = Math.floor(response.data.length * 0.75);
+    if (estimatedCompressedSize > MAX_COMPRESSED_BYTES) {
+      const sizeMB = Math.round(estimatedCompressedSize / 1024 / 1024);
+      debugLog(`Skipping oversized EPG file: ${sizeMB}MB (max ${MAX_COMPRESSED_SIZE_MB}MB) - ${url}`, 'epg');
+      throw new Error(`EPG file too large (${sizeMB}MB). Use a regional EPG instead of ALL_SOURCES.`);
+    }
+
+    debugLog(`Received ${response.data.length} bytes (base64), sending to worker for decompression...`, 'epg');
+    const programs = await parseEpgInWorker(response.data, true);
+    debugLog(`Worker parsed ${programs.length} programs`, 'epg');
+    return programs;
+  } else {
+    const response = await window.fetchProxy.fetch(url);
+    if (!response.data?.ok) {
+      throw new Error(`Failed to fetch XMLTV: ${response.data?.status || 'unknown error'}`);
+    }
+    debugLog(`Received ${response.data.text.length} bytes, sending to worker for parsing...`, 'epg');
+    const programs = await parseEpgInWorker(response.data.text, false);
+    debugLog(`Worker parsed ${programs.length} programs`, 'epg');
+    return programs;
   }
-
-  const xmlText = response.data.text;
-  debugLog(`Received ${xmlText.length} bytes of XMLTV data`, 'epg');
-
-  const programs = parseXmltv(xmlText);
-  debugLog(`Parsed ${programs.length} programs from XMLTV`, 'epg');
-
-  return programs;
 }
 
-// Sync EPG from XMLTV URL for M3U sources
+// Fetch XMLTV from potentially multiple URLs (comma-separated)
+async function fetchXmltvFromUrls(epgUrlStr: string): Promise<XmltvProgram[]> {
+  // Split by comma and trim each URL
+  const urls = epgUrlStr.split(',').map(u => u.trim()).filter(u => u.length > 0);
+
+  if (urls.length === 0) {
+    return [];
+  }
+
+  if (urls.length === 1) {
+    return fetchXmltvFromUrl(urls[0]);
+  }
+
+  // Multiple URLs - fetch in parallel batches to avoid overwhelming servers
+  // Yields to event loop between batches to keep UI responsive
+  debugLog(`Found ${urls.length} EPG URLs, fetching in parallel batches...`, 'epg');
+  const BATCH_SIZE = 5;
+  const allResults: XmltvProgram[][] = [];
+
+  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+    const batch = urls.slice(i, i + BATCH_SIZE);
+    debugLog(`Fetching batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(urls.length / BATCH_SIZE)} (${batch.length} URLs)`, 'epg');
+
+    const results = await Promise.all(
+      batch.map(async (url) => {
+        try {
+          return await fetchXmltvFromUrl(url);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          debugLog(`Failed to fetch from ${url}: ${errMsg}`, 'epg');
+          return []; // Return empty array on failure, continue with others
+        }
+      })
+    );
+
+    // Collect results without spreading (faster)
+    for (const r of results) {
+      if (r.length > 0) allResults.push(r);
+    }
+
+    // Yield to event loop between batches to keep UI responsive
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  // Flatten at the end (single operation)
+  const allPrograms = allResults.flat();
+  debugLog(`Total programs from all EPG sources: ${allPrograms.length}`, 'epg');
+  return allPrograms;
+}
+
+// Sync EPG from XMLTV URL(s) for M3U sources
 async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[]): Promise<number> {
-  debugLog(`Starting M3U EPG sync from: ${epgUrl}`, 'epg');
+  debugLog(`Starting M3U EPG sync`, 'epg');
 
   try {
-    const xmltvPrograms = await fetchXmltvFromUrl(epgUrl);
+    const xmltvPrograms = await fetchXmltvFromUrls(epgUrl);
 
     if (xmltvPrograms.length === 0) {
       debugLog('No programs found in XMLTV, keeping existing data', 'epg');
@@ -114,11 +265,13 @@ async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[
     }
     debugLog(`${channelsWithEpgId}/${channels.length} channels have epg_channel_id`, 'epg');
 
-    // Convert XMLTV programs to stored format
+    // Convert XMLTV programs to stored format (yield periodically for large datasets)
     const storedPrograms: StoredProgram[] = [];
     const unmatchedChannels = new Set<string>();
+    const YIELD_EVERY = 10000; // Yield every 10k items
 
-    for (const prog of xmltvPrograms) {
+    for (let i = 0; i < xmltvPrograms.length; i++) {
+      const prog = xmltvPrograms[i];
       const streamId = channelMap.get(prog.channel_id);
       if (streamId) {
         storedPrograms.push({
@@ -132,6 +285,10 @@ async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[
         });
       } else {
         unmatchedChannels.add(prog.channel_id);
+      }
+      // Yield to event loop periodically
+      if (i > 0 && i % YIELD_EVERY === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
 
@@ -147,11 +304,15 @@ async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[
     debugLog('Clearing old EPG data and storing new...', 'epg');
     await db.programs.where('source_id').equals(source.id).delete();
 
-    // Store in batches
+    // Store in batches with yields to keep UI responsive
     const BATCH_SIZE = 500;
     for (let i = 0; i < storedPrograms.length; i += BATCH_SIZE) {
       const batch = storedPrograms.slice(i, i + BATCH_SIZE);
       await db.programs.bulkPut(batch);
+      // Yield every few batches
+      if ((i / BATCH_SIZE) % 10 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
     }
 
     debugLog(`M3U EPG sync complete: ${storedPrograms.length} programs stored`, 'epg');

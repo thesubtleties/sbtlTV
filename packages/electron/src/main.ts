@@ -778,15 +778,17 @@ ipcMain.handle('import-m3u-file', async () => {
   }
 });
 
-// URL allowlist for fetch-binary (TMDB exports only) - prevents SSRF attacks
-const ALLOWED_BINARY_FETCH_DOMAINS = [
-  'files.tmdb.org',       // TMDB daily exports (gzipped)
-];
-
-function isAllowedBinaryUrl(url: string): boolean {
+// Check if URL is allowed for binary fetch
+// Uses same SSRF protection as fetch-proxy (respects allowLanSources setting)
+function isAllowedBinaryUrl(url: string, allowLan: boolean): boolean {
+  // Check SSRF protection (unless LAN sources are allowed)
+  if (!allowLan && isBlockedUrl(url)) {
+    return false;
+  }
+  // Allow any HTTP/HTTPS URL
   try {
     const parsed = new URL(url);
-    return ALLOWED_BINARY_FETCH_DOMAINS.some(domain => parsed.hostname === domain || parsed.hostname.endsWith('.' + domain));
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
   } catch {
     return false;
   }
@@ -846,11 +848,12 @@ ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: s
   }
 });
 
-// Fetch binary - for gzipped/binary content, returns base64
-// Restricted to TMDB exports only (prevents SSRF with binary data)
+// Fetch binary - for gzipped/binary content (EPG files, TMDB exports), returns base64
+// Uses same SSRF protection as fetch-proxy (respects allowLanSources setting)
 ipcMain.handle('fetch-binary', async (_event, url: string) => {
-  if (!isAllowedBinaryUrl(url)) {
-    return { success: false, error: `Domain not allowed for binary fetch: ${new URL(url).hostname}` };
+  const settings = storage.getSettings();
+  if (!isAllowedBinaryUrl(url, settings.allowLanSources ?? false)) {
+    return { success: false, error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > Security if you trust this source.' };
   }
   try {
     const response = await electronNet.fetch(url);
