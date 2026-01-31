@@ -2,32 +2,34 @@
 
 A desktop IPTV player built with Electron and mpv.
 
+<!-- Screenshot or demo video here -->
+
 ## Features
 
-- **Live TV** - Browse channels by category, view EPG program guide
-- **Movies** - Browse and play VOD movies with TMDB metadata matching
-- **TV Series** - Browse series with season/episode navigation
-- **mpv Player** - Hardware-accelerated playback via libmpv
-- **Multi-source** - Add multiple IPTV sources (Xtream Codes API)
-- **Stream Fallback** - Automatic URL format fallback (.ts → .m3u8 → .m3u)
-- **Offline Database** - IndexedDB storage for channels, EPG, and VOD catalog
+- **Live TV with EPG** - Browse channels by category with a full program guide
+- **Movies & Series** - Browse your VOD library with poster art and metadata
+- **TMDB Integration** - Suggested, popular, and genre-based browsing for movies and series
+- **Poster Overlays** - Optional rating badges on posters via RPDB
+- **Multi-source Support** - Connect via Xtream Codes API or M3U playlists
+- **EPG from Multiple Sources** - Fetch guide data from your provider or external URLs
+- **Channel Ordering** - Sort channels by provider numbers or alphabetically
+- **Offline Storage** - Channels, EPG, and catalog cached locally for fast browsing
 
 ## Installation
 
-Download the latest release for your platform from the [Releases](../../releases) page:
+Download the latest release from the [Releases](../../releases) page:
 
-- **Windows**: `.exe` installer (mpv included) ✅ *tested*
-- **macOS**: `.dmg` - ⚠️ *mpv bundling issue being debugged, fix coming soon* ([#13](../../issues/13))
-- **Linux**: `.AppImage` or `.deb` (requires mpv - see below) - *untested, feedback welcome*
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Windows | Tested | mpv included |
+| Linux | Untested | Requires mpv installed separately |
+| macOS | Not working | Rendering issues under investigation |
 
-### Linux / macOS Intel Users
+### Linux Users
 
 mpv must be installed separately:
 
 ```bash
-# macOS (Intel)
-brew install mpv
-
 # Ubuntu/Debian
 sudo apt install mpv
 
@@ -44,69 +46,72 @@ sudo pacman -S mpv
 
 - Node.js 20+
 - pnpm 10+
-- mpv installed (for development)
+- mpv installed
 
 ### Development
 
 ```bash
-# Install dependencies
 pnpm install
-
-# Build all packages
 pnpm build
-
-# Run in development mode
 pnpm dev
 ```
 
 ### Building Distributables
 
 ```bash
-# Download mpv for bundling (Windows/macOS)
+# Download mpv for bundling (Windows)
 bash scripts/download-mpv.sh
 
 # Build for current platform
 pnpm dist
 
-# Build for specific platform
-pnpm dist:win    # Windows
-pnpm dist:mac    # macOS
-pnpm dist:linux  # Linux
+# Platform-specific
+pnpm dist:win
+pnpm dist:mac
+pnpm dist:linux
 ```
-
-Output files will be in the `release/` directory.
 
 ## Configuration
 
-### Adding Sources
+### Adding a Source
 
-1. Open Settings (gear icon in sidebar)
-2. Go to the Sources tab
-3. Click "Add Source"
-4. Enter your Xtream Codes credentials:
-   - Server URL
-   - Username
-   - Password
-5. Click "Sync" to fetch channels and VOD catalog
+1. Open Settings (gear icon)
+2. Go to Sources tab
+3. Add your Xtream Codes credentials (server URL, username, password)
+4. Click Sync to fetch channels and content
+
+### TMDB Integration
+
+Movie and series metadata comes from [The Movie Database](https://www.themoviedb.org/). Basic matching works automatically.
+
+For genre browsing and suggested/popular lists, add a TMDB Access Token:
+1. Create an account at [themoviedb.org](https://www.themoviedb.org/signup)
+2. Get an API Read Access Token from [API settings](https://www.themoviedb.org/settings/api)
+3. Add it in Settings → TMDB
+
+*This product uses the TMDB API but is not endorsed or certified by TMDB.*
+
+### Poster Overlays (RPDB)
+
+Add rating badges to posters with an [RPDB](https://ratingposterdb.com/) API key in Settings → Poster DB.
+
+### Debug Logging
+
+Enable logging in Settings → Debug for troubleshooting. Logs are saved to your app data folder with automatic rotation.
 
 ### Data Location
 
-User data is stored in:
 - **Windows**: `%APPDATA%/sbtlTV`
 - **macOS**: `~/Library/Application Support/sbtlTV`
 - **Linux**: `~/.config/sbtlTV`
 
-This includes your sources configuration and cached data. App updates do not affect user data.
+## Disclaimer
 
-## Project Structure
+This application is a media player only and does not provide any content. Users must provide their own IPTV service credentials from a legitimate provider. The developers are not responsible for how this software is used or for any content accessed through it.
 
-```
-packages/
-├── core/        # Shared types and utilities
-├── electron/    # Electron main process, mpv integration
-├── local-adapter/  # Local file adapter (future)
-└── ui/          # React frontend (Vite)
-```
+## Credits
+
+Video playback powered by [mpv](https://mpv.io/).
 
 ## License
 
