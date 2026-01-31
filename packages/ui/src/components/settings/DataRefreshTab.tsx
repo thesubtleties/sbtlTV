@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { clearAllCachedData } from '../../db';
+import { syncAllSources } from '../../db/sync';
+import { useCacheClearing, useSetCacheClearing, useSetChannelSyncing } from '../../stores/uiStore';
 
 interface DataRefreshTabProps {
   vodRefreshHours: number;
@@ -14,8 +16,10 @@ export function DataRefreshTab({
   onVodRefreshChange,
   onEpgRefreshChange,
 }: DataRefreshTabProps) {
-  const [isClearing, setIsClearing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const isClearing = useCacheClearing();
+  const setCacheClearing = useSetCacheClearing();
+  const setChannelSyncing = useSetChannelSyncing();
 
   async function saveRefreshSettings(vod: number, epg: number) {
     if (!window.storage) return;
@@ -23,15 +27,18 @@ export function DataRefreshTab({
   }
 
   async function handleClearCache() {
-    setIsClearing(true);
+    setCacheClearing(true);
+    setShowConfirm(false);
     try {
       await clearAllCachedData();
-      // Force page reload to trigger fresh sync
-      window.location.reload();
+      // Trigger fresh sync (no page reload needed)
+      setCacheClearing(false);
+      setChannelSyncing(true);
+      await syncAllSources();
+      setChannelSyncing(false);
     } catch (error) {
       console.error('[Settings] Failed to clear cache:', error);
-      setIsClearing(false);
-      setShowConfirm(false);
+      setCacheClearing(false);
     }
   }
 
@@ -97,7 +104,11 @@ export function DataRefreshTab({
         </p>
 
         <div style={{ marginTop: '0.75rem' }}>
-          {!showConfirm ? (
+          {isClearing ? (
+            <button className="sync-btn danger" disabled>
+              Clearing...
+            </button>
+          ) : !showConfirm ? (
             <button
               className="sync-btn danger"
               onClick={() => setShowConfirm(true)}
