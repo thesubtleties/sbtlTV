@@ -17,6 +17,15 @@ import type { VodPlayInfo } from './types/media';
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
 
+// Debug logging helper for UI playback
+function debugLog(message: string, category = 'play'): void {
+  const logMsg = `[${category}] ${message}`;
+  console.log(logMsg);
+  if (window.debug?.logFromRenderer) {
+    window.debug.logFromRenderer(logMsg).catch(() => {});
+  }
+}
+
 /**
  * Generate fallback stream URLs when primary fails.
  * Live TV: .ts → .m3u8 → .m3u
@@ -68,22 +77,31 @@ async function tryLoadWithFallbacks(
   isLive: boolean,
   mpv: NonNullable<typeof window.mpv>
 ): Promise<{ success: boolean; url: string; error?: string }> {
+  debugLog(`Attempting to load: ${primaryUrl} (isLive: ${isLive})`);
+
   // Try primary URL first
   const result = await mpv.load(primaryUrl);
   if (!result.error) {
+    debugLog(`Primary URL loaded successfully`);
     return { success: true, url: primaryUrl };
   }
+  debugLog(`Primary URL failed: ${result.error}`);
 
   // Try fallbacks
   const fallbacks = getStreamFallbacks(primaryUrl, isLive);
+  debugLog(`Trying ${fallbacks.length} fallback URLs...`);
   for (const fallbackUrl of fallbacks) {
+    debugLog(`Trying fallback: ${fallbackUrl}`);
     const fallbackResult = await mpv.load(fallbackUrl);
     if (!fallbackResult.error) {
+      debugLog(`Fallback succeeded: ${fallbackUrl}`);
       return { success: true, url: fallbackUrl };
     }
+    debugLog(`Fallback failed: ${fallbackResult.error}`);
   }
 
   // All failed - return original error
+  debugLog(`All URLs failed, returning error: ${result.error}`);
   return { success: false, url: primaryUrl, error: result.error };
 }
 
@@ -186,12 +204,19 @@ function App() {
 
   // Control handlers
   const handleLoadStream = async (channel: StoredChannel) => {
-    if (!window.mpv) return;
+    debugLog(`handleLoadStream: ${channel.name} (${channel.stream_id})`);
+    debugLog(`  URL: ${channel.direct_url}`);
+    if (!window.mpv) {
+      debugLog('  ABORT: window.mpv not available');
+      return;
+    }
     setError(null);
     const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
     if (!result.success) {
+      debugLog(`  FAILED: ${result.error}`);
       setError(result.error ?? 'Failed to load stream');
     } else {
+      debugLog(`  SUCCESS: playing`);
       // Update channel with working URL if fallback was used
       setCurrentChannel(result.url !== channel.direct_url
         ? { ...channel, direct_url: result.url }
@@ -221,8 +246,10 @@ function App() {
   };
 
   const handleStop = async () => {
+    debugLog('handleStop called');
     if (!window.mpv) return;
     await window.mpv.stop();
+    debugLog('handleStop: mpv.stop() completed');
     setPlaying(false);
     setCurrentChannel(null);
   };
@@ -243,12 +270,19 @@ function App() {
 
   // Play VOD content (movies/series)
   const handlePlayVod = async (info: VodPlayInfo) => {
-    if (!window.mpv) return;
+    debugLog(`handlePlayVod: ${info.title} (${info.type})`);
+    debugLog(`  URL: ${info.url}`);
+    if (!window.mpv) {
+      debugLog('  ABORT: window.mpv not available');
+      return;
+    }
     setError(null);
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
     if (!result.success) {
+      debugLog(`  FAILED: ${result.error}`);
       setError(result.error ?? 'Failed to load stream');
     } else {
+      debugLog(`  SUCCESS: playing`);
       // Create a pseudo-channel for the now playing bar
       const workingUrl = result.url;
       setCurrentChannel({

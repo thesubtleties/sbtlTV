@@ -580,12 +580,20 @@ ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
 
 // IPC Handlers - mpv control
 ipcMain.handle('mpv-load', async (_event, url: string) => {
-  if (!mpvSocket) return { error: 'mpv not initialized' };
+  debugLog(`mpv-load called with URL: ${url}`, 'mpv');
+  if (!mpvSocket) {
+    debugLog('mpv-load FAILED: mpv not initialized (no socket)', 'mpv');
+    return { error: 'mpv not initialized' };
+  }
   try {
+    debugLog('Sending loadfile command to mpv...', 'mpv');
     await sendMpvCommand('loadfile', [url]);
+    debugLog('mpv-load SUCCESS', 'mpv');
     return { success: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Unknown error' };
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    debugLog(`mpv-load FAILED: ${errMsg}`, 'mpv');
+    return { error: errMsg };
   }
 });
 
@@ -650,12 +658,16 @@ ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
 });
 
 ipcMain.handle('mpv-stop', async () => {
+  debugLog('mpv-stop called', 'mpv');
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('stop', []);
+    debugLog('mpv-stop SUCCESS', 'mpv');
     return { success: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Unknown error' };
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    debugLog(`mpv-stop FAILED: ${errMsg}`, 'mpv');
+    return { error: errMsg };
   }
 });
 
