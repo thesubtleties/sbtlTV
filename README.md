@@ -19,11 +19,33 @@ A desktop IPTV player built with Electron and mpv.
 
 Download the latest release from the [Releases](../../releases) page:
 
-| Platform | Status | Notes |
-|----------|--------|-------|
-| Windows | Tested | mpv included |
-| Linux | Untested | Requires mpv installed separately |
-| macOS | Not working | Rendering issues under investigation |
+| Platform | Notes |
+|----------|-------|
+| Windows | mpv included |
+| Linux | Requires mpv installed separately |
+| macOS | Requires mpv installed via Homebrew |
+
+### Windows Users
+
+Windows SmartScreen may block the app on first run. Click **More info** → **Run anyway** to proceed.
+
+### macOS Users
+
+mpv must be installed via Homebrew:
+
+```bash
+# Install Homebrew if you don't have it
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install mpv
+brew install mpv
+```
+
+On first run, macOS may block the app. Remove the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/sbtlTV.app
+```
 
 ### Linux Users
 
