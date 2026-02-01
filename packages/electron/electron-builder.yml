@@ -78,7 +78,7 @@ linux:
     - target: deb
       arch:
         - x64
-  icon: assets/sbtltv-logo-white.png
+  icon: assets/512x512.png
   category: AudioVideo
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
 
