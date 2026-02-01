@@ -205,14 +205,16 @@ function findMpvBinary(): string | null {
     }
     return null; // Not found
   } else if (process.platform === 'darwin') {
-    // Check bundled mpv first (in resources/mpv/MacOS/ to preserve dylib paths)
-    const bundledPath = path.join(resourcesPath, 'mpv', 'MacOS', 'mpv');
-    if (fs.existsSync(bundledPath)) return bundledPath;
-
-    // Fall back to system locations
+    // Prefer system mpv (properly signed, has GPU access)
+    // Bundled mpv has code signing issues that prevent GPU access on macOS
     if (fs.existsSync('/opt/homebrew/bin/mpv')) return '/opt/homebrew/bin/mpv';
     if (fs.existsSync('/usr/local/bin/mpv')) return '/usr/local/bin/mpv';
     if (fs.existsSync('/usr/bin/mpv')) return '/usr/bin/mpv';
+
+    // Fall back to bundled (may have signing issues preventing video display)
+    const bundledPath = path.join(resourcesPath, 'mpv', 'MacOS', 'mpv');
+    if (fs.existsSync(bundledPath)) return bundledPath;
+
     return null;
   } else {
     // Linux - rely on system mpv
@@ -258,6 +260,17 @@ async function checkMpvAvailable(): Promise<boolean> {
         'Ubuntu/Debian: sudo apt install mpv\n' +
         'Fedora: sudo dnf install mpv\n' +
         'Arch: sudo pacman -S mpv\n\n' +
+        'Then restart the application.',
+      buttons: ['OK'],
+    });
+  } else if (process.platform === 'darwin') {
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'mpv Required',
+      message: 'mpv media player is required but not installed.',
+      detail: 'Please install mpv using Homebrew:\n\n' +
+        'brew install mpv\n\n' +
+        'If you don\'t have Homebrew, install it first from https://brew.sh\n\n' +
         'Then restart the application.',
       buttons: ['OK'],
     });
