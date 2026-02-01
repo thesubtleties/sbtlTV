@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-01-31
+
+### Fixed
+- macOS: Video not displaying due to bundled mpv issues - now prefers system mpv (`brew install mpv`) (needs testing)
+- macOS: Added helpful error dialog with Homebrew install instructions when mpv not found
+- Linux: Desktop icon not displaying - use properly sized 512x512 icon per freedesktop spec (needs testing)
+
 ## [0.2.0] - 2026-01-31
 
 ### Added
