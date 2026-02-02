@@ -15,8 +15,7 @@ typedef BOOL(WINAPI* PFNWGLMAKECURRENTPROC)(HDC, HGLRC);
 typedef PROC(WINAPI* PFNWGLGETPROCADDRESSPROC)(LPCSTR);
 #elif defined(__APPLE__)
 #include <OpenGL/gl3.h>
-#include <OpenGL/CGLTypes.h>
-#include <OpenGL/CGLCurrent.h>
+#include <OpenGL/OpenGL.h>
 #include <dlfcn.h>
 #else
 #include <GL/gl.h>
