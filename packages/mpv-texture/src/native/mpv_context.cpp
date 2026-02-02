@@ -14,6 +14,7 @@ typedef HGLRC(WINAPI* PFNWGLCREATECONTEXTATTRIBSARBPROC)(HDC, HGLRC, const int*)
 typedef BOOL(WINAPI* PFNWGLMAKECURRENTPROC)(HDC, HGLRC);
 typedef PROC(WINAPI* PFNWGLGETPROCADDRESSPROC)(LPCSTR);
 #elif defined(__APPLE__)
+#define GL_SILENCE_DEPRECATION
 #include <OpenGL/gl3.h>
 #include <OpenGL/OpenGL.h>
 #include <dlfcn.h>

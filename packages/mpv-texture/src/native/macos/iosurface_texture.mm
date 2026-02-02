@@ -5,9 +5,10 @@
 #ifdef __APPLE__
 
 #include "../texture_share.h"
+#define GL_SILENCE_DEPRECATION
 #include <OpenGL/gl3.h>
-#include <OpenGL/CGLTypes.h>
-#include <OpenGL/CGLCurrent.h>
+#include <OpenGL/OpenGL.h>
+#include <OpenGL/CGLIOSurface.h>
 #include <IOSurface/IOSurface.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <iostream>
