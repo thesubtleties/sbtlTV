@@ -1,0 +1,27 @@
+{
+  "name": "@sbtltv/mpv-texture",
+  "version": "0.1.0",
+  "description": "Native libmpv addon with GPU texture sharing for Electron",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:native && npm run build:ts",
+    "build:native": "node-gyp rebuild",
+    "build:ts": "tsc",
+    "clean": "node-gyp clean && rm -rf dist",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "node-gyp": "^10.3.1",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "gypfile": true
+}

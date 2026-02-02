@@ -7,6 +7,19 @@ import { fileURLToPath } from 'url';
 import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
 
+// Experimental: Try to load native mpv-texture addon
+let mpvTextureAddon: unknown = null;
+const USE_NATIVE_MPV = process.argv.includes('--native-mpv');
+if (USE_NATIVE_MPV) {
+  try {
+    // Dynamic import of native addon
+    mpvTextureAddon = await import('@sbtltv/mpv-texture');
+    console.log('[mpv-texture] Native addon loaded successfully');
+  } catch (error) {
+    console.warn('[mpv-texture] Failed to load native addon, falling back to external mpv:', error);
+  }
+}
+
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

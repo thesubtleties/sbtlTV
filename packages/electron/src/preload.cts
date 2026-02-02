@@ -159,3 +159,55 @@ contextBridge.exposeInMainWorld('debug', {
   logFromRenderer: (message: string) => ipcRenderer.invoke('debug-log-renderer', message),
   openLogFolder: () => ipcRenderer.invoke('debug-open-log-folder'),
 } satisfies DebugApi);
+
+// Shared texture API for GPU-accelerated video rendering (Electron 40+)
+// This allows the renderer to receive VideoFrames from the main process
+export interface SharedTextureApi {
+  onFrame: (callback: (videoFrame: VideoFrame, index: number) => void) => void;
+  removeFrameListener: () => void;
+  isAvailable: boolean;
+}
+
+// Check if sharedTexture API is available
+let sharedTextureAvailable = false;
+try {
+  const { sharedTexture } = require('electron');
+  sharedTextureAvailable = !!sharedTexture?.setSharedTextureReceiver;
+} catch {
+  sharedTextureAvailable = false;
+}
+
+// Frame callback storage
+let frameCallback: ((videoFrame: VideoFrame, index: number) => void) | null = null;
+
+// Set up frame receiver if available
+if (sharedTextureAvailable) {
+  try {
+    const { sharedTexture } = require('electron');
+    sharedTexture.setSharedTextureReceiver(async (data: { sharedTexture: { getVideoFrame: () => VideoFrame; release: () => void } }, ...args: unknown[]) => {
+      const index = typeof args[0] === 'number' ? args[0] : 0;
+      if (frameCallback) {
+        const videoFrame = data.sharedTexture.getVideoFrame();
+        frameCallback(videoFrame, index);
+        // Note: The renderer is responsible for calling videoFrame.close()
+        // and data.sharedTexture.release() when done with the frame
+      } else {
+        // No callback set, release immediately
+        data.sharedTexture.release();
+      }
+    });
+  } catch (error) {
+    console.warn('[preload] Failed to set up sharedTexture receiver:', error);
+    sharedTextureAvailable = false;
+  }
+}
+
+contextBridge.exposeInMainWorld('sharedTexture', {
+  onFrame: (callback: (videoFrame: VideoFrame, index: number) => void) => {
+    frameCallback = callback;
+  },
+  removeFrameListener: () => {
+    frameCallback = null;
+  },
+  isAvailable: sharedTextureAvailable,
+} satisfies SharedTextureApi);
