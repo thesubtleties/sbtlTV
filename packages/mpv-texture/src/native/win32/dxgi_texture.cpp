@@ -38,6 +38,8 @@ typedef void(APIENTRY* PFNGLBINDTEXTUREPROC)(GLenum, GLuint);
 #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
 #define GL_TEXTURE_2D 0x0DE1
 #define GL_RGBA8 0x8058
+#define GL_RGBA 0x1908
+#define GL_UNSIGNED_BYTE 0x1401
 
 // WGL_NV_DX_interop constants
 #define WGL_ACCESS_READ_WRITE_NV 0x0001
@@ -66,7 +68,7 @@ public:
             return false;
         }
 
-        // Create D3D11 device
+        // Create D3D11 device on the NVIDIA adapter (required for WGL_NV_DX_interop)
         D3D_FEATURE_LEVEL featureLevels[] = {
             D3D_FEATURE_LEVEL_11_1,
             D3D_FEATURE_LEVEL_11_0,
@@ -79,18 +81,59 @@ public:
         flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
-        HRESULT hr = D3D11CreateDevice(
-            nullptr,
-            D3D_DRIVER_TYPE_HARDWARE,
-            nullptr,
-            flags,
-            featureLevels,
-            ARRAYSIZE(featureLevels),
-            D3D11_SDK_VERSION,
-            &m_d3dDevice,
-            nullptr,
-            &m_d3dContext
-        );
+        // Enumerate adapters to find NVIDIA GPU
+        IDXGIFactory1* factory = nullptr;
+        IDXGIAdapter1* nvidiaAdapter = nullptr;
+        HRESULT hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&factory);
+
+        if (SUCCEEDED(hr)) {
+            IDXGIAdapter1* adapter = nullptr;
+            for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; i++) {
+                DXGI_ADAPTER_DESC1 desc;
+                adapter->GetDesc1(&desc);
+
+                // Check for NVIDIA in the description
+                std::wstring descStr(desc.Description);
+                if (descStr.find(L"NVIDIA") != std::wstring::npos) {
+                    nvidiaAdapter = adapter;
+                    std::wcout << L"[DXGI] Using NVIDIA adapter: " << desc.Description << std::endl;
+                    break;
+                }
+                adapter->Release();
+            }
+            factory->Release();
+        }
+
+        // Create device on NVIDIA adapter, or fall back to default
+        if (nvidiaAdapter) {
+            hr = D3D11CreateDevice(
+                nvidiaAdapter,
+                D3D_DRIVER_TYPE_UNKNOWN,  // Must be UNKNOWN when specifying adapter
+                nullptr,
+                flags,
+                featureLevels,
+                ARRAYSIZE(featureLevels),
+                D3D11_SDK_VERSION,
+                &m_d3dDevice,
+                nullptr,
+                &m_d3dContext
+            );
+            nvidiaAdapter->Release();
+        } else {
+            std::cerr << "[DXGI] NVIDIA adapter not found, using default" << std::endl;
+            hr = D3D11CreateDevice(
+                nullptr,
+                D3D_DRIVER_TYPE_HARDWARE,
+                nullptr,
+                flags,
+                featureLevels,
+                ARRAYSIZE(featureLevels),
+                D3D11_SDK_VERSION,
+                &m_d3dDevice,
+                nullptr,
+                &m_d3dContext
+            );
+        }
 
         if (FAILED(hr)) {
             std::cerr << "[DXGI] Failed to create D3D11 device: " << std::hex << hr << std::endl;
@@ -147,9 +190,25 @@ public:
             return false;
         }
 
+        // Set the share handle on the D3D resource BEFORE registering with WGL
+        // This is required by WGL_NV_DX_interop spec for shared resources
+        if (m_wglDXSetResourceShareHandleNV) {
+            if (!m_wglDXSetResourceShareHandleNV(m_d3dTexture, m_sharedHandle)) {
+                DWORD err = GetLastError();
+                std::cerr << "[DXGI] Failed to set share handle on D3D resource, error: " << err << std::endl;
+                // Continue anyway - some drivers may not require this
+            } else {
+                std::cout << "[DXGI] Share handle set on D3D resource" << std::endl;
+            }
+        }
+
         // Create OpenGL texture
         glGenTextures(1, &m_glTexture);
         glBindTexture(GL_TEXTURE_2D, m_glTexture);
+
+        // Initialize GL texture storage before WGL registration
+        // Some drivers require the texture to have allocated storage
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
         // Register D3D texture with OpenGL via WGL_NV_DX_interop
         m_wglDxObject = m_wglDXRegisterObjectNV(
@@ -161,7 +220,17 @@ public:
         );
 
         if (!m_wglDxObject) {
-            std::cerr << "[DXGI] Failed to register DX object with WGL" << std::endl;
+            DWORD err = GetLastError();
+            std::cerr << "[DXGI] Failed to register DX object with WGL, error: " << err << std::endl;
+            return false;
+        }
+
+        std::cout << "[DXGI] DX object registered with WGL successfully" << std::endl;
+
+        // Lock the DX object so OpenGL can access it
+        HANDLE objects[] = { m_wglDxObject };
+        if (!m_wglDXLockObjectsNV(m_wglDxDevice, 1, objects)) {
+            std::cerr << "[DXGI] Failed to lock DX object for FBO setup" << std::endl;
             return false;
         }
 
@@ -171,6 +240,10 @@ public:
         m_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_glTexture, 0);
 
         GLenum status = m_glCheckFramebufferStatus(GL_FRAMEBUFFER);
+
+        // Unlock after FBO setup
+        m_wglDXUnlockObjectsNV(m_wglDxDevice, 1, objects);
+
         if (status != GL_FRAMEBUFFER_COMPLETE) {
             std::cerr << "[DXGI] FBO incomplete: " << std::hex << status << std::endl;
             return false;
@@ -218,11 +291,20 @@ public:
     }
 
     bool lockTexture() override {
-        if (!m_wglDxObject) return false;
+        if (!m_wglDxObject) {
+            std::cerr << "[DXGI] lockTexture: No DX object" << std::endl;
+            return false;
+        }
+
+        if (m_locked) {
+            // Already locked - this is OK, just return success
+            return true;
+        }
 
         HANDLE objects[] = { m_wglDxObject };
         if (!m_wglDXLockObjectsNV(m_wglDxDevice, 1, objects)) {
-            std::cerr << "[DXGI] Failed to lock DX object" << std::endl;
+            DWORD err = GetLastError();
+            std::cerr << "[DXGI] Failed to lock DX object, error: " << err << std::endl;
             return false;
         }
 
@@ -316,6 +398,8 @@ private:
         if (!wglGetProcAddress) return false;
 
         // Load WGL_NV_DX_interop functions
+        m_wglDXSetResourceShareHandleNV = reinterpret_cast<PFNWGLDXSETRESOURCESHAREHANDLENVPROC>(
+            wglGetProcAddress("wglDXSetResourceShareHandleNV"));
         m_wglDXOpenDeviceNV = reinterpret_cast<PFNWGLDXOPENDEVICENVPROC>(
             wglGetProcAddress("wglDXOpenDeviceNV"));
         m_wglDXCloseDeviceNV = reinterpret_cast<PFNWGLDXCLOSEDEVICENVPROC>(
@@ -329,6 +413,7 @@ private:
         m_wglDXUnlockObjectsNV = reinterpret_cast<PFNWGLDXUNLOCKOBJECTSNVPROC>(
             wglGetProcAddress("wglDXUnlockObjectsNV"));
 
+        // Note: wglDXSetResourceShareHandleNV may be null on older drivers, we'll check before use
         return m_wglDXOpenDeviceNV && m_wglDXCloseDeviceNV &&
                m_wglDXRegisterObjectNV && m_wglDXUnregisterObjectNV &&
                m_wglDXLockObjectsNV && m_wglDXUnlockObjectsNV;
@@ -380,6 +465,7 @@ private:
     HANDLE m_wglDxObject = nullptr;
 
     // WGL extension functions
+    PFNWGLDXSETRESOURCESHAREHANDLENVPROC m_wglDXSetResourceShareHandleNV = nullptr;
     PFNWGLDXOPENDEVICENVPROC m_wglDXOpenDeviceNV = nullptr;
     PFNWGLDXCLOSEDEVICENVPROC m_wglDXCloseDeviceNV = nullptr;
     PFNWGLDXREGISTEROBJECTNVPROC m_wglDXRegisterObjectNV = nullptr;

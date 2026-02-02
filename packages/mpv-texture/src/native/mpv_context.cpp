@@ -29,12 +29,116 @@ MpvContext::~MpvContext() {
     destroy();
 }
 
+// Platform-specific GL context creation
+#ifdef _WIN32
+static HWND g_dummyWindow = nullptr;
+static HDC g_hdc = nullptr;
+static HGLRC g_hglrc = nullptr;
+
+static bool createWindowsGLContext() {
+    // Register dummy window class
+    WNDCLASSA wc = {};
+    wc.lpfnWndProc = DefWindowProcA;
+    wc.hInstance = GetModuleHandle(nullptr);
+    wc.lpszClassName = "MpvTextureDummyWindow";
+    RegisterClassA(&wc);
+
+    // Create hidden window
+    g_dummyWindow = CreateWindowExA(
+        0, "MpvTextureDummyWindow", "", 0,
+        0, 0, 1, 1, nullptr, nullptr,
+        GetModuleHandle(nullptr), nullptr
+    );
+    if (!g_dummyWindow) {
+        std::cerr << "[MpvContext] Failed to create dummy window" << std::endl;
+        return false;
+    }
+
+    g_hdc = GetDC(g_dummyWindow);
+    if (!g_hdc) {
+        std::cerr << "[MpvContext] Failed to get DC" << std::endl;
+        return false;
+    }
+
+    // Set pixel format
+    PIXELFORMATDESCRIPTOR pfd = {};
+    pfd.nSize = sizeof(pfd);
+    pfd.nVersion = 1;
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.iPixelType = PFD_TYPE_RGBA;
+    pfd.cColorBits = 32;
+    pfd.cDepthBits = 24;
+    pfd.iLayerType = PFD_MAIN_PLANE;
+
+    int pixelFormat = ChoosePixelFormat(g_hdc, &pfd);
+    if (!pixelFormat || !SetPixelFormat(g_hdc, pixelFormat, &pfd)) {
+        std::cerr << "[MpvContext] Failed to set pixel format" << std::endl;
+        return false;
+    }
+
+    // Create OpenGL context
+    g_hglrc = wglCreateContext(g_hdc);
+    if (!g_hglrc) {
+        std::cerr << "[MpvContext] Failed to create GL context" << std::endl;
+        return false;
+    }
+
+    // Make it current
+    if (!wglMakeCurrent(g_hdc, g_hglrc)) {
+        std::cerr << "[MpvContext] Failed to make GL context current" << std::endl;
+        return false;
+    }
+
+    // Check which GPU the OpenGL context is using
+    const char* vendor = (const char*)glGetString(GL_VENDOR);
+    const char* renderer = (const char*)glGetString(GL_RENDERER);
+    std::cout << "[MpvContext] OpenGL Vendor: " << (vendor ? vendor : "unknown") << std::endl;
+    std::cout << "[MpvContext] OpenGL Renderer: " << (renderer ? renderer : "unknown") << std::endl;
+
+    // Check if we're on NVIDIA - WGL_NV_DX_interop requires both D3D and GL on same GPU
+    if (renderer && strstr(renderer, "NVIDIA") == nullptr) {
+        std::cerr << "[MpvContext] WARNING: OpenGL is not on NVIDIA GPU. WGL_NV_DX_interop may fail." << std::endl;
+        std::cerr << "[MpvContext] Set NVIDIA as preferred GPU for this app in NVIDIA Control Panel." << std::endl;
+    }
+
+    std::cout << "[MpvContext] Windows GL context created successfully" << std::endl;
+    return true;
+}
+
+static void destroyWindowsGLContext() {
+    if (g_hglrc) {
+        wglMakeCurrent(nullptr, nullptr);
+        wglDeleteContext(g_hglrc);
+        g_hglrc = nullptr;
+    }
+    if (g_hdc && g_dummyWindow) {
+        ReleaseDC(g_dummyWindow, g_hdc);
+        g_hdc = nullptr;
+    }
+    if (g_dummyWindow) {
+        DestroyWindow(g_dummyWindow);
+        g_dummyWindow = nullptr;
+    }
+}
+#endif
+
 bool MpvContext::create(const MpvConfig& config) {
     if (m_initialized) {
         return true;
     }
 
     m_config = config;
+
+#ifdef _WIN32
+    // Create Windows GL context first (required for WGL extensions)
+    if (!createWindowsGLContext()) {
+        if (m_errorCallback) {
+            m_errorCallback("Failed to create Windows GL context");
+        }
+        return false;
+    }
+    m_glContext = static_cast<void*>(g_hglrc);
+#endif
 
     // Create mpv handle
     m_mpv = mpv_create();
@@ -144,6 +248,13 @@ bool MpvContext::create(const MpvConfig& config) {
     // Start threads
     m_running = true;
     m_eventThread = std::thread(&MpvContext::eventLoop, this);
+
+#ifdef _WIN32
+    // Release GL context from main thread so render thread can use it
+    // (OpenGL contexts can only be current on one thread at a time)
+    wglMakeCurrent(nullptr, nullptr);
+#endif
+
     m_renderThread = std::thread(&MpvContext::renderLoop, this);
 
     m_initialized = true;
@@ -187,6 +298,11 @@ void MpvContext::destroy() {
         delete m_textureShare;
         m_textureShare = nullptr;
     }
+
+#ifdef _WIN32
+    destroyWindowsGLContext();
+    m_glContext = nullptr;
+#endif
 
     m_initialized = false;
 }
@@ -361,6 +477,17 @@ void MpvContext::handlePropertyChange(mpv_event_property* prop) {
 }
 
 void MpvContext::renderLoop() {
+#ifdef _WIN32
+    // Make GL context current on this thread (required for WGL operations)
+    if (g_hdc && g_hglrc) {
+        if (!wglMakeCurrent(g_hdc, g_hglrc)) {
+            std::cerr << "[MpvContext] Failed to make GL context current in render thread" << std::endl;
+            return;
+        }
+        std::cout << "[MpvContext] GL context made current in render thread" << std::endl;
+    }
+#endif
+
     while (m_running) {
         // Wait for render update
         {

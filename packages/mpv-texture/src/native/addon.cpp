@@ -5,6 +5,15 @@
 #include <napi.h>
 #include "mpv_context.h"
 
+// Request high-performance GPU on Windows (NVIDIA Optimus / AMD PowerXpress)
+// These exports tell the GPU scheduler to prefer the discrete GPU
+#ifdef _WIN32
+extern "C" {
+    __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
+    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+#endif
+
 using namespace mpv_texture;
 
 // Global context (single instance per process)

@@ -15,6 +15,11 @@ export interface MpvResult {
   error?: string;
 }
 
+export interface MpvModeInfo {
+  mode: 'native' | 'external';
+  sharedTextureAvailable: boolean;
+}
+
 export interface MpvApi {
   load: (url: string) => Promise<MpvResult>;
   play: () => Promise<MpvResult>;
@@ -25,6 +30,7 @@ export interface MpvApi {
   toggleMute: () => Promise<MpvResult>;
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
+  getMode: () => Promise<MpvModeInfo>;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
@@ -106,6 +112,7 @@ contextBridge.exposeInMainWorld('mpv', {
   toggleMute: () => ipcRenderer.invoke('mpv-toggle-mute'),
   seek: (seconds: number) => ipcRenderer.invoke('mpv-seek', seconds),
   getStatus: () => ipcRenderer.invoke('mpv-get-status'),
+  getMode: () => ipcRenderer.invoke('mpv-get-mode'),
 
   // Event listeners
   onReady: (callback: (ready: boolean) => void) => {
@@ -188,9 +195,13 @@ if (sharedTextureAvailable) {
       const index = typeof args[0] === 'number' ? args[0] : 0;
       if (frameCallback) {
         const videoFrame = data.sharedTexture.getVideoFrame();
-        frameCallback(videoFrame, index);
-        // Note: The renderer is responsible for calling videoFrame.close()
-        // and data.sharedTexture.release() when done with the frame
+        try {
+          frameCallback(videoFrame, index);
+          // Note: The renderer is responsible for calling videoFrame.close()
+        } finally {
+          // Always release the shared texture when done
+          data.sharedTexture.release();
+        }
       } else {
         // No callback set, release immediately
         data.sharedTexture.release();

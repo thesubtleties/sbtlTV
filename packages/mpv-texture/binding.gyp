@@ -27,7 +27,7 @@
           "copies": [
             {
               "destination": "<(module_root_dir)/build/Release",
-              "files": ["<(module_root_dir)/deps/mpv/win64/mpv-2.dll"]
+              "files": ["<(module_root_dir)/deps/mpv/win64/libmpv-2.dll"]
             }
           ],
           "msvs_settings": {

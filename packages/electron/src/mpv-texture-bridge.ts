@@ -112,10 +112,31 @@ export class MpvTextureBridge {
     if (!this.window || !this.mpv) return;
 
     try {
+      // Debug: log what we're receiving
+      if (this.frameIndex < 3) {
+        console.log('[MpvTextureBridge] Frame info:', {
+          handle: textureInfo.handle,
+          handleType: typeof textureInfo.handle,
+          width: textureInfo.width,
+          height: textureInfo.height,
+          format: textureInfo.format,
+        });
+      }
+
+      // Convert handle from bigint to the format Electron expects
+      // On Windows, SharedTextureHandle expects { ntHandle: Buffer }
+      // The ntHandle is the NT HANDLE value as a Buffer
+      const handleBuffer = Buffer.alloc(8);
+      handleBuffer.writeBigUInt64LE(textureInfo.handle);
+
+      const sharedTextureHandle: SharedTextureHandle = {
+        ntHandle: handleBuffer,
+      };
+
       // Import the texture handle
       const imported = sharedTexture.importSharedTexture({
         textureInfo: {
-          handle: textureInfo.handle as unknown as SharedTextureHandle,
+          handle: sharedTextureHandle,
           codedSize: { width: textureInfo.width, height: textureInfo.height },
           visibleRect: { x: 0, y: 0, width: textureInfo.width, height: textureInfo.height },
           pixelFormat: textureInfo.format === 'nv12' ? 'rgba' : textureInfo.format,

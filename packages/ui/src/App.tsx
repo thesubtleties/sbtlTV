@@ -8,6 +8,7 @@ import { ChannelPanel } from './components/ChannelPanel';
 import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
+import { VideoCanvas } from './components/VideoCanvas';
 import { useSelectedCategory } from './hooks/useChannels';
 import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useSetChannelSortOrder } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
@@ -440,7 +441,10 @@ function App() {
         </div>
       </div>
 
-      {/* Background - transparent over mpv */}
+      {/* Video canvas for native mpv mode - displays VideoFrames from sharedTexture */}
+      <VideoCanvas visible={!!currentChannel && playing} />
+
+      {/* Background - transparent over mpv (external mode) or behind VideoCanvas (native mode) */}
       <div className="video-background">
         {!currentChannel && (
           <div className="placeholder">
