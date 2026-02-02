@@ -15,6 +15,8 @@ typedef BOOL(WINAPI* PFNWGLMAKECURRENTPROC)(HDC, HGLRC);
 typedef PROC(WINAPI* PFNWGLGETPROCADDRESSPROC)(LPCSTR);
 #elif defined(__APPLE__)
 #include <OpenGL/gl3.h>
+#include <OpenGL/CGLTypes.h>
+#include <OpenGL/CGLCurrent.h>
 #include <dlfcn.h>
 #else
 #include <GL/gl.h>
@@ -122,6 +124,63 @@ static void destroyWindowsGLContext() {
 }
 #endif
 
+#ifdef __APPLE__
+static CGLContextObj g_cglContext = nullptr;
+static CGLPixelFormatObj g_cglPixelFormat = nullptr;
+
+static bool createMacOSGLContext() {
+    // Create a minimal OpenGL context for offscreen rendering
+    CGLPixelFormatAttribute attributes[] = {
+        kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,
+        kCGLPFAColorSize, (CGLPixelFormatAttribute)24,
+        kCGLPFAAlphaSize, (CGLPixelFormatAttribute)8,
+        kCGLPFAAccelerated,
+        kCGLPFANoRecovery,
+        (CGLPixelFormatAttribute)0
+    };
+
+    GLint numFormats = 0;
+    CGLError err = CGLChoosePixelFormat(attributes, &g_cglPixelFormat, &numFormats);
+    if (err != kCGLNoError || numFormats == 0) {
+        std::cerr << "[MpvContext] Failed to choose pixel format: " << err << std::endl;
+        return false;
+    }
+
+    err = CGLCreateContext(g_cglPixelFormat, nullptr, &g_cglContext);
+    if (err != kCGLNoError) {
+        std::cerr << "[MpvContext] Failed to create CGL context: " << err << std::endl;
+        CGLDestroyPixelFormat(g_cglPixelFormat);
+        g_cglPixelFormat = nullptr;
+        return false;
+    }
+
+    err = CGLSetCurrentContext(g_cglContext);
+    if (err != kCGLNoError) {
+        std::cerr << "[MpvContext] Failed to set CGL context current: " << err << std::endl;
+        CGLDestroyContext(g_cglContext);
+        CGLDestroyPixelFormat(g_cglPixelFormat);
+        g_cglContext = nullptr;
+        g_cglPixelFormat = nullptr;
+        return false;
+    }
+
+    std::cout << "[MpvContext] macOS CGL context created successfully" << std::endl;
+    return true;
+}
+
+static void destroyMacOSGLContext() {
+    if (g_cglContext) {
+        CGLSetCurrentContext(nullptr);
+        CGLDestroyContext(g_cglContext);
+        g_cglContext = nullptr;
+    }
+    if (g_cglPixelFormat) {
+        CGLDestroyPixelFormat(g_cglPixelFormat);
+        g_cglPixelFormat = nullptr;
+    }
+}
+#endif
+
 bool MpvContext::create(const MpvConfig& config) {
     if (m_initialized) {
         return true;
@@ -138,6 +197,15 @@ bool MpvContext::create(const MpvConfig& config) {
         return false;
     }
     m_glContext = static_cast<void*>(g_hglrc);
+#elif defined(__APPLE__)
+    // Create macOS CGL context for IOSurface sharing
+    if (!createMacOSGLContext()) {
+        if (m_errorCallback) {
+            m_errorCallback("Failed to create macOS GL context");
+        }
+        return false;
+    }
+    m_glContext = static_cast<void*>(g_cglContext);
 #endif
 
     // Create mpv handle
@@ -253,6 +321,9 @@ bool MpvContext::create(const MpvConfig& config) {
     // Release GL context from main thread so render thread can use it
     // (OpenGL contexts can only be current on one thread at a time)
     wglMakeCurrent(nullptr, nullptr);
+#elif defined(__APPLE__)
+    // Release CGL context from main thread so render thread can use it
+    CGLSetCurrentContext(nullptr);
 #endif
 
     m_renderThread = std::thread(&MpvContext::renderLoop, this);
@@ -301,6 +372,9 @@ void MpvContext::destroy() {
 
 #ifdef _WIN32
     destroyWindowsGLContext();
+    m_glContext = nullptr;
+#elif defined(__APPLE__)
+    destroyMacOSGLContext();
     m_glContext = nullptr;
 #endif
 
@@ -485,6 +559,16 @@ void MpvContext::renderLoop() {
             return;
         }
         std::cout << "[MpvContext] GL context made current in render thread" << std::endl;
+    }
+#elif defined(__APPLE__)
+    // Make CGL context current on this thread
+    if (g_cglContext) {
+        CGLError err = CGLSetCurrentContext(g_cglContext);
+        if (err != kCGLNoError) {
+            std::cerr << "[MpvContext] Failed to make CGL context current in render thread: " << err << std::endl;
+            return;
+        }
+        std::cout << "[MpvContext] CGL context made current in render thread" << std::endl;
     }
 #endif
 

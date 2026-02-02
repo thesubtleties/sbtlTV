@@ -124,14 +124,26 @@ export class MpvTextureBridge {
       }
 
       // Convert handle from bigint to the format Electron expects
-      // On Windows, SharedTextureHandle expects { ntHandle: Buffer }
-      // The ntHandle is the NT HANDLE value as a Buffer
+      // Platform-specific SharedTextureHandle format:
+      // - Windows: { ntHandle: Buffer } - NT HANDLE as 64-bit LE buffer
+      // - macOS: { ioSurface: Buffer } - IOSurfaceID as 32-bit LE buffer
       const handleBuffer = Buffer.alloc(8);
       handleBuffer.writeBigUInt64LE(textureInfo.handle);
 
-      const sharedTextureHandle: SharedTextureHandle = {
-        ntHandle: handleBuffer,
-      };
+      let sharedTextureHandle: SharedTextureHandle;
+      if (process.platform === 'darwin') {
+        // macOS: IOSurfaceID is a 32-bit value
+        const ioSurfaceBuffer = Buffer.alloc(4);
+        ioSurfaceBuffer.writeUInt32LE(Number(textureInfo.handle));
+        sharedTextureHandle = {
+          ioSurface: ioSurfaceBuffer,
+        };
+      } else {
+        // Windows: NT HANDLE is a 64-bit value
+        sharedTextureHandle = {
+          ntHandle: handleBuffer,
+        };
+      }
 
       // Import the texture handle
       const imported = sharedTexture.importSharedTexture({
