@@ -154,9 +154,7 @@ export class MpvTextureBridge {
           pixelFormat: textureInfo.format === 'nv12' ? 'rgba' : textureInfo.format,
         },
         allReferencesReleased: () => {
-          // Called when Electron is done with the texture
-          console.log('[MpvTextureBridge] allReferencesReleased callback fired');
-          this.mpv?.releaseFrame();
+          // Note: This callback rarely/never fires - we release immediately after send instead
         },
       });
 
@@ -168,8 +166,14 @@ export class MpvTextureBridge {
         },
         this.frameIndex++
       );
+
+      // Release frame immediately after send - don't wait for allReferencesReleased
+      // The preload closes the VideoFrame synchronously, so we can release immediately
+      this.mpv?.releaseFrame();
     } catch (error) {
       console.error('[MpvTextureBridge] Failed to handle frame:', error);
+      // Release on error too
+      this.mpv?.releaseFrame();
     }
   }
 

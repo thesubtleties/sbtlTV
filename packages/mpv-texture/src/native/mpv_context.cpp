@@ -604,18 +604,9 @@ void MpvContext::renderLoop() {
             continue;
         }
 
-        // Wait if frame is still in use
-        {
-            std::lock_guard<std::mutex> lock(m_frameMutex);
-            if (m_frameInUse) {
-                static int skipCount = 0;
-                if (skipCount < 5) {
-                    std::cout << "[MpvContext] Skipping frame - previous not released" << std::endl;
-                    skipCount++;
-                }
-                continue; // Skip frame, Electron hasn't released the previous one
-            }
-        }
+        // Note: We no longer check m_frameInUse here - let the keyed mutex handle sync.
+        // If Electron is still using the previous frame, AcquireSync will block/timeout.
+        // This allows mpv to keep rendering at full speed.
 
         // Lock texture for rendering
         if (!m_textureShare->lockTexture()) {

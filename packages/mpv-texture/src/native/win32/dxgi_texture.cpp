@@ -320,10 +320,11 @@ public:
         }
 
         // Acquire keyed mutex with key 0 (Chromium standard: kDXGIKeyedMutexAcquireReleaseKey = 0)
+        // Use 0ms timeout (non-blocking) - skip frame rather than block if Electron is still reading
         if (m_keyedMutex) {
-            HRESULT hr = m_keyedMutex->AcquireSync(0, 100);  // 100ms timeout
+            HRESULT hr = m_keyedMutex->AcquireSync(0, 0);  // 0ms = non-blocking
             if (hr == WAIT_TIMEOUT) {
-                // Electron still reading, skip this frame
+                // Electron still reading, skip this frame immediately
                 return false;
             }
             if (FAILED(hr)) {

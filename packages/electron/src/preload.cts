@@ -191,24 +191,24 @@ let frameCallback: ((videoFrame: VideoFrame, index: number) => void) | null = nu
 if (sharedTextureAvailable) {
   try {
     const { sharedTexture } = require('electron');
-    sharedTexture.setSharedTextureReceiver(async (data: { sharedTexture: { getVideoFrame: () => VideoFrame; release: () => void } }, ...args: unknown[]) => {
+    sharedTexture.setSharedTextureReceiver(async (data: { importedSharedTexture: { getVideoFrame: () => VideoFrame; release: () => void } }, ...args: unknown[]) => {
       const index = typeof args[0] === 'number' ? args[0] : 0;
-      console.log('[preload] Received shared texture, index:', index);
-      if (frameCallback) {
-        const videoFrame = data.sharedTexture.getVideoFrame();
-        console.log('[preload] Got VideoFrame:', videoFrame.codedWidth, 'x', videoFrame.codedHeight);
-        try {
-          frameCallback(videoFrame, index);
-          // Note: The renderer is responsible for calling videoFrame.close()
-        } finally {
-          // Always release the shared texture when done
-          console.log('[preload] Releasing shared texture');
-          data.sharedTexture.release();
+      const imported = data.importedSharedTexture;
+      try {
+        if (frameCallback && imported) {
+          const videoFrame = imported.getVideoFrame();
+          try {
+            frameCallback(videoFrame, index);
+          } finally {
+            videoFrame?.close();
+            imported.release();
+          }
+        } else if (imported) {
+          imported.release();
         }
-      } else {
-        // No callback set, release immediately
-        console.log('[preload] No callback, releasing immediately');
-        data.sharedTexture.release();
+      } catch (error) {
+        console.error('[preload] sharedTexture error:', error);
+        try { imported?.release(); } catch { /* ignore */ }
       }
     });
   } catch (error) {
