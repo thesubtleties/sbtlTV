@@ -197,6 +197,13 @@ public:
             return false;
         }
 
+        // Get keyed mutex interface for synchronization with Electron
+        hr = m_d3dTexture->QueryInterface(__uuidof(IDXGIKeyedMutex), (void**)&m_keyedMutex);
+        if (FAILED(hr)) {
+            std::cerr << "[DXGI] Failed to get keyed mutex: " << std::hex << hr << std::endl;
+            return false;
+        }
+
         // Set the share handle on the D3D resource BEFORE registering with WGL
         // This is required by WGL_NV_DX_interop spec for shared resources
         if (m_wglDXSetResourceShareHandleNV) {
@@ -280,6 +287,10 @@ public:
             glDeleteTextures(1, &m_glTexture);
             m_glTexture = 0;
         }
+        if (m_keyedMutex) {
+            m_keyedMutex->Release();
+            m_keyedMutex = nullptr;
+        }
         if (m_d3dTexture) {
             m_d3dTexture->Release();
             m_d3dTexture = nullptr;
@@ -308,10 +319,27 @@ public:
             return true;
         }
 
+        // Acquire keyed mutex before writing (key 0 = writer access)
+        if (m_keyedMutex) {
+            HRESULT hr = m_keyedMutex->AcquireSync(0, 100);  // 100ms timeout
+            if (hr == WAIT_TIMEOUT) {
+                // Electron still reading, skip this frame
+                return false;
+            }
+            if (FAILED(hr)) {
+                std::cerr << "[DXGI] Failed to acquire keyed mutex: " << std::hex << hr << std::endl;
+                return false;
+            }
+        }
+
         HANDLE objects[] = { m_wglDxObject };
         if (!m_wglDXLockObjectsNV(m_wglDxDevice, 1, objects)) {
             DWORD err = GetLastError();
             std::cerr << "[DXGI] Failed to lock DX object, error: " << err << std::endl;
+            // Release mutex if WGL lock failed
+            if (m_keyedMutex) {
+                m_keyedMutex->ReleaseSync(0);
+            }
             return false;
         }
 
@@ -326,11 +354,16 @@ public:
             return info;
         }
 
-        // Unlock the object
+        // Unlock the WGL object first
         HANDLE objects[] = { m_wglDxObject };
         if (!m_wglDXUnlockObjectsNV(m_wglDxDevice, 1, objects)) {
             std::cerr << "[DXGI] Failed to unlock DX object" << std::endl;
-            return info;
+            // Still try to release mutex
+        }
+
+        // Release keyed mutex so Electron can read (release to key 0 for next acquire)
+        if (m_keyedMutex) {
+            m_keyedMutex->ReleaseSync(0);
         }
 
         m_locked = false;
@@ -353,6 +386,9 @@ public:
         if (m_locked) {
             HANDLE objects[] = { m_wglDxObject };
             m_wglDXUnlockObjectsNV(m_wglDxDevice, 1, objects);
+            if (m_keyedMutex) {
+                m_keyedMutex->ReleaseSync(0);
+            }
             m_locked = false;
         }
 
@@ -369,6 +405,11 @@ public:
         if (m_glTexture) {
             glDeleteTextures(1, &m_glTexture);
             m_glTexture = 0;
+        }
+
+        if (m_keyedMutex) {
+            m_keyedMutex->Release();
+            m_keyedMutex = nullptr;
         }
 
         if (m_wglDxDevice) {
@@ -460,6 +501,7 @@ private:
     ID3D11Device* m_d3dDevice = nullptr;
     ID3D11DeviceContext* m_d3dContext = nullptr;
     ID3D11Texture2D* m_d3dTexture = nullptr;
+    IDXGIKeyedMutex* m_keyedMutex = nullptr;  // For NT handle synchronization
     HANDLE m_sharedHandle = nullptr;
 
     // OpenGL
