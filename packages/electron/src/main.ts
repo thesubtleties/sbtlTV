@@ -311,9 +311,8 @@ async function initMpv(): Promise<void> {
     console.log('[mpv] Using binary:', mpvBinary);
     debugLog(`Using binary: ${mpvBinary}`, 'mpv');
 
-    // Check mpv version for feature compatibility
+    // Check mpv version for logging
     const mpvVersion = getMpvVersion(mpvBinary);
-    const hasHdrOptions = mpvVersion && (mpvVersion[0] > 0 || (mpvVersion[0] === 0 && mpvVersion[1] >= 35));
     const versionStr = mpvVersion ? `${mpvVersion[0]}.${mpvVersion[1]}` : 'unknown';
     console.log('[mpv] Version:', versionStr);
     debugLog(`Version: ${versionStr}`, 'mpv');
@@ -334,18 +333,6 @@ async function initMpv(): Promise<void> {
       '--hwdec=auto',
       '--vo=gpu',
     ];
-
-    // HDR options require mpv 0.35+
-    if (hasHdrOptions) {
-      mpvArgs.push(
-        '--target-colorspace-hint=no',
-        '--tone-mapping=mobius',
-        '--hdr-compute-peak=no',
-      );
-      console.log('[mpv] HDR options enabled (mpv 0.35+)');
-    } else {
-      console.log('[mpv] HDR options skipped (requires mpv 0.35+)');
-    }
 
     // Get native window handle for --wid embedding
     const nativeHandle = mainWindow.getNativeWindowHandle();
