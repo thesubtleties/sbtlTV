@@ -155,6 +155,7 @@ export class MpvTextureBridge {
         },
         allReferencesReleased: () => {
           // Called when Electron is done with the texture
+          console.log('[MpvTextureBridge] allReferencesReleased callback fired');
           this.mpv?.releaseFrame();
         },
       });
