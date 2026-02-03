@@ -522,9 +522,12 @@ void MpvContext::handlePropertyChange(mpv_event_property* prop) {
             int newWidth = static_cast<int>(*static_cast<int64_t*>(prop->data));
             if (newWidth > 0 && newWidth != m_status.width) {
                 m_status.width = newWidth;
-                // Resize texture if needed
-                if (m_textureShare && m_status.height > 0) {
-                    m_textureShare->resizeTexture(m_status.width, m_status.height);
+                // Signal render thread to resize (GL calls must happen there)
+                if (m_status.height > 0) {
+                    m_pendingWidth = static_cast<uint32_t>(m_status.width);
+                    m_pendingHeight = static_cast<uint32_t>(m_status.height);
+                    m_needsResize = true;
+                    m_renderCV.notify_one();  // Wake render thread for resize
                 }
             }
             statusChanged = true;
@@ -532,9 +535,12 @@ void MpvContext::handlePropertyChange(mpv_event_property* prop) {
             int newHeight = static_cast<int>(*static_cast<int64_t*>(prop->data));
             if (newHeight > 0 && newHeight != m_status.height) {
                 m_status.height = newHeight;
-                // Resize texture if needed
-                if (m_textureShare && m_status.width > 0) {
-                    m_textureShare->resizeTexture(m_status.width, m_status.height);
+                // Signal render thread to resize (GL calls must happen there)
+                if (m_status.width > 0) {
+                    m_pendingWidth = static_cast<uint32_t>(m_status.width);
+                    m_pendingHeight = static_cast<uint32_t>(m_status.height);
+                    m_needsResize = true;
+                    m_renderCV.notify_one();  // Wake render thread for resize
                 }
             }
             statusChanged = true;
@@ -573,12 +579,23 @@ void MpvContext::renderLoop() {
 #endif
 
     while (m_running) {
-        // Wait for render update
+        // Wait for render update or resize request
         {
             std::unique_lock<std::mutex> lock(m_renderMutex);
-            m_renderCV.wait(lock, [this] { return m_needsRender || !m_running; });
+            m_renderCV.wait(lock, [this] { return m_needsRender || m_needsResize || !m_running; });
             if (!m_running) break;
             m_needsRender = false;
+        }
+
+        // Handle texture resize on render thread (GL context is current here)
+        if (m_needsResize && m_textureShare) {
+            uint32_t newWidth = m_pendingWidth.load();
+            uint32_t newHeight = m_pendingHeight.load();
+            if (newWidth > 0 && newHeight > 0) {
+                std::cout << "[MpvContext] Resizing texture to " << newWidth << "x" << newHeight << std::endl;
+                m_textureShare->resizeTexture(newWidth, newHeight);
+            }
+            m_needsResize = false;
         }
 
         // Check if we can render

@@ -106,6 +106,11 @@ private:
     std::condition_variable m_renderCV;
     std::atomic<bool> m_needsRender{false};
 
+    // Texture resize synchronization (resize must happen on render thread)
+    std::atomic<bool> m_needsResize{false};
+    std::atomic<uint32_t> m_pendingWidth{0};
+    std::atomic<uint32_t> m_pendingHeight{0};
+
     // Frame synchronization
     std::mutex m_frameMutex;
     std::atomic<bool> m_frameInUse{false};
