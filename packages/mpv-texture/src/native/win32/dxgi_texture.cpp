@@ -319,7 +319,7 @@ public:
             return true;
         }
 
-        // Acquire keyed mutex before writing (key 0 = writer access)
+        // Acquire keyed mutex with key 0 (Chromium standard: kDXGIKeyedMutexAcquireReleaseKey = 0)
         if (m_keyedMutex) {
             HRESULT hr = m_keyedMutex->AcquireSync(0, 100);  // 100ms timeout
             if (hr == WAIT_TIMEOUT) {
@@ -361,7 +361,7 @@ public:
             // Still try to release mutex
         }
 
-        // Release keyed mutex so Electron can read (release to key 0 for next acquire)
+        // Release keyed mutex with key 0 (Chromium standard)
         if (m_keyedMutex) {
             m_keyedMutex->ReleaseSync(0);
         }
