@@ -608,12 +608,22 @@ void MpvContext::renderLoop() {
         {
             std::lock_guard<std::mutex> lock(m_frameMutex);
             if (m_frameInUse) {
+                static int skipCount = 0;
+                if (skipCount < 5) {
+                    std::cout << "[MpvContext] Skipping frame - previous not released" << std::endl;
+                    skipCount++;
+                }
                 continue; // Skip frame, Electron hasn't released the previous one
             }
         }
 
         // Lock texture for rendering
         if (!m_textureShare->lockTexture()) {
+            static int lockFailCount = 0;
+            if (lockFailCount < 5) {
+                std::cout << "[MpvContext] Failed to lock texture" << std::endl;
+                lockFailCount++;
+            }
             continue;
         }
 
@@ -650,9 +660,19 @@ void MpvContext::renderLoop() {
         // Report swap
         mpv_render_context_report_swap(m_renderCtx);
 
+        // Ensure all GL commands are complete before releasing to D3D
+        glFinish();
+
         // Unlock and export texture
         TextureInfo info = m_textureShare->unlockAndExport();
         if (info.is_valid) {
+            static int frameCount = 0;
+            if (frameCount < 10) {
+                std::cout << "[MpvContext] Frame " << frameCount << " exported: "
+                          << info.width << "x" << info.height << std::endl;
+            }
+            frameCount++;
+
             std::lock_guard<std::mutex> lock(m_frameMutex);
             m_currentFrame = info;
             m_frameInUse = true;
