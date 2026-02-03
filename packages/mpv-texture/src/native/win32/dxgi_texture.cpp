@@ -9,6 +9,7 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
+#include <dxgi1_2.h>  // For IDXGIResource1 (NT shared handles)
 #include <gl/GL.h>
 #include <iostream>
 
@@ -157,7 +158,7 @@ public:
         m_width = width;
         m_height = height;
 
-        // Create D3D11 texture with shared handle
+        // Create D3D11 texture with NT shared handle (required for Electron's importSharedTexture)
         D3D11_TEXTURE2D_DESC desc = {};
         desc.Width = width;
         desc.Height = height;
@@ -167,7 +168,8 @@ public:
         desc.SampleDesc.Count = 1;
         desc.Usage = D3D11_USAGE_DEFAULT;
         desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+        // Use NT handle for cross-process sharing (Electron requires this)
+        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
 
         HRESULT hr = m_d3dDevice->CreateTexture2D(&desc, nullptr, &m_d3dTexture);
         if (FAILED(hr)) {
@@ -175,18 +177,23 @@ public:
             return false;
         }
 
-        // Get DXGI shared handle
-        IDXGIResource* dxgiResource = nullptr;
-        hr = m_d3dTexture->QueryInterface(__uuidof(IDXGIResource), (void**)&dxgiResource);
+        // Get NT shared handle via IDXGIResource1::CreateSharedHandle
+        IDXGIResource1* dxgiResource1 = nullptr;
+        hr = m_d3dTexture->QueryInterface(__uuidof(IDXGIResource1), (void**)&dxgiResource1);
         if (FAILED(hr)) {
-            std::cerr << "[DXGI] Failed to get DXGI resource: " << std::hex << hr << std::endl;
+            std::cerr << "[DXGI] Failed to get IDXGIResource1: " << std::hex << hr << std::endl;
             return false;
         }
 
-        hr = dxgiResource->GetSharedHandle(&m_sharedHandle);
-        dxgiResource->Release();
+        hr = dxgiResource1->CreateSharedHandle(
+            nullptr,  // Security attributes (nullptr = not inheritable)
+            DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE,
+            nullptr,  // Name (nullptr = unnamed)
+            &m_sharedHandle
+        );
+        dxgiResource1->Release();
         if (FAILED(hr)) {
-            std::cerr << "[DXGI] Failed to get shared handle: " << std::hex << hr << std::endl;
+            std::cerr << "[DXGI] Failed to create NT shared handle: " << std::hex << hr << std::endl;
             return false;
         }
 
