@@ -4,6 +4,8 @@ A desktop IPTV player built with Electron and mpv.
 
 <!-- Screenshot or demo video here -->
 
+> **Early Development** - This project is new and actively evolving. The goal is a dead-simple, low-latency player that balances aesthetics, ease of use, and quality-of-life features. We're constantly fixing bugs, adding features, and improving the experience. Check back often for updates, and feel free to [open an issue](../../issues) if you run into problems or have suggestions.
+
 ## Features
 
 - **Live TV with EPG** - Browse channels by category with a full program guide
