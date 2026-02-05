@@ -76,8 +76,9 @@ const ENRICHED_TV_URL = 'https://raw.githubusercontent.com/thesubtleties/sbtlTV-
 /**
  * Normalize title for matching
  * Strips provider prefixes (ES -, 4K-ES -, etc.) and language suffixes ((ES), [EN], etc.)
+ * @internal Exported for testing
  */
-function normalizeTitle(title: string): string {
+export function normalizeTitle(title: string): string {
   // Language/country codes commonly used by providers
   const langCodes = 'ES|EN|DE|FR|IT|PT|RU|JP|KR|CN|US|UK|MX|AR|BR|NL|PL|TR|IN|AU|CA';
 
@@ -89,14 +90,15 @@ function normalizeTitle(title: string): string {
     .replace(new RegExp(`^(${langCodes})\\s*[-–—]\\s*`, 'i'), '')
     // Remove trailing language tags: "(ES)", "[EN]", etc.
     .replace(new RegExp(`\\s*[\\(\\[](${langCodes})[\\)\\]]\\s*$`, 'i'), '')
-    // Remove year patterns
+    // Remove year patterns (parentheses/brackets)
     .replace(/\s*\(\d{4}\)\s*/g, ' ')
     .replace(/\s*\[\d{4}\]\s*/g, ' ')
-    .replace(/\s+\d{4}$/g, '')
-    // Remove quality markers
-    .replace(/\s*(4k|uhd|hd|sd|1080p|720p|480p|bluray|web-dl|hdrip|dvdrip)\s*/gi, ' ')
-    // Remove special chars
+    // Remove special chars (dots, dashes become spaces)
     .replace(/[^\w\s]/g, ' ')
+    // Remove quality markers (including 2160p)
+    .replace(/\s*(4k|uhd|hd|sd|2160p|1080p|720p|480p|bluray|blu-ray|web-dl|webrip|hdrip|dvdrip|brrip|hdtv)\s*/gi, ' ')
+    // Remove trailing year (after special chars converted to spaces)
+    .replace(/\s+\d{4}\s*$/g, '')
     // Normalize whitespace
     .replace(/\s+/g, ' ')
     .trim();
