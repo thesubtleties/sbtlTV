@@ -75,10 +75,20 @@ const ENRICHED_TV_URL = 'https://raw.githubusercontent.com/thesubtleties/sbtlTV-
 
 /**
  * Normalize title for matching
+ * Strips provider prefixes (ES -, 4K-ES -, etc.) and language suffixes ((ES), [EN], etc.)
  */
 function normalizeTitle(title: string): string {
+  // Language/country codes commonly used by providers
+  const langCodes = 'ES|EN|DE|FR|IT|PT|RU|JP|KR|CN|US|UK|MX|AR|BR|NL|PL|TR|IN|AU|CA';
+
   return title
     .toLowerCase()
+    // Remove leading quality+language prefixes: "4K-ES - ", "HD-EN - ", "4K - ", etc.
+    .replace(new RegExp(`^(4k|hd|sd|uhd)[-\\s]*(${langCodes})?\\s*[-–—]\\s*`, 'i'), '')
+    // Remove leading language prefixes: "ES - ", "EN - ", etc.
+    .replace(new RegExp(`^(${langCodes})\\s*[-–—]\\s*`, 'i'), '')
+    // Remove trailing language tags: "(ES)", "[EN]", etc.
+    .replace(new RegExp(`\\s*[\\(\\[](${langCodes})[\\)\\]]\\s*$`, 'i'), '')
     // Remove year patterns
     .replace(/\s*\(\d{4}\)\s*/g, ' ')
     .replace(/\s*\[\d{4}\]\s*/g, ' ')
