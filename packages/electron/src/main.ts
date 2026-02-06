@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
 import * as net from 'net';
@@ -156,6 +156,12 @@ async function createWindow(): Promise<void> {
       : path.join(__dirname, '../../ui/dist/index.html');
     await mainWindow.loadFile(uiPath);
   }
+
+  // Open external links in system browser instead of new Electron windows
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;

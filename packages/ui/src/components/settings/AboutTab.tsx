@@ -89,7 +89,7 @@ export function AboutTab() {
             </svg>
           </a>
           <a
-            href="https://sbtl.dev"
+            href="https://sbtl.dev?utm_source=sbtltv&utm_medium=about"
             target="_blank"
             rel="noopener noreferrer"
             title="sbtl.dev"
