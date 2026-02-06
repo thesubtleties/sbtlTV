@@ -174,7 +174,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     setDetailItemStore(selectedItem);
   }, [selectedItem, setDetailItemStore]);
 
-  // Collapse handler from detail - slides detail down (page disappears instantly), preserves selection
+  // Collapse handler from detail - hides background content instantly, slides detail down, preserves selection
   const handleCollapsePage = useCallback(() => {
     // Page content disappears instantly
     setPageContentVisible(false);
@@ -436,7 +436,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     onHeroPlay: handleHeroPlay,
   }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, handleItemClick, handleHeroPlay]);
 
-  // Handle category selection - also close detail view and reset scroll on category change
+  // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {
     setSelectedCategoryId(id);
     setSelectedItem(null);

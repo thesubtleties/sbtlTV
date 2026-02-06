@@ -120,6 +120,7 @@ export interface UpdateInfo {
 export interface UpdaterApi {
   onUpdateAvailable: (callback: (info: UpdateInfo) => void) => void;
   onUpdateDownloaded: (callback: (info: UpdateInfo) => void) => void;
+  onError: (callback: (error: { message: string }) => void) => void;
   checkForUpdates: () => Promise<StorageResult<UpdateInfo | null>>;
   installUpdate: () => Promise<void>;
   removeAllListeners: () => void;

@@ -8,8 +8,9 @@ export function AboutTab() {
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    window.platform?.getVersion().then(setVersion).catch(() => {
-      setVersion('dev');
+    window.platform?.getVersion().then(setVersion).catch((err) => {
+      console.error('Failed to get app version:', err);
+      setVersion('unknown');
     });
   }, []);
 
@@ -35,7 +36,8 @@ export function AboutTab() {
       } else {
         setUpdateStatus('You are on the latest version');
       }
-    } catch {
+    } catch (err) {
+      console.error('Update check failed:', err);
       setUpdateStatus('Failed to check for updates');
     } finally {
       setCheckingUpdate(false);

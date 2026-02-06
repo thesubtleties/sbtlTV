@@ -59,11 +59,16 @@ function useTmdbAccessTokenState(): { token: string | null; loaded: boolean } {
         setState({ token: null, loaded: true });
         return;
       }
-      const result = await window.storage.getSettings();
-      if (result.data && 'tmdbApiKey' in result.data) {
-        // Still stored as tmdbApiKey in settings for backwards compat
-        setState({ token: (result.data as { tmdbApiKey?: string }).tmdbApiKey ?? null, loaded: true });
-      } else {
+      try {
+        const result = await window.storage.getSettings();
+        if (result.data && 'tmdbApiKey' in result.data) {
+          // Still stored as tmdbApiKey in settings for backwards compat
+          setState({ token: (result.data as { tmdbApiKey?: string }).tmdbApiKey ?? null, loaded: true });
+        } else {
+          setState({ token: null, loaded: true });
+        }
+      } catch (err) {
+        console.error('Failed to load TMDB token from settings:', err);
         setState({ token: null, loaded: true });
       }
     }

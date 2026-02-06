@@ -162,26 +162,22 @@ contextBridge.exposeInMainWorld('debug', {
   openLogFolder: () => ipcRenderer.invoke('debug-open-log-folder'),
 } satisfies DebugApi);
 
-// Expose auto-updater API
-export interface UpdaterApi {
-  onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => void;
-  onUpdateDownloaded: (callback: (info: { version: string; releaseDate: string }) => void) => void;
-  checkForUpdates: () => Promise<{ success?: boolean; error?: string; data?: { version: string; releaseDate: string } | null }>;
-  installUpdate: () => Promise<void>;
-  removeAllListeners: () => void;
-}
-
+// Expose auto-updater API (types defined in electron.d.ts)
 contextBridge.exposeInMainWorld('updater', {
   onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => {
-    ipcRenderer.on('updater-update-available', (_, info) => callback(info));
+    ipcRenderer.on('updater-update-available', (_event: IpcRendererEvent, info) => callback(info));
   },
   onUpdateDownloaded: (callback: (info: { version: string; releaseDate: string }) => void) => {
-    ipcRenderer.on('updater-update-downloaded', (_, info) => callback(info));
+    ipcRenderer.on('updater-update-downloaded', (_event: IpcRendererEvent, info) => callback(info));
+  },
+  onError: (callback: (error: { message: string }) => void) => {
+    ipcRenderer.on('updater-error', (_event: IpcRendererEvent, error) => callback(error));
   },
   checkForUpdates: () => ipcRenderer.invoke('updater-check'),
   installUpdate: () => ipcRenderer.invoke('updater-install'),
   removeAllListeners: () => {
     ipcRenderer.removeAllListeners('updater-update-available');
     ipcRenderer.removeAllListeners('updater-update-downloaded');
+    ipcRenderer.removeAllListeners('updater-error');
   },
-} satisfies UpdaterApi);
+});

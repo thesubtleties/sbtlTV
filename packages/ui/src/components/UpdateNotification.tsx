@@ -15,7 +15,7 @@ export function UpdateNotification() {
       });
     }
 
-    // Test event (from About tab's "Test Update Toast" button)
+    // Test event (dispatch via console: window.dispatchEvent(new CustomEvent('test-update-notification', { detail: { version: '1.0.0', releaseDate: '2026-01-01' } })))
     const handleTestUpdate = (e: Event) => {
       setUpdateInfo((e as CustomEvent).detail);
       setDismissed(false);
@@ -31,7 +31,9 @@ export function UpdateNotification() {
   if (!updateInfo || dismissed) return null;
 
   const handleInstall = () => {
-    window.updater?.installUpdate();
+    window.updater?.installUpdate().catch((err) => {
+      console.error('Failed to install update:', err);
+    });
   };
 
   const handleDismiss = () => {

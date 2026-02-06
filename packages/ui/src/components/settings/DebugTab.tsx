@@ -40,8 +40,8 @@ export function DebugTab({
       await navigator.clipboard.writeText('https://github.com/thesubtleties/sbtlTV/issues');
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      console.error('Clipboard API not available');
+    } catch (err) {
+      console.error('Clipboard write failed:', err);
     }
   }
 
