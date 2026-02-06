@@ -666,27 +666,24 @@ export function useFeaturedContent(accessToken: string | null, type: 'movies' | 
   const { series: popularSeries } = useLocalPopularSeries(count);
 
   const [featured, setFeatured] = useState<(StoredMovie | StoredSeries)[]>([]);
-  const [sourceKey, setSourceKey] = useState<string>('');
 
   useEffect(() => {
-    // Determine which source to use
+    // Once we have featured items, don't change them (prevents flicker)
+    if (featured.length > 0) return;
+
+    // Determine which source to use - prefer trending if available
     let items: (StoredMovie | StoredSeries)[];
-    let key: string;
 
     if (type === 'movies') {
       items = trendingMovies.length > 0 ? trendingMovies : popularMovies;
-      key = `movies-${trendingMovies.length > 0 ? 'trending' : 'local'}-${items.length}`;
     } else {
       items = trendingSeries.length > 0 ? trendingSeries : popularSeries;
-      key = `series-${trendingSeries.length > 0 ? 'trending' : 'local'}-${items.length}`;
     }
 
-    // Only re-randomize if source actually changed
-    if (key !== sourceKey && items.length > 0) {
-      setSourceKey(key);
+    if (items.length > 0) {
       setFeatured(randomSample(items, count));
     }
-  }, [type, trendingMovies, trendingSeries, popularMovies, popularSeries, count, sourceKey]);
+  }, [type, trendingMovies, trendingSeries, popularMovies, popularSeries, count, featured.length]);
 
   return {
     items: featured,
