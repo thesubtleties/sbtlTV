@@ -654,24 +654,40 @@ function randomSample<T>(array: T[], n: number): T[] {
   return shuffled.slice(0, n);
 }
 
+// Module-level cache: persists for the app session, clears on restart
+const featuredCache = new Map<string, (StoredMovie | StoredSeries)[]>();
+
 /**
  * Get featured content for hero section
- * Returns random items from trending (with cache fallback)
- * Selection is stable - only re-randomizes when data source changes
+ * Returns random items from trending (with local popular fallback).
+ * Randomizes once per app session per type - stable across tab switches.
  */
 export function useFeaturedContent(accessToken: string | null, type: 'movies' | 'series', count = 5) {
   const { movies: trendingMovies } = useTrendingMovies(accessToken);
   const { series: trendingSeries } = useTrendingSeries(accessToken);
-  const { movies: popularMovies } = useLocalPopularMovies(count);
-  const { series: popularSeries } = useLocalPopularSeries(count);
+  // Fetch a larger pool so randomSample actually shuffles
+  const { movies: popularMovies } = useLocalPopularMovies(count * 4);
+  const { series: popularSeries } = useLocalPopularSeries(count * 4);
 
-  const [featured, setFeatured] = useState<(StoredMovie | StoredSeries)[]>([]);
+  const [featured, setFeatured] = useState<(StoredMovie | StoredSeries)[]>(
+    () => featuredCache.get(type) || []
+  );
+  // Give TMDB key time to load before falling back to local popular
+  const [tokenGracePeriod, setTokenGracePeriod] = useState(!accessToken);
 
   useEffect(() => {
-    // Once we have featured items, don't change them (prevents flicker)
-    if (featured.length > 0) return;
+    if (accessToken || !tokenGracePeriod) return;
+    const timer = setTimeout(() => setTokenGracePeriod(false), 1500);
+    return () => clearTimeout(timer);
+  }, [accessToken, tokenGracePeriod]);
 
-    // Determine which source to use - prefer trending if available
+  useEffect(() => {
+    if (featuredCache.has(type)) return;
+
+    // Still waiting for TMDB key to arrive
+    if (!accessToken && tokenGracePeriod) return;
+
+    // Prefer trending (TMDB), fall back to local popular
     let items: (StoredMovie | StoredSeries)[];
 
     if (type === 'movies') {
@@ -681,9 +697,11 @@ export function useFeaturedContent(accessToken: string | null, type: 'movies' | 
     }
 
     if (items.length > 0) {
-      setFeatured(randomSample(items, count));
+      const sampled = randomSample(items, count);
+      featuredCache.set(type, sampled);
+      setFeatured(sampled);
     }
-  }, [type, trendingMovies, trendingSeries, popularMovies, popularSeries, count, featured.length]);
+  }, [type, accessToken, tokenGracePeriod, trendingMovies, trendingSeries, popularMovies, popularSeries, count]);
 
   return {
     items: featured,
