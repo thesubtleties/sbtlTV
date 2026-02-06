@@ -46,21 +46,31 @@ import {
  * Note: This is the "API Read Access Token" from TMDB, not the API key
  */
 export function useTmdbAccessToken(): string | null {
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const { token } = useTmdbAccessTokenState();
+  return token;
+}
+
+function useTmdbAccessTokenState(): { token: string | null; loaded: boolean } {
+  const [state, setState] = useState<{ token: string | null; loaded: boolean }>({ token: null, loaded: false });
 
   useEffect(() => {
     async function loadToken() {
-      if (!window.storage) return;
+      if (!window.storage) {
+        setState({ token: null, loaded: true });
+        return;
+      }
       const result = await window.storage.getSettings();
       if (result.data && 'tmdbApiKey' in result.data) {
         // Still stored as tmdbApiKey in settings for backwards compat
-        setAccessToken((result.data as { tmdbApiKey?: string }).tmdbApiKey ?? null);
+        setState({ token: (result.data as { tmdbApiKey?: string }).tmdbApiKey ?? null, loaded: true });
+      } else {
+        setState({ token: null, loaded: true });
       }
     }
     loadToken();
   }, []);
 
-  return accessToken;
+  return state;
 }
 
 // Alias for backwards compatibility
@@ -663,6 +673,7 @@ const featuredCache = new Map<string, (StoredMovie | StoredSeries)[]>();
  * Randomizes once per app session per type - stable across tab switches.
  */
 export function useFeaturedContent(accessToken: string | null, type: 'movies' | 'series', count = 5) {
+  const { loaded: tokenLoaded } = useTmdbAccessTokenState();
   const { movies: trendingMovies } = useTrendingMovies(accessToken);
   const { series: trendingSeries } = useTrendingSeries(accessToken);
   // Fetch a larger pool so randomSample actually shuffles
@@ -672,20 +683,12 @@ export function useFeaturedContent(accessToken: string | null, type: 'movies' | 
   const [featured, setFeatured] = useState<(StoredMovie | StoredSeries)[]>(
     () => featuredCache.get(type) || []
   );
-  // Give TMDB key time to load before falling back to local popular
-  const [tokenGracePeriod, setTokenGracePeriod] = useState(!accessToken);
-
-  useEffect(() => {
-    if (accessToken || !tokenGracePeriod) return;
-    const timer = setTimeout(() => setTokenGracePeriod(false), 1500);
-    return () => clearTimeout(timer);
-  }, [accessToken, tokenGracePeriod]);
 
   useEffect(() => {
     if (featuredCache.has(type)) return;
 
-    // Still waiting for TMDB key to arrive
-    if (!accessToken && tokenGracePeriod) return;
+    // Wait for settings to load so we know if there's a TMDB key
+    if (!tokenLoaded) return;
 
     // Prefer trending (TMDB), fall back to local popular
     let items: (StoredMovie | StoredSeries)[];
@@ -701,7 +704,7 @@ export function useFeaturedContent(accessToken: string | null, type: 'movies' | 
       featuredCache.set(type, sampled);
       setFeatured(sampled);
     }
-  }, [type, accessToken, tokenGracePeriod, trendingMovies, trendingSeries, popularMovies, popularSeries, count]);
+  }, [type, tokenLoaded, trendingMovies, trendingSeries, popularMovies, popularSeries, count]);
 
   return {
     items: featured,

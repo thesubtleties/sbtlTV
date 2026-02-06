@@ -64,11 +64,14 @@ export function AboutTab() {
           >
             {checkingUpdate ? 'Checking...' : 'Check for Updates'}
           </button>
-          {updateStatus && (
-            <p className="form-hint" style={{ textAlign: 'center', maxWidth: '360px' }}>
-              {updateStatus}
-            </p>
-          )}
+          {/* Fixed height so status text doesn't shift layout */}
+          <div style={{ minHeight: '1.5em' }}>
+            {updateStatus && (
+              <p className="form-hint" style={{ textAlign: 'center', maxWidth: '360px', margin: 0 }}>
+                {updateStatus}
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
