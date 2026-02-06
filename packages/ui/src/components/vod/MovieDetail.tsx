@@ -8,6 +8,7 @@
 import { useEffect, useCallback } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
+import { DetailHeader } from './DetailHeader';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
@@ -85,28 +86,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
       </div>
 
       {/* Header with back button and collapse */}
-      <header className="movie-detail__header">
-        <button
-          className="movie-detail__back"
-          onClick={onClose}
-          aria-label="Go back"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-          Back
-        </button>
-        <button
-          className="movie-detail__collapse"
-          onClick={onCollapse}
-          aria-label="Collapse detail"
-          title="Collapse"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-      </header>
+      <DetailHeader className="movie-detail" onBack={onClose} onCollapse={onCollapse} />
 
       {/* Content */}
       <div className="movie-detail__content">

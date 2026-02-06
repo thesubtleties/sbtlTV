@@ -27,31 +27,14 @@ import {
   useMultipleMoviesByGenre,
   useMultipleSeriesByGenre,
 } from '../hooks/useTmdbLists';
-import {
-  useMoviesCategory,
-  useSetMoviesCategory,
-  useSeriesCategory,
-  useSetSeriesCategory,
-  useMoviesSearchQuery,
-  useSetMoviesSearchQuery,
-  useSeriesSearchQuery,
-  useSetSeriesSearchQuery,
-  useMoviesHomeScrollPosition,
-  useSetMoviesHomeScrollPosition,
-  useSeriesHomeScrollPosition,
-  useSetSeriesHomeScrollPosition,
-  useMoviesDetailItem,
-  useSetMoviesDetailItem,
-  useSeriesDetailItem,
-  useSetSeriesDetailItem,
-  useMoviesPageCollapsed,
-  useSetMoviesPageCollapsed,
-  useSeriesPageCollapsed,
-  useSetSeriesPageCollapsed,
-} from '../stores/uiStore';
+import { useVodNavigation } from '../stores/uiStore';
 import type { StoredMovie, StoredSeries } from '../db';
 import { type MediaItem, type VodType, type VodPlayInfo } from '../types/media';
 import './VodPage.css';
+
+// Animation timing (must match .vod-page transition in VodPage.css: 0.35s)
+const SLIDE_DURATION_MS = 350;
+const SLIDE_DELAY_MS = 50;
 
 // Carousel row type for virtualization (all data pre-fetched)
 type CarouselRow = {
@@ -114,96 +97,16 @@ const homeVirtuosoComponents = {
   Header: HomeHeader,
 };
 
-interface VodPageProps {
-  type: VodType;
-  onPlay?: (info: VodPlayInfo) => void;
-  onClose?: () => void;
-}
-
-export function VodPage({ type, onPlay, onClose }: VodPageProps) {
-  // Category state - use the appropriate store based on type
-  const moviesCategory = useMoviesCategory();
-  const setMoviesCategory = useSetMoviesCategory();
-  const seriesCategory = useSeriesCategory();
-  const setSeriesCategory = useSetSeriesCategory();
-
-  const selectedCategoryId = type === 'movie' ? moviesCategory : seriesCategory;
-  const setSelectedCategoryId = type === 'movie' ? setMoviesCategory : setSeriesCategory;
-
-  // Search query state from store (persists per media type)
-  const moviesSearchQuery = useMoviesSearchQuery();
-  const setMoviesSearchQuery = useSetMoviesSearchQuery();
-  const seriesSearchQuery = useSeriesSearchQuery();
-  const setSeriesSearchQuery = useSetSeriesSearchQuery();
-
-  const searchQuery = type === 'movie' ? moviesSearchQuery : seriesSearchQuery;
-  const setSearchQuery = type === 'movie' ? setMoviesSearchQuery : setSeriesSearchQuery;
-
-  // Scroll position state from store (home view only)
-  const moviesScrollPos = useMoviesHomeScrollPosition();
-  const setMoviesScrollPos = useSetMoviesHomeScrollPosition();
-  const seriesScrollPos = useSeriesHomeScrollPosition();
-  const setSeriesScrollPos = useSetSeriesHomeScrollPosition();
-
-  const scrollPosition = type === 'movie' ? moviesScrollPos : seriesScrollPos;
-  const setScrollPosition = type === 'movie' ? setMoviesScrollPos : setSeriesScrollPos;
-
-  // Detail item state from store (persists selected item)
-  const moviesDetailItem = useMoviesDetailItem();
-  const setMoviesDetailItemStore = useSetMoviesDetailItem();
-  const seriesDetailItem = useSeriesDetailItem();
-  const setSeriesDetailItemStore = useSetSeriesDetailItem();
-
-  const detailItem = type === 'movie' ? moviesDetailItem : seriesDetailItem;
-  const setDetailItemStore = type === 'movie' ? setMoviesDetailItemStore : setSeriesDetailItemStore;
-
-  // Page collapsed state from store (slides whole page down)
-  const moviesPageCollapsed = useMoviesPageCollapsed();
-  const setMoviesPageCollapsed = useSetMoviesPageCollapsed();
-  const seriesPageCollapsed = useSeriesPageCollapsed();
-  const setSeriesPageCollapsed = useSetSeriesPageCollapsed();
-
-  const isPageCollapsed = type === 'movie' ? moviesPageCollapsed : seriesPageCollapsed;
-  const setPageCollapsed = type === 'movie' ? setMoviesPageCollapsed : setSeriesPageCollapsed;
-
-  // Local selected item state, initialized from store
-  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(detailItem);
-
-  // Sync selected item back to store
-  useEffect(() => {
-    setDetailItemStore(selectedItem);
-  }, [selectedItem, setDetailItemStore]);
-
-  // Collapse handler from detail - hides background content instantly, slides detail down, preserves selection
-  const handleCollapsePage = useCallback(() => {
-    // Page content disappears instantly
-    setPageContentVisible(false);
-    // Detail slides down, then close
-    setPageCollapsed(true);
-    setTimeout(() => {
-      onClose?.();
-    }, 350);
-  }, [setPageCollapsed, onClose]);
-
-  // Back handler from home/categories (no detail) - slides whole page down
-  const handlePageBack = useCallback(() => {
-    if (selectedItem) {
-      // If detail is open, just close detail (instant, no animation)
-      setSelectedItem(null);
-    } else {
-      // No detail: slide page down
-      setPageCollapsed(true);
-      setTimeout(() => {
-        onClose?.();
-      }, 350);
-    }
-  }, [selectedItem, setPageCollapsed, onClose]);
-
-  // Track if page content should be visible (for coordinating with detail animation)
+// Animation state machine for VodPage enter/exit/collapse transitions
+function useVodPageAnimation(
+  selectedItem: MediaItem | null,
+  setSelectedItem: (item: MediaItem | null) => void,
+  setPageCollapsed: (collapsed: boolean) => void,
+  onClose?: () => void,
+) {
   // Start hidden if we have a detail (will show after detail slides up)
   const [pageContentVisible, setPageContentVisible] = useState(!selectedItem);
-
-  // Track local entering state (always start collapsed, animate up)
+  // Always start collapsed, animate up
   const [isEntering, setIsEntering] = useState(true);
 
   // Animate in on mount
@@ -213,11 +116,10 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       const startTimer = setTimeout(() => {
         setIsEntering(false);
         setPageCollapsed(false);
-      }, 50);
-      // Show page content after detail animation completes
+      }, SLIDE_DELAY_MS);
       const showContentTimer = setTimeout(() => {
         setPageContentVisible(true);
-      }, 400); // 50ms delay + 350ms animation
+      }, SLIDE_DELAY_MS + SLIDE_DURATION_MS);
       return () => {
         clearTimeout(startTimer);
         clearTimeout(showContentTimer);
@@ -228,10 +130,62 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       const timer = setTimeout(() => {
         setIsEntering(false);
         setPageCollapsed(false);
-      }, 50);
+      }, SLIDE_DELAY_MS);
       return () => clearTimeout(timer);
     }
   }, []); // Only on mount
+
+  // Collapse handler from detail - hides background content instantly, slides detail down
+  const handleCollapsePage = useCallback(() => {
+    setPageContentVisible(false);
+    setPageCollapsed(true);
+    setTimeout(() => {
+      onClose?.();
+    }, SLIDE_DURATION_MS);
+  }, [setPageCollapsed, onClose]);
+
+  // Back handler - close detail if open, otherwise slide page down
+  const handlePageBack = useCallback(() => {
+    if (selectedItem) {
+      setSelectedItem(null);
+    } else {
+      setPageCollapsed(true);
+      setTimeout(() => {
+        onClose?.();
+      }, SLIDE_DURATION_MS);
+    }
+  }, [selectedItem, setSelectedItem, setPageCollapsed, onClose]);
+
+  return { isEntering, pageContentVisible, handleCollapsePage, handlePageBack };
+}
+
+interface VodPageProps {
+  type: VodType;
+  onPlay?: (info: VodPlayInfo) => void;
+  onClose?: () => void;
+}
+
+export function VodPage({ type, onPlay, onClose }: VodPageProps) {
+  // Navigation state from store (persists per media type across tab switches)
+  const {
+    selectedCategoryId, setSelectedCategoryId,
+    searchQuery, setSearchQuery,
+    scrollPosition, setScrollPosition,
+    detailItem, setDetailItem: setDetailItemStore,
+    isPageCollapsed, setPageCollapsed,
+  } = useVodNavigation(type);
+
+  // Local selected item state, initialized from store
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(detailItem);
+
+  // Sync selected item back to store
+  useEffect(() => {
+    setDetailItemStore(selectedItem);
+  }, [selectedItem, setDetailItemStore]);
+
+  // Animation state machine (enter/exit/collapse transitions)
+  const { isEntering, pageContentVisible, handleCollapsePage, handlePageBack } =
+    useVodPageAnimation(selectedItem, setSelectedItem, setPageCollapsed, onClose);
 
   // API key for TMDB
   const tmdbApiKey = useTmdbApiKey();
@@ -396,7 +350,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       // Delay playback until animation completes
       setTimeout(() => {
         onPlay(info);
-      }, 350);
+      }, SLIDE_DURATION_MS);
     }
   }, [onPlay, setPageCollapsed]);
 

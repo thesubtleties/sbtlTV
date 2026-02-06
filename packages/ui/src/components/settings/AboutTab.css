@@ -1,0 +1,80 @@
+.about-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.about-tab__center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+}
+
+.about-tab__logo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.about-tab__title {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.about-tab__version {
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 400;
+}
+
+.about-tab__update-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.about-tab__update-btn {
+  padding: 8px 20px;
+  flex: none;
+}
+
+.about-tab__status {
+  min-height: 1.5em;
+}
+
+.about-tab__status-text {
+  text-align: center;
+  max-width: 360px;
+  margin: 0;
+}
+
+.about-tab__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.about-tab__links {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.about-tab__link {
+  color: rgba(255, 255, 255, 0.25);
+  transition: color 0.15s ease;
+  display: flex;
+}
+
+.about-tab__link:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.about-tab__license {
+  margin-top: 0;
+}

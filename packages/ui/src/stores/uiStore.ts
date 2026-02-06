@@ -149,3 +149,20 @@ export const useMoviesPageCollapsed = () => useUIStore((s) => s.moviesPageCollap
 export const useSetMoviesPageCollapsed = () => useUIStore((s) => s.setMoviesPageCollapsed);
 export const useSeriesPageCollapsed = () => useUIStore((s) => s.seriesPageCollapsed);
 export const useSetSeriesPageCollapsed = () => useUIStore((s) => s.setSeriesPageCollapsed);
+
+// Convenience hook - selects movies or series navigation state by type
+export function useVodNavigation(type: 'movie' | 'series') {
+  const isMovies = type === 'movie';
+  return {
+    selectedCategoryId: useUIStore((s) => isMovies ? s.moviesSelectedCategory : s.seriesSelectedCategory),
+    setSelectedCategoryId: useUIStore((s) => isMovies ? s.setMoviesSelectedCategory : s.setSeriesSelectedCategory),
+    searchQuery: useUIStore((s) => isMovies ? s.moviesSearchQuery : s.seriesSearchQuery),
+    setSearchQuery: useUIStore((s) => isMovies ? s.setMoviesSearchQuery : s.setSeriesSearchQuery),
+    scrollPosition: useUIStore((s) => isMovies ? s.moviesHomeScrollPosition : s.seriesHomeScrollPosition),
+    setScrollPosition: useUIStore((s) => isMovies ? s.setMoviesHomeScrollPosition : s.setSeriesHomeScrollPosition),
+    detailItem: useUIStore((s) => isMovies ? s.moviesDetailItem : s.seriesDetailItem),
+    setDetailItem: useUIStore((s) => isMovies ? s.setMoviesDetailItem : s.setSeriesDetailItem),
+    isPageCollapsed: useUIStore((s) => isMovies ? s.moviesPageCollapsed : s.seriesPageCollapsed),
+    setPageCollapsed: useUIStore((s) => isMovies ? s.setMoviesPageCollapsed : s.setSeriesPageCollapsed),
+  };
+}
