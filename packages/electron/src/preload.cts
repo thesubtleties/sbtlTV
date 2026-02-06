@@ -159,3 +159,27 @@ contextBridge.exposeInMainWorld('debug', {
   logFromRenderer: (message: string) => ipcRenderer.invoke('debug-log-renderer', message),
   openLogFolder: () => ipcRenderer.invoke('debug-open-log-folder'),
 } satisfies DebugApi);
+
+// Expose auto-updater API
+export interface UpdaterApi {
+  onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => void;
+  onUpdateDownloaded: (callback: (info: { version: string; releaseDate: string }) => void) => void;
+  checkForUpdates: () => Promise<{ success?: boolean; error?: string; data?: { version: string; releaseDate: string } | null }>;
+  installUpdate: () => Promise<void>;
+  removeAllListeners: () => void;
+}
+
+contextBridge.exposeInMainWorld('updater', {
+  onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => {
+    ipcRenderer.on('updater-update-available', (_, info) => callback(info));
+  },
+  onUpdateDownloaded: (callback: (info: { version: string; releaseDate: string }) => void) => {
+    ipcRenderer.on('updater-update-downloaded', (_, info) => callback(info));
+  },
+  checkForUpdates: () => ipcRenderer.invoke('updater-check'),
+  installUpdate: () => ipcRenderer.invoke('updater-install'),
+  removeAllListeners: () => {
+    ipcRenderer.removeAllListeners('updater-update-available');
+    ipcRenderer.removeAllListeners('updater-update-downloaded');
+  },
+} satisfies UpdaterApi);

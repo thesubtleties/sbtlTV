@@ -1,0 +1,97 @@
+.update-notification {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  z-index: 9999;
+  background: var(--bg-secondary, #1a1a2e);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: slideIn 0.3s ease-out;
+  max-width: 320px;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.update-notification__content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.update-notification__icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.update-notification__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.update-notification__text strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+}
+
+.update-notification__text span {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+}
+
+.update-notification__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.update-notification__btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.update-notification__btn--later {
+  background: transparent;
+  color: var(--text-secondary, #888);
+}
+
+.update-notification__btn--later:hover {
+  background: var(--bg-tertiary, #252538);
+  color: var(--text-primary, #fff);
+}
+
+.update-notification__btn--install {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+}
+
+.update-notification__btn--install:hover {
+  filter: brightness(1.1);
+}

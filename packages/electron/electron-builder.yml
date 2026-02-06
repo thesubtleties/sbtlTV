@@ -85,5 +85,9 @@ linux:
 appImage:
   license: ../../LICENSE
 
-# Don't publish automatically - we'll handle this in CI
-publish: null
+# GitHub releases for auto-update
+publish:
+  provider: github
+  owner: thesubtleties
+  repo: sbtlTV
+  releaseType: release

@@ -6,6 +6,9 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
+import electronUpdater from 'electron-updater';
+const { autoUpdater } = electronUpdater;
+type UpdateInfo = electronUpdater.UpdateInfo;
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -753,6 +756,21 @@ ipcMain.handle('debug-open-log-folder', async () => {
   return { success: true };
 });
 
+// Auto-updater IPC handlers
+ipcMain.handle('updater-install', () => {
+  autoUpdater.quitAndInstall();
+});
+
+ipcMain.handle('updater-check', async () => {
+  if (!app.isPackaged) return { data: null };
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { success: true, data: result?.updateInfo };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Check failed' };
+  }
+});
+
 // IPC Handler - Import M3U file via file dialog
 ipcMain.handle('import-m3u-file', async () => {
   if (!mainWindow) return { error: 'No window available' };
@@ -893,6 +911,30 @@ app.whenReady().then(async () => {
   }
   await createWindow();
   await initMpv();
+
+  // Auto-updater (packaged builds only)
+  if (app.isPackaged) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-available', (info: UpdateInfo) => {
+      debugLog(`Update available: ${info.version}`, 'updater');
+      mainWindow?.webContents.send('updater-update-available', info);
+    });
+
+    autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
+      debugLog(`Update downloaded: ${info.version}`, 'updater');
+      mainWindow?.webContents.send('updater-update-downloaded', info);
+    });
+
+    autoUpdater.on('error', (err) => {
+      debugLog(`Auto-updater error: ${err.message}`, 'updater');
+    });
+
+    autoUpdater.checkForUpdates().catch((err) => {
+      debugLog(`Update check failed: ${err.message}`, 'updater');
+    });
+  }
 });
 
 app.on('window-all-closed', () => {
