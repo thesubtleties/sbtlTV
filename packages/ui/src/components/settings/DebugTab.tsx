@@ -10,6 +10,7 @@ export function DebugTab({
   onDebugLoggingChange,
 }: DebugTabProps) {
   const [logPath, setLogPath] = useState<string>('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     // Get log file path on mount
@@ -31,6 +32,16 @@ export function DebugTab({
   async function handleOpenLogFolder() {
     if (window.debug) {
       await window.debug.openLogFolder();
+    }
+  }
+
+  async function handleCopyGitHub() {
+    try {
+      await navigator.clipboard.writeText('https://github.com/thesubtleties/sbtlTV/issues');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      console.error('Clipboard API not available');
     }
   }
 
@@ -59,6 +70,24 @@ export function DebugTab({
           <p className="form-hint" style={{ marginTop: '0.5rem' }}>
             When enabled, detailed logs from mpv, the renderer, and main process
             are written to a file. This may slightly impact performance.
+          </p>
+          <p className="form-hint" style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            Report issues at{' '}
+            <span style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>github.com/thesubtleties/sbtlTV/issues</span>
+            <button
+              onClick={handleCopyGitHub}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '2px 6px',
+                fontSize: '0.75rem',
+                opacity: 0.8,
+              }}
+            >
+              {copied ? '✓' : 'copy'}
+            </button>
           </p>
         </div>
 
@@ -93,6 +122,7 @@ export function DebugTab({
             </div>
           </div>
         )}
+
       </div>
 
       <p className="settings-disclaimer">
