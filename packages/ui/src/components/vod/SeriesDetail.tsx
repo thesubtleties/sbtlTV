@@ -20,11 +20,13 @@ import './SeriesDetail.css';
 export interface SeriesDetailProps {
   series: StoredSeries;
   onClose: () => void;
+  onCollapse?: () => void;
+  isCollapsed?: boolean;
   onPlayEpisode?: (info: VodPlayInfo) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
 }
 
-export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesDetailProps) {
+export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey }: SeriesDetailProps) {
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
 
   // Fetch episodes
@@ -104,14 +106,14 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
   const currentEpisodes = seasons[selectedSeason] ?? [];
 
   return (
-    <div className="series-detail">
+    <div className={`series-detail${isCollapsed ? ' series-detail--collapsed' : ''}`}>
       {/* Backdrop */}
       <div className="series-detail__backdrop">
         {backdropUrl && <img src={backdropUrl} alt="" aria-hidden="true" />}
         <div className="series-detail__backdrop-gradient" />
       </div>
 
-      {/* Header with back button */}
+      {/* Header with back button and collapse */}
       <header className="series-detail__header">
         <button
           className="series-detail__back"
@@ -122,6 +124,16 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
             <path d="M15 18l-6-6 6-6" />
           </svg>
           Back
+        </button>
+        <button
+          className="series-detail__collapse"
+          onClick={onCollapse}
+          aria-label="Collapse detail"
+          title="Collapse"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </button>
       </header>
 

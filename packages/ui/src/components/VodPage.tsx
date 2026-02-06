@@ -32,6 +32,22 @@ import {
   useSetMoviesCategory,
   useSeriesCategory,
   useSetSeriesCategory,
+  useMoviesSearchQuery,
+  useSetMoviesSearchQuery,
+  useSeriesSearchQuery,
+  useSetSeriesSearchQuery,
+  useMoviesHomeScrollPosition,
+  useSetMoviesHomeScrollPosition,
+  useSeriesHomeScrollPosition,
+  useSetSeriesHomeScrollPosition,
+  useMoviesDetailItem,
+  useSetMoviesDetailItem,
+  useSeriesDetailItem,
+  useSetSeriesDetailItem,
+  useMoviesPageCollapsed,
+  useSetMoviesPageCollapsed,
+  useSeriesPageCollapsed,
+  useSetSeriesPageCollapsed,
 } from '../stores/uiStore';
 import type { StoredMovie, StoredSeries } from '../db';
 import { type MediaItem, type VodType, type VodPlayInfo } from '../types/media';
@@ -105,9 +121,6 @@ interface VodPageProps {
 }
 
 export function VodPage({ type, onPlay, onClose }: VodPageProps) {
-  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-
   // Category state - use the appropriate store based on type
   const moviesCategory = useMoviesCategory();
   const setMoviesCategory = useSetMoviesCategory();
@@ -116,6 +129,109 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   const selectedCategoryId = type === 'movie' ? moviesCategory : seriesCategory;
   const setSelectedCategoryId = type === 'movie' ? setMoviesCategory : setSeriesCategory;
+
+  // Search query state from store (persists per media type)
+  const moviesSearchQuery = useMoviesSearchQuery();
+  const setMoviesSearchQuery = useSetMoviesSearchQuery();
+  const seriesSearchQuery = useSeriesSearchQuery();
+  const setSeriesSearchQuery = useSetSeriesSearchQuery();
+
+  const searchQuery = type === 'movie' ? moviesSearchQuery : seriesSearchQuery;
+  const setSearchQuery = type === 'movie' ? setMoviesSearchQuery : setSeriesSearchQuery;
+
+  // Scroll position state from store (home view only)
+  const moviesScrollPos = useMoviesHomeScrollPosition();
+  const setMoviesScrollPos = useSetMoviesHomeScrollPosition();
+  const seriesScrollPos = useSeriesHomeScrollPosition();
+  const setSeriesScrollPos = useSetSeriesHomeScrollPosition();
+
+  const scrollPosition = type === 'movie' ? moviesScrollPos : seriesScrollPos;
+  const setScrollPosition = type === 'movie' ? setMoviesScrollPos : setSeriesScrollPos;
+
+  // Detail item state from store (persists selected item)
+  const moviesDetailItem = useMoviesDetailItem();
+  const setMoviesDetailItemStore = useSetMoviesDetailItem();
+  const seriesDetailItem = useSeriesDetailItem();
+  const setSeriesDetailItemStore = useSetSeriesDetailItem();
+
+  const detailItem = type === 'movie' ? moviesDetailItem : seriesDetailItem;
+  const setDetailItemStore = type === 'movie' ? setMoviesDetailItemStore : setSeriesDetailItemStore;
+
+  // Page collapsed state from store (slides whole page down)
+  const moviesPageCollapsed = useMoviesPageCollapsed();
+  const setMoviesPageCollapsed = useSetMoviesPageCollapsed();
+  const seriesPageCollapsed = useSeriesPageCollapsed();
+  const setSeriesPageCollapsed = useSetSeriesPageCollapsed();
+
+  const isPageCollapsed = type === 'movie' ? moviesPageCollapsed : seriesPageCollapsed;
+  const setPageCollapsed = type === 'movie' ? setMoviesPageCollapsed : setSeriesPageCollapsed;
+
+  // Local selected item state, initialized from store
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(detailItem);
+
+  // Sync selected item back to store
+  useEffect(() => {
+    setDetailItemStore(selectedItem);
+  }, [selectedItem, setDetailItemStore]);
+
+  // Collapse handler from detail - slides detail down (page disappears instantly), preserves selection
+  const handleCollapsePage = useCallback(() => {
+    // Page content disappears instantly
+    setPageContentVisible(false);
+    // Detail slides down, then close
+    setPageCollapsed(true);
+    setTimeout(() => {
+      onClose?.();
+    }, 350);
+  }, [setPageCollapsed, onClose]);
+
+  // Back handler from home/categories (no detail) - slides whole page down
+  const handlePageBack = useCallback(() => {
+    if (selectedItem) {
+      // If detail is open, just close detail (instant, no animation)
+      setSelectedItem(null);
+    } else {
+      // No detail: slide page down
+      setPageCollapsed(true);
+      setTimeout(() => {
+        onClose?.();
+      }, 350);
+    }
+  }, [selectedItem, setPageCollapsed, onClose]);
+
+  // Track if page content should be visible (for coordinating with detail animation)
+  // Start hidden if we have a detail (will show after detail slides up)
+  const [pageContentVisible, setPageContentVisible] = useState(!selectedItem);
+
+  // Track local entering state (always start collapsed, animate up)
+  const [isEntering, setIsEntering] = useState(true);
+
+  // Animate in on mount
+  useEffect(() => {
+    if (selectedItem) {
+      // Has detail: detail slides up, then page content pops in after
+      const startTimer = setTimeout(() => {
+        setIsEntering(false);
+        setPageCollapsed(false);
+      }, 50);
+      // Show page content after detail animation completes
+      const showContentTimer = setTimeout(() => {
+        setPageContentVisible(true);
+      }, 400); // 50ms delay + 350ms animation
+      return () => {
+        clearTimeout(startTimer);
+        clearTimeout(showContentTimer);
+      };
+    } else {
+      // No detail: slide whole page up
+      setPageContentVisible(true);
+      const timer = setTimeout(() => {
+        setIsEntering(false);
+        setPageCollapsed(false);
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, []); // Only on mount
 
   // API key for TMDB
   const tmdbApiKey = useTmdbApiKey();
@@ -275,9 +391,14 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   const handlePlay = useCallback((info: VodPlayInfo) => {
     if (onPlay) {
-      onPlay(info);
+      // Trigger slide-down animation
+      setPageCollapsed(true);
+      // Delay playback until animation completes
+      setTimeout(() => {
+        onPlay(info);
+      }, 350);
     }
-  }, [onPlay]);
+  }, [onPlay, setPageCollapsed]);
 
   const handleCloseDetail = useCallback(() => {
     setSelectedItem(null);
@@ -315,7 +436,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     onHeroPlay: handleHeroPlay,
   }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, handleItemClick, handleHeroPlay]);
 
-  // Handle category selection - also close detail view
+  // Handle category selection - also close detail view and reset scroll on category change
   const handleCategorySelect = useCallback((id: string | null) => {
     setSelectedCategoryId(id);
     setSelectedItem(null);
@@ -354,15 +475,26 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const typeLabel = type === 'movie' ? 'Movies' : 'Series';
   const browseType = type === 'movie' ? 'movies' : 'series';
 
+  // Determine animation mode: page-level (no detail) vs detail-level (has detail)
+  const hasDetail = !!selectedItem;
+  const shouldPageBeCollapsed = (isEntering || isPageCollapsed) && !hasDetail;
+  const pageClasses = [
+    'vod-page',
+    // Animate whole page when entering/exiting without detail
+    shouldPageBeCollapsed ? 'vod-page--collapsed' : '',
+    // Hide page content when detail is animating out
+    !pageContentVisible ? 'vod-page--content-hidden' : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className="vod-page">
+    <div className={pageClasses}>
       {/* Unified header: back + categories + search */}
       <HorizontalCategoryStrip
         categories={categories.map(c => ({ id: c.category_id, name: c.name }))}
         selectedId={selectedCategoryId}
         onSelect={handleCategorySelect}
         type={type}
-        onBack={onClose}
+        onBack={handlePageBack}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onSearchSubmit={() => {
@@ -403,6 +535,13 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             computeItemKey={(_, row) => row.key}
             components={homeVirtuosoComponents}
             itemContent={CarouselRowContent}
+            initialScrollTop={scrollPosition}
+            onScroll={(e) => {
+              // Only track scroll on home view
+              if (selectedCategoryId === null) {
+                setScrollPosition((e.target as HTMLElement).scrollTop);
+              }
+            }}
           />
         )}
       </main>
@@ -412,6 +551,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         <MovieDetail
           movie={selectedItem as StoredMovie}
           onClose={handleCloseDetail}
+          onCollapse={handleCollapsePage}
+          isCollapsed={isEntering || isPageCollapsed}
           onPlay={(movie, plot) => handlePlay({
             url: movie.direct_url,
             title: movie.title || movie.name,
@@ -426,6 +567,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         <SeriesDetail
           series={selectedItem as StoredSeries}
           onClose={handleCloseDetail}
+          onCollapse={handleCollapsePage}
+          isCollapsed={isEntering || isPageCollapsed}
           onPlayEpisode={handlePlay}
           apiKey={tmdbApiKey}
         />

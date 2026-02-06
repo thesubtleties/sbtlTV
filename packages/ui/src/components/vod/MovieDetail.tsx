@@ -18,11 +18,13 @@ import './MovieDetail.css';
 export interface MovieDetailProps {
   movie: StoredMovie;
   onClose: () => void;
+  onCollapse?: () => void;
+  isCollapsed?: boolean;
   onPlay?: (movie: StoredMovie, plot?: string | null) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
 }
 
-export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps) {
+export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, apiKey }: MovieDetailProps) {
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -75,14 +77,14 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
     : null;
 
   return (
-    <div className="movie-detail">
+    <div className={`movie-detail${isCollapsed ? ' movie-detail--collapsed' : ''}`}>
       {/* Backdrop */}
       <div className="movie-detail__backdrop">
         {backdropUrl && <img src={backdropUrl} alt="" aria-hidden="true" />}
         <div className="movie-detail__backdrop-gradient" />
       </div>
 
-      {/* Header with back button */}
+      {/* Header with back button and collapse */}
       <header className="movie-detail__header">
         <button
           className="movie-detail__back"
@@ -93,6 +95,16 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
             <path d="M15 18l-6-6 6-6" />
           </svg>
           Back
+        </button>
+        <button
+          className="movie-detail__collapse"
+          onClick={onCollapse}
+          aria-label="Collapse detail"
+          title="Collapse"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </button>
       </header>
 
