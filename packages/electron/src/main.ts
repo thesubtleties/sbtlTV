@@ -756,18 +756,26 @@ ipcMain.handle('debug-open-log-folder', async () => {
   return { success: true };
 });
 
+// App version
+ipcMain.handle('get-app-version', () => app.getVersion());
+
 // Auto-updater IPC handlers
 ipcMain.handle('updater-install', () => {
   autoUpdater.quitAndInstall();
 });
 
 ipcMain.handle('updater-check', async () => {
-  if (!app.isPackaged) return { data: null };
+  if (!app.isPackaged) return { error: 'dev' };
   try {
     const result = await autoUpdater.checkForUpdates();
     return { success: true, data: result?.updateInfo };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Check failed' };
+    const msg = err instanceof Error ? err.message : 'Check failed';
+    // Clean up common 404 error (no releases published yet)
+    if (msg.includes('404') || msg.includes('latest.yml')) {
+      return { error: 'No published releases found' };
+    }
+    return { error: msg.split('\n')[0] };
   }
 });
 
@@ -928,11 +936,16 @@ app.whenReady().then(async () => {
     });
 
     autoUpdater.on('error', (err) => {
-      debugLog(`Auto-updater error: ${err.message}`, 'updater');
+      const msg = err.message;
+      if (msg.includes('404') || msg.includes('latest.yml')) {
+        debugLog('No published releases found for auto-update', 'updater');
+      } else {
+        debugLog(`Auto-updater error: ${msg.split('\n')[0]}`, 'updater');
+      }
     });
 
     autoUpdater.checkForUpdates().catch((err) => {
-      debugLog(`Update check failed: ${err.message}`, 'updater');
+      debugLog(`Update check: ${err.message.split('\n')[0]}`, 'updater');
     });
   }
 });

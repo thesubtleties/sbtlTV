@@ -10,6 +10,7 @@ import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
 import { DebugTab } from './settings/DebugTab';
+import { AboutTab } from './settings/AboutTab';
 import './Settings.css';
 
 interface SettingsProps {
@@ -237,6 +238,8 @@ export function Settings({ onClose }: SettingsProps) {
             onDebugLoggingChange={setDebugLoggingEnabled}
           />
         );
+      case 'about':
+        return <AboutTab />;
       default:
         return null;
     }

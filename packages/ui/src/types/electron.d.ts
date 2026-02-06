@@ -102,6 +102,8 @@ export interface PlatformApi {
   isWindows: boolean;
   isMac: boolean;
   isLinux: boolean;
+  isDev: boolean;
+  getVersion: () => Promise<string>;
 }
 
 export interface DebugApi {

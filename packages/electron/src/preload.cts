@@ -151,6 +151,8 @@ contextBridge.exposeInMainWorld('platform', {
   isWindows: process.platform === 'win32',
   isMac: process.platform === 'darwin',
   isLinux: process.platform === 'linux',
+  isDev: process.argv.includes('--dev'),
+  getVersion: () => ipcRenderer.invoke('get-app-version'),
 });
 
 // Expose debug API for logging
