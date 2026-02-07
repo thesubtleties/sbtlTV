@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
 import * as net from 'net';
@@ -6,6 +6,9 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
+import electronUpdater from 'electron-updater';
+const { autoUpdater } = electronUpdater;
+type UpdateInfo = electronUpdater.UpdateInfo;
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -153,6 +156,32 @@ async function createWindow(): Promise<void> {
       : path.join(__dirname, '../../ui/dist/index.html');
     await mainWindow.loadFile(uiPath);
   }
+
+  // Open external links in system browser (restrict to http/https)
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const protocol = new URL(url).protocol;
+      if (protocol === 'https:' || protocol === 'http:') {
+        shell.openExternal(url).catch((err) => {
+          debugLog(`Failed to open external URL: ${url} - ${err instanceof Error ? err.message : err}`, 'app');
+        });
+      } else {
+        debugLog(`Blocked external URL with protocol ${protocol}: ${url}`, 'app');
+      }
+    } catch {
+      debugLog(`Blocked malformed external URL: ${url}`, 'app');
+    }
+    return { action: 'deny' };
+  });
+
+  // Block top-level navigation away from the app
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const appOrigin = mainWindow?.webContents.getURL();
+    if (appOrigin && !url.startsWith(appOrigin.split('/').slice(0, 3).join('/'))) {
+      event.preventDefault();
+      debugLog(`Blocked navigation to: ${url}`, 'app');
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -753,6 +782,40 @@ ipcMain.handle('debug-open-log-folder', async () => {
   return { success: true };
 });
 
+// App version
+ipcMain.handle('get-app-version', () => app.getVersion());
+
+// Auto-updater IPC handlers
+let updateDownloaded = false;
+
+ipcMain.handle('updater-install', () => {
+  if (!updateDownloaded) {
+    return { error: 'No update has been downloaded yet' };
+  }
+  try {
+    autoUpdater.quitAndInstall();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Install failed';
+    debugLog(`Failed to quit and install: ${msg}`, 'updater');
+    return { error: msg };
+  }
+});
+
+ipcMain.handle('updater-check', async () => {
+  if (!app.isPackaged) return { error: 'dev' };
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { success: true, data: result?.updateInfo };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Check failed';
+    // Clean up common 404 error (no releases published yet)
+    if (msg.includes('404') || msg.includes('latest.yml')) {
+      return { error: 'No published releases found' };
+    }
+    return { error: msg.split('\n')[0] };
+  }
+});
+
 // IPC Handler - Import M3U file via file dialog
 ipcMain.handle('import-m3u-file', async () => {
   if (!mainWindow) return { error: 'No window available' };
@@ -893,6 +956,38 @@ app.whenReady().then(async () => {
   }
   await createWindow();
   await initMpv();
+
+  // Auto-updater (packaged builds only)
+  if (app.isPackaged) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-available', (info: UpdateInfo) => {
+      debugLog(`Update available: ${info.version}`, 'updater');
+      mainWindow?.webContents.send('updater-update-available', info);
+    });
+
+    autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
+      updateDownloaded = true;
+      debugLog(`Update downloaded: ${info.version}`, 'updater');
+      mainWindow?.webContents.send('updater-update-downloaded', info);
+    });
+
+    autoUpdater.on('error', (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('404') || msg.includes('latest.yml')) {
+        debugLog('No published releases found for auto-update', 'updater');
+      } else {
+        debugLog(`Auto-updater error: ${msg.split('\n')[0]}`, 'updater');
+        mainWindow?.webContents.send('updater-error', { message: msg.split('\n')[0] });
+      }
+    });
+
+    autoUpdater.checkForUpdates().catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      debugLog(`Update check: ${msg.split('\n')[0]}`, 'updater');
+    });
+  }
 });
 
 app.on('window-all-closed', () => {

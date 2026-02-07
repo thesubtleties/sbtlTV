@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
+import { DetailHeader } from './DetailHeader';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useSeriesDetails } from '../../hooks/useVod';
@@ -20,11 +21,13 @@ import './SeriesDetail.css';
 export interface SeriesDetailProps {
   series: StoredSeries;
   onClose: () => void;
+  onCollapse?: () => void;
+  isCollapsed?: boolean;
   onPlayEpisode?: (info: VodPlayInfo) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
 }
 
-export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesDetailProps) {
+export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey }: SeriesDetailProps) {
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
 
   // Fetch episodes
@@ -104,26 +107,15 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
   const currentEpisodes = seasons[selectedSeason] ?? [];
 
   return (
-    <div className="series-detail">
+    <div className={`series-detail${isCollapsed ? ' series-detail--collapsed' : ''}`}>
       {/* Backdrop */}
       <div className="series-detail__backdrop">
         {backdropUrl && <img src={backdropUrl} alt="" aria-hidden="true" />}
         <div className="series-detail__backdrop-gradient" />
       </div>
 
-      {/* Header with back button */}
-      <header className="series-detail__header">
-        <button
-          className="series-detail__back"
-          onClick={onClose}
-          aria-label="Go back"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-          Back
-        </button>
-      </header>
+      {/* Header with back button and collapse */}
+      <DetailHeader className="series-detail" onBack={onClose} onCollapse={onCollapse} />
 
       {/* Content */}
       <div className="series-detail__content">

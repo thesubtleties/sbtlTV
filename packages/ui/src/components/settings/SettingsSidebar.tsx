@@ -9,7 +9,8 @@ export type SettingsTabId =
   | 'series'
   | 'posterdb'
   | 'security'
-  | 'debug';
+  | 'debug'
+  | 'about';
 
 interface SettingsCategory {
   label: string;
@@ -43,6 +44,7 @@ const SETTINGS_CATEGORIES: SettingsCategory[] = [
     tabs: [
       { id: 'security', label: 'Security' },
       { id: 'debug', label: 'Debug' },
+      { id: 'about', label: 'About' },
     ],
   },
 ];

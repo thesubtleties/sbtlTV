@@ -151,6 +151,8 @@ contextBridge.exposeInMainWorld('platform', {
   isWindows: process.platform === 'win32',
   isMac: process.platform === 'darwin',
   isLinux: process.platform === 'linux',
+  isDev: process.argv.includes('--dev'),
+  getVersion: () => ipcRenderer.invoke('get-app-version'),
 });
 
 // Expose debug API for logging
@@ -159,3 +161,23 @@ contextBridge.exposeInMainWorld('debug', {
   logFromRenderer: (message: string) => ipcRenderer.invoke('debug-log-renderer', message),
   openLogFolder: () => ipcRenderer.invoke('debug-open-log-folder'),
 } satisfies DebugApi);
+
+// Expose auto-updater API (types defined in electron.d.ts)
+contextBridge.exposeInMainWorld('updater', {
+  onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => {
+    ipcRenderer.on('updater-update-available', (_event: IpcRendererEvent, info) => callback(info));
+  },
+  onUpdateDownloaded: (callback: (info: { version: string; releaseDate: string }) => void) => {
+    ipcRenderer.on('updater-update-downloaded', (_event: IpcRendererEvent, info) => callback(info));
+  },
+  onError: (callback: (error: { message: string }) => void) => {
+    ipcRenderer.on('updater-error', (_event: IpcRendererEvent, error) => callback(error));
+  },
+  checkForUpdates: () => ipcRenderer.invoke('updater-check'),
+  installUpdate: () => ipcRenderer.invoke('updater-install'),
+  removeAllListeners: () => {
+    ipcRenderer.removeAllListeners('updater-update-available');
+    ipcRenderer.removeAllListeners('updater-update-downloaded');
+    ipcRenderer.removeAllListeners('updater-error');
+  },
+});

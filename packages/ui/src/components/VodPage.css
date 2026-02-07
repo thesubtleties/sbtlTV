@@ -9,6 +9,22 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vod-page--collapsed {
+  transform: translateY(100%);
+  pointer-events: none;
+}
+
+/* Hide page content when detail is animating (prevents glitchy double-layer) */
+.vod-page--content-hidden {
+  background: transparent;
+}
+
+.vod-page--content-hidden > *:not(.movie-detail):not(.series-detail) {
+  opacity: 0;
+  visibility: hidden;
 }
 
 /* Header */
