@@ -3,7 +3,12 @@ import { Logo } from '../Logo';
 import { SbtlMark } from '../SbtlMark';
 import './AboutTab.css';
 
-export function AboutTab() {
+interface AboutTabProps {
+  autoUpdateEnabled: boolean;
+  onAutoUpdateChange: (enabled: boolean) => void;
+}
+
+export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProps) {
   const [version, setVersion] = useState<string>('');
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
@@ -45,6 +50,11 @@ export function AboutTab() {
     }
   }
 
+  async function handleAutoUpdateChange(enabled: boolean) {
+    onAutoUpdateChange(enabled);
+    await window.storage?.updateSettings({ autoUpdateEnabled: enabled });
+  }
+
   return (
     <div className="settings-tab-content about-tab">
       <div className="about-tab__center">
@@ -71,6 +81,14 @@ export function AboutTab() {
               </p>
             )}
           </div>
+          <label className="genre-checkbox about-tab__auto-update">
+            <input
+              type="checkbox"
+              checked={autoUpdateEnabled}
+              onChange={(e) => handleAutoUpdateChange(e.target.checked)}
+            />
+            <span className="genre-name">Check for updates automatically</span>
+          </label>
         </div>
       </div>
 

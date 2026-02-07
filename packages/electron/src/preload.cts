@@ -48,6 +48,7 @@ export interface StorageResult<T = void> {
 export interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
+  autoUpdateEnabled?: boolean;
 }
 
 export interface M3UImportResult {

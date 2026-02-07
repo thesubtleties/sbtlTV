@@ -35,6 +35,7 @@ interface AppSettings {
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF protection bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering (default: alphabetical)
+  autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
 }
 
 // Internal storage format (encrypted)
@@ -51,6 +52,7 @@ interface StoredSettings {
   allowLanSources?: boolean;        // Allow requests to LAN IPs
   debugLoggingEnabled?: boolean;    // Write verbose logs to file
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
+  autoUpdateEnabled?: boolean;  // Auto-check for updates on launch
 }
 
 const store = new Store<StoreSchema>({
@@ -189,6 +191,7 @@ export function getSettings(): AppSettings {
   result.allowLanSources = stored.allowLanSources ?? false;
   result.debugLoggingEnabled = stored.debugLoggingEnabled ?? false;
   result.channelSortOrder = stored.channelSortOrder ?? 'alphabetical';
+  result.autoUpdateEnabled = stored.autoUpdateEnabled ?? true;
   return result;
 }
 
@@ -222,6 +225,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.channelSortOrder !== undefined) {
     updated.channelSortOrder = settings.channelSortOrder;
+  }
+  if (settings.autoUpdateEnabled !== undefined) {
+    updated.autoUpdateEnabled = settings.autoUpdateEnabled;
   }
 
   store.set('settings', updated);

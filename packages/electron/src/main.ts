@@ -983,10 +983,14 @@ app.whenReady().then(async () => {
       }
     });
 
-    autoUpdater.checkForUpdates().catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      debugLog(`Update check: ${msg.split('\n')[0]}`, 'updater');
-    });
+    if (settings.autoUpdateEnabled ?? true) {
+      autoUpdater.checkForUpdates().catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        debugLog(`Update check: ${msg.split('\n')[0]}`, 'updater');
+      });
+    } else {
+      debugLog('Auto-update disabled by user setting', 'updater');
+    }
   }
 });
 

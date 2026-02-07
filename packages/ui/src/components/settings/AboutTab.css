@@ -52,6 +52,11 @@
   margin: 0;
 }
 
+.about-tab__auto-update {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+}
+
 .about-tab__footer {
   display: flex;
   flex-direction: column;

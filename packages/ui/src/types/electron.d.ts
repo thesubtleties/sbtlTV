@@ -56,6 +56,7 @@ export interface AppSettings {
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
+  autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
 }
 
 export interface Source {
