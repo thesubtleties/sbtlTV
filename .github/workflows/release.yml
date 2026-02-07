@@ -54,9 +54,7 @@ jobs:
         shell: bash
 
       - name: Build Electron app
-        run: pnpm dist:${{ matrix.platform }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm dist:${{ matrix.platform }} --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -67,6 +65,8 @@ jobs:
             release/*.dmg
             release/*.AppImage
             release/*.deb
+            release/*.yml
+            release/*.yaml
           if-no-files-found: error
 
   release:
