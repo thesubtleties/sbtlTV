@@ -10,7 +10,6 @@ export function DebugTab({
   onDebugLoggingChange,
 }: DebugTabProps) {
   const [logPath, setLogPath] = useState<string>('');
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     // Get log file path on mount
@@ -35,15 +34,7 @@ export function DebugTab({
     }
   }
 
-  async function handleCopyGitHub() {
-    try {
-      await navigator.clipboard.writeText('https://github.com/thesubtleties/sbtlTV/issues');
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Clipboard write failed:', err);
-    }
-  }
+
 
   return (
     <div className="settings-tab-content">
@@ -71,23 +62,11 @@ export function DebugTab({
             When enabled, detailed logs from mpv, the renderer, and main process
             are written to a file. This may slightly impact performance.
           </p>
-          <p className="form-hint" style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            Report issues at{' '}
-            <span style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>github.com/thesubtleties/sbtlTV/issues</span>
-            <button
-              onClick={handleCopyGitHub}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                padding: '2px 6px',
-                fontSize: '0.75rem',
-                opacity: 0.8,
-              }}
-            >
-              {copied ? '✓' : 'copy'}
-            </button>
+          <p className="form-hint" style={{ marginTop: '0.5rem' }}>
+            Report issues on{' '}
+            <a href="https://github.com/thesubtleties/sbtlTV/issues" target="_blank" rel="noopener noreferrer">
+              GitHub
+            </a>
           </p>
         </div>
 
