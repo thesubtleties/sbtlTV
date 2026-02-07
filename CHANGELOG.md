@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [0.3.1] - 2026-02-07
 
 ### Fixed
+- "Check for Updates" no longer falsely shows "Update available" when already on the latest version
 - CI: build pipeline no longer fails on GitHub release creation
 
 ## [0.3.0] - 2026-02-06

@@ -39,7 +39,11 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
           setUpdateStatus(`Update check failed: ${result.error.split('\n')[0]}`);
         }
       } else if (result.data) {
-        setUpdateStatus(`Update available: v${result.data.version}`);
+        if (result.data.version !== version) {
+          setUpdateStatus(`Update available: v${result.data.version}`);
+        } else {
+          setUpdateStatus('You are on the latest version');
+        }
       } else {
         setUpdateStatus('You are on the latest version');
       }
