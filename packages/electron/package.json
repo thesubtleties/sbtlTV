@@ -1,6 +1,6 @@
 {
   "name": "@sbtltv/electron",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Desktop IPTV player with mpv",
   "homepage": "https://github.com/thesubtleties/sbtlTV",
   "author": {
@@ -23,7 +23,8 @@
   },
   "dependencies": {
     "@sbtltv/core": "workspace:*",
-    "electron-store": "^11.0.2"
+    "electron-store": "^11.0.2",
+    "electron-updater": "^6.7.3"
   },
   "devDependencies": {
     "electron": "^40.0.0",

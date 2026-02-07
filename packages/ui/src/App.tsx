@@ -8,6 +8,7 @@ import { ChannelPanel } from './components/ChannelPanel';
 import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
+import { UpdateNotification } from './components/UpdateNotification';
 import { useSelectedCategory } from './hooks/useChannels';
 import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useSetChannelSortOrder } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
@@ -544,6 +545,9 @@ function App() {
           onClose={() => setActiveView('none')}
         />
       )}
+
+      {/* Update notification toast */}
+      <UpdateNotification />
 
       {/* Resize grip for frameless window (Windows only - frameless windows lack native resize) */}
       {window.platform?.isWindows && (

@@ -34,6 +34,8 @@ export function DebugTab({
     }
   }
 
+
+
   return (
     <div className="settings-tab-content">
       <div className="settings-section">
@@ -59,6 +61,12 @@ export function DebugTab({
           <p className="form-hint" style={{ marginTop: '0.5rem' }}>
             When enabled, detailed logs from mpv, the renderer, and main process
             are written to a file. This may slightly impact performance.
+          </p>
+          <p className="form-hint" style={{ marginTop: '0.5rem' }}>
+            Report issues on{' '}
+            <a href="https://github.com/thesubtleties/sbtlTV/issues" target="_blank" rel="noopener noreferrer">
+              GitHub
+            </a>
           </p>
         </div>
 
@@ -93,6 +101,7 @@ export function DebugTab({
             </div>
           </div>
         )}
+
       </div>
 
       <p className="settings-disclaimer">

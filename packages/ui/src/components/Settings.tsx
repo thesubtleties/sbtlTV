@@ -10,6 +10,7 @@ import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
 import { DebugTab } from './settings/DebugTab';
+import { AboutTab } from './settings/AboutTab';
 import './Settings.css';
 
 interface SettingsProps {
@@ -43,6 +44,9 @@ export function Settings({ onClose }: SettingsProps) {
 
   // Debug state
   const [debugLoggingEnabled, setDebugLoggingEnabled] = useState(false);
+
+  // Auto-update state (default ON)
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true);
 
   // Channel display state
   const [channelSortOrder, setChannelSortOrder] = useState<'alphabetical' | 'number'>('alphabetical');
@@ -98,6 +102,7 @@ export function Settings({ onClose }: SettingsProps) {
         allowLanSources?: boolean;
         debugLoggingEnabled?: boolean;
         channelSortOrder?: 'alphabetical' | 'number';
+        autoUpdateEnabled?: boolean;
       };
 
       // Load TMDB API key
@@ -135,6 +140,9 @@ export function Settings({ onClose }: SettingsProps) {
 
       // Load channel display settings
       setChannelSortOrder(settings.channelSortOrder ?? 'alphabetical');
+
+      // Load auto-update setting (default ON)
+      setAutoUpdateEnabled(settings.autoUpdateEnabled ?? true);
     }
     setSettingsLoaded(true);
   }
@@ -235,6 +243,13 @@ export function Settings({ onClose }: SettingsProps) {
           <DebugTab
             debugLoggingEnabled={debugLoggingEnabled}
             onDebugLoggingChange={setDebugLoggingEnabled}
+          />
+        );
+      case 'about':
+        return (
+          <AboutTab
+            autoUpdateEnabled={autoUpdateEnabled}
+            onAutoUpdateChange={setAutoUpdateEnabled}
           />
         );
       default:

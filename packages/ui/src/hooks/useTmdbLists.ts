@@ -46,21 +46,36 @@ import {
  * Note: This is the "API Read Access Token" from TMDB, not the API key
  */
 export function useTmdbAccessToken(): string | null {
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const { token } = useTmdbAccessTokenState();
+  return token;
+}
+
+function useTmdbAccessTokenState(): { token: string | null; loaded: boolean } {
+  const [state, setState] = useState<{ token: string | null; loaded: boolean }>({ token: null, loaded: false });
 
   useEffect(() => {
     async function loadToken() {
-      if (!window.storage) return;
-      const result = await window.storage.getSettings();
-      if (result.data && 'tmdbApiKey' in result.data) {
-        // Still stored as tmdbApiKey in settings for backwards compat
-        setAccessToken((result.data as { tmdbApiKey?: string }).tmdbApiKey ?? null);
+      if (!window.storage) {
+        setState({ token: null, loaded: true });
+        return;
+      }
+      try {
+        const result = await window.storage.getSettings();
+        if (result.data && 'tmdbApiKey' in result.data) {
+          // Still stored as tmdbApiKey in settings for backwards compat
+          setState({ token: (result.data as { tmdbApiKey?: string }).tmdbApiKey ?? null, loaded: true });
+        } else {
+          setState({ token: null, loaded: true });
+        }
+      } catch (err) {
+        console.error('Failed to load TMDB token from settings:', err);
+        setState({ token: null, loaded: true });
       }
     }
     loadToken();
   }, []);
 
-  return accessToken;
+  return state;
 }
 
 // Alias for backwards compatibility
@@ -654,39 +669,47 @@ function randomSample<T>(array: T[], n: number): T[] {
   return shuffled.slice(0, n);
 }
 
+// Module-level cache: persists for the app session, clears on restart
+const featuredCache = new Map<string, (StoredMovie | StoredSeries)[]>();
+
 /**
  * Get featured content for hero section
- * Returns random items from trending (with cache fallback)
- * Selection is stable - only re-randomizes when data source changes
+ * Returns random items from trending (with local popular fallback).
+ * Randomizes once per app session per type - stable across tab switches.
  */
 export function useFeaturedContent(accessToken: string | null, type: 'movies' | 'series', count = 5) {
+  const { loaded: tokenLoaded } = useTmdbAccessTokenState();
   const { movies: trendingMovies } = useTrendingMovies(accessToken);
   const { series: trendingSeries } = useTrendingSeries(accessToken);
-  const { movies: popularMovies } = useLocalPopularMovies(count);
-  const { series: popularSeries } = useLocalPopularSeries(count);
+  // Fetch a larger pool so randomSample actually shuffles
+  const { movies: popularMovies } = useLocalPopularMovies(count * 4);
+  const { series: popularSeries } = useLocalPopularSeries(count * 4);
 
-  const [featured, setFeatured] = useState<(StoredMovie | StoredSeries)[]>([]);
-  const [sourceKey, setSourceKey] = useState<string>('');
+  const [featured, setFeatured] = useState<(StoredMovie | StoredSeries)[]>(
+    () => featuredCache.get(type) || []
+  );
 
   useEffect(() => {
-    // Determine which source to use
+    if (featuredCache.has(type)) return;
+
+    // Wait for settings to load so we know if there's a TMDB key
+    if (!tokenLoaded) return;
+
+    // Prefer trending (TMDB), fall back to local popular
     let items: (StoredMovie | StoredSeries)[];
-    let key: string;
 
     if (type === 'movies') {
       items = trendingMovies.length > 0 ? trendingMovies : popularMovies;
-      key = `movies-${trendingMovies.length > 0 ? 'trending' : 'local'}-${items.length}`;
     } else {
       items = trendingSeries.length > 0 ? trendingSeries : popularSeries;
-      key = `series-${trendingSeries.length > 0 ? 'trending' : 'local'}-${items.length}`;
     }
 
-    // Only re-randomize if source actually changed
-    if (key !== sourceKey && items.length > 0) {
-      setSourceKey(key);
-      setFeatured(randomSample(items, count));
+    if (items.length > 0) {
+      const sampled = randomSample(items, count);
+      featuredCache.set(type, sampled);
+      setFeatured(sampled);
     }
-  }, [type, trendingMovies, trendingSeries, popularMovies, popularSeries, count, sourceKey]);
+  }, [type, tokenLoaded, trendingMovies, trendingSeries, popularMovies, popularSeries, count]);
 
   return {
     items: featured,

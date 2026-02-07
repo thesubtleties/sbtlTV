@@ -56,6 +56,7 @@ export interface AppSettings {
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
+  autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
 }
 
 export interface Source {
@@ -102,12 +103,29 @@ export interface PlatformApi {
   isWindows: boolean;
   isMac: boolean;
   isLinux: boolean;
+  isDev: boolean;
+  isPortable: boolean;
+  getVersion: () => Promise<string>;
 }
 
 export interface DebugApi {
   getLogPath: () => Promise<StorageResult<string>>;
   logFromRenderer: (message: string) => Promise<StorageResult>;
   openLogFolder: () => Promise<StorageResult>;
+}
+
+export interface UpdateInfo {
+  version: string;
+  releaseDate: string;
+}
+
+export interface UpdaterApi {
+  onUpdateAvailable: (callback: (info: UpdateInfo) => void) => void;
+  onUpdateDownloaded: (callback: (info: UpdateInfo) => void) => void;
+  onError: (callback: (error: { message: string }) => void) => void;
+  checkForUpdates: () => Promise<StorageResult<UpdateInfo | null>>;
+  installUpdate: () => Promise<void>;
+  removeAllListeners: () => void;
 }
 
 declare global {
@@ -118,6 +136,7 @@ declare global {
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
     debug?: DebugApi;
+    updater?: UpdaterApi;
   }
 }
 
