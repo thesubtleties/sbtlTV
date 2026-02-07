@@ -153,6 +153,7 @@ contextBridge.exposeInMainWorld('platform', {
   isMac: process.platform === 'darwin',
   isLinux: process.platform === 'linux',
   isDev: process.argv.includes('--dev'),
+  isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR,
   getVersion: () => ipcRenderer.invoke('get-app-version'),
 });
 

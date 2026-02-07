@@ -803,6 +803,7 @@ ipcMain.handle('updater-install', () => {
 
 ipcMain.handle('updater-check', async () => {
   if (!app.isPackaged) return { error: 'dev' };
+  if (process.env.PORTABLE_EXECUTABLE_DIR) return { error: 'portable' };
   try {
     const result = await autoUpdater.checkForUpdates();
     return { success: true, data: result?.updateInfo };
@@ -957,8 +958,9 @@ app.whenReady().then(async () => {
   await createWindow();
   await initMpv();
 
-  // Auto-updater (packaged builds only)
-  if (app.isPackaged) {
+  // Auto-updater (packaged NSIS builds only, not portable)
+  const isPortable = !!process.env.PORTABLE_EXECUTABLE_DIR;
+  if (app.isPackaged && !isPortable) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 

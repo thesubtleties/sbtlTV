@@ -104,6 +104,7 @@ export interface PlatformApi {
   isMac: boolean;
   isLinux: boolean;
   isDev: boolean;
+  isPortable: boolean;
   getVersion: () => Promise<string>;
 }
 

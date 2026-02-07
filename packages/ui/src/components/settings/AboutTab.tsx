@@ -12,6 +12,7 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
   const [version, setVersion] = useState<string>('');
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const isPortable = window.platform?.isPortable ?? false;
 
   useEffect(() => {
     window.platform?.getVersion().then(setVersion).catch((err) => {
@@ -66,29 +67,48 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
         </div>
 
         <div className="about-tab__update-section">
-          <button
-            className="save-btn about-tab__update-btn"
-            onClick={handleCheckForUpdates}
-            disabled={checkingUpdate}
-          >
-            {checkingUpdate ? 'Checking...' : 'Check for Updates'}
-          </button>
-          {/* Fixed height so status text doesn't shift layout */}
-          <div className="about-tab__status">
-            {updateStatus && (
+          {isPortable ? (
+            <>
+              <a
+                href="https://github.com/thesubtleties/sbtlTV/releases"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="save-btn about-tab__update-btn"
+                style={{ textDecoration: 'none', textAlign: 'center' }}
+              >
+                View Releases on GitHub
+              </a>
               <p className="form-hint about-tab__status-text">
-                {updateStatus}
+                Auto-updates are not available for portable builds.
               </p>
-            )}
-          </div>
-          <label className="genre-checkbox about-tab__auto-update">
-            <input
-              type="checkbox"
-              checked={autoUpdateEnabled}
-              onChange={(e) => handleAutoUpdateChange(e.target.checked)}
-            />
-            <span className="genre-name">Check for updates automatically</span>
-          </label>
+            </>
+          ) : (
+            <>
+              <button
+                className="save-btn about-tab__update-btn"
+                onClick={handleCheckForUpdates}
+                disabled={checkingUpdate}
+              >
+                {checkingUpdate ? 'Checking...' : 'Check for Updates'}
+              </button>
+              {/* Fixed height so status text doesn't shift layout */}
+              <div className="about-tab__status">
+                {updateStatus && (
+                  <p className="form-hint about-tab__status-text">
+                    {updateStatus}
+                  </p>
+                )}
+              </div>
+              <label className="genre-checkbox about-tab__auto-update">
+                <input
+                  type="checkbox"
+                  checked={autoUpdateEnabled}
+                  onChange={(e) => handleAutoUpdateChange(e.target.checked)}
+                />
+                <span className="genre-name">Check for updates automatically</span>
+              </label>
+            </>
+          )}
         </div>
       </div>
 
