@@ -1,5 +1,6 @@
 /*
  * macOS IOSurface texture sharing implementation
+ * Triple-buffered: mpv writes to one surface while Electron reads another
  */
 
 #ifdef __APPLE__
@@ -14,6 +15,14 @@
 #include <iostream>
 
 namespace mpv_texture {
+
+static const int BUFFER_COUNT = 3;
+
+struct IOSurfaceSlot {
+    IOSurfaceRef ioSurface = nullptr;
+    GLuint glTexture = 0;
+    GLuint glFBO = 0;
+};
 
 class IOSurfaceTextureShare : public ITextureShare {
 public:
@@ -41,6 +50,90 @@ public:
         m_width = width;
         m_height = height;
 
+        for (int i = 0; i < BUFFER_COUNT; i++) {
+            if (!createSlot(m_slots[i], width, height)) {
+                for (int j = 0; j < i; j++) {
+                    destroySlot(m_slots[j]);
+                }
+                return false;
+            }
+        }
+
+        m_writeIndex = 0;
+        std::cout << "[IOSurface] Created " << BUFFER_COUNT << " triple-buffered textures "
+                  << width << "x" << height << std::endl;
+        return true;
+    }
+
+    bool resizeTexture(uint32_t width, uint32_t height) override {
+        if (width == m_width && height == m_height) {
+            return true;
+        }
+
+        for (int i = 0; i < BUFFER_COUNT; i++) {
+            destroySlot(m_slots[i]);
+        }
+
+        return createTexture(width, height);
+    }
+
+    uint32_t getGLTexture() const override {
+        return m_slots[m_writeIndex].glTexture;
+    }
+
+    uint32_t getGLFBO() const override {
+        return m_slots[m_writeIndex].glFBO;
+    }
+
+    bool lockTexture() override {
+        if (!m_slots[m_writeIndex].ioSurface) return false;
+        // No IOSurfaceLock needed — GPU-to-GPU sharing uses glFlush for sync
+        m_locked = true;
+        return true;
+    }
+
+    TextureInfo unlockAndExport() override {
+        TextureInfo info = {};
+
+        if (!m_locked) {
+            return info;
+        }
+
+        m_locked = false;
+
+        auto& slot = m_slots[m_writeIndex];
+
+        // Get IOSurface ID for sharing
+        IOSurfaceID surfaceId = IOSurfaceGetID(slot.ioSurface);
+
+        info.handle = static_cast<uint64_t>(surfaceId);
+        info.width = m_width;
+        info.height = m_height;
+        info.format = TextureFormat::BGRA8;
+        info.is_valid = true;
+
+        // Swap to next buffer for next frame
+        m_writeIndex = (m_writeIndex + 1) % BUFFER_COUNT;
+
+        return info;
+    }
+
+    void releaseTexture() override {
+        // No-op with triple buffering - mpv always has a free slot to write to
+    }
+
+    void destroy() override {
+        m_locked = false;
+
+        for (int i = 0; i < BUFFER_COUNT; i++) {
+            destroySlot(m_slots[i]);
+        }
+
+        m_initialized = false;
+    }
+
+private:
+    bool createSlot(IOSurfaceSlot& slot, uint32_t width, uint32_t height) {
         // Create IOSurface
         CFMutableDictionaryRef properties = CFDictionaryCreateMutable(
             kCFAllocatorDefault,
@@ -67,7 +160,7 @@ public:
         CFDictionarySetValue(properties, kIOSurfaceBytesPerRow, bprNum);
         CFDictionarySetValue(properties, kIOSurfacePixelFormat, pfNum);
 
-        m_ioSurface = IOSurfaceCreate(properties);
+        slot.ioSurface = IOSurfaceCreate(properties);
 
         CFRelease(widthNum);
         CFRelease(heightNum);
@@ -76,14 +169,14 @@ public:
         CFRelease(pfNum);
         CFRelease(properties);
 
-        if (!m_ioSurface) {
+        if (!slot.ioSurface) {
             std::cerr << "[IOSurface] Failed to create IOSurface" << std::endl;
             return false;
         }
 
         // Create OpenGL texture backed by IOSurface
-        glGenTextures(1, &m_glTexture);
-        glBindTexture(GL_TEXTURE_RECTANGLE, m_glTexture);
+        glGenTextures(1, &slot.glTexture);
+        glBindTexture(GL_TEXTURE_RECTANGLE, slot.glTexture);
 
         CGLError err = CGLTexImageIOSurface2D(
             m_cglContext,
@@ -93,7 +186,7 @@ public:
             height,
             GL_BGRA,
             GL_UNSIGNED_INT_8_8_8_8_REV,
-            m_ioSurface,
+            slot.ioSurface,
             0
         );
 
@@ -103,9 +196,9 @@ public:
         }
 
         // Create FBO
-        glGenFramebuffers(1, &m_glFBO);
-        glBindFramebuffer(GL_FRAMEBUFFER, m_glFBO);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, m_glTexture, 0);
+        glGenFramebuffers(1, &slot.glFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, slot.glFBO);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, slot.glTexture, 0);
 
         GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
         if (status != GL_FRAMEBUFFER_COMPLETE) {
@@ -114,120 +207,34 @@ public:
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-        std::cout << "[IOSurface] Created shared texture " << width << "x" << height << std::endl;
         return true;
     }
 
-    bool resizeTexture(uint32_t width, uint32_t height) override {
-        if (width == m_width && height == m_height) {
-            return true;
+    void destroySlot(IOSurfaceSlot& slot) {
+        if (slot.glFBO) {
+            glDeleteFramebuffers(1, &slot.glFBO);
+            slot.glFBO = 0;
         }
-
-        // Destroy old resources
-        if (m_glFBO) {
-            glDeleteFramebuffers(1, &m_glFBO);
-            m_glFBO = 0;
+        if (slot.glTexture) {
+            glDeleteTextures(1, &slot.glTexture);
+            slot.glTexture = 0;
         }
-        if (m_glTexture) {
-            glDeleteTextures(1, &m_glTexture);
-            m_glTexture = 0;
+        if (slot.ioSurface) {
+            CFRelease(slot.ioSurface);
+            slot.ioSurface = nullptr;
         }
-        if (m_ioSurface) {
-            CFRelease(m_ioSurface);
-            m_ioSurface = nullptr;
-        }
-
-        // Create new resources
-        return createTexture(width, height);
     }
 
-    uint32_t getGLTexture() const override {
-        return m_glTexture;
-    }
-
-    uint32_t getGLFBO() const override {
-        return m_glFBO;
-    }
-
-    bool lockTexture() override {
-        if (!m_ioSurface) return false;
-
-        IOReturn result = IOSurfaceLock(m_ioSurface, 0, nullptr);
-        if (result != kIOReturnSuccess) {
-            std::cerr << "[IOSurface] Failed to lock: " << result << std::endl;
-            return false;
-        }
-
-        m_locked = true;
-        return true;
-    }
-
-    TextureInfo unlockAndExport() override {
-        TextureInfo info = {};
-
-        if (!m_locked) {
-            return info;
-        }
-
-        IOReturn result = IOSurfaceUnlock(m_ioSurface, 0, nullptr);
-        if (result != kIOReturnSuccess) {
-            std::cerr << "[IOSurface] Failed to unlock: " << result << std::endl;
-            return info;
-        }
-
-        m_locked = false;
-
-        // Get IOSurface ID for sharing
-        IOSurfaceID surfaceId = IOSurfaceGetID(m_ioSurface);
-
-        info.handle = static_cast<uint64_t>(surfaceId);
-        info.width = m_width;
-        info.height = m_height;
-        info.format = TextureFormat::BGRA8;
-        info.is_valid = true;
-
-        return info;
-    }
-
-    void releaseTexture() override {
-        // Nothing special needed - IOSurface handles reference counting
-    }
-
-    void destroy() override {
-        if (m_locked && m_ioSurface) {
-            IOSurfaceUnlock(m_ioSurface, 0, nullptr);
-            m_locked = false;
-        }
-
-        if (m_glFBO) {
-            glDeleteFramebuffers(1, &m_glFBO);
-            m_glFBO = 0;
-        }
-
-        if (m_glTexture) {
-            glDeleteTextures(1, &m_glTexture);
-            m_glTexture = 0;
-        }
-
-        if (m_ioSurface) {
-            CFRelease(m_ioSurface);
-            m_ioSurface = nullptr;
-        }
-
-        m_initialized = false;
-    }
-
-private:
     bool m_initialized = false;
     bool m_locked = false;
     uint32_t m_width = 0;
     uint32_t m_height = 0;
 
     CGLContextObj m_cglContext = nullptr;
-    IOSurfaceRef m_ioSurface = nullptr;
-    GLuint m_glTexture = 0;
-    GLuint m_glFBO = 0;
+
+    // Triple-buffered texture slots
+    IOSurfaceSlot m_slots[BUFFER_COUNT];
+    int m_writeIndex = 0;
 };
 
 // Factory function

@@ -1,7 +1,7 @@
 /*
  * Windows DXGI texture sharing implementation
  * Uses WGL_NV_DX_interop for OpenGL/D3D11 interop
- * Double-buffered: mpv writes to one texture while Electron reads the other
+ * Triple-buffered: mpv writes to one texture while Electron reads another
  */
 
 #ifdef _WIN32
@@ -50,9 +50,9 @@ typedef void(APIENTRY* PFNGLBINDTEXTUREPROC)(GLenum, GLuint);
 
 namespace mpv_texture {
 
-static const int BUFFER_COUNT = 2;
+static const int BUFFER_COUNT = 3;
 
-// Per-texture resources for double buffering
+// Per-texture resources for triple buffering
 struct TextureSlot {
     ID3D11Texture2D* d3dTexture = nullptr;
     IDXGIKeyedMutex* keyedMutex = nullptr;
@@ -182,7 +182,7 @@ public:
         }
 
         m_writeIndex = 0;
-        std::cout << "[DXGI] Created " << BUFFER_COUNT << " double-buffered textures "
+        std::cout << "[DXGI] Created " << BUFFER_COUNT << " triple-buffered textures "
                   << width << "x" << height << std::endl;
         return true;
     }
@@ -261,7 +261,7 @@ public:
     }
 
     void releaseTexture() override {
-        // No-op with double buffering - mpv always has a free slot to write to
+        // No-op with triple buffering - mpv always has a free slot to write to
     }
 
     void destroy() override {
@@ -487,7 +487,7 @@ private:
     uint32_t m_width = 0;
     uint32_t m_height = 0;
 
-    // Double-buffered texture slots
+    // Triple-buffered texture slots
     TextureSlot m_slots[BUFFER_COUNT];
     int m_writeIndex = 0;
 
