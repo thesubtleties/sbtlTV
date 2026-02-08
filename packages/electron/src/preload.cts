@@ -197,12 +197,10 @@ if (sharedTextureAvailable) {
       try {
         if (frameCallback && imported) {
           const videoFrame = imported.getVideoFrame();
-          try {
-            frameCallback(videoFrame, index);
-          } finally {
-            videoFrame?.close();
-            imported.release();
-          }
+          // Don't close videoFrame here - VideoCanvas manages frame lifecycle via rAF
+          // It will close the previous frame when a new one arrives
+          frameCallback(videoFrame, index);
+          imported.release();
         } else if (imported) {
           imported.release();
         }

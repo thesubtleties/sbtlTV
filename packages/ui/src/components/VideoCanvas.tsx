@@ -168,14 +168,13 @@ function initWebGL(canvas: HTMLCanvasElement): WebGLState | null {
 export function VideoCanvas({ visible, className, flipY = false, flipX = false }: VideoCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glStateRef = useRef<WebGLState | null>(null);
-  const lastDimensionsRef = useRef({ width: 0, height: 0 });
 
-  // Handle frame rendering with WebGL
+  // Handle frame - render immediately
   const handleFrame = useCallback((videoFrame: VideoFrame, _index: number) => {
     const canvas = canvasRef.current;
     const glState = glStateRef.current;
 
-    if (!canvas || !glState) {
+    if (!canvas || !glState || videoFrame.codedWidth <= 0) {
       videoFrame.close();
       return;
     }
@@ -184,29 +183,30 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     const width = videoFrame.codedWidth;
     const height = videoFrame.codedHeight;
 
-    // Resize canvas if video dimensions changed
+    // Resize canvas if needed
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
       gl.viewport(0, 0, width, height);
-      lastDimensionsRef.current = { width, height };
       console.log(`[VideoCanvas] Resized to ${width}x${height}`);
     }
 
-    // Upload VideoFrame to texture
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame);
-
     // Draw
-    gl.useProgram(program);
-    gl.uniform1i(flipYLocation, flipY ? 1 : 0);
-    gl.uniform1i(flipXLocation, flipX ? 1 : 0);
-    gl.bindVertexArray(vao);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    try {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame);
+      gl.useProgram(program);
+      gl.uniform1i(flipYLocation, flipY ? 1 : 0);
+      gl.uniform1i(flipXLocation, flipX ? 1 : 0);
+      gl.bindVertexArray(vao);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    } catch (e) {
+      // Frame might be invalid
+    }
 
-    // IMPORTANT: Close the frame when done to prevent memory leaks
     videoFrame.close();
   }, [flipY, flipX]);
+
 
   // Initialize WebGL on mount
   useEffect(() => {

@@ -1,6 +1,7 @@
 /*
  * Windows DXGI texture sharing implementation
  * Uses WGL_NV_DX_interop for OpenGL/D3D11 interop
+ * Double-buffered: mpv writes to one texture while Electron reads the other
  */
 
 #ifdef _WIN32
@@ -48,6 +49,18 @@ typedef void(APIENTRY* PFNGLBINDTEXTUREPROC)(GLenum, GLuint);
 #define WGL_ACCESS_WRITE_DISCARD_NV 0x0002
 
 namespace mpv_texture {
+
+static const int BUFFER_COUNT = 2;
+
+// Per-texture resources for double buffering
+struct TextureSlot {
+    ID3D11Texture2D* d3dTexture = nullptr;
+    IDXGIKeyedMutex* keyedMutex = nullptr;
+    HANDLE sharedHandle = nullptr;
+    GLuint glTexture = 0;
+    GLuint glFBO = 0;
+    HANDLE wglDxObject = nullptr;
+};
 
 class DXGITextureShare : public ITextureShare {
 public:
@@ -158,114 +171,19 @@ public:
         m_width = width;
         m_height = height;
 
-        // Create D3D11 texture with NT shared handle (required for Electron's importSharedTexture)
-        D3D11_TEXTURE2D_DESC desc = {};
-        desc.Width = width;
-        desc.Height = height;
-        desc.MipLevels = 1;
-        desc.ArraySize = 1;
-        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        desc.SampleDesc.Count = 1;
-        desc.Usage = D3D11_USAGE_DEFAULT;
-        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        // Use NT handle for cross-process sharing (Electron requires this)
-        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
-
-        HRESULT hr = m_d3dDevice->CreateTexture2D(&desc, nullptr, &m_d3dTexture);
-        if (FAILED(hr)) {
-            std::cerr << "[DXGI] Failed to create D3D11 texture: " << std::hex << hr << std::endl;
-            return false;
-        }
-
-        // Get NT shared handle via IDXGIResource1::CreateSharedHandle
-        IDXGIResource1* dxgiResource1 = nullptr;
-        hr = m_d3dTexture->QueryInterface(__uuidof(IDXGIResource1), (void**)&dxgiResource1);
-        if (FAILED(hr)) {
-            std::cerr << "[DXGI] Failed to get IDXGIResource1: " << std::hex << hr << std::endl;
-            return false;
-        }
-
-        hr = dxgiResource1->CreateSharedHandle(
-            nullptr,  // Security attributes (nullptr = not inheritable)
-            DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE,
-            nullptr,  // Name (nullptr = unnamed)
-            &m_sharedHandle
-        );
-        dxgiResource1->Release();
-        if (FAILED(hr)) {
-            std::cerr << "[DXGI] Failed to create NT shared handle: " << std::hex << hr << std::endl;
-            return false;
-        }
-
-        // Get keyed mutex interface for synchronization with Electron
-        hr = m_d3dTexture->QueryInterface(__uuidof(IDXGIKeyedMutex), (void**)&m_keyedMutex);
-        if (FAILED(hr)) {
-            std::cerr << "[DXGI] Failed to get keyed mutex: " << std::hex << hr << std::endl;
-            return false;
-        }
-
-        // Set the share handle on the D3D resource BEFORE registering with WGL
-        // This is required by WGL_NV_DX_interop spec for shared resources
-        if (m_wglDXSetResourceShareHandleNV) {
-            if (!m_wglDXSetResourceShareHandleNV(m_d3dTexture, m_sharedHandle)) {
-                DWORD err = GetLastError();
-                std::cerr << "[DXGI] Failed to set share handle on D3D resource, error: " << err << std::endl;
-                // Continue anyway - some drivers may not require this
-            } else {
-                std::cout << "[DXGI] Share handle set on D3D resource" << std::endl;
+        for (int i = 0; i < BUFFER_COUNT; i++) {
+            if (!createSlot(m_slots[i], width, height)) {
+                // Clean up any slots already created
+                for (int j = 0; j < i; j++) {
+                    destroySlot(m_slots[j]);
+                }
+                return false;
             }
         }
 
-        // Create OpenGL texture
-        glGenTextures(1, &m_glTexture);
-        glBindTexture(GL_TEXTURE_2D, m_glTexture);
-
-        // Initialize GL texture storage before WGL registration
-        // Some drivers require the texture to have allocated storage
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-
-        // Register D3D texture with OpenGL via WGL_NV_DX_interop
-        m_wglDxObject = m_wglDXRegisterObjectNV(
-            m_wglDxDevice,
-            m_d3dTexture,
-            m_glTexture,
-            GL_TEXTURE_2D,
-            WGL_ACCESS_WRITE_DISCARD_NV
-        );
-
-        if (!m_wglDxObject) {
-            DWORD err = GetLastError();
-            std::cerr << "[DXGI] Failed to register DX object with WGL, error: " << err << std::endl;
-            return false;
-        }
-
-        std::cout << "[DXGI] DX object registered with WGL successfully" << std::endl;
-
-        // Lock the DX object so OpenGL can access it
-        HANDLE objects[] = { m_wglDxObject };
-        if (!m_wglDXLockObjectsNV(m_wglDxDevice, 1, objects)) {
-            std::cerr << "[DXGI] Failed to lock DX object for FBO setup" << std::endl;
-            return false;
-        }
-
-        // Create FBO
-        m_glGenFramebuffers(1, &m_glFBO);
-        m_glBindFramebuffer(GL_FRAMEBUFFER, m_glFBO);
-        m_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_glTexture, 0);
-
-        GLenum status = m_glCheckFramebufferStatus(GL_FRAMEBUFFER);
-
-        // Unlock after FBO setup
-        m_wglDXUnlockObjectsNV(m_wglDxDevice, 1, objects);
-
-        if (status != GL_FRAMEBUFFER_COMPLETE) {
-            std::cerr << "[DXGI] FBO incomplete: " << std::hex << status << std::endl;
-            return false;
-        }
-
-        m_glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-        std::cout << "[DXGI] Created shared texture " << width << "x" << height << std::endl;
+        m_writeIndex = 0;
+        std::cout << "[DXGI] Created " << BUFFER_COUNT << " double-buffered textures "
+                  << width << "x" << height << std::endl;
         return true;
     }
 
@@ -274,73 +192,37 @@ public:
             return true;
         }
 
-        // Destroy old resources
-        if (m_wglDxObject) {
-            m_wglDXUnregisterObjectNV(m_wglDxDevice, m_wglDxObject);
-            m_wglDxObject = nullptr;
-        }
-        if (m_glFBO) {
-            m_glDeleteFramebuffers(1, &m_glFBO);
-            m_glFBO = 0;
-        }
-        if (m_glTexture) {
-            glDeleteTextures(1, &m_glTexture);
-            m_glTexture = 0;
-        }
-        if (m_keyedMutex) {
-            m_keyedMutex->Release();
-            m_keyedMutex = nullptr;
-        }
-        if (m_d3dTexture) {
-            m_d3dTexture->Release();
-            m_d3dTexture = nullptr;
+        // Destroy all slots and recreate
+        for (int i = 0; i < BUFFER_COUNT; i++) {
+            destroySlot(m_slots[i]);
         }
 
-        // Create new resources
         return createTexture(width, height);
     }
 
     uint32_t getGLTexture() const override {
-        return m_glTexture;
+        return m_slots[m_writeIndex].glTexture;
     }
 
     uint32_t getGLFBO() const override {
-        return m_glFBO;
+        return m_slots[m_writeIndex].glFBO;
     }
 
     bool lockTexture() override {
-        if (!m_wglDxObject) {
+        auto& slot = m_slots[m_writeIndex];
+        if (!slot.wglDxObject) {
             std::cerr << "[DXGI] lockTexture: No DX object" << std::endl;
             return false;
         }
 
         if (m_locked) {
-            // Already locked - this is OK, just return success
             return true;
         }
 
-        // Acquire keyed mutex with key 0 (Chromium standard: kDXGIKeyedMutexAcquireReleaseKey = 0)
-        // Use 0ms timeout (non-blocking) - skip frame rather than block if Electron is still reading
-        if (m_keyedMutex) {
-            HRESULT hr = m_keyedMutex->AcquireSync(0, 0);  // 0ms = non-blocking
-            if (hr == WAIT_TIMEOUT) {
-                // Electron still reading, skip this frame immediately
-                return false;
-            }
-            if (FAILED(hr)) {
-                std::cerr << "[DXGI] Failed to acquire keyed mutex: " << std::hex << hr << std::endl;
-                return false;
-            }
-        }
-
-        HANDLE objects[] = { m_wglDxObject };
+        HANDLE objects[] = { slot.wglDxObject };
         if (!m_wglDXLockObjectsNV(m_wglDxDevice, 1, objects)) {
             DWORD err = GetLastError();
             std::cerr << "[DXGI] Failed to lock DX object, error: " << err << std::endl;
-            // Release mutex if WGL lock failed
-            if (m_keyedMutex) {
-                m_keyedMutex->ReleaseSync(0);
-            }
             return false;
         }
 
@@ -355,72 +237,50 @@ public:
             return info;
         }
 
-        // Unlock the WGL object first
-        HANDLE objects[] = { m_wglDxObject };
+        auto& slot = m_slots[m_writeIndex];
+
+        // Unlock via WGL interop
+        HANDLE objects[] = { slot.wglDxObject };
         if (!m_wglDXUnlockObjectsNV(m_wglDxDevice, 1, objects)) {
             std::cerr << "[DXGI] Failed to unlock DX object" << std::endl;
-            // Still try to release mutex
-        }
-
-        // Release keyed mutex with key 0 (Chromium standard)
-        if (m_keyedMutex) {
-            m_keyedMutex->ReleaseSync(0);
         }
 
         m_locked = false;
 
-        // Fill info
-        info.handle = reinterpret_cast<uint64_t>(m_sharedHandle);
+        // Export this slot's handle
+        info.handle = reinterpret_cast<uint64_t>(slot.sharedHandle);
         info.width = m_width;
         info.height = m_height;
         info.format = TextureFormat::RGBA8;
         info.is_valid = true;
 
+        // Swap to other buffer for next frame
+        m_writeIndex = (m_writeIndex + 1) % BUFFER_COUNT;
+
         return info;
     }
 
     void releaseTexture() override {
-        // Nothing special needed - texture is ready for next frame
+        // No-op with double buffering - mpv always has a free slot to write to
     }
 
     void destroy() override {
         if (m_locked) {
-            HANDLE objects[] = { m_wglDxObject };
-            m_wglDXUnlockObjectsNV(m_wglDxDevice, 1, objects);
-            if (m_keyedMutex) {
-                m_keyedMutex->ReleaseSync(0);
+            auto& slot = m_slots[m_writeIndex];
+            if (slot.wglDxObject) {
+                HANDLE objects[] = { slot.wglDxObject };
+                m_wglDXUnlockObjectsNV(m_wglDxDevice, 1, objects);
             }
             m_locked = false;
         }
 
-        if (m_wglDxObject) {
-            m_wglDXUnregisterObjectNV(m_wglDxDevice, m_wglDxObject);
-            m_wglDxObject = nullptr;
-        }
-
-        if (m_glFBO) {
-            m_glDeleteFramebuffers(1, &m_glFBO);
-            m_glFBO = 0;
-        }
-
-        if (m_glTexture) {
-            glDeleteTextures(1, &m_glTexture);
-            m_glTexture = 0;
-        }
-
-        if (m_keyedMutex) {
-            m_keyedMutex->Release();
-            m_keyedMutex = nullptr;
+        for (int i = 0; i < BUFFER_COUNT; i++) {
+            destroySlot(m_slots[i]);
         }
 
         if (m_wglDxDevice) {
             m_wglDXCloseDeviceNV(m_wglDxDevice);
             m_wglDxDevice = nullptr;
-        }
-
-        if (m_d3dTexture) {
-            m_d3dTexture->Release();
-            m_d3dTexture = nullptr;
         }
 
         if (m_d3dContext) {
@@ -437,6 +297,135 @@ public:
     }
 
 private:
+    bool createSlot(TextureSlot& slot, uint32_t width, uint32_t height) {
+        // Create D3D11 texture with NT shared handle (required for Electron's importSharedTexture)
+        D3D11_TEXTURE2D_DESC desc = {};
+        desc.Width = width;
+        desc.Height = height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+
+        HRESULT hr = m_d3dDevice->CreateTexture2D(&desc, nullptr, &slot.d3dTexture);
+        if (FAILED(hr)) {
+            std::cerr << "[DXGI] Failed to create D3D11 texture: " << std::hex << hr << std::endl;
+            return false;
+        }
+
+        // Get NT shared handle via IDXGIResource1::CreateSharedHandle
+        IDXGIResource1* dxgiResource1 = nullptr;
+        hr = slot.d3dTexture->QueryInterface(__uuidof(IDXGIResource1), (void**)&dxgiResource1);
+        if (FAILED(hr)) {
+            std::cerr << "[DXGI] Failed to get IDXGIResource1: " << std::hex << hr << std::endl;
+            return false;
+        }
+
+        hr = dxgiResource1->CreateSharedHandle(
+            nullptr,
+            DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE,
+            nullptr,
+            &slot.sharedHandle
+        );
+        dxgiResource1->Release();
+        if (FAILED(hr)) {
+            std::cerr << "[DXGI] Failed to create NT shared handle: " << std::hex << hr << std::endl;
+            return false;
+        }
+
+        // Get keyed mutex (required by D3D11 for NT shared handles)
+        hr = slot.d3dTexture->QueryInterface(__uuidof(IDXGIKeyedMutex), (void**)&slot.keyedMutex);
+        if (FAILED(hr)) {
+            std::cerr << "[DXGI] Failed to get keyed mutex: " << std::hex << hr << std::endl;
+            return false;
+        }
+
+        // Set the share handle on the D3D resource BEFORE registering with WGL
+        // Required by WGL_NV_DX_interop spec for shared resources
+        if (m_wglDXSetResourceShareHandleNV) {
+            if (!m_wglDXSetResourceShareHandleNV(slot.d3dTexture, slot.sharedHandle)) {
+                DWORD err = GetLastError();
+                std::cerr << "[DXGI] Failed to set share handle, error: " << err << std::endl;
+                // Continue anyway - some drivers may not require this
+            }
+        }
+
+        // Create OpenGL texture
+        glGenTextures(1, &slot.glTexture);
+        glBindTexture(GL_TEXTURE_2D, slot.glTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+        // Register D3D texture with OpenGL via WGL_NV_DX_interop
+        slot.wglDxObject = m_wglDXRegisterObjectNV(
+            m_wglDxDevice,
+            slot.d3dTexture,
+            slot.glTexture,
+            GL_TEXTURE_2D,
+            WGL_ACCESS_WRITE_DISCARD_NV
+        );
+
+        if (!slot.wglDxObject) {
+            DWORD err = GetLastError();
+            std::cerr << "[DXGI] Failed to register DX object with WGL, error: " << err << std::endl;
+            return false;
+        }
+
+        // Lock for FBO setup
+        HANDLE objects[] = { slot.wglDxObject };
+        if (!m_wglDXLockObjectsNV(m_wglDxDevice, 1, objects)) {
+            std::cerr << "[DXGI] Failed to lock DX object for FBO setup" << std::endl;
+            return false;
+        }
+
+        // Create FBO
+        m_glGenFramebuffers(1, &slot.glFBO);
+        m_glBindFramebuffer(GL_FRAMEBUFFER, slot.glFBO);
+        m_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, slot.glTexture, 0);
+
+        GLenum status = m_glCheckFramebufferStatus(GL_FRAMEBUFFER);
+
+        // Unlock after FBO setup
+        m_wglDXUnlockObjectsNV(m_wglDxDevice, 1, objects);
+
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            std::cerr << "[DXGI] FBO incomplete: " << std::hex << status << std::endl;
+            return false;
+        }
+
+        m_glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return true;
+    }
+
+    void destroySlot(TextureSlot& slot) {
+        if (slot.wglDxObject) {
+            m_wglDXUnregisterObjectNV(m_wglDxDevice, slot.wglDxObject);
+            slot.wglDxObject = nullptr;
+        }
+        if (slot.glFBO) {
+            m_glDeleteFramebuffers(1, &slot.glFBO);
+            slot.glFBO = 0;
+        }
+        if (slot.glTexture) {
+            glDeleteTextures(1, &slot.glTexture);
+            slot.glTexture = 0;
+        }
+        if (slot.keyedMutex) {
+            slot.keyedMutex->Release();
+            slot.keyedMutex = nullptr;
+        }
+        if (slot.sharedHandle) {
+            CloseHandle(slot.sharedHandle);
+            slot.sharedHandle = nullptr;
+        }
+        if (slot.d3dTexture) {
+            slot.d3dTexture->Release();
+            slot.d3dTexture = nullptr;
+        }
+    }
+
     bool loadWGLExtensions() {
         // Get wglGetProcAddress
         HMODULE opengl32 = LoadLibraryA("opengl32.dll");
@@ -498,21 +487,19 @@ private:
     uint32_t m_width = 0;
     uint32_t m_height = 0;
 
-    // D3D11
+    // Double-buffered texture slots
+    TextureSlot m_slots[BUFFER_COUNT];
+    int m_writeIndex = 0;
+
+    // D3D11 (shared across slots)
     ID3D11Device* m_d3dDevice = nullptr;
     ID3D11DeviceContext* m_d3dContext = nullptr;
-    ID3D11Texture2D* m_d3dTexture = nullptr;
-    IDXGIKeyedMutex* m_keyedMutex = nullptr;  // For NT handle synchronization
-    HANDLE m_sharedHandle = nullptr;
 
     // OpenGL
     HGLRC m_hglrc = nullptr;
-    GLuint m_glTexture = 0;
-    GLuint m_glFBO = 0;
 
     // WGL/DX interop
     HANDLE m_wglDxDevice = nullptr;
-    HANDLE m_wglDxObject = nullptr;
 
     // WGL extension functions
     PFNWGLDXSETRESOURCESHAREHANDLENVPROC m_wglDXSetResourceShareHandleNV = nullptr;

@@ -52,8 +52,14 @@ export class MpvTextureBridge {
   private window: BrowserWindow | null = null;
   private frameIndex = 0;
   private initialized = false;
+  private sending = false;
+  private pendingFrame: TextureInfo | null = null;
   private statusCallback?: (status: MpvStatus) => void;
   private errorCallback?: (error: string) => void;
+
+  // Diagnostics
+  private stats = { received: 0, dropped: 0, sent: 0, errors: 0, importMs: 0, sendMs: 0, sendCount: 0 };
+  private statsInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Initialize the bridge with the target window
@@ -98,6 +104,17 @@ export class MpvTextureBridge {
 
       this.initialized = true;
       console.log('[MpvTextureBridge] Initialized successfully');
+
+      // Log frame stats every 2 seconds
+      this.statsInterval = setInterval(() => {
+        if (this.stats.received > 0) {
+          const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
+          const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
+          console.log(`[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}ms`);
+          this.stats = { received: 0, dropped: 0, sent: 0, errors: 0, importMs: 0, sendMs: 0, sendCount: 0 };
+        }
+      }, 2000);
+
       return true;
     } catch (error) {
       console.error('[MpvTextureBridge] Failed to initialize:', error);
@@ -107,74 +124,88 @@ export class MpvTextureBridge {
 
   /**
    * Handle a new frame from mpv
+   *
+   * Stores the latest frame and kicks off the send loop. If a send is already
+   * in progress, the frame is stored and will be picked up when the current
+   * send completes — always sending the most recent frame available.
    */
-  private async handleFrame(textureInfo: TextureInfo): Promise<void> {
+  private handleFrame(textureInfo: TextureInfo): void {
     if (!this.window || !this.mpv) return;
 
-    try {
-      // Debug: log what we're receiving
-      if (this.frameIndex < 3) {
-        console.log('[MpvTextureBridge] Frame info:', {
-          handle: textureInfo.handle,
-          handleType: typeof textureInfo.handle,
-          width: textureInfo.width,
-          height: textureInfo.height,
-          format: textureInfo.format,
-        });
-      }
+    this.stats.received++;
 
-      // Convert handle from bigint to the format Electron expects
-      // Platform-specific SharedTextureHandle format:
-      // - Windows: { ntHandle: Buffer } - NT HANDLE as 64-bit LE buffer
-      // - macOS: { ioSurface: Buffer } - IOSurfaceID as 32-bit LE buffer
-      const handleBuffer = Buffer.alloc(8);
-      handleBuffer.writeBigUInt64LE(textureInfo.handle);
-
-      let sharedTextureHandle: SharedTextureHandle;
-      if (process.platform === 'darwin') {
-        // macOS: IOSurfaceID is a 32-bit value
-        const ioSurfaceBuffer = Buffer.alloc(4);
-        ioSurfaceBuffer.writeUInt32LE(Number(textureInfo.handle));
-        sharedTextureHandle = {
-          ioSurface: ioSurfaceBuffer,
-        };
-      } else {
-        // Windows: NT HANDLE is a 64-bit value
-        sharedTextureHandle = {
-          ntHandle: handleBuffer,
-        };
-      }
-
-      // Import the texture handle
-      const imported = sharedTexture.importSharedTexture({
-        textureInfo: {
-          handle: sharedTextureHandle,
-          codedSize: { width: textureInfo.width, height: textureInfo.height },
-          visibleRect: { x: 0, y: 0, width: textureInfo.width, height: textureInfo.height },
-          pixelFormat: textureInfo.format === 'nv12' ? 'rgba' : textureInfo.format,
-        },
-        allReferencesReleased: () => {
-          // Note: This callback rarely/never fires - we release immediately after send instead
-        },
-      });
-
-      // Send to renderer
-      await sharedTexture.sendSharedTexture(
-        {
-          frame: this.window.webContents.mainFrame,
-          importedSharedTexture: imported,
-        },
-        this.frameIndex++
-      );
-
-      // Release frame immediately after send - don't wait for allReferencesReleased
-      // The preload closes the VideoFrame synchronously, so we can release immediately
-      this.mpv?.releaseFrame();
-    } catch (error) {
-      console.error('[MpvTextureBridge] Failed to handle frame:', error);
-      // Release on error too
-      this.mpv?.releaseFrame();
+    if (this.sending) {
+      // Store latest, overwriting any previously pending frame
+      this.stats.dropped++;
     }
+    this.pendingFrame = textureInfo;
+
+    if (!this.sending) {
+      this.sendLoop();
+    }
+  }
+
+  /**
+   * Send loop - keeps sending the latest pending frame until none remain.
+   * Only one instance runs at a time (guarded by this.sending).
+   */
+  private async sendLoop(): Promise<void> {
+    if (!this.window) return;
+    this.sending = true;
+
+    while (this.pendingFrame) {
+      const textureInfo = this.pendingFrame;
+      this.pendingFrame = null;
+
+      let imported: ReturnType<typeof sharedTexture.importSharedTexture> | null = null;
+      try {
+        // Convert handle to platform format
+        let sharedTextureHandle: SharedTextureHandle;
+        if (process.platform === 'darwin') {
+          const ioSurfaceBuffer = Buffer.alloc(4);
+          ioSurfaceBuffer.writeUInt32LE(Number(textureInfo.handle));
+          sharedTextureHandle = { ioSurface: ioSurfaceBuffer };
+        } else {
+          const handleBuffer = Buffer.alloc(8);
+          handleBuffer.writeBigUInt64LE(textureInfo.handle);
+          sharedTextureHandle = { ntHandle: handleBuffer };
+        }
+
+        const t0 = performance.now();
+
+        imported = sharedTexture.importSharedTexture({
+          textureInfo: {
+            handle: sharedTextureHandle,
+            codedSize: { width: textureInfo.width, height: textureInfo.height },
+            visibleRect: { x: 0, y: 0, width: textureInfo.width, height: textureInfo.height },
+            pixelFormat: textureInfo.format === 'nv12' ? 'rgba' : textureInfo.format,
+          },
+        });
+
+        const t1 = performance.now();
+
+        await sharedTexture.sendSharedTexture(
+          {
+            frame: this.window!.webContents.mainFrame,
+            importedSharedTexture: imported,
+          },
+          this.frameIndex++
+        );
+
+        const t2 = performance.now();
+        this.stats.importMs += t1 - t0;
+        this.stats.sendMs += t2 - t1;
+        this.stats.sendCount++;
+        this.stats.sent++;
+      } catch (error) {
+        this.stats.errors++;
+        console.error('[MpvTextureBridge] Frame error:', error);
+      } finally {
+        imported?.release();
+      }
+    }
+
+    this.sending = false;
   }
 
   /**
@@ -261,6 +292,10 @@ export class MpvTextureBridge {
    * Destroy and clean up
    */
   destroy(): void {
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = null;
+    }
     if (this.mpv) {
       this.mpv.destroy();
       this.mpv = null;

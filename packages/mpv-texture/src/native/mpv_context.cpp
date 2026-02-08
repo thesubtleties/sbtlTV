@@ -651,8 +651,8 @@ void MpvContext::renderLoop() {
         // Report swap
         mpv_render_context_report_swap(m_renderCtx);
 
-        // Ensure all GL commands are complete before releasing to D3D
-        glFinish();
+        // Flush GL commands (non-blocking) - keyed mutex handles actual sync
+        glFlush();
 
         // Unlock and export texture
         TextureInfo info = m_textureShare->unlockAndExport();
