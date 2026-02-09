@@ -10,6 +10,8 @@
 #
 # The final mpv-bundle/ is self-contained and gets placed into
 # sbtlTV.app/Contents/Resources/mpv/ by electron-builder.
+#
+# Compatible with bash 3 (macOS default) — no associative arrays.
 
 set -e
 
@@ -41,19 +43,25 @@ install_name_tool -change "@rpath/libmpv.dylib" "@loader_path/libmpv.dylib" \
 
 HOMEBREW_PREFIX="$(brew --prefix)"
 
-# Collect all dylibs that need bundling (BFS)
-declare -a TO_PROCESS=("$BUNDLE_DIR/libmpv.dylib")
-declare -A ALREADY_BUNDLED
+# Use a queue file + bundled-tracking dir instead of bash 4 associative arrays
+QUEUE_FILE="$(mktemp)"
+DONE_DIR="$(mktemp -d)"
+trap "rm -f '$QUEUE_FILE'; rm -rf '$DONE_DIR'" EXIT
 
-while [ ${#TO_PROCESS[@]} -gt 0 ]; do
-  CURRENT="${TO_PROCESS[0]}"
-  TO_PROCESS=("${TO_PROCESS[@]:1}")  # shift
+echo "$BUNDLE_DIR/libmpv.dylib" > "$QUEUE_FILE"
+
+while [ -s "$QUEUE_FILE" ]; do
+  # Pop first line
+  CURRENT="$(head -1 "$QUEUE_FILE")"
+  tail -n +2 "$QUEUE_FILE" > "$QUEUE_FILE.tmp" && mv "$QUEUE_FILE.tmp" "$QUEUE_FILE"
 
   BASENAME="$(basename "$CURRENT")"
-  if [[ -n "${ALREADY_BUNDLED[$BASENAME]}" ]]; then
+
+  # Skip if already processed
+  if [ -f "$DONE_DIR/$BASENAME" ]; then
     continue
   fi
-  ALREADY_BUNDLED[$BASENAME]=1
+  touch "$DONE_DIR/$BASENAME"
 
   # Find all Homebrew dylib deps of this library
   DEPS=$(otool -L "$CURRENT" | tail -n +2 | awk '{print $1}' | grep "$HOMEBREW_PREFIX" || true)
@@ -64,14 +72,14 @@ while [ ${#TO_PROCESS[@]} -gt 0 ]; do
     # Copy if not already in bundle
     if [ ! -f "$BUNDLE_DIR/$DEP_BASENAME" ]; then
       # Resolve symlinks to get the actual file
-      REAL_DEP="$(realpath "$DEP" 2>/dev/null || readlink -f "$DEP" 2>/dev/null || echo "$DEP")"
+      REAL_DEP="$(python3 -c "import os; print(os.path.realpath('$DEP'))" 2>/dev/null || echo "$DEP")"
       if [ -f "$REAL_DEP" ]; then
         cp "$REAL_DEP" "$BUNDLE_DIR/$DEP_BASENAME"
         chmod 644 "$BUNDLE_DIR/$DEP_BASENAME"
         # Set the install_name to @loader_path
         install_name_tool -id "@loader_path/$DEP_BASENAME" "$BUNDLE_DIR/$DEP_BASENAME"
         echo "[bundle]   + $DEP_BASENAME"
-        TO_PROCESS+=("$BUNDLE_DIR/$DEP_BASENAME")
+        echo "$BUNDLE_DIR/$DEP_BASENAME" >> "$QUEUE_FILE"
       else
         echo "[bundle]   ? missing: $DEP"
       fi
