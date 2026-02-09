@@ -162,8 +162,9 @@ export class MpvTextureBridge {
         // Convert handle to platform format
         let sharedTextureHandle: SharedTextureHandle;
         if (process.platform === 'darwin') {
-          const ioSurfaceBuffer = Buffer.alloc(4);
-          ioSurfaceBuffer.writeUInt32LE(Number(textureInfo.handle));
+          // handle contains the raw IOSurfaceRef pointer (8 bytes on arm64)
+          const ioSurfaceBuffer = Buffer.alloc(8);
+          ioSurfaceBuffer.writeBigUInt64LE(textureInfo.handle);
           sharedTextureHandle = { ioSurface: ioSurfaceBuffer };
         } else {
           const handleBuffer = Buffer.alloc(8);

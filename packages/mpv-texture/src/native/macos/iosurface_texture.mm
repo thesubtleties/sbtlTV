@@ -103,10 +103,9 @@ public:
 
         auto& slot = m_slots[m_writeIndex];
 
-        // Get IOSurface ID for sharing
-        IOSurfaceID surfaceId = IOSurfaceGetID(slot.ioSurface);
-
-        info.handle = static_cast<uint64_t>(surfaceId);
+        // Pass IOSurfaceRef as raw pointer — Electron's importSharedTexture expects
+        // the ioSurface Buffer to contain the IOSurfaceRef pointer, not the IOSurfaceID.
+        info.handle = reinterpret_cast<uint64_t>(slot.ioSurface);
         info.width = m_width;
         info.height = m_height;
         info.format = TextureFormat::BGRA8;

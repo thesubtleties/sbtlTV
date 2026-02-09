@@ -78,9 +78,8 @@ jobs:
       - name: Bundle mpv (macOS)
         if: matrix.platform == 'mac'
         run: |
-          mkdir -p packages/electron/mpv-bundle
-          cp packages/mpv-texture/build/Release/mpv_texture.node packages/electron/mpv-bundle/
-          cp packages/mpv-texture/build/Release/libmpv.dylib packages/electron/mpv-bundle/
+          chmod +x packages/mpv-texture/scripts/bundle-dylibs-mac.sh
+          packages/mpv-texture/scripts/bundle-dylibs-mac.sh
 
       # Build Electron app
       - name: Build Electron app
