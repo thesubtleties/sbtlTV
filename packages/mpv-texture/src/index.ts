@@ -17,11 +17,21 @@ let addon: NativeAddon;
 const distDir = __dirname;
 const packageDir = dirname(distDir);
 
-const paths = [
+const paths: string[] = [];
+
+// In packaged Electron app, load from extraResources/mpv/ where all dylibs live.
+// This is critical: @loader_path in the .node resolves to the .node's directory,
+// so it must be co-located with libmpv.dylib and all transitive deps.
+if ((process as any).resourcesPath) {
+  paths.push(join((process as any).resourcesPath, 'mpv', 'mpv_texture.node'));
+}
+
+// Development / unpackaged paths
+paths.push(
   join(packageDir, 'build', 'Release', 'mpv_texture.node'),
   join(distDir, 'mpv_texture.node'),
   join(packageDir, 'mpv_texture.node'),
-];
+);
 
 let loadedPath = '';
 for (const p of paths) {
