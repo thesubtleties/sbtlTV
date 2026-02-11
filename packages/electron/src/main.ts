@@ -146,8 +146,8 @@ async function createWindow(): Promise<void> {
     height: 720,
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
-    backgroundColor: '#00000000',
-    transparent: true,
+    backgroundColor: isWindows ? '#00000000' : '#000000',
+    transparent: isWindows, // Only Windows needs transparency (external mpv renders behind)
     frame: false,
     resizable: true, // Explicit for Electron 40
     icon: path.join(__dirname, '../assets/sbtltv-logo-white.png'),
