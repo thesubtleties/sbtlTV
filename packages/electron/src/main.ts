@@ -139,7 +139,6 @@ function debugLog(message: string, category = 'app'): void {
 }
 
 async function createWindow(): Promise<void> {
-  // On Windows, we use a transparent frameless window for mpv embedding
   const isWindows = process.platform === 'win32';
 
   mainWindow = new BrowserWindow({
@@ -147,9 +146,9 @@ async function createWindow(): Promise<void> {
     height: 720,
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
-    backgroundColor: isWindows ? '#00000000' : '#000000',
-    transparent: isWindows, // Transparent on Windows so mpv shows through
-    frame: !isWindows, // Frameless on Windows (required for transparency)
+    backgroundColor: '#00000000',
+    transparent: true,
+    frame: false,
     resizable: true, // Explicit for Electron 40
     icon: path.join(__dirname, '../assets/sbtltv-logo-white.png'),
     webPreferences: {
