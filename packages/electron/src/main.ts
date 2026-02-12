@@ -8,12 +8,12 @@ import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
 import { MpvTextureBridge } from './mpv-texture-bridge.js';
 
-// Experimental: Try to load native mpv-texture addon
+// On macOS, default to native mpv-texture addon (IOSurface shared texture).
+// Falls back to external mpv process if the addon fails to load.
 let mpvTextureAddon: unknown = null;
-const USE_NATIVE_MPV = process.argv.includes('--native-mpv');
+const USE_NATIVE_MPV = process.platform === 'darwin';
 if (USE_NATIVE_MPV) {
   try {
-    // Dynamic import of native addon
     mpvTextureAddon = await import('@sbtltv/mpv-texture');
     console.log('[mpv-texture] Native addon loaded successfully');
   } catch (error) {
