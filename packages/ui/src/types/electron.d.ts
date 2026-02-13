@@ -13,6 +13,11 @@ export interface MpvResult {
   error?: string;
 }
 
+export interface MpvModeInfo {
+  mode: 'native' | 'external';
+  sharedTextureAvailable: boolean;
+}
+
 export interface MpvApi {
   load: (url: string) => Promise<MpvResult>;
   play: () => Promise<MpvResult>;
@@ -23,6 +28,7 @@ export interface MpvApi {
   toggleMute: () => Promise<MpvResult>;
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
+  getMode: () => Promise<MpvModeInfo>;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
@@ -128,6 +134,15 @@ export interface UpdaterApi {
   removeAllListeners: () => void;
 }
 
+export interface SharedTextureApi {
+  /** Register callback to receive VideoFrames from native mpv */
+  onFrame: (callback: (videoFrame: VideoFrame, index: number) => void) => void;
+  /** Remove the frame callback */
+  removeFrameListener: () => void;
+  /** Whether sharedTexture API is available (native mpv mode) */
+  isAvailable: boolean;
+}
+
 declare global {
   interface Window {
     mpv?: MpvApi;
@@ -137,6 +152,7 @@ declare global {
     platform?: PlatformApi;
     debug?: DebugApi;
     updater?: UpdaterApi;
+    sharedTexture?: SharedTextureApi;
   }
 }
 

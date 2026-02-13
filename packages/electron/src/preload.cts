@@ -15,6 +15,11 @@ export interface MpvResult {
   error?: string;
 }
 
+export interface MpvModeInfo {
+  mode: 'native' | 'external';
+  sharedTextureAvailable: boolean;
+}
+
 export interface MpvApi {
   load: (url: string) => Promise<MpvResult>;
   play: () => Promise<MpvResult>;
@@ -25,6 +30,7 @@ export interface MpvApi {
   toggleMute: () => Promise<MpvResult>;
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
+  getMode: () => Promise<MpvModeInfo>;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
@@ -107,6 +113,7 @@ contextBridge.exposeInMainWorld('mpv', {
   toggleMute: () => ipcRenderer.invoke('mpv-toggle-mute'),
   seek: (seconds: number) => ipcRenderer.invoke('mpv-seek', seconds),
   getStatus: () => ipcRenderer.invoke('mpv-get-status'),
+  getMode: () => ipcRenderer.invoke('mpv-get-mode'),
 
   // Event listeners
   onReady: (callback: (ready: boolean) => void) => {
@@ -183,3 +190,65 @@ contextBridge.exposeInMainWorld('updater', {
     ipcRenderer.removeAllListeners('updater-error');
   },
 });
+
+// Shared texture API for GPU-accelerated video rendering (Electron 40+)
+// This allows the renderer to receive VideoFrames from the main process
+export interface SharedTextureApi {
+  onFrame: (callback: (videoFrame: VideoFrame, index: number) => void) => void;
+  removeFrameListener: () => void;
+  isAvailable: boolean;
+}
+
+// Check if sharedTexture API is available AND we're on a platform that uses native mpv.
+// Windows uses external mpv via --wid (renders behind the window), so the VideoCanvas
+// must not activate there — it would cover the external mpv output with a black canvas.
+let sharedTextureAvailable = false;
+if (process.platform === 'darwin') {
+  try {
+    const { sharedTexture } = require('electron');
+    sharedTextureAvailable = !!sharedTexture?.setSharedTextureReceiver;
+  } catch {
+    sharedTextureAvailable = false;
+  }
+}
+
+// Frame callback storage
+let frameCallback: ((videoFrame: VideoFrame, index: number) => void) | null = null;
+
+// Set up frame receiver if available
+if (sharedTextureAvailable) {
+  try {
+    const { sharedTexture } = require('electron');
+    sharedTexture.setSharedTextureReceiver(async (data: { importedSharedTexture: { getVideoFrame: () => VideoFrame; release: () => void } }, ...args: unknown[]) => {
+      const index = typeof args[0] === 'number' ? args[0] : 0;
+      const imported = data.importedSharedTexture;
+      try {
+        if (frameCallback && imported) {
+          const videoFrame = imported.getVideoFrame();
+          // Don't close videoFrame here - VideoCanvas manages frame lifecycle via rAF
+          // It will close the previous frame when a new one arrives
+          frameCallback(videoFrame, index);
+          imported.release();
+        } else if (imported) {
+          imported.release();
+        }
+      } catch (error) {
+        console.error('[preload] sharedTexture error:', error);
+        try { imported?.release(); } catch { /* ignore */ }
+      }
+    });
+  } catch (error) {
+    console.warn('[preload] Failed to set up sharedTexture receiver:', error);
+    sharedTextureAvailable = false;
+  }
+}
+
+contextBridge.exposeInMainWorld('sharedTexture', {
+  onFrame: (callback: (videoFrame: VideoFrame, index: number) => void) => {
+    frameCallback = callback;
+  },
+  removeFrameListener: () => {
+    frameCallback = null;
+  },
+  isAvailable: sharedTextureAvailable,
+} satisfies SharedTextureApi);

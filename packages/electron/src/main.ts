@@ -9,6 +9,31 @@ import * as storage from './storage.js';
 import electronUpdater from 'electron-updater';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
+// Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
+// which may not be available on all platforms
+type MpvTextureBridgeType = import('./mpv-texture-bridge.js').MpvTextureBridge;
+let MpvTextureBridgeClass: (new () => MpvTextureBridgeType) | null = null;
+if (process.platform === 'darwin') {
+  try {
+    const mod = await import('./mpv-texture-bridge.js');
+    MpvTextureBridgeClass = mod.MpvTextureBridge;
+  } catch (error) {
+    console.warn('[mpv] Failed to load mpv-texture-bridge:', error);
+  }
+}
+
+// On macOS, default to native mpv-texture addon (IOSurface shared texture).
+// Falls back to external mpv process if the addon fails to load.
+let mpvTextureAddon: unknown = null;
+const USE_NATIVE_MPV = process.platform === 'darwin';
+if (USE_NATIVE_MPV) {
+  try {
+    mpvTextureAddon = await import('@sbtltv/mpv-texture');
+    console.log('[mpv-texture] Native addon loaded successfully');
+  } catch (error) {
+    console.warn('[mpv-texture] Failed to load native addon, falling back to external mpv:', error);
+  }
+}
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -23,6 +48,10 @@ let mpvProcess: ChildProcess | null = null;
 let mpvSocket: net.Socket | null = null;
 let requestId = 0;
 const pendingRequests = new Map<number, { resolve: (data: unknown) => void; reject: (err: Error) => void }>();
+
+// Native mpv-texture state
+let useNativeMpv = false;
+let mpvBridge: MpvTextureBridgeType | null = null;
 
 // Track mpv state
 let isShuttingDown = false; // Track if we're intentionally closing
@@ -133,8 +162,8 @@ async function createWindow(): Promise<void> {
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
     backgroundColor: isWindows ? '#00000000' : '#000000',
-    transparent: isWindows, // Transparent on Windows so mpv shows through
-    frame: !isWindows, // Frameless on Windows (required for transparency)
+    transparent: isWindows, // Only Windows needs transparency (external mpv renders behind)
+    frame: false,
     resizable: true, // Explicit for Electron 40
     icon: path.join(__dirname, '../assets/sbtltv-logo-white.png'),
     webPreferences: {
@@ -191,6 +220,15 @@ async function createWindow(): Promise<void> {
 
 function killMpv(): void {
   isShuttingDown = true;
+
+  // Clean up native mpv bridge
+  if (mpvBridge) {
+    mpvBridge.destroy();
+    mpvBridge = null;
+    useNativeMpv = false;
+  }
+
+  // Clean up external mpv process
   if (mpvSocket) {
     mpvSocket.destroy();
     mpvSocket = null;
@@ -462,6 +500,53 @@ async function initMpv(): Promise<void> {
   }
 }
 
+/**
+ * Initialize native mpv-texture bridge for GPU-accelerated playback
+ * Returns true if successful, false if should fall back to external mpv
+ */
+async function initNativeMpv(): Promise<boolean> {
+  if (!mainWindow) return false;
+
+  try {
+    if (!MpvTextureBridgeClass) return false;
+    const bridge = new MpvTextureBridgeClass();
+    const success = await bridge.initialize(mainWindow, {
+      hwdec: 'auto',
+    });
+
+    if (success) {
+      mpvBridge = bridge;
+      useNativeMpv = true;
+
+      // Forward status updates to renderer
+      bridge.onStatus((status) => {
+        // Sync local state for getStatus calls
+        mpvState.playing = status.playing;
+        mpvState.volume = status.volume;
+        mpvState.muted = status.muted;
+        mpvState.position = status.position;
+        mpvState.duration = status.duration;
+        sendToRenderer('mpv-status', status);
+      });
+
+      // Forward errors to renderer
+      bridge.onError((error) => {
+        sendToRenderer('mpv-error', error);
+      });
+
+      console.log('[mpv] Native mpv-texture bridge initialized');
+      debugLog('Native mpv-texture bridge initialized', 'mpv');
+      sendToRenderer('mpv-ready', true);
+      return true;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.warn('[mpv] Native bridge failed:', message);
+    debugLog(`Native bridge failed: ${message}`, 'mpv');
+  }
+  return false;
+}
+
 async function connectToMpvSocket(): Promise<void> {
   return new Promise((resolve, reject) => {
     mpvSocket = net.createConnection(SOCKET_PATH);
@@ -613,6 +698,21 @@ ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
 // IPC Handlers - mpv control
 ipcMain.handle('mpv-load', async (_event, url: string) => {
   debugLog(`mpv-load called with URL: ${url}`, 'mpv');
+
+  // Route to native bridge if available
+  if (useNativeMpv && mpvBridge) {
+    try {
+      await mpvBridge.load(url);
+      debugLog('mpv-load SUCCESS (native)', 'mpv');
+      return { success: true };
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Unknown error';
+      debugLog(`mpv-load FAILED (native): ${errMsg}`, 'mpv');
+      return { error: errMsg };
+    }
+  }
+
+  // External mpv via socket
   if (!mpvSocket) {
     debugLog('mpv-load FAILED: mpv not initialized (no socket)', 'mpv');
     return { error: 'mpv not initialized' };
@@ -630,6 +730,10 @@ ipcMain.handle('mpv-load', async (_event, url: string) => {
 });
 
 ipcMain.handle('mpv-play', async () => {
+  if (useNativeMpv && mpvBridge) {
+    mpvBridge.play();
+    return { success: true };
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('set_property', ['pause', false]);
@@ -640,6 +744,10 @@ ipcMain.handle('mpv-play', async () => {
 });
 
 ipcMain.handle('mpv-pause', async () => {
+  if (useNativeMpv && mpvBridge) {
+    mpvBridge.pause();
+    return { success: true };
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('set_property', ['pause', true]);
@@ -650,6 +758,15 @@ ipcMain.handle('mpv-pause', async () => {
 });
 
 ipcMain.handle('mpv-toggle-pause', async () => {
+  if (useNativeMpv && mpvBridge) {
+    const status = mpvBridge.getStatus();
+    if (status?.playing) {
+      mpvBridge.pause();
+    } else {
+      mpvBridge.play();
+    }
+    return { success: true };
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('cycle', ['pause']);
@@ -660,6 +777,10 @@ ipcMain.handle('mpv-toggle-pause', async () => {
 });
 
 ipcMain.handle('mpv-volume', async (_event, volume: number) => {
+  if (useNativeMpv && mpvBridge) {
+    mpvBridge.setVolume(volume);
+    return { success: true };
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('set_property', ['volume', volume]);
@@ -670,6 +791,10 @@ ipcMain.handle('mpv-volume', async (_event, volume: number) => {
 });
 
 ipcMain.handle('mpv-toggle-mute', async () => {
+  if (useNativeMpv && mpvBridge) {
+    mpvBridge.toggleMute();
+    return { success: true };
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('cycle', ['mute']);
@@ -680,6 +805,10 @@ ipcMain.handle('mpv-toggle-mute', async () => {
 });
 
 ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
+  if (useNativeMpv && mpvBridge) {
+    mpvBridge.seek(seconds);
+    return { success: true };
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('seek', [seconds, 'absolute']);
@@ -691,6 +820,11 @@ ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
 
 ipcMain.handle('mpv-stop', async () => {
   debugLog('mpv-stop called', 'mpv');
+  if (useNativeMpv && mpvBridge) {
+    mpvBridge.stop();
+    debugLog('mpv-stop SUCCESS (native)', 'mpv');
+    return { success: true };
+  }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
     await sendMpvCommand('stop', []);
@@ -703,7 +837,18 @@ ipcMain.handle('mpv-stop', async () => {
   }
 });
 
-ipcMain.handle('mpv-get-status', async () => mpvState);
+ipcMain.handle('mpv-get-status', async () => {
+  if (useNativeMpv && mpvBridge) {
+    return mpvBridge.getStatus() ?? mpvState;
+  }
+  return mpvState;
+});
+
+// Get mpv mode (native vs external) for renderer adaptation
+ipcMain.handle('mpv-get-mode', async () => ({
+  mode: useNativeMpv ? 'native' : 'external',
+  sharedTextureAvailable: useNativeMpv,
+}));
 
 // IPC Handlers - Storage
 ipcMain.handle('storage-get-sources', async () => {
@@ -950,13 +1095,32 @@ app.whenReady().then(async () => {
   const settings = storage.getSettings();
   initDebugLogging(settings.debugLoggingEnabled ?? false);
 
-  const mpvAvailable = await checkMpvAvailable();
-  if (!mpvAvailable) {
-    app.quit();
-    return;
-  }
   await createWindow();
-  await initMpv();
+
+  // Try native mpv-texture if requested and addon loaded
+  if (USE_NATIVE_MPV && mpvTextureAddon) {
+    console.log('[mpv] Attempting native mpv-texture initialization...');
+    const nativeSuccess = await initNativeMpv();
+    if (nativeSuccess) {
+      console.log('[mpv] Using native mpv-texture bridge');
+    } else {
+      console.log('[mpv] Native bridge failed, falling back to external mpv');
+      const mpvAvailable = await checkMpvAvailable();
+      if (!mpvAvailable) {
+        app.quit();
+        return;
+      }
+      await initMpv();
+    }
+  } else {
+    // Non-macOS or addon not loaded: use external mpv
+    const mpvAvailable = await checkMpvAvailable();
+    if (!mpvAvailable) {
+      app.quit();
+      return;
+    }
+    await initMpv();
+  }
 
   // Auto-updater (packaged NSIS builds only, not portable)
   const isPortable = !!process.env.PORTABLE_EXECUTABLE_DIR;
