@@ -9,6 +9,7 @@ import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
 import { UpdateNotification } from './components/UpdateNotification';
+import { VideoCanvas } from './components/VideoCanvas';
 import { useSelectedCategory } from './hooks/useChannels';
 import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useSetChannelSortOrder } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
@@ -441,7 +442,10 @@ function App() {
         </div>
       </div>
 
-      {/* Background - transparent over mpv */}
+      {/* Video canvas for native mpv mode - displays VideoFrames from sharedTexture */}
+      <VideoCanvas visible={!!currentChannel && playing} />
+
+      {/* Background - transparent over mpv (external mode) or behind VideoCanvas (native mode) */}
       <div className="video-background">
         {!currentChannel && (
           <div className="placeholder">
@@ -549,8 +553,8 @@ function App() {
       {/* Update notification toast */}
       <UpdateNotification />
 
-      {/* Resize grip for frameless window (Windows only - frameless windows lack native resize) */}
-      {window.platform?.isWindows && (
+      {/* Resize grip for frameless window — Electron frameless windows lack native resize edges */}
+      {(window.platform?.isWindows || window.platform?.isLinux) && (
       <div
         className={`resize-grip${showControls ? ' visible' : ''}`}
         onMouseDown={(e) => {

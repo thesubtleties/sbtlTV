@@ -1,0 +1,97 @@
+name: Build Test (Mac Native + Windows External)
+
+on:
+  push:
+    branches:
+      - feature/native-mpv-mac
+      - dev
+    paths:
+      - 'packages/mpv-texture/**'
+      - 'packages/electron/**'
+      - 'packages/ui/**'
+      - '.github/workflows/build-test.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies (skip native build)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Windows: Bundle external mpv binary (--wid mode, no native addon)
+      - name: Install mpv (Windows)
+        if: matrix.platform == 'win'
+        shell: bash
+        run: |
+          choco install mpvio -y
+          mkdir -p packages/electron/mpv-bundle
+          cp "C:/ProgramData/chocolatey/lib/mpvio.install/tools/"*.exe packages/electron/mpv-bundle/
+          cp "C:/ProgramData/chocolatey/lib/mpvio.install/tools/"*.dll packages/electron/mpv-bundle/
+
+      # macOS: Install mpv, setup SDK, build native addon, bundle dylibs
+      - name: Setup mpv (macOS)
+        if: matrix.platform == 'mac'
+        run: |
+          brew install mpv
+          cd packages/mpv-texture
+          chmod +x scripts/setup-mpv-mac.sh
+          ./scripts/setup-mpv-mac.sh
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Build native addon (macOS only)
+        if: matrix.platform == 'mac'
+        run: |
+          cd packages/mpv-texture
+          npm run build:native
+
+      - name: Bundle native dylibs (macOS)
+        if: matrix.platform == 'mac'
+        run: |
+          chmod +x packages/mpv-texture/scripts/bundle-dylibs-mac.sh
+          packages/mpv-texture/scripts/bundle-dylibs-mac.sh
+
+      # Build Electron app
+      - name: Build Electron app
+        run: pnpm dist:${{ matrix.platform }} --publish never
+
+      # Upload artifacts
+      - name: Upload app (Windows)
+        if: matrix.platform == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbtlTV-win
+          path: release/*.exe
+          if-no-files-found: warn
+
+      - name: Upload app (macOS)
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbtlTV-mac
+          path: release/*.dmg
+          if-no-files-found: warn

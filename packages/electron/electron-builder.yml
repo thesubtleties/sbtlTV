@@ -12,6 +12,14 @@ files:
   - "!**/*.ts"
   - "!**/tsconfig.json"
 
+# Unpack native addons and their dylib/dll deps from the asar archive.
+# Electron auto-unpacks .node files, but the co-located dylibs need
+# explicit unpacking so @loader_path resolves to the same directory.
+asarUnpack:
+  - "**/*.node"
+  - "**/*.dylib"
+  - "**/*.dll"
+
 extraResources:
   # Bundle the UI dist folder
   - from: ../ui/dist

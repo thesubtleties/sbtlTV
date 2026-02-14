@@ -1,0 +1,16 @@
+# Build artifacts
+build/
+dist/
+node_modules/
+
+# IDE
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Dependencies (binaries should be committed)
+# deps/mpv/win64/*.dll
+# deps/mpv/macos/*.dylib

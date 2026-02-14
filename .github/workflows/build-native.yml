@@ -1,0 +1,124 @@
+name: Build Native Addon
+
+on:
+  push:
+    branches:
+      - feature/electron-shared-texture
+    paths:
+      - 'packages/mpv-texture/**'
+      - 'packages/electron/**'
+      - '.github/workflows/build-native.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies (skip native build)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Windows: Setup mpv SDK
+      - name: Setup mpv SDK (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          cd packages/mpv-texture
+          ./scripts/setup-mpv-win.ps1
+
+      # macOS: Install mpv via Homebrew
+      - name: Setup mpv (macOS)
+        if: matrix.platform == 'mac'
+        run: |
+          brew install mpv
+          cd packages/mpv-texture
+          chmod +x scripts/setup-mpv-mac.sh
+          ./scripts/setup-mpv-mac.sh
+
+      # Build everything (including native addon)
+      - name: Build all packages
+        run: pnpm build
+
+      # Build native addon explicitly
+      - name: Build native addon
+        run: |
+          cd packages/mpv-texture
+          npm run build:native
+
+      # Bundle mpv for distribution
+      - name: Bundle mpv (Windows)
+        if: matrix.platform == 'win'
+        shell: bash
+        run: |
+          mkdir -p packages/electron/mpv-bundle
+          cp packages/mpv-texture/build/Release/mpv_texture.node packages/electron/mpv-bundle/
+          cp packages/mpv-texture/build/Release/libmpv-2.dll packages/electron/mpv-bundle/
+
+      - name: Bundle mpv (macOS)
+        if: matrix.platform == 'mac'
+        run: |
+          chmod +x packages/mpv-texture/scripts/bundle-dylibs-mac.sh
+          packages/mpv-texture/scripts/bundle-dylibs-mac.sh
+
+      # Build Electron app
+      - name: Build Electron app
+        run: pnpm dist:${{ matrix.platform }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Upload full app artifacts
+      - name: Upload app (Windows)
+        if: matrix.platform == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbtlTV-win-native
+          path: release/*.exe
+          if-no-files-found: warn
+
+      - name: Upload app (macOS)
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbtlTV-mac-native
+          path: release/*.dmg
+          if-no-files-found: warn
+
+      # Also upload just the native addon for debugging
+      - name: Upload native addon (Windows)
+        if: matrix.platform == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-texture-win
+          path: |
+            packages/mpv-texture/build/Release/mpv_texture.node
+            packages/mpv-texture/build/Release/libmpv-2.dll
+
+      - name: Upload native addon (macOS)
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-texture-mac
+          path: |
+            packages/mpv-texture/build/Release/mpv_texture.node
+            packages/mpv-texture/build/Release/libmpv.dylib
