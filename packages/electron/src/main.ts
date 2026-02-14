@@ -708,7 +708,7 @@ ipcMain.handle('mpv-load', async (_event, url: string) => {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unknown error';
       debugLog(`mpv-load FAILED (native): ${errMsg}`, 'mpv');
-      return { error: errMsg };
+      return { error: 'Failed to load stream. Enable debug logging in Settings for details.' };
     }
   }
 
@@ -731,8 +731,13 @@ ipcMain.handle('mpv-load', async (_event, url: string) => {
 
 ipcMain.handle('mpv-play', async () => {
   if (useNativeMpv && mpvBridge) {
-    mpvBridge.play();
-    return { success: true };
+    try {
+      mpvBridge.play();
+      return { success: true };
+    } catch (error) {
+      debugLog(`mpv-play FAILED (native): ${error instanceof Error ? error.message : error}`, 'mpv');
+      return { success: true }; // Don't surface transient playback errors to UI
+    }
   }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
@@ -745,8 +750,13 @@ ipcMain.handle('mpv-play', async () => {
 
 ipcMain.handle('mpv-pause', async () => {
   if (useNativeMpv && mpvBridge) {
-    mpvBridge.pause();
-    return { success: true };
+    try {
+      mpvBridge.pause();
+      return { success: true };
+    } catch (error) {
+      debugLog(`mpv-pause FAILED (native): ${error instanceof Error ? error.message : error}`, 'mpv');
+      return { success: true };
+    }
   }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
@@ -759,13 +769,18 @@ ipcMain.handle('mpv-pause', async () => {
 
 ipcMain.handle('mpv-toggle-pause', async () => {
   if (useNativeMpv && mpvBridge) {
-    const status = mpvBridge.getStatus();
-    if (status?.playing) {
-      mpvBridge.pause();
-    } else {
-      mpvBridge.play();
+    try {
+      const status = mpvBridge.getStatus();
+      if (status?.playing) {
+        mpvBridge.pause();
+      } else {
+        mpvBridge.play();
+      }
+      return { success: true };
+    } catch (error) {
+      debugLog(`mpv-toggle-pause FAILED (native): ${error instanceof Error ? error.message : error}`, 'mpv');
+      return { success: true };
     }
-    return { success: true };
   }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
@@ -778,8 +793,13 @@ ipcMain.handle('mpv-toggle-pause', async () => {
 
 ipcMain.handle('mpv-volume', async (_event, volume: number) => {
   if (useNativeMpv && mpvBridge) {
-    mpvBridge.setVolume(volume);
-    return { success: true };
+    try {
+      mpvBridge.setVolume(volume);
+      return { success: true };
+    } catch (error) {
+      debugLog(`mpv-volume FAILED (native): ${error instanceof Error ? error.message : error}`, 'mpv');
+      return { success: true };
+    }
   }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
@@ -792,8 +812,13 @@ ipcMain.handle('mpv-volume', async (_event, volume: number) => {
 
 ipcMain.handle('mpv-toggle-mute', async () => {
   if (useNativeMpv && mpvBridge) {
-    mpvBridge.toggleMute();
-    return { success: true };
+    try {
+      mpvBridge.toggleMute();
+      return { success: true };
+    } catch (error) {
+      debugLog(`mpv-toggle-mute FAILED (native): ${error instanceof Error ? error.message : error}`, 'mpv');
+      return { success: true };
+    }
   }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
@@ -806,8 +831,13 @@ ipcMain.handle('mpv-toggle-mute', async () => {
 
 ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
   if (useNativeMpv && mpvBridge) {
-    mpvBridge.seek(seconds);
-    return { success: true };
+    try {
+      mpvBridge.seek(seconds);
+      return { success: true };
+    } catch (error) {
+      debugLog(`mpv-seek FAILED (native): ${error instanceof Error ? error.message : error}`, 'mpv');
+      return { success: true };
+    }
   }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
@@ -821,9 +851,14 @@ ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
 ipcMain.handle('mpv-stop', async () => {
   debugLog('mpv-stop called', 'mpv');
   if (useNativeMpv && mpvBridge) {
-    mpvBridge.stop();
-    debugLog('mpv-stop SUCCESS (native)', 'mpv');
-    return { success: true };
+    try {
+      mpvBridge.stop();
+      debugLog('mpv-stop SUCCESS (native)', 'mpv');
+      return { success: true };
+    } catch (error) {
+      debugLog(`mpv-stop FAILED (native): ${error instanceof Error ? error.message : error}`, 'mpv');
+      return { success: true };
+    }
   }
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {

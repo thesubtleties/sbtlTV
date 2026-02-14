@@ -553,8 +553,8 @@ function App() {
       {/* Update notification toast */}
       <UpdateNotification />
 
-      {/* Resize grip for frameless window (Windows only - frameless windows lack native resize) */}
-      {window.platform?.isWindows && (
+      {/* Resize grip for frameless window — Electron frameless windows lack native resize edges */}
+      {(window.platform?.isWindows || window.platform?.isLinux) && (
       <div
         className={`resize-grip${showControls ? ' visible' : ''}`}
         onMouseDown={(e) => {
