@@ -4,42 +4,21 @@
       "target_name": "mpv_texture",
       "cflags!": ["-fno-exceptions"],
       "cflags_cc!": ["-fno-exceptions"],
-      "sources": [
-        "src/native/addon.cpp",
-        "src/native/mpv_context.cpp"
-      ],
       "include_dirs": [
-        "<!@(node -p \"require('node-addon-api').include\")",
-        "deps/mpv/include"
+        "<!@(node -p \"require('node-addon-api').include\")"
       ],
       "defines": ["NAPI_DISABLE_CPP_EXCEPTIONS"],
+
       "conditions": [
-        ["OS=='win'", {
-          "sources": [
-            "src/native/win32/dxgi_texture.cpp"
-          ],
-          "libraries": [
-            "-l<(module_root_dir)/deps/mpv/win64/mpv.lib",
-            "-ld3d11",
-            "-ldxgi",
-            "-lopengl32"
-          ],
-          "copies": [
-            {
-              "destination": "<(module_root_dir)/build/Release",
-              "files": ["<(module_root_dir)/deps/mpv/win64/libmpv-2.dll"]
-            }
-          ],
-          "msvs_settings": {
-            "VCCLCompilerTool": {
-              "ExceptionHandling": 1,
-              "AdditionalOptions": ["/std:c++20"]
-            }
-          }
-        }],
+        # ── macOS: build the real native addon (IOSurface GPU texture sharing) ──
         ["OS=='mac'", {
           "sources": [
+            "src/native/addon.cpp",
+            "src/native/mpv_context.cpp",
             "src/native/macos/iosurface_texture.mm"
+          ],
+          "include_dirs": [
+            "deps/mpv/include"
           ],
           "libraries": [
             "-L<(module_root_dir)/deps/mpv/macos",
@@ -61,6 +40,16 @@
               "destination": "<(module_root_dir)/build/Release",
               "files": ["<(module_root_dir)/deps/mpv/macos/libmpv.dylib"]
             }
+          ]
+        }],
+
+        # ── Non-macOS: build a no-op stub (see src/native/stub.cpp for details) ──
+        # Windows uses external mpv via --wid flag, Linux uses separate window.
+        # The stub lets node-gyp and @electron/rebuild succeed without requiring
+        # mpv dev libraries on platforms that don't use the native addon.
+        ["OS!='mac'", {
+          "sources": [
+            "src/native/stub.cpp"
           ]
         }]
       ]
