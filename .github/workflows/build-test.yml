@@ -1,9 +1,8 @@
-name: Build Test (Mac Native + Windows External)
+name: Build Test (All Platforms)
 
 on:
   push:
     branches:
-      - feature/native-mpv-mac
       - dev
     paths:
       - 'packages/mpv-texture/**'
@@ -22,6 +21,8 @@ jobs:
             platform: win
           - os: macos-latest
             platform: mac
+          - os: ubuntu-latest
+            platform: linux
 
     runs-on: ${{ matrix.os }}
 
@@ -38,7 +39,7 @@ jobs:
           node-version: 20
           cache: 'pnpm'
 
-      - name: Install dependencies (skip native build)
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       # Windows: Bundle external mpv binary (--wid mode, no native addon)
@@ -51,7 +52,7 @@ jobs:
           cp "C:/ProgramData/chocolatey/lib/mpvio.install/tools/"*.exe packages/electron/mpv-bundle/
           cp "C:/ProgramData/chocolatey/lib/mpvio.install/tools/"*.dll packages/electron/mpv-bundle/
 
-      # macOS: Install mpv, setup SDK, build native addon, bundle dylibs
+      # macOS: Install mpv SDK, build native addon, bundle dylibs
       - name: Setup mpv (macOS)
         if: matrix.platform == 'mac'
         run: |
@@ -85,7 +86,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sbtlTV-win
-          path: release/*.exe
+          path: |
+            release/*.exe
           if-no-files-found: warn
 
       - name: Upload app (macOS)
@@ -94,4 +96,14 @@ jobs:
         with:
           name: sbtlTV-mac
           path: release/*.dmg
+          if-no-files-found: warn
+
+      - name: Upload app (Linux)
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbtlTV-linux
+          path: |
+            release/*.AppImage
+            release/*.deb
           if-no-files-found: warn

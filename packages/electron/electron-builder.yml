@@ -52,21 +52,15 @@ nsis:
 portable:
   artifactName: ${productName}-${version}-win-${arch}-portable.${ext}
 
-# macOS configuration
+# macOS configuration (arm64 only — native mpv-texture addon, no bundled external mpv)
 mac:
   target:
     - target: dmg
       arch:
-        - x64
         - arm64
   icon: assets/sbtltv-logo-white.png
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   category: public.app-category.entertainment
-  extraResources:
-    - from: mpv-bundle
-      to: mpv
-      filter:
-        - "**/*"
 
 dmg:
   contents:

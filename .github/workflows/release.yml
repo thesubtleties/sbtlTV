@@ -34,24 +34,41 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build all packages
-        run: pnpm build
-
+      # Windows: Bundle external mpv binary (--wid mode, no native addon)
       - name: Install mpv (Windows)
         if: matrix.platform == 'win'
+        shell: bash
         run: |
           choco install mpvio -y
           mkdir -p packages/electron/mpv-bundle
           cp "C:/ProgramData/chocolatey/lib/mpvio.install/tools/"*.exe packages/electron/mpv-bundle/
           cp "C:/ProgramData/chocolatey/lib/mpvio.install/tools/"*.dll packages/electron/mpv-bundle/
-        shell: bash
 
-      - name: Download mpv (macOS only)
+      # macOS: Install mpv SDK, build native addon, bundle dylibs
+      - name: Setup mpv (macOS)
         if: matrix.platform == 'mac'
-        run: bash scripts/download-mpv.sh
-        shell: bash
+        run: |
+          brew install mpv
+          cd packages/mpv-texture
+          chmod +x scripts/setup-mpv-mac.sh
+          ./scripts/setup-mpv-mac.sh
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Build native addon (macOS only)
+        if: matrix.platform == 'mac'
+        run: |
+          cd packages/mpv-texture
+          npm run build:native
+
+      - name: Bundle native dylibs (macOS)
+        if: matrix.platform == 'mac'
+        run: |
+          chmod +x packages/mpv-texture/scripts/bundle-dylibs-mac.sh
+          packages/mpv-texture/scripts/bundle-dylibs-mac.sh
 
       - name: Build Electron app
         run: pnpm dist:${{ matrix.platform }} --publish never
