@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-02-15
+
+### Added
+- **Native in-window video on macOS** - Video now renders directly inside the app window using a native mpv-texture addon with GPU-accelerated IOSurface sharing (replaces external mpv window)
+- Screen sleep prevention during video playback on all platforms
+- macOS: `which mpv` PATH fallback for non-standard installs (MacPorts, Nix, custom prefix)
+
+### Fixed
+- Mutex lock ordering in native mpv context to prevent potential deadlock
+- WebGL draw errors now logged with throttling and context loss detection
+- Native texture bridge escalates to error callback after 5 consecutive frame failures
+- Render thread fires error callback if GL context initialization fails
+- IPC handlers wrapped in try-catch with debug logging
+- Partial bridge destroyed on init failure (resource leak fix)
+- Comment inaccuracies corrected across native addon
+- Unified MpvStatus types across native bridge, preload, and UI layers
+- Removed duplicate dependency and redundant addon import
+
+### Changed
+- macOS builds are now **arm64 (Apple Silicon) only** — Intel Mac support discontinued
+- macOS no longer bundles an external mpv binary — uses native addon with system mpv as fallback
+- CI workflows updated for native addon build pipeline (brew + node-gyp + dylib bundling)
+
+### Known Issues
+- Linux: Video plays in a separate window rather than embedded
+
 ## [0.3.1] - 2026-02-07
 
 ### Fixed

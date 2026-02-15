@@ -1,9 +1,15 @@
-name: Release
+name: Build Test (All Platforms)
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - dev
+    paths:
+      - 'packages/mpv-texture/**'
+      - 'packages/electron/**'
+      - 'packages/ui/**'
+      - '.github/workflows/build-test.yml'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -70,44 +76,34 @@ jobs:
           chmod +x packages/mpv-texture/scripts/bundle-dylibs-mac.sh
           packages/mpv-texture/scripts/bundle-dylibs-mac.sh
 
+      # Build Electron app
       - name: Build Electron app
         run: pnpm dist:${{ matrix.platform }} --publish never
 
-      - name: Upload artifacts
+      # Upload artifacts
+      - name: Upload app (Windows)
+        if: matrix.platform == 'win'
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.platform }}
+          name: sbtlTV-win
           path: |
             release/*.exe
-            release/*.dmg
+          if-no-files-found: warn
+
+      - name: Upload app (macOS)
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbtlTV-mac
+          path: release/*.dmg
+          if-no-files-found: warn
+
+      - name: Upload app (Linux)
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbtlTV-linux
+          path: |
             release/*.AppImage
             release/*.deb
-            release/*.yml
-            release/*.yaml
-          if-no-files-found: error
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: List artifacts
-        run: ls -la artifacts/
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*
-          generate_release_notes: true
-          draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if-no-files-found: warn
