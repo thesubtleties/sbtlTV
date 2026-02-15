@@ -61,7 +61,7 @@ export type TextureFormat = 'rgba' | 'nv12' | 'bgra';
  * Information about an exported texture frame
  */
 export interface TextureInfo {
-  /** Platform-specific handle (HANDLE on Windows, IOSurfaceID on macOS) */
+  /** Platform-specific handle (HANDLE on Windows, IOSurfaceRef pointer on macOS) */
   handle: bigint;
   /** Texture width in pixels */
   width: number;

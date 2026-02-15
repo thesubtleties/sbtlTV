@@ -604,9 +604,9 @@ void MpvContext::renderLoop() {
             continue;
         }
 
-        // Note: We no longer check m_frameInUse here - let the keyed mutex handle sync.
-        // If Electron is still using the previous frame, AcquireSync will block/timeout.
-        // This allows mpv to keep rendering at full speed.
+        // No m_frameInUse check needed — triple buffering eliminates contention.
+        // macOS: IOSurface uses glFlush for GPU-to-GPU sync.
+        // Windows (future): keyed mutex / AcquireSync will handle sync instead.
 
         // Lock texture for rendering
         if (!m_textureShare->lockTexture()) {
@@ -651,7 +651,8 @@ void MpvContext::renderLoop() {
         // Report swap
         mpv_render_context_report_swap(m_renderCtx);
 
-        // Flush GL commands (non-blocking) - keyed mutex handles actual sync
+        // Flush GL commands to ensure rendering is complete before export.
+        // macOS: glFlush is sufficient for GPU-to-GPU IOSurface sharing.
         glFlush();
 
         // Unlock and export texture

@@ -14,12 +14,12 @@ namespace mpv_texture {
 enum class TextureFormat {
     RGBA8,    // Standard RGBA
     NV12,     // YUV 4:2:0 (hardware decode output)
-    BGRA8     // BGRA (Windows native)
+    BGRA8     // BGRA (macOS IOSurface native format)
 };
 
 // Information about an exported texture
 struct TextureInfo {
-    uint64_t handle;        // Platform-specific handle (HANDLE on Win, IOSurfaceID on Mac)
+    uint64_t handle;        // Platform-specific handle (HANDLE on Win, IOSurfaceRef pointer on Mac)
     uint32_t width;
     uint32_t height;
     TextureFormat format;

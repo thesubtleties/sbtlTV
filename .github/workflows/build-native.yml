@@ -1,4 +1,12 @@
-name: Build Native Addon
+# REFERENCE WORKFLOW — Not used in current CI pipeline.
+#
+# Builds the native mpv-texture addon on BOTH macOS and Windows.
+# Preserved for when Windows native support is added.
+# Triggers only on feature/electron-shared-texture branch (inactive).
+#
+# Active CI workflow: build-test.yml (Mac native + Windows external)
+
+name: Build Native Addon (Reference)
 
 on:
   push:

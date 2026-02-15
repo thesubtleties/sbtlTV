@@ -1,7 +1,16 @@
 /*
- * Windows DXGI texture sharing implementation
- * Uses WGL_NV_DX_interop for OpenGL/D3D11 interop
- * Triple-buffered: mpv writes to one texture while Electron reads another
+ * REFERENCE CODE — NOT CURRENTLY COMPILED
+ *
+ * Windows DXGI texture sharing implementation using WGL_NV_DX_interop.
+ * Triple-buffered: mpv writes to one texture while Electron reads another.
+ *
+ * Kept as reference for future Windows native mpv porting.
+ * Currently, Windows uses external mpv via --wid flag (see main.ts).
+ * This file is excluded from the build — binding.gyp compiles stub.cpp
+ * on non-macOS platforms.
+ *
+ * To activate: add to binding.gyp OS=='win' condition and provide
+ * mpv dev libraries via scripts/setup-mpv-win.ps1.
  */
 
 #ifdef _WIN32
