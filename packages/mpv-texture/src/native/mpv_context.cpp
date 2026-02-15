@@ -569,6 +569,10 @@ void MpvContext::renderLoop() {
     if (g_hdc && g_hglrc) {
         if (!wglMakeCurrent(g_hdc, g_hglrc)) {
             std::cerr << "[MpvContext] Failed to make GL context current in render thread" << std::endl;
+            std::lock_guard<std::mutex> lock(m_callbackMutex);
+            if (m_errorCallback) {
+                m_errorCallback("Render thread failed: could not make GL context current");
+            }
             return;
         }
         std::cout << "[MpvContext] GL context made current in render thread" << std::endl;
@@ -579,6 +583,10 @@ void MpvContext::renderLoop() {
         CGLError err = CGLSetCurrentContext(g_cglContext);
         if (err != kCGLNoError) {
             std::cerr << "[MpvContext] Failed to make CGL context current in render thread: " << err << std::endl;
+            std::lock_guard<std::mutex> lock(m_callbackMutex);
+            if (m_errorCallback) {
+                m_errorCallback("Render thread failed: could not make CGL context current");
+            }
             return;
         }
         std::cout << "[MpvContext] CGL context made current in render thread" << std::endl;
