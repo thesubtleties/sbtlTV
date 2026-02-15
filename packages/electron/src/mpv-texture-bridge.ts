@@ -306,6 +306,3 @@ export class MpvTextureBridge {
     console.log('[MpvTextureBridge] Destroyed');
   }
 }
-
-// Singleton instance
-export const mpvTextureBridge = new MpvTextureBridge();

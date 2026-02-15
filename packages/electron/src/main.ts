@@ -223,7 +223,11 @@ function killMpv(): void {
 
   // Clean up native mpv bridge
   if (mpvBridge) {
-    mpvBridge.destroy();
+    try {
+      mpvBridge.destroy();
+    } catch (error) {
+      debugLog(`Error destroying native bridge: ${error instanceof Error ? error.message : error}`, 'mpv');
+    }
     mpvBridge = null;
     useNativeMpv = false;
   }
@@ -506,45 +510,53 @@ async function initMpv(): Promise<void> {
  */
 async function initNativeMpv(): Promise<boolean> {
   if (!mainWindow) return false;
+  if (!MpvTextureBridgeClass) return false;
 
+  let bridge: MpvTextureBridgeType | null = null;
   try {
-    if (!MpvTextureBridgeClass) return false;
-    const bridge = new MpvTextureBridgeClass();
+    bridge = new MpvTextureBridgeClass();
     const success = await bridge.initialize(mainWindow, {
       hwdec: 'auto',
     });
 
-    if (success) {
-      mpvBridge = bridge;
-      useNativeMpv = true;
-
-      // Forward status updates to renderer
-      bridge.onStatus((status) => {
-        // Sync local state for getStatus calls
-        mpvState.playing = status.playing;
-        mpvState.volume = status.volume;
-        mpvState.muted = status.muted;
-        mpvState.position = status.position;
-        mpvState.duration = status.duration;
-        sendToRenderer('mpv-status', status);
-      });
-
-      // Forward errors to renderer
-      bridge.onError((error) => {
-        sendToRenderer('mpv-error', error);
-      });
-
-      console.log('[mpv] Native mpv-texture bridge initialized');
-      debugLog('Native mpv-texture bridge initialized', 'mpv');
-      sendToRenderer('mpv-ready', true);
-      return true;
+    if (!success) {
+      console.warn('[mpv] Native bridge initialize returned false');
+      debugLog('Native bridge initialize returned false', 'mpv');
+      bridge.destroy();
+      return false;
     }
+
+    mpvBridge = bridge;
+    useNativeMpv = true;
+
+    // Forward status updates to renderer
+    bridge.onStatus((status) => {
+      // Sync local state for getStatus calls
+      mpvState.playing = status.playing;
+      mpvState.volume = status.volume;
+      mpvState.muted = status.muted;
+      mpvState.position = status.position;
+      mpvState.duration = status.duration;
+      sendToRenderer('mpv-status', status);
+    });
+
+    // Forward errors to renderer
+    bridge.onError((error) => {
+      sendToRenderer('mpv-error', error);
+    });
+
+    console.log('[mpv] Native mpv-texture bridge initialized');
+    debugLog('Native mpv-texture bridge initialized', 'mpv');
+    sendToRenderer('mpv-ready', true);
+    return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.warn('[mpv] Native bridge failed:', message);
     debugLog(`Native bridge failed: ${message}`, 'mpv');
+    // Clean up partially-initialized bridge to avoid leaking GL contexts/threads
+    bridge?.destroy();
+    return false;
   }
-  return false;
 }
 
 async function connectToMpvSocket(): Promise<void> {
