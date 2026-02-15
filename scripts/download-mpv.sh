@@ -1,10 +1,12 @@
 #!/bin/bash
-# Download mpv binaries for bundling with the app
+# Download mpv binaries for bundling with the app (Windows only)
 # Run this script from the repository root
 #
-# Sources (both listed on https://mpv.io/installation/):
+# macOS uses the native mpv-texture addon (built from source via setup-mpv-mac.sh)
+# and falls back to system-installed mpv — no bundled binary needed.
+#
+# Sources (listed on https://mpv.io/installation/):
 # - Windows: SourceForge mpv-player-windows (official community builds)
-# - macOS: stolendata builds (arm64 only, macOS 14+)
 
 set -e
 
@@ -13,7 +15,6 @@ set -e
 # To get checksum: curl -L <url> | sha256sum
 # =============================================================================
 MPV_SHA256_WINDOWS="8cf5ce27d21490c24eedf91e0ac2bc4a748ba8f4eb20cb7c1fc9442d2d580008"
-MPV_SHA256_MACOS="3170fb709defebaba33e9755297d70dc3562220541de54fc3d494a8309ef1260"
 
 # Verify checksum of downloaded file
 # Usage: verify_checksum <file> <expected_sha256>
@@ -77,43 +78,8 @@ case "$(uname -s)" in
     ;;
 
   Darwin)
-    echo "Downloading mpv for macOS..."
-    # stolendata builds - arm64 only (Apple Silicon, macOS 14+)
-    # https://laboratory.stolendata.net/~djinn/mpv_osx/
-    # Note: Intel Mac users will need to install mpv via Homebrew
-    MPV_URL="https://laboratory.stolendata.net/~djinn/mpv_osx/mpv-arm64-0.40.0.tar.gz"
-    TEMP_DIR=$(mktemp -d)
-    curl -L -o "$TEMP_DIR/mpv.tar.gz" "$MPV_URL"
-
-    verify_checksum "$TEMP_DIR/mpv.tar.gz" "$MPV_SHA256_MACOS"
-
-    # Extract
-    tar -xzf "$TEMP_DIR/mpv.tar.gz" -C "$TEMP_DIR"
-
-    # Find the .app bundle (name may vary)
-    MPV_APP=$(find "$TEMP_DIR" -maxdepth 2 -name "*.app" -type d | head -1)
-    if [ -z "$MPV_APP" ]; then
-      echo "❌ Could not find .app bundle in archive"
-      ls -la "$TEMP_DIR"
-      exit 1
-    fi
-    echo "Found app bundle: $MPV_APP"
-
-    # Copy mpv binary and dylibs preserving relative path structure
-    # stolendata builds have libs in MacOS/lib/, not Frameworks/
-    mkdir -p "$BUNDLE_DIR/MacOS"
-    cp "$MPV_APP/Contents/MacOS/mpv" "$BUNDLE_DIR/MacOS/"
-    # Copy dylibs (in MacOS/lib/ for stolendata builds)
-    if [ -d "$MPV_APP/Contents/MacOS/lib" ]; then
-      cp -R "$MPV_APP/Contents/MacOS/lib" "$BUNDLE_DIR/MacOS/"
-    fi
-    # Also check Frameworks (other builds may use this)
-    if [ -d "$MPV_APP/Contents/Frameworks" ]; then
-      cp -R "$MPV_APP/Contents/Frameworks" "$BUNDLE_DIR/"
-    fi
-
-    rm -rf "$TEMP_DIR"
-    echo "mpv for macOS (Apple Silicon) downloaded to $BUNDLE_DIR"
+    echo "macOS uses native mpv-texture addon — no bundled mpv binary needed."
+    echo "Run packages/mpv-texture/scripts/setup-mpv-mac.sh to set up the native build."
     ;;
 
   Linux)
