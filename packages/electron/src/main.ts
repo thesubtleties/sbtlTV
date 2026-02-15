@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
 import * as net from 'net';
@@ -64,6 +64,20 @@ const mpvState: MpvState = {
   position: 0,
   duration: 0,
 };
+
+// Prevent screen sleep during playback
+let sleepBlockerId: number | null = null;
+
+function updateSleepBlock(playing: boolean): void {
+  if (playing && sleepBlockerId === null) {
+    sleepBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+    debugLog('Sleep prevention enabled', 'system');
+  } else if (!playing && sleepBlockerId !== null) {
+    powerSaveBlocker.stop(sleepBlockerId);
+    sleepBlockerId = null;
+    debugLog('Sleep prevention disabled', 'system');
+  }
+}
 
 // Windows uses named pipes, Linux/macOS use Unix sockets
 const SOCKET_PATH = process.platform === 'win32'
@@ -275,6 +289,13 @@ function findMpvBinary(): string | null {
     if (fs.existsSync('/opt/homebrew/bin/mpv')) return '/opt/homebrew/bin/mpv';
     if (fs.existsSync('/usr/local/bin/mpv')) return '/usr/local/bin/mpv';
     if (fs.existsSync('/usr/bin/mpv')) return '/usr/bin/mpv';
+    // Fallback: check PATH (catches MacPorts, Nix, custom prefix installs)
+    try {
+      const whichResult = execFileSync('which', ['mpv'], { encoding: 'utf-8' }).trim();
+      if (whichResult && fs.existsSync(whichResult)) return whichResult;
+    } catch {
+      // which failed, mpv not in PATH
+    }
 
     // Fall back to bundled (may have signing issues preventing video display)
     const bundledPath = path.join(resourcesPath, 'mpv', 'MacOS', 'mpv');
@@ -526,6 +547,7 @@ async function initNativeMpv(): Promise<boolean> {
     // Forward status updates to renderer
     bridge.onStatus((status) => {
       // Sync local state for getStatus calls
+      updateSleepBlock(status.playing);
       mpvState.playing = status.playing;
       mpvState.volume = status.volume;
       mpvState.muted = status.muted;
@@ -618,6 +640,7 @@ function handleMpvMessage(msg: MpvMessage): void {
     switch (msg.name) {
       case 'pause':
         mpvState.playing = !msg.data;
+        updateSleepBlock(mpvState.playing);
         break;
       case 'volume':
         mpvState.volume = (msg.data as number) || 100;
@@ -1204,6 +1227,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  updateSleepBlock(false);
   killMpv();
   if (process.platform !== 'darwin') {
     app.quit();
