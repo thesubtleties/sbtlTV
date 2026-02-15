@@ -548,10 +548,17 @@ void MpvContext::handlePropertyChange(mpv_event_property* prop) {
     }
 
     if (statusChanged) {
+        // Copy status under its own lock, then release before acquiring callback lock.
+        // This avoids nested m_callbackMutex → m_statusMutex ordering that could
+        // deadlock if any other code path ever locks them in the opposite order.
+        MpvStatus statusCopy;
+        {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            statusCopy = m_status;
+        }
         std::lock_guard<std::mutex> lock(m_callbackMutex);
         if (m_statusCallback) {
-            std::lock_guard<std::mutex> statusLock(m_statusMutex);
-            m_statusCallback(m_status);
+            m_statusCallback(statusCopy);
         }
     }
 }

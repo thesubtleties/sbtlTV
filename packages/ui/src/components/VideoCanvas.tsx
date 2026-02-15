@@ -168,6 +168,7 @@ function initWebGL(canvas: HTMLCanvasElement): WebGLState | null {
 export function VideoCanvas({ visible, className, flipY = false, flipX = false }: VideoCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glStateRef = useRef<WebGLState | null>(null);
+  const drawErrorCount = useRef(0);
 
   // Handle frame - render immediately
   const handleFrame = useCallback((videoFrame: VideoFrame, _index: number) => {
@@ -201,7 +202,17 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       gl.bindVertexArray(vao);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     } catch (e) {
-      // Frame might be invalid
+      drawErrorCount.current++;
+      const count = drawErrorCount.current;
+      if (count === 1 || count === 10 || count === 100) {
+        if (gl.isContextLost()) {
+          console.error('[VideoCanvas] WebGL context lost');
+          window.debug?.logFromRenderer('[VideoCanvas] WebGL context lost');
+        } else {
+          console.error(`[VideoCanvas] Draw error (${count} total):`, e);
+          window.debug?.logFromRenderer(`[VideoCanvas] Draw error (${count} total): ${e}`);
+        }
+      }
     }
 
     videoFrame.close();
