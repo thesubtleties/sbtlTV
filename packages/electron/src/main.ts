@@ -61,6 +61,9 @@ interface MpvState {
   muted: boolean;
   position: number;
   duration: number;
+  /** Video dimensions — present in native mode, undefined in external mode */
+  width?: number;
+  height?: number;
 }
 
 const mpvState: MpvState = {
@@ -537,6 +540,8 @@ async function initNativeMpv(): Promise<boolean> {
       mpvState.muted = status.muted;
       mpvState.position = status.position;
       mpvState.duration = status.duration;
+      mpvState.width = status.width;
+      mpvState.height = status.height;
       sendToRenderer('mpv-status', status);
     });
 

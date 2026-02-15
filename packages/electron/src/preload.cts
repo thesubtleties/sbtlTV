@@ -8,6 +8,9 @@ export interface MpvStatus {
   muted: boolean;
   position: number;
   duration: number;
+  /** Video dimensions — available in native mode, absent in external mode */
+  width?: number;
+  height?: number;
 }
 
 export interface MpvResult {

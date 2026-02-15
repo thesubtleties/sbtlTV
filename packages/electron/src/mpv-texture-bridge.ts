@@ -6,49 +6,14 @@
  */
 
 import { BrowserWindow, sharedTexture, SharedTextureHandle } from 'electron';
-
-// Type definitions for the mpv-texture addon
-// (These match the types from @sbtltv/mpv-texture)
-interface TextureInfo {
-  handle: bigint;
-  width: number;
-  height: number;
-  format: 'rgba' | 'nv12' | 'bgra';
-}
-
-interface MpvStatus {
-  playing: boolean;
-  volume: number;
-  muted: boolean;
-  position: number;
-  duration: number;
-  width: number;
-  height: number;
-}
-
-interface MpvTextureAddon {
-  create(config?: { width?: number; height?: number; hwdec?: string }): void;
-  destroy(): void;
-  load(url: string): Promise<void>;
-  play(): void;
-  pause(): void;
-  stop(): void;
-  seek(position: number): void;
-  setVolume(volume: number): void;
-  toggleMute(): void;
-  getStatus(): MpvStatus | undefined;
-  onFrame(callback: (info: TextureInfo) => void): void;
-  onStatus(callback: (status: MpvStatus) => void): void;
-  onError(callback: (error: string) => void): void;
-  releaseFrame(): void;
-  isInitialized(): boolean;
-}
+import type { MpvStatus, TextureInfo, MpvConfig } from '@sbtltv/mpv-texture';
+import type MpvTexture from '@sbtltv/mpv-texture';
 
 /**
  * MpvTextureBridge - Integrates mpv-texture with Electron's sharedTexture API
  */
 export class MpvTextureBridge {
-  private mpv: MpvTextureAddon | null = null;
+  private mpv: MpvTexture | null = null;
   private window: BrowserWindow | null = null;
   private frameIndex = 0;
   private initialized = false;
@@ -69,7 +34,7 @@ export class MpvTextureBridge {
    */
   async initialize(
     window: BrowserWindow,
-    config?: { width?: number; height?: number; hwdec?: string }
+    config?: MpvConfig
   ): Promise<boolean> {
     this.window = window;
 
@@ -77,7 +42,7 @@ export class MpvTextureBridge {
       // Dynamic import of the native addon
       // This allows the app to run without the addon (falling back to external mpv)
       const mpvModule = await import('@sbtltv/mpv-texture');
-      this.mpv = mpvModule.mpvTexture as unknown as MpvTextureAddon;
+      this.mpv = mpvModule.mpvTexture;
     } catch (error) {
       console.warn('[MpvTextureBridge] Failed to load mpv-texture addon:', error);
       return false;
@@ -286,7 +251,7 @@ export class MpvTextureBridge {
    * Check if initialized
    */
   isInitialized(): boolean {
-    return this.initialized && (this.mpv?.isInitialized() ?? false);
+    return this.initialized && (this.mpv?.isInitialized ?? false);
   }
 
   /**
