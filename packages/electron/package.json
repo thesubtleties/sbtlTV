@@ -23,7 +23,6 @@
   },
   "dependencies": {
     "@sbtltv/core": "workspace:*",
-    "@sbtltv/mpv-texture": "workspace:*",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3"
   },

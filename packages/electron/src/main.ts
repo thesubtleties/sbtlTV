@@ -23,17 +23,8 @@ if (process.platform === 'darwin') {
 }
 
 // On macOS, default to native mpv-texture addon (IOSurface shared texture).
-// Falls back to external mpv process if the addon fails to load.
-let mpvTextureAddon: unknown = null;
+// Falls back to external mpv process if the bridge fails to load or initialize.
 const USE_NATIVE_MPV = process.platform === 'darwin';
-if (USE_NATIVE_MPV) {
-  try {
-    mpvTextureAddon = await import('@sbtltv/mpv-texture');
-    console.log('[mpv-texture] Native addon loaded successfully');
-  } catch (error) {
-    console.warn('[mpv-texture] Failed to load native addon, falling back to external mpv:', error);
-  }
-}
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -1149,8 +1140,8 @@ app.whenReady().then(async () => {
 
   await createWindow();
 
-  // Try native mpv-texture if requested and addon loaded
-  if (USE_NATIVE_MPV && mpvTextureAddon) {
+  // Try native mpv-texture if on macOS and bridge loaded
+  if (USE_NATIVE_MPV && MpvTextureBridgeClass) {
     console.log('[mpv] Attempting native mpv-texture initialization...');
     const nativeSuccess = await initNativeMpv();
     if (nativeSuccess) {
