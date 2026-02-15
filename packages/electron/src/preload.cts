@@ -210,7 +210,8 @@ if (process.platform === 'darwin') {
   try {
     const { sharedTexture } = require('electron');
     sharedTextureAvailable = !!sharedTexture?.setSharedTextureReceiver;
-  } catch {
+  } catch (error) {
+    console.debug('[preload] sharedTexture API not available:', error);
     sharedTextureAvailable = false;
   }
 }

@@ -20,6 +20,7 @@ export class MpvTextureBridge {
   private pendingFrame: TextureInfo | null = null;
   private statusCallback?: (status: MpvStatus) => void;
   private errorCallback?: (error: string) => void;
+  private consecutiveErrors = 0;
 
   // Diagnostics
   private stats = { received: 0, dropped: 0, sent: 0, errors: 0, importMs: 0, sendMs: 0, sendCount: 0 };
@@ -162,9 +163,16 @@ export class MpvTextureBridge {
         this.stats.sendMs += t2 - t1;
         this.stats.sendCount++;
         this.stats.sent++;
+        this.consecutiveErrors = 0;
       } catch (error) {
         this.stats.errors++;
-        console.error('[MpvTextureBridge] Frame error:', error);
+        this.consecutiveErrors++;
+        if (this.consecutiveErrors === 1 || this.consecutiveErrors === 5) {
+          console.error(`[MpvTextureBridge] Frame error (${this.consecutiveErrors} consecutive):`, error);
+        }
+        if (this.consecutiveErrors === 5) {
+          this.errorCallback?.(`Shared texture pipeline failing: ${this.consecutiveErrors} consecutive frame errors`);
+        }
       } finally {
         imported?.release();
       }
