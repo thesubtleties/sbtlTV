@@ -46,7 +46,9 @@ for (const p of paths) {
   }
 }
 
-if (!addon) {
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+// Non-null assertion needed: TS can't infer that addon is assigned inside the for loop above
+if (!addon!) {
   throw new Error(`[mpv-texture] Native addon not found. Searched:\n${paths.join('\n')}`);
 }
 
