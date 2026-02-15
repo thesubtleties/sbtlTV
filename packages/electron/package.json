@@ -26,6 +26,9 @@
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3"
   },
+  "optionalDependencies": {
+    "@sbtltv/mpv-texture": "workspace:*"
+  },
   "devDependencies": {
     "electron": "^40.0.0",
     "electron-builder": "^26.4.0",
