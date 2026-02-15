@@ -25,21 +25,19 @@ Download the latest release from the [Releases](../../releases) page:
 |----------|-------|
 | Windows | mpv included |
 | Linux | Requires mpv installed separately |
-| macOS | Requires mpv installed via Homebrew |
+| macOS (Apple Silicon) | Video renders natively in-window; mpv via Homebrew recommended as fallback |
 
 ### Windows Users
 
 Windows SmartScreen may block the app on first run. Click **More info** → **Run anyway** to proceed.
 
-### macOS Users
+### macOS Users (Apple Silicon only)
 
-mpv must be installed via Homebrew:
+Video renders natively inside the app window. No external mpv installation is required for normal use.
+
+If the native renderer fails, the app falls back to system mpv. Install via Homebrew if needed:
 
 ```bash
-# Install Homebrew if you don't have it
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install mpv
 brew install mpv
 ```
 
