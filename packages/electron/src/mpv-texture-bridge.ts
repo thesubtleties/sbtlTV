@@ -6,8 +6,7 @@
  */
 
 import { BrowserWindow, sharedTexture, SharedTextureHandle } from 'electron';
-import type { MpvStatus, TextureInfo, MpvConfig } from '@sbtltv/mpv-texture';
-import type MpvTexture from '@sbtltv/mpv-texture';
+import type { MpvTexture, MpvStatus, TextureInfo, MpvConfig } from '@sbtltv/mpv-texture';
 
 /**
  * MpvTextureBridge - Integrates mpv-texture with Electron's sharedTexture API
