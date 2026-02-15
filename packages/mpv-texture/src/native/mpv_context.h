@@ -121,6 +121,9 @@ private:
     mutable std::mutex m_statusMutex;
 
     // Callbacks
+    // Lock ordering: never hold m_callbackMutex while acquiring m_statusMutex
+    // or vice versa. Copy status under m_statusMutex, release, then lock
+    // m_callbackMutex to invoke the callback.
     FrameCallback m_frameCallback;
     StatusCallback m_statusCallback;
     ErrorCallback m_errorCallback;

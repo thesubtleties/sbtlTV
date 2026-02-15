@@ -218,7 +218,7 @@ bool MpvContext::create(const MpvConfig& config) {
     }
 
     // Set options before initialization
-    mpv_set_option_string(m_mpv, "vo", "libmpv");
+    mpv_set_option_string(m_mpv, "vo", config.vo.c_str());
     mpv_set_option_string(m_mpv, "hwdec", config.hwdec.c_str());
     mpv_set_option_string(m_mpv, "keep-open", "yes");
     mpv_set_option_string(m_mpv, "idle", "yes");

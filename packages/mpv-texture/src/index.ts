@@ -46,7 +46,7 @@ for (const p of paths) {
   }
 }
 
-if (!addon!) {
+if (!addon) {
   throw new Error(`[mpv-texture] Native addon not found. Searched:\n${paths.join('\n')}`);
 }
 
