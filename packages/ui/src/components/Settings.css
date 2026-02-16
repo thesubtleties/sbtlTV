@@ -555,6 +555,30 @@
   flex: 1;
 }
 
+.form-group.inline select,
+.form-group select {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.85rem;
+  min-width: 160px;
+}
+
+.form-group.inline select:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: rgba(0, 212, 255, 0.5);
+}
+
+.form-group.inline select option,
+.form-group select option {
+  background: #1a1a1a;
+  color: #fff;
+  padding: 8px 12px;
+}
+
 .form-group.inline button {
   padding: 8px 16px;
   border: 1px solid rgba(255, 255, 255, 0.2);
