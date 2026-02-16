@@ -42,7 +42,7 @@ export function EpgTab({
   }
 
   return (
-    <div className="settings-tab-content">
+    <div className="settings-tab-content epg-tab-scroll">
       <div className="settings-section">
         <div className="section-header">
           <h3>Channel Display</h3>
@@ -52,20 +52,18 @@ export function EpgTab({
           Configure how channels are sorted in the guide.
         </p>
 
-        <div className="refresh-settings">
-          <div className="form-group inline">
-            <label>Sort Order</label>
-            <select
-              value={channelSortOrder}
-              onChange={(e) => handleSortOrderChange(e.target.value as 'alphabetical' | 'number')}
-            >
-              <option value="alphabetical">Alphabetical (A-Z)</option>
-              <option value="number">Channel Number</option>
-            </select>
-          </div>
+        <div className="form-group inline">
+          <label>Sort Order</label>
+          <select
+            value={channelSortOrder}
+            onChange={(e) => handleSortOrderChange(e.target.value as 'alphabetical' | 'number')}
+          >
+            <option value="alphabetical">Alphabetical (A-Z)</option>
+            <option value="number">Channel Number</option>
+          </select>
         </div>
 
-        <p className="form-hint" style={{ marginTop: '0.75rem' }}>
+        <p className="form-hint">
           "Channel Number" uses the order from your provider (Xtream num or M3U tvg-chno).
           Channels without a number will appear at the end, sorted alphabetically.
         </p>
@@ -80,7 +78,6 @@ export function EpgTab({
           Adjust the category sidebar width and background opacity of the guide overlay.
         </p>
 
-        {/* Category Width Slider */}
         <div className="form-group">
           <label>Category Width</label>
           <input
@@ -98,27 +95,7 @@ export function EpgTab({
           </div>
         </div>
 
-        {/* Live preview */}
-        <div
-          className="width-preview"
-          style={{
-            width: `${categoryBarWidth}px`,
-            background: `rgb(0 0 0 / ${guideOpacity})`,
-          }}
-        >
-          <div className="width-preview-item selected">
-            <span className="width-preview-name">All Channels</span>
-          </div>
-          <div className="width-preview-item">
-            <span className="width-preview-name">Entertainment &amp; Movies HD</span>
-          </div>
-          <div className="width-preview-item">
-            <span className="width-preview-name">Sports</span>
-          </div>
-        </div>
-
-        {/* Background Opacity Slider */}
-        <div className="form-group" style={{ marginTop: '20px' }}>
+        <div className="form-group">
           <label>Background Opacity</label>
           <input
             type="range"

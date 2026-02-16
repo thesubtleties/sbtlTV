@@ -45,7 +45,27 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.settings-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.settings-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .settings-header {
@@ -671,6 +691,15 @@
   min-height: 0;
 }
 
+/* EPG tab: natural flow so content scrolls instead of stretching */
+.epg-tab-scroll {
+  height: auto;
+}
+
+.epg-tab-scroll .settings-section {
+  flex: none;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -1047,31 +1076,3 @@
   margin-top: 2px;
 }
 
-/* Width Preview Widget */
-.width-preview {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 6px 0;
-  margin-top: 10px;
-  transition: width 0.15s ease, background 0.15s ease;
-  overflow: hidden;
-}
-
-.width-preview-item {
-  padding: 8px 12px;
-  color: rgba(255, 255, 255, 0.8);
-  transition: background 0.15s ease;
-}
-
-.width-preview-item.selected {
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
-}
-
-.width-preview-name {
-  font-size: 0.85rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: block;
-}

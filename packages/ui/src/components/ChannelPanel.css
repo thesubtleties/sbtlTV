@@ -22,6 +22,7 @@
   opacity: 0;
   transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
               opacity 0.25s ease,
+              left 0.25s cubic-bezier(0.4, 0, 0.2, 1),
               padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -41,11 +42,13 @@
 }
 
 .guide-panel.with-categories {
-  padding-left: calc(var(--category-content-width, 160px) + 70px);
+  left: calc(var(--category-content-width, 160px) + 70px);
+  padding-left: 0;
 }
 
 .guide-panel.sidebar-expanded.with-categories {
-  padding-left: calc(var(--category-content-width, 160px) + 160px);
+  left: calc(var(--category-content-width, 160px) + 160px);
+  padding-left: 0;
 }
 
 /* Header */

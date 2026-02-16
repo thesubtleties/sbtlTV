@@ -12,7 +12,7 @@ import { UpdateNotification } from './components/UpdateNotification';
 import { VideoCanvas } from './components/VideoCanvas';
 import { useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
-import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useSetChannelSortOrder } from './stores/uiStore';
+import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useSetChannelSortOrder, useSetCategoryBarWidth, useSetGuideOpacity } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
@@ -139,6 +139,8 @@ function App() {
   const setChannelSyncing = useSetChannelSyncing();
   const setVodSyncing = useSetVodSyncing();
   const setChannelSortOrder = useSetChannelSortOrder();
+  const setCategoryBarWidth = useSetCategoryBarWidth();
+  const setGuideOpacity = useSetGuideOpacity();
 
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
@@ -330,6 +332,13 @@ function App() {
           // Load channel sort order preference
           if (settingsResult.data?.channelSortOrder) {
             setChannelSortOrder(settingsResult.data.channelSortOrder);
+          }
+          // Load guide appearance preferences
+          if (settingsResult.data?.categoryBarWidth !== undefined) {
+            setCategoryBarWidth(settingsResult.data.categoryBarWidth);
+          }
+          if (settingsResult.data?.guideOpacity !== undefined) {
+            setGuideOpacity(settingsResult.data.guideOpacity);
           }
 
           // Sync channels/EPG only for stale sources
