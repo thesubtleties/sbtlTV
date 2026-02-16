@@ -16,7 +16,7 @@
   left: 0;
   right: 0;
   height: 32px;
-  background: rgba(0, 0, 0, 0.95);
+  background: rgb(0 0 0 / var(--guide-opacity, 0.95));
   display: flex;
   align-items: center;
   justify-content: space-between;

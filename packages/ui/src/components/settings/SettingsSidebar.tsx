@@ -34,7 +34,7 @@ const SETTINGS_CATEGORIES: SettingsCategory[] = [
   {
     label: 'Library',
     tabs: [
-      { id: 'channels', label: 'Channels' },
+      { id: 'channels', label: 'EPG' },
       { id: 'movies', label: 'Movies' },
       { id: 'series', label: 'Series' },
     ],

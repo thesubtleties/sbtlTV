@@ -4,7 +4,7 @@ import { SettingsSidebar, type SettingsTabId } from './settings/SettingsSidebar'
 import { SourcesTab } from './settings/SourcesTab';
 import { TmdbTab } from './settings/TmdbTab';
 import { DataRefreshTab } from './settings/DataRefreshTab';
-import { ChannelsTab } from './settings/ChannelsTab';
+import { EpgTab } from './settings/ChannelsTab';
 import { MoviesTab } from './settings/MoviesTab';
 import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
@@ -50,6 +50,10 @@ export function Settings({ onClose }: SettingsProps) {
 
   // Channel display state
   const [channelSortOrder, setChannelSortOrder] = useState<'alphabetical' | 'number'>('alphabetical');
+
+  // Guide appearance state
+  const [categoryBarWidth, setCategoryBarWidth] = useState(160);
+  const [guideOpacity, setGuideOpacity] = useState(0.95);
 
   // Loading state for settings
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -103,6 +107,8 @@ export function Settings({ onClose }: SettingsProps) {
         debugLoggingEnabled?: boolean;
         channelSortOrder?: 'alphabetical' | 'number';
         autoUpdateEnabled?: boolean;
+        categoryBarWidth?: number;
+        guideOpacity?: number;
       };
 
       // Load TMDB API key
@@ -143,6 +149,10 @@ export function Settings({ onClose }: SettingsProps) {
 
       // Load auto-update setting (default ON)
       setAutoUpdateEnabled(settings.autoUpdateEnabled ?? true);
+
+      // Load guide appearance settings
+      setCategoryBarWidth(settings.categoryBarWidth ?? 160);
+      setGuideOpacity(settings.guideOpacity ?? 0.95);
     }
     setSettingsLoaded(true);
   }
@@ -197,9 +207,13 @@ export function Settings({ onClose }: SettingsProps) {
         );
       case 'channels':
         return (
-          <ChannelsTab
+          <EpgTab
             channelSortOrder={channelSortOrder}
             onChannelSortOrderChange={setChannelSortOrder}
+            categoryBarWidth={categoryBarWidth}
+            guideOpacity={guideOpacity}
+            onCategoryBarWidthChange={setCategoryBarWidth}
+            onGuideOpacityChange={setGuideOpacity}
           />
         );
       case 'movies':

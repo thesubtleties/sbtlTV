@@ -36,6 +36,8 @@ interface AppSettings {
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering (default: alphabetical)
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
+  categoryBarWidth?: number;    // Category strip content width in px (default 160)
+  guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
 }
 
 // Internal storage format (encrypted)
@@ -53,6 +55,8 @@ interface StoredSettings {
   debugLoggingEnabled?: boolean;    // Write verbose logs to file
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch
+  categoryBarWidth?: number;    // Category strip content width in px
+  guideOpacity?: number;        // Background opacity for EPG/category/title bar
 }
 
 const store = new Store<StoreSchema>({
@@ -192,6 +196,8 @@ export function getSettings(): AppSettings {
   result.debugLoggingEnabled = stored.debugLoggingEnabled ?? false;
   result.channelSortOrder = stored.channelSortOrder ?? 'alphabetical';
   result.autoUpdateEnabled = stored.autoUpdateEnabled ?? true;
+  result.categoryBarWidth = stored.categoryBarWidth ?? 160;
+  result.guideOpacity = stored.guideOpacity ?? 0.95;
   return result;
 }
 
@@ -228,6 +234,12 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.autoUpdateEnabled !== undefined) {
     updated.autoUpdateEnabled = settings.autoUpdateEnabled;
+  }
+  if (settings.categoryBarWidth !== undefined) {
+    updated.categoryBarWidth = settings.categoryBarWidth;
+  }
+  if (settings.guideOpacity !== undefined) {
+    updated.guideOpacity = settings.guideOpacity;
   }
 
   store.set('settings', updated);

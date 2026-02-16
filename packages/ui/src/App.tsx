@@ -11,6 +11,7 @@ import { Logo } from './components/Logo';
 import { UpdateNotification } from './components/UpdateNotification';
 import { VideoCanvas } from './components/VideoCanvas';
 import { useSelectedCategory } from './hooks/useChannels';
+import { useCssVariableSync } from './hooks/useCssVariableSync';
 import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useSetChannelSortOrder } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
 import type { StoredChannel } from './db';
@@ -108,6 +109,8 @@ async function tryLoadWithFallbacks(
 }
 
 function App() {
+  useCssVariableSync();
+
   // mpv state
   const [mpvReady, setMpvReady] = useState(false);
   const [playing, setPlaying] = useState(false);

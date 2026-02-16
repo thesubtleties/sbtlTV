@@ -7,7 +7,7 @@
   bottom: 0;
   padding-left: 70px;
   box-sizing: border-box;
-  background: rgba(0, 0, 0, 0.95);
+  background: rgb(0 0 0 / var(--guide-opacity, 0.95));
   backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
@@ -41,11 +41,11 @@
 }
 
 .guide-panel.with-categories {
-  padding-left: 230px;
+  padding-left: calc(var(--category-content-width, 160px) + 70px);
 }
 
 .guide-panel.sidebar-expanded.with-categories {
-  padding-left: 320px;
+  padding-left: calc(var(--category-content-width, 160px) + 160px);
 }
 
 /* Header */

@@ -66,6 +66,8 @@ export interface AppSettings {
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
+  categoryBarWidth?: number;    // Category strip content width in px (default 160)
+  guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
 }
 
 export interface Source {

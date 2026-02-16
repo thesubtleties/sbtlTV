@@ -55,6 +55,12 @@ interface UIState {
   // Channel display settings
   channelSortOrder: 'alphabetical' | 'number';
   setChannelSortOrder: (value: 'alphabetical' | 'number') => void;
+
+  // Guide appearance settings
+  categoryBarWidth: number;
+  guideOpacity: number;
+  setCategoryBarWidth: (value: number) => void;
+  setGuideOpacity: (value: number) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -103,6 +109,12 @@ export const useUIStore = create<UIState>((set) => ({
   // Channel display settings
   channelSortOrder: 'alphabetical',
   setChannelSortOrder: (value) => set({ channelSortOrder: value }),
+
+  // Guide appearance settings
+  categoryBarWidth: 160,
+  guideOpacity: 0.95,
+  setCategoryBarWidth: (value) => set({ categoryBarWidth: value }),
+  setGuideOpacity: (value) => set({ guideOpacity: value }),
 }));
 
 // Selectors for cleaner component code
@@ -125,6 +137,12 @@ export const useSetCacheClearing = () => useUIStore((s) => s.setCacheClearing);
 // Channel display settings selectors
 export const useChannelSortOrder = () => useUIStore((s) => s.channelSortOrder);
 export const useSetChannelSortOrder = () => useUIStore((s) => s.setChannelSortOrder);
+
+// Guide appearance selectors
+export const useCategoryBarWidth = () => useUIStore((s) => s.categoryBarWidth);
+export const useSetCategoryBarWidth = () => useUIStore((s) => s.setCategoryBarWidth);
+export const useGuideOpacity = () => useUIStore((s) => s.guideOpacity);
+export const useSetGuideOpacity = () => useUIStore((s) => s.setGuideOpacity);
 
 // Search query selectors
 export const useMoviesSearchQuery = () => useUIStore((s) => s.moviesSearchQuery);
