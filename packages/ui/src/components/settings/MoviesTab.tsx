@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useMovieGenres, useMultipleMoviesByGenre } from '../../hooks/useTmdbLists';
+import { useUpdateSettings } from '../../stores/uiStore';
 
 interface MoviesTabProps {
   tmdbApiKey: string | null;
@@ -15,6 +16,7 @@ export function MoviesTab({
   settingsLoaded,
 }: MoviesTabProps) {
   const { genres, loading } = useMovieGenres(tmdbApiKey);
+  const updateStoreSettings = useUpdateSettings();
 
   // Get all genre IDs to check availability
   const allGenreIds = useMemo(() => genres.map(g => g.id), [genres]);
@@ -69,6 +71,7 @@ export function MoviesTab({
   }
 
   async function saveToStorage(genreIds: number[]) {
+    updateStoreSettings({ movieGenresEnabled: genreIds });
     if (!window.storage) return;
     await window.storage.updateSettings({ movieGenresEnabled: genreIds });
   }

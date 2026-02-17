@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Logo } from '../Logo';
 import { SbtlMark } from '../SbtlMark';
+import { useUpdateSettings } from '../../stores/uiStore';
 import './AboutTab.css';
 
 interface AboutTabProps {
@@ -9,6 +10,7 @@ interface AboutTabProps {
 }
 
 export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProps) {
+  const updateSettings = useUpdateSettings();
   const [version, setVersion] = useState<string>('');
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
@@ -57,7 +59,9 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
 
   async function handleAutoUpdateChange(enabled: boolean) {
     onAutoUpdateChange(enabled);
-    await window.storage?.updateSettings({ autoUpdateEnabled: enabled });
+    updateSettings({ autoUpdateEnabled: enabled });
+    if (!window.storage) return;
+    await window.storage.updateSettings({ autoUpdateEnabled: enabled });
   }
 
   return (

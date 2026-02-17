@@ -58,6 +58,9 @@ mac:
     - target: dmg
       arch:
         - arm64
+    - target: zip
+      arch:
+        - arm64
   icon: assets/sbtltv-logo-white.png
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   category: public.app-category.entertainment

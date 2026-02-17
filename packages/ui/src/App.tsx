@@ -11,7 +11,8 @@ import { Logo } from './components/Logo';
 import { UpdateNotification } from './components/UpdateNotification';
 import { VideoCanvas } from './components/VideoCanvas';
 import { useSelectedCategory } from './hooks/useChannels';
-import { useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useSetChannelSortOrder } from './stores/uiStore';
+import { useCssVariableSync } from './hooks/useCssVariableSync';
+import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
@@ -108,6 +109,8 @@ async function tryLoadWithFallbacks(
 }
 
 function App() {
+  useCssVariableSync();
+
   // mpv state
   const [mpvReady, setMpvReady] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -135,8 +138,6 @@ function App() {
   const tmdbMatching = useTmdbMatching();
   const setChannelSyncing = useSetChannelSyncing();
   const setVodSyncing = useSetVodSyncing();
-  const setChannelSortOrder = useSetChannelSortOrder();
-
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
 
@@ -313,6 +314,26 @@ function App() {
     }
   };
 
+  // Hydrate settings from disk into Zustand (runs unconditionally, even without sources)
+  useEffect(() => {
+    async function loadSettings() {
+      if (!window.storage) return;
+      try {
+        const result = await window.storage.getSettings();
+        if (result.data) {
+          useUIStore.getState().hydrateSettings(result.data);
+        } else {
+          // No settings on disk yet — still mark as loaded with defaults
+          useUIStore.getState().hydrateSettings({} as any);
+        }
+      } catch (err) {
+        console.error('[App] Failed to load settings:', err);
+        useUIStore.getState().hydrateSettings({} as any);
+      }
+    }
+    loadSettings();
+  }, []);
+
   // Sync sources on app load (if sources exist)
   useEffect(() => {
     const doInitialSync = async () => {
@@ -320,20 +341,16 @@ function App() {
       try {
         const result = await window.storage.getSources();
         if (result.data && result.data.length > 0) {
-          // Get user's configured refresh settings
-          const settingsResult = await window.storage.getSettings();
-          const epgRefreshHours = settingsResult.data?.epgRefreshHours ?? 6;
-          const vodRefreshHours = settingsResult.data?.vodRefreshHours ?? 24;
-          // Load channel sort order preference
-          if (settingsResult.data?.channelSortOrder) {
-            setChannelSortOrder(settingsResult.data.channelSortOrder);
-          }
+          // Read refresh settings from Zustand (already hydrated)
+          const { settings } = useUIStore.getState();
+          const epgRefreshHrs = settings.epgRefreshHours ?? 6;
+          const vodRefreshHrs = settings.vodRefreshHours ?? 24;
 
           // Sync channels/EPG only for stale sources
           const enabledSources = result.data.filter(s => s.enabled);
           const staleSources = [];
           for (const source of enabledSources) {
-            const stale = await isEpgStale(source.id, epgRefreshHours);
+            const stale = await isEpgStale(source.id, epgRefreshHrs);
             if (stale) {
               staleSources.push(source);
             } else {
@@ -354,7 +371,7 @@ function App() {
           if (xtreamSources.length > 0) {
             const staleVodSources = [];
             for (const source of xtreamSources) {
-              const stale = await isVodStale(source.id, vodRefreshHours);
+              const stale = await isVodStale(source.id, vodRefreshHrs);
               if (stale) {
                 staleVodSources.push(source);
               } else {
