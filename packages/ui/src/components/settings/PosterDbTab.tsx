@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { validateRpdbApiKey, getRpdbTier, rpdbSupportsBackdrops } from '../../services/rpdb';
+import { useUpdateSettings } from '../../stores/uiStore';
 
 interface PosterDbTabProps {
   apiKey: string;
@@ -19,6 +20,7 @@ export function PosterDbTab({
   onBackdropsEnabledChange,
 }: PosterDbTabProps) {
   const [validating, setValidating] = useState(false);
+  const updateSettings = useUpdateSettings();
 
   const tier = getRpdbTier(apiKey);
   const supportsBackdrops = rpdbSupportsBackdrops(apiKey);
@@ -33,6 +35,7 @@ export function PosterDbTab({
     onApiKeyValidChange(isValid);
 
     if (isValid) {
+      updateSettings({ posterDbApiKey: apiKey });
       await window.storage.updateSettings({ posterDbApiKey: apiKey });
     }
 
@@ -40,8 +43,9 @@ export function PosterDbTab({
   }
 
   async function handleBackdropsToggle(enabled: boolean) {
-    if (!window.storage) return;
     onBackdropsEnabledChange(enabled);
+    updateSettings({ rpdbBackdropsEnabled: enabled });
+    if (!window.storage) return;
     await window.storage.updateSettings({ rpdbBackdropsEnabled: enabled });
   }
 

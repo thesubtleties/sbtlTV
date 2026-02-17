@@ -36,91 +36,54 @@ import {
   type TmdbTvResult,
   type TmdbGenre,
 } from '../services/tmdb';
+import {
+  useTmdbApiKey as useTmdbApiKeySelector,
+  useSettingsLoaded,
+  useMovieGenresEnabled as useMovieGenresEnabledSelector,
+  useSeriesGenresEnabled as useSeriesGenresEnabledSelector,
+} from '../stores/uiStore';
 
 // ===========================================================================
-// Settings Hook
+// Settings Hooks (read from Zustand — no IPC)
 // ===========================================================================
 
 /**
- * Get TMDB access token from settings
+ * Get TMDB access token from Zustand settings
  * Note: This is the "API Read Access Token" from TMDB, not the API key
  */
 export function useTmdbAccessToken(): string | null {
-  const { token } = useTmdbAccessTokenState();
-  return token;
+  return useTmdbApiKeySelector();
 }
 
-function useTmdbAccessTokenState(): { token: string | null; loaded: boolean } {
-  const [state, setState] = useState<{ token: string | null; loaded: boolean }>({ token: null, loaded: false });
-
-  useEffect(() => {
-    async function loadToken() {
-      if (!window.storage) {
-        setState({ token: null, loaded: true });
-        return;
-      }
-      try {
-        const result = await window.storage.getSettings();
-        if (result.data && 'tmdbApiKey' in result.data) {
-          // Still stored as tmdbApiKey in settings for backwards compat
-          setState({ token: (result.data as { tmdbApiKey?: string }).tmdbApiKey ?? null, loaded: true });
-        } else {
-          setState({ token: null, loaded: true });
-        }
-      } catch (err) {
-        console.error('Failed to load TMDB token from settings:', err);
-        setState({ token: null, loaded: true });
-      }
-    }
-    loadToken();
-  }, []);
-
-  return state;
+export function useTmdbAccessTokenState(): { token: string | null; loaded: boolean } {
+  const token = useTmdbApiKeySelector();
+  const loaded = useSettingsLoaded();
+  return { token, loaded };
 }
 
 // Alias for backwards compatibility
 export const useTmdbApiKey = useTmdbAccessToken;
 
 /**
- * Get enabled movie genres from settings
+ * Get enabled movie genres from Zustand settings
  * Returns undefined if not yet loaded, or array of genre IDs
  */
 export function useEnabledMovieGenres(): number[] | undefined {
-  const [enabledGenres, setEnabledGenres] = useState<number[] | undefined>(undefined);
-
-  useEffect(() => {
-    async function loadSettings() {
-      if (!window.storage) return;
-      const result = await window.storage.getSettings();
-      if (result.data && 'movieGenresEnabled' in result.data) {
-        setEnabledGenres((result.data as { movieGenresEnabled?: number[] }).movieGenresEnabled);
-      }
-    }
-    loadSettings();
-  }, []);
-
-  return enabledGenres;
+  const loaded = useSettingsLoaded();
+  const genres = useMovieGenresEnabledSelector();
+  if (!loaded) return undefined;
+  return genres;
 }
 
 /**
- * Get enabled series genres from settings
+ * Get enabled series genres from Zustand settings
  * Returns undefined if not yet loaded, or array of genre IDs
  */
 export function useEnabledSeriesGenres(): number[] | undefined {
-  const [enabledGenres, setEnabledGenres] = useState<number[] | undefined>(undefined);
-
-  useEffect(() => {
-    async function loadSettings() {
-      if (!window.storage) return;
-      const result = await window.storage.getSettings();
-      if (result.data && 'seriesGenresEnabled' in result.data) {
-        setEnabledGenres((result.data as { seriesGenresEnabled?: number[] }).seriesGenresEnabled);
-      }
-    }
-    loadSettings();
-  }, []);
-
-  return enabledGenres;
+  const loaded = useSettingsLoaded();
+  const genres = useSeriesGenresEnabledSelector();
+  if (!loaded) return undefined;
+  return genres;
 }
 
 // ===========================================================================

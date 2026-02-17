@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { clearAllCachedData } from '../../db';
 import { syncAllSources } from '../../db/sync';
-import { useCacheClearing, useSetCacheClearing, useSetChannelSyncing } from '../../stores/uiStore';
+import { useCacheClearing, useSetCacheClearing, useSetChannelSyncing, useUpdateSettings } from '../../stores/uiStore';
 
 interface DataRefreshTabProps {
   vodRefreshHours: number;
@@ -20,8 +20,10 @@ export function DataRefreshTab({
   const isClearing = useCacheClearing();
   const setCacheClearing = useSetCacheClearing();
   const setChannelSyncing = useSetChannelSyncing();
+  const updateSettings = useUpdateSettings();
 
   async function saveRefreshSettings(vod: number, epg: number) {
+    updateSettings({ vodRefreshHours: vod, epgRefreshHours: epg });
     if (!window.storage) return;
     await window.storage.updateSettings({ vodRefreshHours: vod, epgRefreshHours: epg });
   }

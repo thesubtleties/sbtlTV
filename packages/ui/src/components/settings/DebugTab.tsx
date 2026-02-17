@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useUpdateSettings } from '../../stores/uiStore';
 
 interface DebugTabProps {
   debugLoggingEnabled: boolean;
@@ -10,6 +11,7 @@ export function DebugTab({
   onDebugLoggingChange,
 }: DebugTabProps) {
   const [logPath, setLogPath] = useState<string>('');
+  const updateSettings = useUpdateSettings();
 
   useEffect(() => {
     // Get log file path on mount
@@ -23,8 +25,9 @@ export function DebugTab({
   }, []);
 
   async function handleDebugLoggingChange(enabled: boolean) {
-    if (!window.storage) return;
     onDebugLoggingChange(enabled);
+    updateSettings({ debugLoggingEnabled: enabled });
+    if (!window.storage) return;
     await window.storage.updateSettings({ debugLoggingEnabled: enabled });
   }
 

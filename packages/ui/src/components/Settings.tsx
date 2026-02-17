@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Source } from '../types/electron';
+import { useUIStore, useSettingsLoaded } from '../stores/uiStore';
 import { SettingsSidebar, type SettingsTabId } from './settings/SettingsSidebar';
 import { SourcesTab } from './settings/SourcesTab';
 import { TmdbTab } from './settings/TmdbTab';
@@ -57,6 +58,7 @@ export function Settings({ onClose }: SettingsProps) {
 
   // Loading state for settings
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const storeSettingsLoaded = useSettingsLoaded();
 
   // Load sources and check encryption on mount
   useEffect(() => {
@@ -88,72 +90,49 @@ export function Settings({ onClose }: SettingsProps) {
     }
   }
 
-  async function loadSettings() {
-    if (!window.storage) {
-      console.error('[Settings] window.storage unavailable - Electron IPC bridge missing');
-      return;
+  function loadSettings() {
+    // Read from Zustand (hydrated at startup in App.tsx) — no IPC call
+    const s = useUIStore.getState().settings;
+
+    // Load TMDB API key
+    const key = s.tmdbApiKey || '';
+    setTmdbApiKey(key);
+    if (key) {
+      setTmdbKeyValid(true); // Assume valid if previously saved
     }
-    const result = await window.storage.getSettings();
-    if (result.data) {
-      const settings = result.data as {
-        tmdbApiKey?: string;
-        vodRefreshHours?: number;
-        epgRefreshHours?: number;
-        movieGenresEnabled?: number[];
-        seriesGenresEnabled?: number[];
-        posterDbApiKey?: string;
-        rpdbBackdropsEnabled?: boolean;
-        allowLanSources?: boolean;
-        debugLoggingEnabled?: boolean;
-        channelSortOrder?: 'alphabetical' | 'number';
-        autoUpdateEnabled?: boolean;
-        categoryBarWidth?: number;
-        guideOpacity?: number;
-      };
 
-      // Load TMDB API key
-      const key = settings.tmdbApiKey || '';
-      setTmdbApiKey(key);
-      if (key) {
-        setTmdbKeyValid(true); // Assume valid if previously saved
-      }
+    // Load refresh settings
+    setVodRefreshHours(s.vodRefreshHours ?? 24);
+    setEpgRefreshHours(s.epgRefreshHours ?? 6);
 
-      // Load refresh settings
-      if (settings.vodRefreshHours !== undefined) {
-        setVodRefreshHours(settings.vodRefreshHours);
-      }
-      if (settings.epgRefreshHours !== undefined) {
-        setEpgRefreshHours(settings.epgRefreshHours);
-      }
+    // Load genre settings
+    setMovieGenresEnabled(s.movieGenresEnabled);
+    setSeriesGenresEnabled(s.seriesGenresEnabled);
 
-      // Load genre settings
-      setMovieGenresEnabled(settings.movieGenresEnabled);
-      setSeriesGenresEnabled(settings.seriesGenresEnabled);
-
-      // Load PosterDB key
-      const rpdbKey = settings.posterDbApiKey || '';
-      setPosterDbApiKey(rpdbKey);
-      if (rpdbKey) {
-        setPosterDbKeyValid(true); // Assume valid if previously saved
-      }
-      setRpdbBackdropsEnabled(settings.rpdbBackdropsEnabled ?? false);
-
-      // Load security settings
-      setAllowLanSources(settings.allowLanSources ?? false);
-
-      // Load debug settings
-      setDebugLoggingEnabled(settings.debugLoggingEnabled ?? false);
-
-      // Load channel display settings
-      setChannelSortOrder(settings.channelSortOrder ?? 'alphabetical');
-
-      // Load auto-update setting (default ON)
-      setAutoUpdateEnabled(settings.autoUpdateEnabled ?? true);
-
-      // Load guide appearance settings
-      setCategoryBarWidth(settings.categoryBarWidth ?? 160);
-      setGuideOpacity(settings.guideOpacity ?? 0.95);
+    // Load PosterDB key
+    const rpdbKey = s.posterDbApiKey || '';
+    setPosterDbApiKey(rpdbKey);
+    if (rpdbKey) {
+      setPosterDbKeyValid(true); // Assume valid if previously saved
     }
+    setRpdbBackdropsEnabled(s.rpdbBackdropsEnabled ?? false);
+
+    // Load security settings
+    setAllowLanSources(s.allowLanSources ?? false);
+
+    // Load debug settings
+    setDebugLoggingEnabled(s.debugLoggingEnabled ?? false);
+
+    // Load channel display settings
+    setChannelSortOrder(s.channelSortOrder ?? 'alphabetical');
+
+    // Load auto-update setting (default ON)
+    setAutoUpdateEnabled(s.autoUpdateEnabled ?? true);
+
+    // Load guide appearance settings
+    setCategoryBarWidth(s.categoryBarWidth ?? 160);
+    setGuideOpacity(s.guideOpacity ?? 0.95);
+
     setSettingsLoaded(true);
   }
 

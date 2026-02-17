@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { validateAccessToken } from '../../services/tmdb';
+import { useUpdateSettings } from '../../stores/uiStore';
 
 interface TmdbTabProps {
   tmdbApiKey: string;
@@ -15,6 +16,7 @@ export function TmdbTab({
   onApiKeyValidChange,
 }: TmdbTabProps) {
   const [tmdbValidating, setTmdbValidating] = useState(false);
+  const updateSettings = useUpdateSettings();
 
   async function saveTmdbApiKey() {
     if (!window.storage) return;
@@ -26,6 +28,7 @@ export function TmdbTab({
     onApiKeyValidChange(isValid);
 
     if (isValid) {
+      updateSettings({ tmdbApiKey });
       await window.storage.updateSettings({ tmdbApiKey });
     }
 
