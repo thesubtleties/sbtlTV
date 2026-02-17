@@ -45,7 +45,27 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.settings-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.settings-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .settings-header {
@@ -535,6 +555,30 @@
   flex: 1;
 }
 
+.form-group.inline select,
+.form-group select {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.85rem;
+  min-width: 160px;
+}
+
+.form-group.inline select:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: rgba(0, 212, 255, 0.5);
+}
+
+.form-group.inline select option,
+.form-group select option {
+  background: #1a1a1a;
+  color: #fff;
+  padding: 8px 12px;
+}
+
 .form-group.inline button {
   padding: 8px 16px;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -669,6 +713,15 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+}
+
+/* EPG tab: natural flow so content scrolls instead of stretching */
+.epg-tab-scroll {
+  height: auto;
+}
+
+.epg-tab-scroll .settings-section {
+  flex: none;
 }
 
 @keyframes fadeIn {
@@ -1000,3 +1053,50 @@
   border-color: rgba(255, 255, 255, 0.2);
   color: rgba(255, 255, 255, 0.8);
 }
+
+/* Settings Slider (Guide Appearance) */
+.settings-slider {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  margin: 8px 0 4px;
+}
+
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.settings-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.settings-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+}
+
+.slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 2px;
+}
+

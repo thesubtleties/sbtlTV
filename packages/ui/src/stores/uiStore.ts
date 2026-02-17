@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 
+import type { AppSettings } from '../types/electron';
 import type { MediaItem } from '../types/media';
 
 interface UIState {
@@ -52,10 +53,22 @@ interface UIState {
   setTmdbMatching: (value: boolean) => void;
   setCacheClearing: (value: boolean) => void;
 
-  // Channel display settings
-  channelSortOrder: 'alphabetical' | 'number';
-  setChannelSortOrder: (value: 'alphabetical' | 'number') => void;
+  // App settings (hydrated from electron-store on startup)
+  settings: AppSettings;
+  settingsLoaded: boolean;
+  hydrateSettings: (data: AppSettings) => void;
+  updateSettings: (partial: Partial<AppSettings>) => void;
 }
+
+const DEFAULT_SETTINGS: AppSettings = {
+  theme: 'dark',
+  channelSortOrder: 'alphabetical',
+  categoryBarWidth: 160,
+  guideOpacity: 0.95,
+  vodRefreshHours: 24,
+  epgRefreshHours: 6,
+  autoUpdateEnabled: true,
+};
 
 export const useUIStore = create<UIState>((set) => ({
   // Movies
@@ -100,9 +113,22 @@ export const useUIStore = create<UIState>((set) => ({
   setTmdbMatching: (value) => set({ tmdbMatching: value }),
   setCacheClearing: (value) => set({ cacheClearing: value }),
 
-  // Channel display settings
-  channelSortOrder: 'alphabetical',
-  setChannelSortOrder: (value) => set({ channelSortOrder: value }),
+  // App settings
+  settings: DEFAULT_SETTINGS,
+  settingsLoaded: false,
+  hydrateSettings: (data) => set({ settings: { ...DEFAULT_SETTINGS, ...data }, settingsLoaded: true }),
+  updateSettings: (partial) => set((state) => {
+    const merged = { ...state.settings, ...partial };
+    // Clamp categoryBarWidth (120-400) and guideOpacity (0.5-1.0)
+    if (partial.categoryBarWidth !== undefined) {
+      merged.categoryBarWidth = Math.max(120, Math.min(400, merged.categoryBarWidth ?? 160));
+    }
+    if (partial.guideOpacity !== undefined) {
+      const val = merged.guideOpacity ?? 0.95;
+      merged.guideOpacity = Number.isNaN(val) ? 0.95 : Math.max(0.5, Math.min(1.0, val));
+    }
+    return { settings: merged };
+  }),
 }));
 
 // Selectors for cleaner component code
@@ -122,9 +148,22 @@ export const useSetTmdbMatching = () => useUIStore((s) => s.setTmdbMatching);
 export const useCacheClearing = () => useUIStore((s) => s.cacheClearing);
 export const useSetCacheClearing = () => useUIStore((s) => s.setCacheClearing);
 
-// Channel display settings selectors
-export const useChannelSortOrder = () => useUIStore((s) => s.channelSortOrder);
-export const useSetChannelSortOrder = () => useUIStore((s) => s.setChannelSortOrder);
+// Settings selectors (read from settings object, with defaults)
+export const useChannelSortOrder = () => useUIStore((s) => s.settings.channelSortOrder ?? 'alphabetical');
+export const useCategoryBarWidth = () => useUIStore((s) => s.settings.categoryBarWidth ?? 160);
+export const useGuideOpacity = () => useUIStore((s) => s.settings.guideOpacity ?? 0.95);
+export const useTmdbApiKey = () => useUIStore((s) => s.settings.tmdbApiKey ?? null);
+export const usePosterDbApiKey = () => useUIStore((s) => s.settings.posterDbApiKey ?? null);
+export const useRpdbBackdropsEnabled = () => useUIStore((s) => s.settings.rpdbBackdropsEnabled ?? false);
+export const useMovieGenresEnabled = () => useUIStore((s) => s.settings.movieGenresEnabled);
+export const useSeriesGenresEnabled = () => useUIStore((s) => s.settings.seriesGenresEnabled);
+export const useSettingsLoaded = () => useUIStore((s) => s.settingsLoaded);
+export const useVodRefreshHours = () => useUIStore((s) => s.settings.vodRefreshHours ?? 24);
+export const useEpgRefreshHours = () => useUIStore((s) => s.settings.epgRefreshHours ?? 6);
+export const useAllowLanSources = () => useUIStore((s) => s.settings.allowLanSources ?? false);
+export const useDebugLoggingEnabled = () => useUIStore((s) => s.settings.debugLoggingEnabled ?? false);
+export const useAutoUpdateEnabled = () => useUIStore((s) => s.settings.autoUpdateEnabled ?? true);
+export const useUpdateSettings = () => useUIStore((s) => s.updateSettings);
 
 // Search query selectors
 export const useMoviesSearchQuery = () => useUIStore((s) => s.moviesSearchQuery);

@@ -1,3 +1,5 @@
+import { useUpdateSettings } from '../../stores/uiStore';
+
 interface SecurityTabProps {
   allowLanSources: boolean;
   onAllowLanSourcesChange: (enabled: boolean) => void;
@@ -7,9 +9,12 @@ export function SecurityTab({
   allowLanSources,
   onAllowLanSourcesChange,
 }: SecurityTabProps) {
+  const updateSettings = useUpdateSettings();
+
   async function handleAllowLanChange(enabled: boolean) {
-    if (!window.storage) return;
     onAllowLanSourcesChange(enabled);
+    updateSettings({ allowLanSources: enabled });
+    if (!window.storage) return;
     await window.storage.updateSettings({ allowLanSources: enabled });
   }
 

@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-02-17
+
+### Added
+- **Adjustable guide appearance** — category sidebar width and background opacity sliders in Settings → EPG
+
+### Fixed
+- macOS auto-updater now works — added zip build target required by electron-updater
+- Release workflow uploads macOS zip to GitHub release assets
+- Opacity stacking flicker — EPG panel uses positioning instead of padding when categories are visible, preventing double-layer opacity overlap during transitions
+
+### Changed
+- **Settings architecture** — all app settings consolidated into Zustand store, hydrated once at startup. Eliminates redundant IPC calls (previously each component independently fetched settings from disk). Settings changes are now reactive across the app.
+- Settings tab renamed from "Channels" to "EPG" with new Guide Appearance section
+- Settings content area is now scrollable with a styled scrollbar
+- Sort order dropdown themed to match other settings controls
+
 ## [0.4.0] - 2026-02-15
 
 ### Added

@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useTvGenres, useMultipleSeriesByGenre } from '../../hooks/useTmdbLists';
+import { useUpdateSettings } from '../../stores/uiStore';
 
 interface SeriesTabProps {
   tmdbApiKey: string | null;
@@ -15,6 +16,7 @@ export function SeriesTab({
   settingsLoaded,
 }: SeriesTabProps) {
   const { genres, loading } = useTvGenres(tmdbApiKey);
+  const updateStoreSettings = useUpdateSettings();
 
   // Get all genre IDs to check availability
   const allGenreIds = useMemo(() => genres.map(g => g.id), [genres]);
@@ -69,6 +71,7 @@ export function SeriesTab({
   }
 
   async function saveToStorage(genreIds: number[]) {
+    updateStoreSettings({ seriesGenresEnabled: genreIds });
     if (!window.storage) return;
     await window.storage.updateSettings({ seriesGenresEnabled: genreIds });
   }

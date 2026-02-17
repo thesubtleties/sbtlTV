@@ -1,11 +1,15 @@
 /**
  * useRpdbSettings - Hook for accessing RPDB (RatingPosterDB) settings
  *
- * Loads RPDB API key and settings from storage, provides helper functions
- * for generating RPDB image URLs.
+ * Reads from Zustand store (hydrated at startup) instead of IPC.
+ * Provides helper functions for generating RPDB image URLs.
  */
 
-import { useState, useEffect } from 'react';
+import {
+  usePosterDbApiKey,
+  useRpdbBackdropsEnabled,
+  useSettingsLoaded,
+} from '../stores/uiStore';
 import {
   getRpdbPosterUrl,
   getRpdbBackdropUrl,
@@ -19,32 +23,13 @@ interface RpdbSettings {
 }
 
 /**
- * Load RPDB settings from storage
+ * Load RPDB settings from Zustand store
  */
 export function useRpdbSettings(): RpdbSettings {
-  const [apiKey, setApiKey] = useState<string | null>(null);
-  const [backdropsEnabled, setBackdropsEnabled] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function loadSettings() {
-      if (!window.storage) {
-        setLoading(false);
-        return;
-      }
-
-      const result = await window.storage.getSettings();
-      if (result.data) {
-        setApiKey(result.data.posterDbApiKey || null);
-        setBackdropsEnabled(result.data.rpdbBackdropsEnabled ?? false);
-      }
-      setLoading(false);
-    }
-
-    loadSettings();
-  }, []);
-
-  return { apiKey, backdropsEnabled, loading };
+  const apiKey = usePosterDbApiKey();
+  const backdropsEnabled = useRpdbBackdropsEnabled();
+  const loaded = useSettingsLoaded();
+  return { apiKey, backdropsEnabled, loading: !loaded };
 }
 
 /**

@@ -7,7 +7,7 @@
   bottom: 0;
   padding-left: 70px;
   box-sizing: border-box;
-  background: rgba(0, 0, 0, 0.95);
+  background: rgb(0 0 0 / var(--guide-opacity, 0.95));
   backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
@@ -22,6 +22,7 @@
   opacity: 0;
   transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
               opacity 0.25s ease,
+              left 0.25s cubic-bezier(0.4, 0, 0.2, 1),
               padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -41,11 +42,13 @@
 }
 
 .guide-panel.with-categories {
-  padding-left: 230px;
+  left: calc(var(--category-content-width, 160px) + 70px);
+  padding-left: 0;
 }
 
 .guide-panel.sidebar-expanded.with-categories {
-  padding-left: 320px;
+  left: calc(var(--category-content-width, 160px) + 160px);
+  padding-left: 0;
 }
 
 /* Header */
