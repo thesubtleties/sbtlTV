@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-02-18
+
+### Fixed
+- macOS auto-updater — `quitAndInstall(false, true)` for reliable restart instead of silent failure
+- About tab now shows full update lifecycle (checking → downloading with progress → restart button) instead of static "Update available" text
+- Install errors are now visible to the user instead of silently swallowed
+- Linux .deb builds correctly show "View Releases on GitHub" instead of broken auto-update UI
+- Update notification toast stays visible on install failure instead of vanishing
+
+### Changed
+- Auto-updater state centralized in Zustand — single listener registration eliminates conflicts between About tab and update notification
+- Added `supportsAutoUpdate` platform property so UI gating is derived in one place
+- Renamed `isLinuxDeb` to `isLinuxNonAppImage` for accuracy (covers all non-AppImage Linux builds)
+
 ## [0.5.0] - 2026-02-17
 
 ### Added

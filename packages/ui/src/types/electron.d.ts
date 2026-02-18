@@ -116,6 +116,8 @@ export interface PlatformApi {
   isLinux: boolean;
   isDev: boolean;
   isPortable: boolean;
+  isLinuxNonAppImage: boolean;
+  supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
 }
 
@@ -130,12 +132,21 @@ export interface UpdateInfo {
   releaseDate: string;
 }
 
+export interface DownloadProgress {
+  percent: number;
+}
+
+export interface UpdateError {
+  message: string;
+}
+
 export interface UpdaterApi {
   onUpdateAvailable: (callback: (info: UpdateInfo) => void) => void;
   onUpdateDownloaded: (callback: (info: UpdateInfo) => void) => void;
-  onError: (callback: (error: { message: string }) => void) => void;
+  onDownloadProgress: (callback: (progress: DownloadProgress) => void) => void;
+  onError: (callback: (error: UpdateError) => void) => void;
   checkForUpdates: () => Promise<StorageResult<UpdateInfo | null>>;
-  installUpdate: () => Promise<void>;
+  installUpdate: () => Promise<StorageResult>;
   removeAllListeners: () => void;
 }
 
