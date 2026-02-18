@@ -12,7 +12,7 @@ import { UpdateNotification } from './components/UpdateNotification';
 import { VideoCanvas } from './components/VideoCanvas';
 import { useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
-import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing } from './stores/uiStore';
+import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, type UpdateState } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
@@ -332,6 +332,28 @@ function App() {
       }
     }
     loadSettings();
+  }, []);
+
+  // Register auto-updater event listeners once (centralized in Zustand)
+  useEffect(() => {
+    if (!window.updater) return;
+    const store = useUIStore.getState;
+    window.updater.onUpdateAvailable((info) => {
+      debugLog(`Update available: ${info.version}`, 'updater');
+      store().setUpdaterState({ phase: 'downloading', percent: 0, version: info.version });
+    });
+    window.updater.onDownloadProgress((progress) => {
+      store().setUpdaterDownloadProgress(progress.percent);
+    });
+    window.updater.onUpdateDownloaded((info) => {
+      debugLog(`Update downloaded: ${info.version}`, 'updater');
+      store().setUpdaterState({ phase: 'ready', version: info.version });
+    });
+    window.updater.onError((err) => {
+      debugLog(`Updater error: ${err.message}`, 'updater');
+      store().setUpdaterState({ phase: 'error', message: err.message });
+    });
+    return () => window.updater?.removeAllListeners();
   }, []);
 
   // Sync sources on app load (if sources exist)

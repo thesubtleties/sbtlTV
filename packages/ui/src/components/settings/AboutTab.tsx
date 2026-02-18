@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Logo } from '../Logo';
 import { SbtlMark } from '../SbtlMark';
-import { useUpdateSettings } from '../../stores/uiStore';
+import { useUIStore, useUpdateSettings, useUpdaterState, useSetUpdaterState } from '../../stores/uiStore';
 import './AboutTab.css';
 
 interface AboutTabProps {
@@ -9,19 +9,23 @@ interface AboutTabProps {
   onAutoUpdateChange: (enabled: boolean) => void;
 }
 
-type UpdateState =
-  | { phase: 'idle' }
-  | { phase: 'checking' }
-  | { phase: 'downloading'; percent: number; version: string }
-  | { phase: 'ready'; version: string }
-  | { phase: 'up-to-date' }
-  | { phase: 'error'; message: string };
+function debugLog(message: string): void {
+  const logMsg = `[updater] ${message}`;
+  console.log(logMsg);
+  if (window.debug?.logFromRenderer) {
+    window.debug.logFromRenderer(logMsg).catch(() => {});
+  }
+}
+
+const CHECK_TIMEOUT_MS = 30_000;
 
 export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProps) {
   const updateSettings = useUpdateSettings();
+  const updaterState = useUpdaterState();
+  const setUpdaterState = useSetUpdaterState();
   const [version, setVersion] = useState<string>('');
-  const [updateState, setUpdateState] = useState<UpdateState>({ phase: 'idle' });
-  const noAutoUpdate = (window.platform?.isPortable ?? false) || (window.platform?.isLinuxDeb ?? false);
+  const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noAutoUpdate = !(window.platform?.supportsAutoUpdate ?? true);
 
   useEffect(() => {
     window.platform?.getVersion().then(setVersion).catch((err) => {
@@ -30,63 +34,65 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
     });
   }, []);
 
-  // Listen for updater events so the About tab stays in sync
+  // Clean up timeout on unmount
   useEffect(() => {
-    if (!window.updater || noAutoUpdate) return;
-
-    window.updater.onUpdateAvailable((info) => {
-      setUpdateState({ phase: 'downloading', percent: 0, version: info.version });
-    });
-    window.updater.onDownloadProgress((progress) => {
-      setUpdateState((prev) =>
-        prev.phase === 'downloading'
-          ? { ...prev, percent: progress.percent }
-          : prev,
-      );
-    });
-    window.updater.onUpdateDownloaded((info) => {
-      setUpdateState({ phase: 'ready', version: info.version });
-    });
-    window.updater.onError((err) => {
-      setUpdateState({ phase: 'error', message: err.message });
-    });
-
-    return () => window.updater?.removeAllListeners();
-  }, [noAutoUpdate]);
+    return () => {
+      if (checkTimeoutRef.current !== null) clearTimeout(checkTimeoutRef.current);
+    };
+  }, []);
 
   const handleCheckForUpdates = useCallback(async () => {
     if (!window.updater) {
-      setUpdateState({ phase: 'error', message: 'Auto-updater not available in dev mode' });
+      setUpdaterState({ phase: 'error', message: 'Auto-updater not available in dev mode' });
       return;
     }
-    setUpdateState({ phase: 'checking' });
+    setUpdaterState({ phase: 'checking' });
+
+    // Timeout: recover from stuck checking state
+    checkTimeoutRef.current = setTimeout(() => {
+      const { updaterState } = useUIStore.getState();
+      if (updaterState.phase === 'checking') {
+        useUIStore.getState().setUpdaterState({ phase: 'error', message: 'Update check timed out. Try again.' });
+      }
+    }, CHECK_TIMEOUT_MS);
+
     try {
       const result = await window.updater.checkForUpdates();
+      if (checkTimeoutRef.current !== null) clearTimeout(checkTimeoutRef.current);
       if (result.error) {
-        if (result.error === 'dev' || result.error === 'portable' || result.error === 'deb') {
-          setUpdateState({ phase: 'error', message: 'Auto-updates are not available for this build' });
+        if (result.error === 'dev' || result.error === 'portable' || result.error === 'no-auto-update') {
+          setUpdaterState({ phase: 'error', message: 'Auto-updates are not available for this build' });
         } else if (result.error.includes('404') || result.error.includes('latest.yml')) {
-          setUpdateState({ phase: 'error', message: 'Unable to check for updates. Please check GitHub releases.' });
+          setUpdaterState({ phase: 'error', message: 'Unable to check for updates. Please check GitHub releases.' });
         } else {
-          setUpdateState({ phase: 'error', message: result.error.split('\n')[0] });
+          setUpdaterState({ phase: 'error', message: result.error.split('\n')[0] });
         }
       } else if (result.data && result.data.version !== version) {
-        // autoDownload will handle the rest — events update state
-        setUpdateState({ phase: 'downloading', percent: 0, version: result.data.version });
+        // autoUpdater.autoDownload is enabled in main, so download starts
+        // immediately — updater events will update progress and completion
+        setUpdaterState({ phase: 'downloading', percent: 0, version: result.data.version });
       } else {
-        setUpdateState({ phase: 'up-to-date' });
+        setUpdaterState({ phase: 'up-to-date' });
       }
     } catch (err) {
-      console.error('Update check failed:', err);
-      setUpdateState({ phase: 'error', message: 'Failed to check for updates' });
+      if (checkTimeoutRef.current !== null) clearTimeout(checkTimeoutRef.current);
+      debugLog(`Check failed: ${err instanceof Error ? err.message : String(err)}`);
+      setUpdaterState({ phase: 'error', message: 'Failed to check for updates' });
     }
-  }, [version]);
+  }, [version, setUpdaterState]);
 
   async function handleInstall() {
     if (!window.updater) return;
-    const result = await window.updater.installUpdate();
-    if (result?.error) {
-      setUpdateState({ phase: 'error', message: result.error });
+    try {
+      const result = await window.updater.installUpdate();
+      if (result?.error) {
+        debugLog(`Install failed: ${result.error}`);
+        setUpdaterState({ phase: 'error', message: result.error });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Install failed';
+      debugLog(`Install error: ${msg}`);
+      setUpdaterState({ phase: 'error', message: 'Failed to install update. Please restart manually.' });
     }
   }
 
@@ -98,7 +104,7 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
   }
 
   function renderUpdateButton() {
-    switch (updateState.phase) {
+    switch (updaterState.phase) {
       case 'checking':
         return (
           <button className="save-btn about-tab__update-btn" disabled>
@@ -108,7 +114,7 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
       case 'downloading':
         return (
           <button className="save-btn about-tab__update-btn" disabled>
-            Downloading v{updateState.version}... {updateState.percent}%
+            Downloading v{updaterState.version}... {updaterState.percent}%
           </button>
         );
       case 'ready':
@@ -117,7 +123,9 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
             Restart to Update
           </button>
         );
-      default:
+      case 'idle':
+      case 'up-to-date':
+      case 'error':
         return (
           <button className="save-btn about-tab__update-btn" onClick={handleCheckForUpdates}>
             Check for Updates
@@ -127,14 +135,16 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
   }
 
   function renderStatusText() {
-    switch (updateState.phase) {
+    switch (updaterState.phase) {
       case 'up-to-date':
         return 'You are on the latest version';
       case 'ready':
-        return `v${updateState.version} downloaded — restart to install`;
+        return `v${updaterState.version} downloaded — restart to install`;
       case 'error':
-        return updateState.message;
-      default:
+        return updaterState.message;
+      case 'idle':
+      case 'checking':
+      case 'downloading':
         return null;
     }
   }

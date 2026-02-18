@@ -7,8 +7,18 @@
 
 import { create } from 'zustand';
 
-import type { AppSettings } from '../types/electron';
+import type { AppSettings, UpdateInfo } from '../types/electron';
 import type { MediaItem } from '../types/media';
+
+// Auto-updater state machine
+export type UpdatePhase = 'idle' | 'checking' | 'downloading' | 'ready' | 'up-to-date' | 'error';
+export type UpdateState =
+  | { phase: 'idle' }
+  | { phase: 'checking' }
+  | { phase: 'downloading'; percent: number; version: string }
+  | { phase: 'ready'; version: string }
+  | { phase: 'up-to-date' }
+  | { phase: 'error'; message: string };
 
 interface UIState {
   // Movies page
@@ -52,6 +62,13 @@ interface UIState {
   setVodSyncing: (value: boolean) => void;
   setTmdbMatching: (value: boolean) => void;
   setCacheClearing: (value: boolean) => void;
+
+  // Auto-updater state (centralized so listeners register once)
+  updaterState: UpdateState;
+  updaterDismissed: boolean;
+  setUpdaterState: (state: UpdateState) => void;
+  setUpdaterDownloadProgress: (percent: number) => void;
+  dismissUpdater: () => void;
 
   // App settings (hydrated from electron-store on startup)
   settings: AppSettings;
@@ -102,6 +119,17 @@ export const useUIStore = create<UIState>((set) => ({
   seriesPageCollapsed: false,
   setMoviesPageCollapsed: (collapsed) => set({ moviesPageCollapsed: collapsed }),
   setSeriesPageCollapsed: (collapsed) => set({ seriesPageCollapsed: collapsed }),
+
+  // Auto-updater
+  updaterState: { phase: 'idle' } as UpdateState,
+  updaterDismissed: false,
+  setUpdaterState: (state) => set({ updaterState: state, updaterDismissed: false }),
+  setUpdaterDownloadProgress: (percent) => set((s) =>
+    s.updaterState.phase === 'downloading'
+      ? { updaterState: { ...s.updaterState, percent } }
+      : {},
+  ),
+  dismissUpdater: () => set({ updaterDismissed: true }),
 
   // Sync state
   channelSyncing: false,
@@ -188,6 +216,13 @@ export const useMoviesPageCollapsed = () => useUIStore((s) => s.moviesPageCollap
 export const useSetMoviesPageCollapsed = () => useUIStore((s) => s.setMoviesPageCollapsed);
 export const useSeriesPageCollapsed = () => useUIStore((s) => s.seriesPageCollapsed);
 export const useSetSeriesPageCollapsed = () => useUIStore((s) => s.setSeriesPageCollapsed);
+
+// Updater selectors
+export const useUpdaterState = () => useUIStore((s) => s.updaterState);
+export const useUpdaterDismissed = () => useUIStore((s) => s.updaterDismissed);
+export const useSetUpdaterState = () => useUIStore((s) => s.setUpdaterState);
+export const useSetUpdaterDownloadProgress = () => useUIStore((s) => s.setUpdaterDownloadProgress);
+export const useDismissUpdater = () => useUIStore((s) => s.dismissUpdater);
 
 // Convenience hook - selects movies or series navigation state by type
 export function useVodNavigation(type: 'movie' | 'series') {

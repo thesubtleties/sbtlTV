@@ -164,7 +164,8 @@ contextBridge.exposeInMainWorld('platform', {
   isLinux: process.platform === 'linux',
   isDev: process.argv.includes('--dev'),
   isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR,
-  isLinuxDeb: process.platform === 'linux' && !process.env.APPIMAGE,
+  isLinuxNonAppImage: process.platform === 'linux' && !process.env.APPIMAGE,
+  supportsAutoUpdate: !process.env.PORTABLE_EXECUTABLE_DIR && !(process.platform === 'linux' && !process.env.APPIMAGE),
   getVersion: () => ipcRenderer.invoke('get-app-version'),
 });
 

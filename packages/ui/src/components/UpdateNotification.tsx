@@ -1,49 +1,39 @@
-import { useState, useEffect } from 'react';
-import type { UpdateInfo } from '../types/electron';
+import { useState } from 'react';
+import { useUpdaterState, useUpdaterDismissed, useDismissUpdater, useSetUpdaterState } from '../stores/uiStore';
 import './UpdateNotification.css';
 
+function debugLog(message: string): void {
+  const logMsg = `[updater] ${message}`;
+  console.log(logMsg);
+  if (window.debug?.logFromRenderer) {
+    window.debug.logFromRenderer(logMsg).catch(() => {});
+  }
+}
+
 export function UpdateNotification() {
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  const updaterState = useUpdaterState();
+  const dismissed = useUpdaterDismissed();
+  const dismiss = useDismissUpdater();
+  const setUpdaterState = useSetUpdaterState();
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Real updater events (packaged builds)
-    if (window.updater) {
-      window.updater.onUpdateDownloaded((info) => {
-        setUpdateInfo(info);
-        setDismissed(false);
-      });
-    }
-
-    // Test event (dispatch via console: window.dispatchEvent(new CustomEvent('test-update-notification', { detail: { version: '1.0.0', releaseDate: '2026-01-01' } })))
-    const handleTestUpdate = (e: Event) => {
-      setUpdateInfo((e as CustomEvent).detail);
-      setDismissed(false);
-    };
-    window.addEventListener('test-update-notification', handleTestUpdate);
-
-    return () => {
-      window.updater?.removeAllListeners();
-      window.removeEventListener('test-update-notification', handleTestUpdate);
-    };
-  }, []);
-
-  if (!updateInfo || dismissed) return null;
+  if (updaterState.phase !== 'ready' || dismissed) return null;
 
   const handleInstall = async () => {
     if (!window.updater) return;
     try {
       const result = await window.updater.installUpdate();
       if (result?.error) {
-        console.error('Failed to install update:', result.error);
+        debugLog(`Install failed: ${result.error}`);
+        setError('Update failed. Please restart manually.');
+        setUpdaterState({ phase: 'error', message: result.error });
       }
     } catch (err) {
-      console.error('Failed to install update:', err);
+      const msg = err instanceof Error ? err.message : 'Install failed';
+      debugLog(`Install error: ${msg}`);
+      setError('Update failed. Please restart manually.');
+      setUpdaterState({ phase: 'error', message: 'Failed to install update' });
     }
-  };
-
-  const handleDismiss = () => {
-    setDismissed(true);
   };
 
   return (
@@ -57,23 +47,34 @@ export function UpdateNotification() {
           </svg>
         </div>
         <div className="update-notification__text">
-          <strong>v{updateInfo.version} available</strong>
-          <span>Restart to install</span>
+          {error ? (
+            <>
+              <strong>Update failed</strong>
+              <span>{error}</span>
+            </>
+          ) : (
+            <>
+              <strong>v{updaterState.version} available</strong>
+              <span>Restart to install</span>
+            </>
+          )}
         </div>
       </div>
       <div className="update-notification__actions">
         <button
           className="update-notification__btn update-notification__btn--later"
-          onClick={handleDismiss}
+          onClick={dismiss}
         >
           Later
         </button>
-        <button
-          className="update-notification__btn update-notification__btn--install"
-          onClick={handleInstall}
-        >
-          Restart
-        </button>
+        {!error && (
+          <button
+            className="update-notification__btn update-notification__btn--install"
+            onClick={handleInstall}
+          >
+            Restart
+          </button>
+        )}
       </div>
     </div>
   );
