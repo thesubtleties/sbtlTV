@@ -1004,7 +1004,7 @@ ipcMain.handle('updater-install', () => {
     return { error: 'No update has been downloaded yet' };
   }
   try {
-    autoUpdater.quitAndInstall();
+    autoUpdater.quitAndInstall(false, true);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Install failed';
     debugLog(`Failed to quit and install: ${msg}`, 'updater');
@@ -1015,6 +1015,7 @@ ipcMain.handle('updater-install', () => {
 ipcMain.handle('updater-check', async () => {
   if (!app.isPackaged) return { error: 'dev' };
   if (process.env.PORTABLE_EXECUTABLE_DIR) return { error: 'portable' };
+  if (process.platform === 'linux' && !process.env.APPIMAGE) return { error: 'deb' };
   try {
     const result = await autoUpdater.checkForUpdates();
     return { success: true, data: result?.updateInfo };
@@ -1188,15 +1189,23 @@ app.whenReady().then(async () => {
     await initMpv();
   }
 
-  // Auto-updater (packaged NSIS builds only, not portable)
+  // Auto-updater (packaged builds with native update support)
+  // Excluded: portable Windows, Linux .deb (only AppImage supports auto-update)
   const isPortable = !!process.env.PORTABLE_EXECUTABLE_DIR;
-  if (app.isPackaged && !isPortable) {
+  const isLinuxDeb = process.platform === 'linux' && !process.env.APPIMAGE;
+  if (app.isPackaged && !isPortable && !isLinuxDeb) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 
     autoUpdater.on('update-available', (info: UpdateInfo) => {
       debugLog(`Update available: ${info.version}`, 'updater');
       mainWindow?.webContents.send('updater-update-available', info);
+    });
+
+    autoUpdater.on('download-progress', (progress) => {
+      mainWindow?.webContents.send('updater-download-progress', {
+        percent: Math.round(progress.percent),
+      });
     });
 
     autoUpdater.on('update-downloaded', (info: UpdateInfo) => {

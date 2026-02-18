@@ -30,10 +30,16 @@ export function UpdateNotification() {
 
   if (!updateInfo || dismissed) return null;
 
-  const handleInstall = () => {
-    window.updater?.installUpdate().catch((err) => {
+  const handleInstall = async () => {
+    if (!window.updater) return;
+    try {
+      const result = await window.updater.installUpdate();
+      if (result?.error) {
+        console.error('Failed to install update:', result.error);
+      }
+    } catch (err) {
       console.error('Failed to install update:', err);
-    });
+    }
   };
 
   const handleDismiss = () => {

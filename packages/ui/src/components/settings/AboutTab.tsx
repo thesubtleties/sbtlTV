@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Logo } from '../Logo';
 import { SbtlMark } from '../SbtlMark';
 import { useUpdateSettings } from '../../stores/uiStore';
@@ -9,12 +9,19 @@ interface AboutTabProps {
   onAutoUpdateChange: (enabled: boolean) => void;
 }
 
+type UpdateState =
+  | { phase: 'idle' }
+  | { phase: 'checking' }
+  | { phase: 'downloading'; percent: number; version: string }
+  | { phase: 'ready'; version: string }
+  | { phase: 'up-to-date' }
+  | { phase: 'error'; message: string };
+
 export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProps) {
   const updateSettings = useUpdateSettings();
   const [version, setVersion] = useState<string>('');
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
-  const isPortable = window.platform?.isPortable ?? false;
+  const [updateState, setUpdateState] = useState<UpdateState>({ phase: 'idle' });
+  const noAutoUpdate = (window.platform?.isPortable ?? false) || (window.platform?.isLinuxDeb ?? false);
 
   useEffect(() => {
     window.platform?.getVersion().then(setVersion).catch((err) => {
@@ -23,37 +30,63 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
     });
   }, []);
 
-  async function handleCheckForUpdates() {
+  // Listen for updater events so the About tab stays in sync
+  useEffect(() => {
+    if (!window.updater || noAutoUpdate) return;
+
+    window.updater.onUpdateAvailable((info) => {
+      setUpdateState({ phase: 'downloading', percent: 0, version: info.version });
+    });
+    window.updater.onDownloadProgress((progress) => {
+      setUpdateState((prev) =>
+        prev.phase === 'downloading'
+          ? { ...prev, percent: progress.percent }
+          : prev,
+      );
+    });
+    window.updater.onUpdateDownloaded((info) => {
+      setUpdateState({ phase: 'ready', version: info.version });
+    });
+    window.updater.onError((err) => {
+      setUpdateState({ phase: 'error', message: err.message });
+    });
+
+    return () => window.updater?.removeAllListeners();
+  }, [noAutoUpdate]);
+
+  const handleCheckForUpdates = useCallback(async () => {
     if (!window.updater) {
-      setUpdateStatus('Auto-updater not available in dev mode');
+      setUpdateState({ phase: 'error', message: 'Auto-updater not available in dev mode' });
       return;
     }
-    setCheckingUpdate(true);
-    setUpdateStatus(null);
+    setUpdateState({ phase: 'checking' });
     try {
       const result = await window.updater.checkForUpdates();
       if (result.error) {
-        if (result.error === 'dev') {
-          setUpdateStatus('Auto-updater not available in dev mode');
+        if (result.error === 'dev' || result.error === 'portable' || result.error === 'deb') {
+          setUpdateState({ phase: 'error', message: 'Auto-updates are not available for this build' });
         } else if (result.error.includes('404') || result.error.includes('latest.yml')) {
-          setUpdateStatus('Unable to check for updates. Please check github.com/thesubtleties/sbtlTV/releases for the latest version.');
+          setUpdateState({ phase: 'error', message: 'Unable to check for updates. Please check GitHub releases.' });
         } else {
-          setUpdateStatus(`Update check failed: ${result.error.split('\n')[0]}`);
+          setUpdateState({ phase: 'error', message: result.error.split('\n')[0] });
         }
-      } else if (result.data) {
-        if (result.data.version !== version) {
-          setUpdateStatus(`Update available: v${result.data.version}`);
-        } else {
-          setUpdateStatus('You are on the latest version');
-        }
+      } else if (result.data && result.data.version !== version) {
+        // autoDownload will handle the rest — events update state
+        setUpdateState({ phase: 'downloading', percent: 0, version: result.data.version });
       } else {
-        setUpdateStatus('You are on the latest version');
+        setUpdateState({ phase: 'up-to-date' });
       }
     } catch (err) {
       console.error('Update check failed:', err);
-      setUpdateStatus('Failed to check for updates');
-    } finally {
-      setCheckingUpdate(false);
+      setUpdateState({ phase: 'error', message: 'Failed to check for updates' });
+    }
+  }, [version]);
+
+  async function handleInstall() {
+    if (!window.updater) return;
+    const result = await window.updater.installUpdate();
+    if (result?.error) {
+      setUpdateState({ phase: 'error', message: result.error });
     }
   }
 
@@ -63,6 +96,50 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
     if (!window.storage) return;
     await window.storage.updateSettings({ autoUpdateEnabled: enabled });
   }
+
+  function renderUpdateButton() {
+    switch (updateState.phase) {
+      case 'checking':
+        return (
+          <button className="save-btn about-tab__update-btn" disabled>
+            Checking...
+          </button>
+        );
+      case 'downloading':
+        return (
+          <button className="save-btn about-tab__update-btn" disabled>
+            Downloading v{updateState.version}... {updateState.percent}%
+          </button>
+        );
+      case 'ready':
+        return (
+          <button className="save-btn about-tab__update-btn about-tab__update-btn--restart" onClick={handleInstall}>
+            Restart to Update
+          </button>
+        );
+      default:
+        return (
+          <button className="save-btn about-tab__update-btn" onClick={handleCheckForUpdates}>
+            Check for Updates
+          </button>
+        );
+    }
+  }
+
+  function renderStatusText() {
+    switch (updateState.phase) {
+      case 'up-to-date':
+        return 'You are on the latest version';
+      case 'ready':
+        return `v${updateState.version} downloaded — restart to install`;
+      case 'error':
+        return updateState.message;
+      default:
+        return null;
+    }
+  }
+
+  const statusText = renderStatusText();
 
   return (
     <div className="settings-tab-content about-tab">
@@ -75,7 +152,7 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
         </div>
 
         <div className="about-tab__update-section">
-          {isPortable ? (
+          {noAutoUpdate ? (
             <>
               <a
                 href="https://github.com/thesubtleties/sbtlTV/releases"
@@ -87,23 +164,16 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
                 View Releases on GitHub
               </a>
               <p className="form-hint about-tab__status-text">
-                Auto-updates are not available for portable builds.
+                Auto-updates are not available for this build.
               </p>
             </>
           ) : (
             <>
-              <button
-                className="save-btn about-tab__update-btn"
-                onClick={handleCheckForUpdates}
-                disabled={checkingUpdate}
-              >
-                {checkingUpdate ? 'Checking...' : 'Check for Updates'}
-              </button>
-              {/* Fixed height so status text doesn't shift layout */}
+              {renderUpdateButton()}
               <div className="about-tab__status">
-                {updateStatus && (
+                {statusText && (
                   <p className="form-hint about-tab__status-text">
-                    {updateStatus}
+                    {statusText}
                   </p>
                 )}
               </div>
