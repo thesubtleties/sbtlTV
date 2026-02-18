@@ -11,7 +11,6 @@ import type { AppSettings, UpdateInfo } from '../types/electron';
 import type { MediaItem } from '../types/media';
 
 // Auto-updater state machine
-export type UpdatePhase = 'idle' | 'checking' | 'downloading' | 'ready' | 'up-to-date' | 'error';
 export type UpdateState =
   | { phase: 'idle' }
   | { phase: 'checking' }
@@ -121,7 +120,7 @@ export const useUIStore = create<UIState>((set) => ({
   setSeriesPageCollapsed: (collapsed) => set({ seriesPageCollapsed: collapsed }),
 
   // Auto-updater
-  updaterState: { phase: 'idle' } as UpdateState,
+  updaterState: { phase: 'idle' },
   updaterDismissed: false,
   setUpdaterState: (state) => set({ updaterState: state, updaterDismissed: false }),
   setUpdaterDownloadProgress: (percent) => set((s) =>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useUpdaterState, useUpdaterDismissed, useDismissUpdater, useSetUpdaterState } from '../stores/uiStore';
+import { useUpdaterState, useUpdaterDismissed, useDismissUpdater } from '../stores/uiStore';
 import './UpdateNotification.css';
 
 function debugLog(message: string): void {
@@ -14,7 +14,6 @@ export function UpdateNotification() {
   const updaterState = useUpdaterState();
   const dismissed = useUpdaterDismissed();
   const dismiss = useDismissUpdater();
-  const setUpdaterState = useSetUpdaterState();
   const [error, setError] = useState<string | null>(null);
 
   if (updaterState.phase !== 'ready' || dismissed) return null;
@@ -26,13 +25,11 @@ export function UpdateNotification() {
       if (result?.error) {
         debugLog(`Install failed: ${result.error}`);
         setError('Update failed. Please restart manually.');
-        setUpdaterState({ phase: 'error', message: result.error });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Install failed';
       debugLog(`Install error: ${msg}`);
       setError('Update failed. Please restart manually.');
-      setUpdaterState({ phase: 'error', message: 'Failed to install update' });
     }
   };
 
