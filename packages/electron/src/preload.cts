@@ -164,6 +164,8 @@ contextBridge.exposeInMainWorld('platform', {
   isLinux: process.platform === 'linux',
   isDev: process.argv.includes('--dev'),
   isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR,
+  isLinuxNonAppImage: process.platform === 'linux' && !process.env.APPIMAGE,
+  supportsAutoUpdate: !process.env.PORTABLE_EXECUTABLE_DIR && !(process.platform === 'linux' && !process.env.APPIMAGE),
   getVersion: () => ipcRenderer.invoke('get-app-version'),
 });
 
@@ -182,6 +184,9 @@ contextBridge.exposeInMainWorld('updater', {
   onUpdateDownloaded: (callback: (info: { version: string; releaseDate: string }) => void) => {
     ipcRenderer.on('updater-update-downloaded', (_event: IpcRendererEvent, info) => callback(info));
   },
+  onDownloadProgress: (callback: (progress: { percent: number }) => void) => {
+    ipcRenderer.on('updater-download-progress', (_event: IpcRendererEvent, progress) => callback(progress));
+  },
   onError: (callback: (error: { message: string }) => void) => {
     ipcRenderer.on('updater-error', (_event: IpcRendererEvent, error) => callback(error));
   },
@@ -190,6 +195,7 @@ contextBridge.exposeInMainWorld('updater', {
   removeAllListeners: () => {
     ipcRenderer.removeAllListeners('updater-update-available');
     ipcRenderer.removeAllListeners('updater-update-downloaded');
+    ipcRenderer.removeAllListeners('updater-download-progress');
     ipcRenderer.removeAllListeners('updater-error');
   },
 });
