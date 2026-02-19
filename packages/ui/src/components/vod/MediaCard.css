@@ -106,13 +106,13 @@
 
 .media-card:hover .media-card__play-icon,
 .media-card:focus-visible .media-card__play-icon {
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(4px);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
 }
 
 .media-card__play-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   margin-left: 2px; /* Visual centering for play icon */
   opacity: 0;
   transition: opacity 0.05s ease;
