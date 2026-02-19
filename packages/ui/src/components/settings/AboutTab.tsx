@@ -2,19 +2,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Logo } from '../Logo';
 import { SbtlMark } from '../SbtlMark';
 import { useUIStore, useUpdateSettings, useUpdaterState, useSetUpdaterState } from '../../stores/uiStore';
+import { debugLog } from '../../utils/debugLog';
 import './AboutTab.css';
 
 interface AboutTabProps {
   autoUpdateEnabled: boolean;
   onAutoUpdateChange: (enabled: boolean) => void;
-}
-
-function debugLog(message: string): void {
-  const logMsg = `[updater] ${message}`;
-  console.log(logMsg);
-  if (window.debug?.logFromRenderer) {
-    window.debug.logFromRenderer(logMsg).catch(() => {});
-  }
 }
 
 const CHECK_TIMEOUT_MS = 30_000;

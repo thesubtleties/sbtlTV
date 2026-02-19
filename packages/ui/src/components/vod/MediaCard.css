@@ -42,6 +42,7 @@
   aspect-ratio: 2/3;
   background: #0d0d0d;
   overflow: hidden;
+  will-change: transform;
 }
 
 .media-card__poster img {
@@ -73,39 +74,53 @@
   text-transform: uppercase;
 }
 
-/* Hover overlay */
+/* Hover overlay — always rendered so backdrop-filter stays warm */
 .media-card__overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0);
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: background 0.01s ease;
 }
 
 .media-card:hover .media-card__overlay,
 .media-card:focus-visible .media-card__overlay {
-  opacity: 1;
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .media-card__play-icon {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0);
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(0px);
+  transition: backdrop-filter 0.01s ease, background 0.01s ease;
+  will-change: backdrop-filter;
+}
+
+.media-card:hover .media-card__play-icon,
+.media-card:focus-visible .media-card__play-icon {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
 }
 
 .media-card__play-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   margin-left: 2px; /* Visual centering for play icon */
+  opacity: 0;
+  transition: opacity 0.01s ease;
+}
+
+.media-card:hover .media-card__play-icon svg,
+.media-card:focus-visible .media-card__play-icon svg {
+  opacity: 1;
 }
 
 /* Info section - compact and polished */
