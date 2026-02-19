@@ -1,3 +1,4 @@
+import { type Table } from 'dexie';
 import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory } from './index';
 import { fetchAndParseM3U, XtreamClient, type XmltvProgram } from '@sbtltv/local-adapter';
 import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
@@ -845,164 +846,93 @@ export async function syncSeriesEpisodes(source: Source, seriesId: string): Prom
   return storedEpisodes.length;
 }
 
-// Match movies against TMDB exports (no API calls!)
+// Generic TMDB matcher — works for both movies and series (no API calls!)
 // Uses enriched data with year info for more accurate matching
 // Only matches items that haven't been attempted yet (incremental)
-async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
-  try {
-    console.log('[TMDB Match] Starting movie matching with year-aware lookup...');
-    console.time('[TMDB Match] Download exports');
-    const exports = await getEnrichedMovieExports();
-    console.timeEnd('[TMDB Match] Download exports');
+type TmdbMatchable = { source_id: string; tmdb_id?: number; match_attempted?: Date; popularity?: number; name: string };
 
-    // Get only movies that haven't been matched AND haven't been attempted
-    // Query by source_id, filter for unmatched (tmdb_id undefined means not in compound index)
-    console.time('[TMDB Match] Query unmatched');
-    const movies = await db.vodMovies
+async function matchWithTmdb<T extends TmdbMatchable>(
+  sourceId: string,
+  label: string,
+  getExports: () => ReturnType<typeof getEnrichedMovieExports>,
+  table: Table<T, string>,
+): Promise<number> {
+  try {
+    console.log(`[TMDB Match] Starting ${label} matching with year-aware lookup...`);
+    console.time(`[TMDB Match] Download ${label} exports`);
+    const exports = await getExports();
+    console.timeEnd(`[TMDB Match] Download ${label} exports`);
+
+    console.time(`[TMDB Match] Query unmatched ${label}`);
+    const items = await table
       .where('source_id')
       .equals(sourceId)
-      .filter(m => !m.tmdb_id && !m.match_attempted)
+      .filter(item => !item.tmdb_id && !item.match_attempted)
       .toArray();
-    console.timeEnd('[TMDB Match] Query unmatched');
+    console.timeEnd(`[TMDB Match] Query unmatched ${label}`);
 
-    if (movies.length === 0) {
-      console.log('[TMDB Match] No new movies to match');
+    if (items.length === 0) {
+      console.log(`[TMDB Match] No new ${label} to match`);
       return 0;
     }
 
-    console.log(`[TMDB Match] Matching ${movies.length} new movies...`);
-    console.time('[TMDB Match] Matching loop');
+    console.log(`[TMDB Match] Matching ${items.length} new ${label}...`);
+    console.time(`[TMDB Match] ${label} matching loop`);
 
     let matched = 0;
     let yearMatched = 0;
     const BATCH_SIZE = 500;
     const now = new Date();
 
-    for (let i = 0; i < movies.length; i += BATCH_SIZE) {
-      const batch = movies.slice(i, i + BATCH_SIZE);
-      const toUpdate: StoredMovie[] = [];
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE);
+      const toUpdate: T[] = [];
 
-      for (const movie of batch) {
-        // Extract title and year from movie data
-        const { title, year } = extractMatchParams(movie);
+      for (const item of batch) {
+        const { title, year } = extractMatchParams(item);
         const match = findBestMatch(exports, title, year);
 
         if (match) {
-          // Track if we matched on year specifically
           if (year && match.year === year) {
             yearMatched++;
           }
           toUpdate.push({
-            ...movie,
+            ...item,
             tmdb_id: match.id,
             popularity: match.popularity,
             match_attempted: now,
           });
           matched++;
         } else {
-          // Mark as attempted even if no match found (prevents re-trying)
           toUpdate.push({
-            ...movie,
+            ...item,
             match_attempted: now,
           });
         }
       }
 
-      // Bulk update - much faster than individual updates
       if (toUpdate.length > 0) {
-        await db.vodMovies.bulkPut(toUpdate);
+        await table.bulkPut(toUpdate);
       }
 
-      console.log(`[TMDB Match] Progress: ${Math.min(i + BATCH_SIZE, movies.length)}/${movies.length}`);
+      console.log(`[TMDB Match] Progress: ${Math.min(i + BATCH_SIZE, items.length)}/${items.length}`);
     }
 
-    console.timeEnd('[TMDB Match] Matching loop');
-    console.log(`[TMDB Match] Matched ${matched}/${movies.length} movies (${yearMatched} with exact year match)`);
+    console.timeEnd(`[TMDB Match] ${label} matching loop`);
+    console.log(`[TMDB Match] Matched ${matched}/${items.length} ${label} (${yearMatched} with exact year match)`);
     return matched;
   } catch (error) {
-    console.error('[TMDB Match] Movie matching failed:', error);
+    console.error(`[TMDB Match] ${label} matching failed:`, error);
     return 0;
   }
 }
 
-// Match series against TMDB exports (no API calls!)
-// Uses enriched data with year info for more accurate matching
-// Only matches items that haven't been attempted yet (incremental)
-async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
-  try {
-    console.log('[TMDB Match] Starting series matching with year-aware lookup...');
-    console.time('[TMDB Match] Download TV exports');
-    const exports = await getEnrichedTvExports();
-    console.timeEnd('[TMDB Match] Download TV exports');
+function matchMoviesWithTmdb(sourceId: string) {
+  return matchWithTmdb(sourceId, 'movie', getEnrichedMovieExports, db.vodMovies);
+}
 
-    // Get only series that haven't been matched AND haven't been attempted
-    // Query by source_id, filter for unmatched
-    console.time('[TMDB Match] Query unmatched series');
-    const series = await db.vodSeries
-      .where('source_id')
-      .equals(sourceId)
-      .filter(s => !s.tmdb_id && !s.match_attempted)
-      .toArray();
-    console.timeEnd('[TMDB Match] Query unmatched series');
-
-    if (series.length === 0) {
-      console.log('[TMDB Match] No new series to match');
-      return 0;
-    }
-
-    console.log(`[TMDB Match] Matching ${series.length} new series...`);
-    console.time('[TMDB Match] Series matching loop');
-
-    let matched = 0;
-    let yearMatched = 0;
-    const BATCH_SIZE = 500;
-    const now = new Date();
-
-    for (let i = 0; i < series.length; i += BATCH_SIZE) {
-      const batch = series.slice(i, i + BATCH_SIZE);
-      const toUpdate: StoredSeries[] = [];
-
-      for (const s of batch) {
-        // Extract title and year from series data
-        const { title, year } = extractMatchParams(s);
-        const match = findBestMatch(exports, title, year);
-
-        if (match) {
-          // Track if we matched on year specifically
-          if (year && match.year === year) {
-            yearMatched++;
-          }
-          toUpdate.push({
-            ...s,
-            tmdb_id: match.id,
-            popularity: match.popularity,
-            match_attempted: now,
-          });
-          matched++;
-        } else {
-          // Mark as attempted even if no match found (prevents re-trying)
-          toUpdate.push({
-            ...s,
-            match_attempted: now,
-          });
-        }
-      }
-
-      // Bulk update - much faster than individual updates
-      if (toUpdate.length > 0) {
-        await db.vodSeries.bulkPut(toUpdate);
-      }
-
-      console.log(`[TMDB Match] Progress: ${Math.min(i + BATCH_SIZE, series.length)}/${series.length}`);
-    }
-
-    console.timeEnd('[TMDB Match] Series matching loop');
-    console.log(`[TMDB Match] Matched ${matched}/${series.length} series (${yearMatched} with exact year match)`);
-    return matched;
-  } catch (error) {
-    console.error('[TMDB Match] Series matching failed:', error);
-    return 0;
-  }
+function matchSeriesWithTmdb(sourceId: string) {
+  return matchWithTmdb(sourceId, 'series', getEnrichedTvExports, db.vodSeries);
 }
 
 // Sync all VOD content for a source
