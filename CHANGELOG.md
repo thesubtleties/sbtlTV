@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.2] - 2026-02-18
+
+### Improved
+- Media card hover effect — frosted glass play icon with smooth backdrop-filter transition (eliminates jank/pop)
+- Play icon upgraded to Tabler player-play with rounded corners and semi-transparent frosted fill
+
+### Refactored
+- Extract shared `GenreCarouselTab` from MoviesTab/SeriesTab — eliminates ~260 lines of duplication
+- Unify `matchMoviesWithTmdb`/`matchSeriesWithTmdb` into generic `matchWithTmdb<T>` — eliminates ~70 lines of duplication
+- Extract shared `debugLog` utility with configurable category prefix
+- Derive `supportsAutoUpdate` from sibling `isPortable`/`isLinuxNonAppImage` consts instead of recomputing from env
+- Add `satisfies PlatformApi` type check to preload platform object (consistent with all other APIs)
+
 ## [0.5.1] - 2026-02-18
 
 ### Fixed

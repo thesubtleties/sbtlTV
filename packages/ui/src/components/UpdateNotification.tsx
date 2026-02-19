@@ -1,14 +1,7 @@
 import { useState } from 'react';
 import { useUpdaterState, useUpdaterDismissed, useDismissUpdater } from '../stores/uiStore';
+import { debugLog } from '../utils/debugLog';
 import './UpdateNotification.css';
-
-function debugLog(message: string): void {
-  const logMsg = `[updater] ${message}`;
-  console.log(logMsg);
-  if (window.debug?.logFromRenderer) {
-    window.debug.logFromRenderer(logMsg).catch(() => {});
-  }
-}
 
 export function UpdateNotification() {
   const updaterState = useUpdaterState();
