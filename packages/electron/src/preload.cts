@@ -158,14 +158,17 @@ contextBridge.exposeInMainWorld('fetchProxy', {
 } satisfies FetchProxyApi);
 
 // Expose platform info for conditional UI (e.g., resize grip on Windows only)
+const isPortable = !!process.env.PORTABLE_EXECUTABLE_DIR;
+const isLinuxNonAppImage = process.platform === 'linux' && !process.env.APPIMAGE;
+
 contextBridge.exposeInMainWorld('platform', {
   isWindows: process.platform === 'win32',
   isMac: process.platform === 'darwin',
   isLinux: process.platform === 'linux',
   isDev: process.argv.includes('--dev'),
-  isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR,
-  isLinuxNonAppImage: process.platform === 'linux' && !process.env.APPIMAGE,
-  supportsAutoUpdate: !process.env.PORTABLE_EXECUTABLE_DIR && !(process.platform === 'linux' && !process.env.APPIMAGE),
+  isPortable,
+  isLinuxNonAppImage,
+  supportsAutoUpdate: !isPortable && !isLinuxNonAppImage,
   getVersion: () => ipcRenderer.invoke('get-app-version'),
 });
 
