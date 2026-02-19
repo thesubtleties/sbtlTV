@@ -82,7 +82,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.05s ease;
+  transition: background 0.01s ease;
 }
 
 .media-card:hover .media-card__overlay,
@@ -100,7 +100,7 @@
   justify-content: center;
   color: white;
   backdrop-filter: blur(0px);
-  transition: backdrop-filter 0.05s ease, background 0.05s ease;
+  transition: backdrop-filter 0.01s ease, background 0.01s ease;
   will-change: backdrop-filter;
 }
 
@@ -115,7 +115,7 @@
   height: 22px;
   margin-left: 2px; /* Visual centering for play icon */
   opacity: 0;
-  transition: opacity 0.05s ease;
+  transition: opacity 0.01s ease;
 }
 
 .media-card:hover .media-card__play-icon svg,
