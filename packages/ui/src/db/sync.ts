@@ -849,7 +849,7 @@ export async function syncSeriesEpisodes(source: Source, seriesId: string): Prom
 // Generic TMDB matcher — works for both movies and series (no API calls!)
 // Uses enriched data with year info for more accurate matching
 // Only matches items that haven't been attempted yet (incremental)
-type TmdbMatchable = { source_id: string; tmdb_id?: number; match_attempted?: Date; popularity?: number; name: string };
+type TmdbMatchable = { source_id: string; tmdb_id?: number; match_attempted?: Date; popularity?: number; name: string; title?: string; year?: string };
 
 async function matchWithTmdb<T extends TmdbMatchable>(
   sourceId: string,

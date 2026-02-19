@@ -33,15 +33,18 @@ export function GenreCarouselTab({
 
   const countsLoading = Array.from(genreData.values()).some(d => d.loading);
 
+  const availableGenreIds = useMemo(() =>
+    genres.filter(g => {
+      const data = genreData.get(g.id);
+      return data ? data.items.length > 0 : false;
+    }).map(g => g.id),
+    [genres, genreData]
+  );
+
   const hasContent = (genreId: number) => {
     const data = genreData.get(genreId);
     return data ? data.items.length > 0 : false;
   };
-
-  const availableGenreIds = useMemo(() =>
-    genres.filter(g => hasContent(g.id)).map(g => g.id),
-    [genres, genreData]
-  );
 
   useEffect(() => {
     if (enabledGenres === undefined && genres.length > 0 && !countsLoading && availableGenreIds.length > 0) {

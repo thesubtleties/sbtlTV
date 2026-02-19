@@ -95,6 +95,17 @@ export interface DebugApi {
   openLogFolder: () => Promise<StorageResult>;
 }
 
+export interface PlatformApi {
+  isWindows: boolean;
+  isMac: boolean;
+  isLinux: boolean;
+  isDev: boolean;
+  isPortable: boolean;
+  isLinuxNonAppImage: boolean;
+  supportsAutoUpdate: boolean;
+  getVersion: () => Promise<string>;
+}
+
 // Expose window control API
 contextBridge.exposeInMainWorld('electronWindow', {
   minimize: () => ipcRenderer.invoke('window-minimize'),
@@ -170,7 +181,7 @@ contextBridge.exposeInMainWorld('platform', {
   isLinuxNonAppImage,
   supportsAutoUpdate: !isPortable && !isLinuxNonAppImage,
   getVersion: () => ipcRenderer.invoke('get-app-version'),
-});
+} satisfies PlatformApi);
 
 // Expose debug API for logging
 contextBridge.exposeInMainWorld('debug', {
