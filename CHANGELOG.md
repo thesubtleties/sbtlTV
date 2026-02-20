@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.3] - 2026-02-19
+
+### Added
+- macOS code signing and notarization — builds are now signed with Developer ID Application certificate and notarized via Apple, eliminating Gatekeeper warnings and enabling auto-update
+
+### Changed
+- Release workflow passes signing credentials to macOS build via GitHub Secrets
+- Hardened runtime enabled with entitlements for native addon compatibility
+
 ## [0.5.2] - 2026-02-18
 
 ### Improved
