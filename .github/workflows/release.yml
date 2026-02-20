@@ -72,6 +72,14 @@ jobs:
 
       - name: Build Electron app
         run: pnpm dist:${{ matrix.platform }} --publish never
+        env:
+          # macOS code signing
+          CSC_LINK: ${{ matrix.platform == 'mac' && secrets.MAC_CERTS || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.MAC_CERTS_PASSWORD || '' }}
+          # macOS notarization
+          APPLE_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.platform == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_TEAM_ID || '' }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
