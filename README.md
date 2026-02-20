@@ -41,7 +41,9 @@ If the native renderer fails, the app falls back to system mpv. Install via Home
 brew install mpv
 ```
 
-On first run, macOS may block the app. Remove the quarantine flag:
+Starting with **v0.5.3**, macOS builds are code-signed and notarized - the app should open without Gatekeeper warnings. If you're upgrading from v0.5.2 or earlier, you'll need to **manually download and install v0.5.3** from the [Releases](../../releases) page (auto-update can't transition from unsigned to signed). After v0.5.3, auto-updates will work normally.
+
+If you're on a version older than v0.5.3 and macOS blocks the app, remove the quarantine flag:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/sbtlTV.app
