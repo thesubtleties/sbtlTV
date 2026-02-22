@@ -3,6 +3,7 @@ import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { useIsOnWatchlist, useToggleWatchlist } from '../../hooks/useWatchlist';
+import { useMovieProgressByTmdb } from '../../hooks/useWatchProgress';
 import type { StoredMovie, StoredSeries } from '../../db';
 import './MediaCard.css';
 
@@ -56,6 +57,10 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
   // Rating - only show if it's a meaningful value (not 0, not NaN)
   const parsedRating = item.rating ? parseFloat(item.rating) : NaN;
   const rating = !isNaN(parsedRating) && parsedRating > 0 ? parsedRating : null;
+
+  // Watch progress bar (movies only — episodes don't show on cards)
+  const watchProgress = useMovieProgressByTmdb(type === 'movie' ? item.tmdb_id : undefined);
+  const progressPercent = watchProgress && !watchProgress.completed ? watchProgress.progress : 0;
 
   const onWatchlist = useIsOnWatchlist(type, item.tmdb_id, 'stream_id' in item ? item.stream_id : (item as StoredSeries).series_id);
   const toggleWatchlist = useToggleWatchlist();
@@ -121,6 +126,13 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
             </svg>
           </div>
         </div>
+
+        {/* Watch progress bar */}
+        {progressPercent > 0 && (
+          <div className="media-card__progress">
+            <div className="media-card__progress-bar" style={{ width: `${progressPercent}%` }} />
+          </div>
+        )}
       </div>
 
       <div className="media-card__info">

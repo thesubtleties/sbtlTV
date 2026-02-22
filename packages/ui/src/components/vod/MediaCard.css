@@ -163,6 +163,24 @@
   color: #c0392b;
 }
 
+/* Watch progress bar — bottom of poster */
+.media-card__progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  z-index: 3;
+}
+
+.media-card__progress-bar {
+  height: 100%;
+  background: #e50914;
+  border-radius: 0 1px 1px 0;
+  transition: width 0.3s ease;
+}
+
 /* Info section - compact and polished */
 .media-card__info {
   height: 36px;

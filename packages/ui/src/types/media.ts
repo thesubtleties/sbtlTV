@@ -46,4 +46,10 @@ export interface VodPlayInfo {
   plot?: string;          // Description/overview
   type: 'movie' | 'series';
   episodeInfo?: string;   // For series: "S1 E3" or "S1 E3 · Episode Title"
+  // Progress tracking fields
+  streamId?: string;      // stream_id of the movie or episode
+  tmdbId?: number;        // tmdb_id of the movie or series
+  sourceId?: string;      // source_id for the stream
+  seasonNum?: number;     // Episode season number
+  episodeNum?: number;    // Episode number
 }

@@ -17,6 +17,7 @@ import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync'
 import type { StoredChannel } from './db';
 import { db } from './db';
 import type { VodPlayInfo } from './types/media';
+import { updateWatchProgress } from './hooks/useWatchProgress';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -139,6 +140,10 @@ function App() {
   const tmdbMatching = useTmdbMatching();
   const setChannelSyncing = useSetChannelSyncing();
   const setVodSyncing = useSetVodSyncing();
+  // Track current VOD info for progress updates (ref avoids stale closure in onStatus)
+  const vodInfoRef = useRef<VodPlayInfo | null>(null);
+  const lastProgressSaveRef = useRef(0);
+
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
 
@@ -173,6 +178,29 @@ function App() {
       }
       if (status.duration !== undefined) {
         setDuration(status.duration);
+      }
+
+      // Save watch progress for VOD (throttled to every 5 seconds)
+      if (status.position !== undefined && status.duration && status.duration > 0) {
+        const info = vodInfoRef.current;
+        if (info?.streamId) {
+          const now = Date.now();
+          if (now - lastProgressSaveRef.current >= 5000) {
+            lastProgressSaveRef.current = now;
+            updateWatchProgress({
+              type: info.type === 'series' ? 'episode' : 'movie',
+              streamId: info.streamId,
+              tmdbId: info.tmdbId,
+              seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
+              seasonNum: info.seasonNum,
+              episodeNum: info.episodeNum,
+              name: info.title + (info.episodeInfo ? ` ${info.episodeInfo}` : ''),
+              position: status.position,
+              duration: status.duration,
+              sourceId: info.sourceId,
+            });
+          }
+        }
       }
     });
 
@@ -257,6 +285,7 @@ function App() {
     debugLog('handleStop: mpv.stop() completed');
     setPlaying(false);
     setCurrentChannel(null);
+    vodInfoRef.current = null;
   };
 
   const handleSeek = async (seconds: number) => {
@@ -299,7 +328,10 @@ function App() {
         direct_url: workingUrl,
         source_id: 'vod',
       });
-      setVodInfo({ ...info, url: workingUrl });
+      const updatedInfo = { ...info, url: workingUrl };
+      setVodInfo(updatedInfo);
+      vodInfoRef.current = updatedInfo;
+      lastProgressSaveRef.current = 0; // Reset throttle for new content
       setPlaying(true);
       // Close VOD pages when playing
       setActiveView('none');

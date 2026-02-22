@@ -72,6 +72,11 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
         plot: lazyPlot || series.plot,
         type: 'series',
         episodeInfo: `S${episode.season_num} E${episode.episode_num}${episode.title ? ` · ${episode.title}` : ''}`,
+        streamId: episode.id,
+        tmdbId: series.tmdb_id,
+        sourceId: episode.source_id,
+        seasonNum: episode.season_num,
+        episodeNum: episode.episode_num,
       });
     },
     [series, onPlayEpisode, lazyPlot]

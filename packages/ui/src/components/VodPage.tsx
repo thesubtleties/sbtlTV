@@ -368,6 +368,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         year: movie.year || movie.release_date?.slice(0, 4),
         plot: movie.plot,
         type: 'movie',
+        streamId: movie.stream_id,
+        tmdbId: movie.tmdb_id,
+        sourceId: movie.source_id,
       });
     } else {
       setSelectedItem(item);
@@ -513,6 +516,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             year: movie.year || movie.release_date?.slice(0, 4),
             plot: plot || movie.plot,
             type: 'movie',
+            streamId: movie.stream_id,
+            tmdbId: movie.tmdb_id,
+            sourceId: movie.source_id,
           })}
           apiKey={tmdbApiKey}
         />
