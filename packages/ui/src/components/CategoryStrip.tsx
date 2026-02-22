@@ -1,4 +1,5 @@
 import { useGroupedCategories, useChannelCount, type GroupedCategory } from '../hooks/useChannels';
+import { useFavoriteChannelCount } from '../hooks/useFavorites';
 import './CategoryStrip.css';
 
 interface CategoryStripProps {
@@ -11,6 +12,7 @@ interface CategoryStripProps {
 export function CategoryStrip({ selectedCategoryId, onSelectCategory, visible, sidebarExpanded }: CategoryStripProps) {
   const groupedCategories = useGroupedCategories();
   const totalChannels = useChannelCount();
+  const favoriteCount = useFavoriteChannelCount();
 
   return (
     <div className={`category-strip ${visible ? 'visible' : 'hidden'} ${sidebarExpanded ? 'sidebar-expanded' : ''}`}>
@@ -27,6 +29,17 @@ export function CategoryStrip({ selectedCategoryId, onSelectCategory, visible, s
           <span className="category-name">All Channels</span>
           <span className="category-count">{totalChannels}</span>
         </button>
+
+        {/* Favorites (shown when user has favorites) */}
+        {favoriteCount > 0 && (
+          <button
+            className={`category-item category-favorites ${selectedCategoryId === '__favorites__' ? 'selected' : ''}`}
+            onClick={() => onSelectCategory('__favorites__')}
+          >
+            <span className="category-name">Favorites</span>
+            <span className="category-count">{favoriteCount}</span>
+          </button>
+        )}
 
         {/* Adaptive category list */}
         {groupedCategories.map((group) =>

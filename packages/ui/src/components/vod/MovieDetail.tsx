@@ -13,6 +13,7 @@ import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
+import { WatchlistButton } from './WatchlistButton';
 import type { StoredMovie } from '../../db';
 import './MovieDetail.css';
 
@@ -146,6 +147,13 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
                 </svg>
                 Play
               </button>
+              <WatchlistButton
+                type="movie"
+                tmdbId={movie.tmdb_id}
+                streamId={movie.stream_id}
+                name={movie.name}
+                className="movie-detail__btn movie-detail__btn--secondary"
+              />
             </div>
 
             {/* Credits */}

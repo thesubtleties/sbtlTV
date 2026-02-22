@@ -130,6 +130,17 @@
   flex-shrink: 0;
 }
 
+/* Favorites category */
+.category-favorites .category-name::before {
+  content: '\2665'; /* heart */
+  margin-right: 6px;
+  color: rgba(255, 100, 100, 0.7);
+}
+
+.category-favorites.selected .category-name::before {
+  color: #ff6464;
+}
+
 /* Multi-source category group */
 .category-group {
   margin-top: 2px;

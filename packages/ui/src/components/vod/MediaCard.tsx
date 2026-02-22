@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, memo } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
+import { useIsOnWatchlist, useToggleWatchlist } from '../../hooks/useWatchlist';
 import type { StoredMovie, StoredSeries } from '../../db';
 import './MediaCard.css';
 
@@ -56,6 +57,14 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
   const parsedRating = item.rating ? parseFloat(item.rating) : NaN;
   const rating = !isNaN(parsedRating) && parsedRating > 0 ? parsedRating : null;
 
+  const onWatchlist = useIsOnWatchlist(type, item.tmdb_id, 'stream_id' in item ? item.stream_id : (item as StoredSeries).series_id);
+  const toggleWatchlist = useToggleWatchlist();
+  const handleToggleWatchlist = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    const streamId = 'stream_id' in item ? item.stream_id : (item as StoredSeries).series_id;
+    toggleWatchlist(type, { tmdbId: item.tmdb_id, streamId, name: item.name });
+  }, [toggleWatchlist, type, item]);
+
   const handleClick = useCallback(() => {
     onClick?.(item);
   }, [item, onClick]);
@@ -96,6 +105,15 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
 
         {/* Hover overlay */}
         <div className="media-card__overlay">
+          <button
+            className={`media-card__heart${onWatchlist ? ' media-card__heart--active' : ''}`}
+            onClick={handleToggleWatchlist}
+            aria-label={onWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill={onWatchlist ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+              <path d="M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z" />
+            </svg>
+          </button>
           <div className="media-card__play-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="rgba(255,255,255,0.55)">
               <path stroke="none" d="M0 0h24v24H0z" fill="none"/>

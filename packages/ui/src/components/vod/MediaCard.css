@@ -123,6 +123,46 @@
   opacity: 1;
 }
 
+/* Heart / watchlist button — top-right of poster */
+.media-card__heart {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.media-card:hover .media-card__heart,
+.media-card:focus-visible .media-card__heart {
+  opacity: 1;
+}
+
+/* Always visible when on watchlist */
+.media-card__heart--active {
+  opacity: 1;
+  color: #e74c3c;
+}
+
+.media-card__heart:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.media-card__heart--active:hover {
+  color: #c0392b;
+}
+
 /* Info section - compact and polished */
 .media-card__info {
   height: 36px;

@@ -306,6 +306,33 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+}
+
+/* Favorite button on channel row */
+.channel-fav-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.2);
+  padding: 2px 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.guide-channel-info:hover .channel-fav-btn {
+  opacity: 1;
+}
+
+.channel-fav-btn.active {
+  color: #ff6464;
+  opacity: 1;
+}
+
+.channel-fav-btn:hover {
+  color: #ff6464;
 }
 
 /* Program Grid (EPG area) */

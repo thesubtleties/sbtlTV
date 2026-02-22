@@ -1,5 +1,6 @@
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { ProgramBlock, EmptyProgramBlock } from './ProgramBlock';
+import { useIsFavoriteChannel, useToggleFavoriteChannel } from '../hooks/useFavorites';
 import type { StoredChannel, StoredProgram } from '../db';
 
 // Width of the channel info column (must match ChannelPanel)
@@ -28,6 +29,12 @@ export const ChannelRow = memo(function ChannelRow({
   visibleHours,
   onPlay,
 }: ChannelRowProps) {
+  const isFavorite = useIsFavoriteChannel(channel.stream_id);
+  const toggleFavorite = useToggleFavoriteChannel();
+  const handleToggleFavorite = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleFavorite(channel.stream_id, channel.name);
+  }, [toggleFavorite, channel.stream_id, channel.name]);
   // Show channel_num when sorting by number, otherwise show list position
   const displayNumber = sortOrder === 'number' && channel.channel_num !== undefined
     ? channel.channel_num
@@ -56,6 +63,13 @@ export const ChannelRow = memo(function ChannelRow({
           )}
         </div>
         <span className="guide-channel-name">{channel.name}</span>
+        <button
+          className={`channel-fav-btn${isFavorite ? ' active' : ''}`}
+          onClick={handleToggleFavorite}
+          title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          {isFavorite ? '\u2665' : '\u2661'}
+        </button>
       </div>
 
       {/* Program grid */}

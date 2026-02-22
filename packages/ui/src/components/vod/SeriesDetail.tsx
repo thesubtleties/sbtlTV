@@ -14,6 +14,7 @@ import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useSeriesDetails } from '../../hooks/useVod';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
+import { WatchlistButton } from './WatchlistButton';
 import type { StoredSeries, StoredEpisode } from '../../db';
 import type { VodPlayInfo } from '../../types/media';
 import './SeriesDetail.css';
@@ -173,6 +174,17 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
                 <span className="series-detail__credit-value">{lazyCredits.cast}</span>
               </div>
             )}
+
+            {/* Actions */}
+            <div className="series-detail__actions">
+              <WatchlistButton
+                type="series"
+                tmdbId={series.tmdb_id}
+                streamId={series.series_id}
+                name={series.name}
+                className="series-detail__btn series-detail__btn--secondary"
+              />
+            </div>
           </div>
         </div>
 
