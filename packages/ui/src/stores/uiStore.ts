@@ -7,7 +7,7 @@
 
 import { create } from 'zustand';
 
-import type { AppSettings, UpdateInfo } from '../types/electron';
+import type { AppSettings, UpdateInfo, Source } from '../types/electron';
 import type { MediaItem } from '../types/media';
 
 // Auto-updater state machine
@@ -74,6 +74,12 @@ interface UIState {
   settingsLoaded: boolean;
   hydrateSettings: (data: AppSettings) => void;
   updateSettings: (partial: Partial<AppSettings>) => void;
+
+  // Sources (hydrated from electron-store for reactive filtering)
+  sources: Source[];
+  sourcesLoaded: boolean;
+  hydrateSources: (sources: Source[]) => void;
+  updateSource: (source: Source) => void;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -156,6 +162,14 @@ export const useUIStore = create<UIState>((set) => ({
     }
     return { settings: merged };
   }),
+
+  // Sources
+  sources: [],
+  sourcesLoaded: false,
+  hydrateSources: (sources) => set({ sources, sourcesLoaded: true }),
+  updateSource: (source) => set((state) => ({
+    sources: state.sources.map(s => s.id === source.id ? source : s),
+  })),
 }));
 
 // Selectors for cleaner component code
@@ -222,6 +236,12 @@ export const useUpdaterDismissed = () => useUIStore((s) => s.updaterDismissed);
 export const useSetUpdaterState = () => useUIStore((s) => s.setUpdaterState);
 export const useSetUpdaterDownloadProgress = () => useUIStore((s) => s.setUpdaterDownloadProgress);
 export const useDismissUpdater = () => useUIStore((s) => s.dismissUpdater);
+
+// Source selectors
+export const useSources = () => useUIStore((s) => s.sources);
+export const useSourcesLoaded = () => useUIStore((s) => s.sourcesLoaded);
+export const useHydrateSources = () => useUIStore((s) => s.hydrateSources);
+export const useUpdateSource = () => useUIStore((s) => s.updateSource);
 
 // Convenience hook - selects movies or series navigation state by type
 export function useVodNavigation(type: 'movie' | 'series') {

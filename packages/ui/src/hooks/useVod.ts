@@ -3,30 +3,31 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory } from '../db';
 import { syncSeriesEpisodes, syncAllVod, type VodSyncResult } from '../db/sync';
 import type { Source } from '../types/electron';
+import { useEnabledSourceIds } from './useSourceFiltering';
 
 // ===========================================================================
 // Movies Hooks
 // ===========================================================================
 
 /**
- * Query movies with optional category filter and search
+ * Query movies with optional category filter and search (filtered by enabled sources)
  */
 export function useMovies(categoryId?: string | null, search?: string) {
+  const enabledIds = useEnabledSourceIds();
   const movies = useLiveQuery(async () => {
-    let query = db.vodMovies.toCollection();
+    let allMovies: StoredMovie[];
 
     if (categoryId) {
-      // Filter by category
-      const allMovies = await db.vodMovies.where('category_ids').equals(categoryId).toArray();
-      if (search) {
-        const searchLower = search.toLowerCase();
-        return allMovies.filter(m => m.name.toLowerCase().includes(searchLower));
-      }
-      return allMovies;
+      allMovies = await db.vodMovies.where('category_ids').equals(categoryId).toArray();
+    } else {
+      allMovies = await db.vodMovies.toArray();
     }
 
-    // No category filter
-    let allMovies = await query.toArray();
+    // Filter by enabled sources
+    if (enabledIds.length > 0) {
+      const enabledSet = new Set(enabledIds);
+      allMovies = allMovies.filter(m => enabledSet.has(m.source_id));
+    }
 
     if (search) {
       const searchLower = search.toLowerCase();
@@ -34,7 +35,7 @@ export function useMovies(categoryId?: string | null, search?: string) {
     }
 
     return allMovies;
-  }, [categoryId, search]);
+  }, [categoryId, search, enabledIds.join(',')]);
 
   return {
     movies: movies ?? [],
@@ -61,16 +62,24 @@ export function useMovie(movieId: string | null) {
 }
 
 /**
- * Get recently added movies
+ * Get recently added movies (from enabled sources)
  */
 export function useRecentMovies(limit = 20) {
+  const enabledIds = useEnabledSourceIds();
   const movies = useLiveQuery(async () => {
-    return db.vodMovies
+    const all = await db.vodMovies
       .orderBy('added')
       .reverse()
-      .limit(limit)
       .toArray();
-  }, [limit]);
+
+    let filtered = all;
+    if (enabledIds.length > 0) {
+      const enabledSet = new Set(enabledIds);
+      filtered = all.filter(m => enabledSet.has(m.source_id));
+    }
+
+    return filtered.slice(0, limit);
+  }, [limit, enabledIds.join(',')]);
 
   return {
     movies: movies ?? [],
@@ -83,24 +92,24 @@ export function useRecentMovies(limit = 20) {
 // ===========================================================================
 
 /**
- * Query series with optional category filter and search
+ * Query series with optional category filter and search (filtered by enabled sources)
  */
 export function useSeries(categoryId?: string | null, search?: string) {
+  const enabledIds = useEnabledSourceIds();
   const series = useLiveQuery(async () => {
-    let query = db.vodSeries.toCollection();
+    let allSeries: StoredSeries[];
 
     if (categoryId) {
-      // Filter by category
-      const allSeries = await db.vodSeries.where('category_ids').equals(categoryId).toArray();
-      if (search) {
-        const searchLower = search.toLowerCase();
-        return allSeries.filter(s => s.name.toLowerCase().includes(searchLower));
-      }
-      return allSeries;
+      allSeries = await db.vodSeries.where('category_ids').equals(categoryId).toArray();
+    } else {
+      allSeries = await db.vodSeries.toArray();
     }
 
-    // No category filter
-    let allSeries = await query.toArray();
+    // Filter by enabled sources
+    if (enabledIds.length > 0) {
+      const enabledSet = new Set(enabledIds);
+      allSeries = allSeries.filter(s => enabledSet.has(s.source_id));
+    }
 
     if (search) {
       const searchLower = search.toLowerCase();
@@ -108,7 +117,7 @@ export function useSeries(categoryId?: string | null, search?: string) {
     }
 
     return allSeries;
-  }, [categoryId, search]);
+  }, [categoryId, search, enabledIds.join(',')]);
 
   return {
     series: series ?? [],
@@ -135,16 +144,24 @@ export function useSeriesById(seriesId: string | null) {
 }
 
 /**
- * Get recently added series
+ * Get recently added series (from enabled sources)
  */
 export function useRecentSeries(limit = 20) {
+  const enabledIds = useEnabledSourceIds();
   const series = useLiveQuery(async () => {
-    return db.vodSeries
+    const all = await db.vodSeries
       .orderBy('added')
       .reverse()
-      .limit(limit)
       .toArray();
-  }, [limit]);
+
+    let filtered = all;
+    if (enabledIds.length > 0) {
+      const enabledSet = new Set(enabledIds);
+      filtered = all.filter(s => enabledSet.has(s.source_id));
+    }
+
+    return filtered.slice(0, limit);
+  }, [limit, enabledIds.join(',')]);
 
   return {
     series: series ?? [],
@@ -240,23 +257,33 @@ export function useSeriesDetails(seriesId: string | null) {
 // ===========================================================================
 
 /**
- * Get VOD categories by type (excludes empty categories)
+ * Get VOD categories by type (excludes empty categories, filtered by enabled sources)
  */
 export function useVodCategories(type: 'movie' | 'series') {
+  const enabledIds = useEnabledSourceIds();
   const categories = useLiveQuery(async () => {
-    const allCategories = await db.vodCategories.where('type').equals(type).toArray();
+    let allCategories = await db.vodCategories.where('type').equals(type).toArray();
 
-    // Filter out categories with no items
+    // Filter categories by enabled sources
+    if (enabledIds.length > 0) {
+      const enabledSet = new Set(enabledIds);
+      allCategories = allCategories.filter(cat => enabledSet.has(cat.source_id));
+    }
+
+    // Filter out categories with no items from enabled sources
     const nonEmptyCategories = await Promise.all(
       allCategories.map(async (cat) => {
         const table = type === 'movie' ? db.vodMovies : db.vodSeries;
-        const count = await table.where('category_ids').equals(cat.category_id).count();
+        const items = await table.where('category_ids').equals(cat.category_id).toArray();
+        const count = enabledIds.length > 0
+          ? items.filter(item => new Set(enabledIds).has(item.source_id)).length
+          : items.length;
         return count > 0 ? cat : null;
       })
     );
 
     return nonEmptyCategories.filter((cat): cat is VodCategory => cat !== null);
-  }, [type]);
+  }, [type, enabledIds.join(',')]);
 
   return {
     categories: categories ?? [],
@@ -317,16 +344,24 @@ export function useVodSync() {
 // ===========================================================================
 
 /**
- * Get total counts of movies and series
+ * Get total counts of movies and series (from enabled sources)
  */
 export function useVodCounts() {
+  const enabledIds = useEnabledSourceIds();
   const counts = useLiveQuery(async () => {
+    if (enabledIds.length === 0) {
+      const [movieCount, seriesCount] = await Promise.all([
+        db.vodMovies.count(),
+        db.vodSeries.count(),
+      ]);
+      return { movieCount, seriesCount };
+    }
     const [movieCount, seriesCount] = await Promise.all([
-      db.vodMovies.count(),
-      db.vodSeries.count(),
+      db.vodMovies.where('source_id').anyOf(enabledIds).count(),
+      db.vodSeries.where('source_id').anyOf(enabledIds).count(),
     ]);
     return { movieCount, seriesCount };
-  });
+  }, [enabledIds.join(',')]);
 
   return {
     movieCount: counts?.movieCount ?? 0,
@@ -340,11 +375,12 @@ export function useVodCounts() {
 // ===========================================================================
 
 /**
- * All movies for browse view (optionally filtered by category)
+ * All movies for browse view (optionally filtered by category, source-aware)
  * Returns items sorted alphabetically - Virtuoso handles virtualization
  * Pass null for categoryId to get ALL movies
  */
 export function usePaginatedMovies(categoryId: string | null, search?: string) {
+  const enabledIds = useEnabledSourceIds();
   const [items, setItems] = useState<StoredMovie[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -355,11 +391,15 @@ export function usePaginatedMovies(categoryId: string | null, search?: string) {
         let result: StoredMovie[];
 
         if (categoryId) {
-          // Filter by category
           result = await db.vodMovies.where('category_ids').equals(categoryId).toArray();
         } else {
-          // All movies
           result = await db.vodMovies.toArray();
+        }
+
+        // Filter by enabled sources
+        if (enabledIds.length > 0) {
+          const enabledSet = new Set(enabledIds);
+          result = result.filter(m => enabledSet.has(m.source_id));
         }
 
         // Apply search filter
@@ -378,9 +418,8 @@ export function usePaginatedMovies(categoryId: string | null, search?: string) {
     };
 
     fetchAll();
-  }, [categoryId, search]);
+  }, [categoryId, search, enabledIds]);
 
-  // Keep API compatible - Virtuoso handles virtualization, no pagination needed
   return {
     items,
     loading,
@@ -390,11 +429,12 @@ export function usePaginatedMovies(categoryId: string | null, search?: string) {
 }
 
 /**
- * All series for browse view (optionally filtered by category)
+ * All series for browse view (optionally filtered by category, source-aware)
  * Returns items sorted alphabetically - Virtuoso handles virtualization
  * Pass null for categoryId to get ALL series
  */
 export function usePaginatedSeries(categoryId: string | null, search?: string) {
+  const enabledIds = useEnabledSourceIds();
   const [items, setItems] = useState<StoredSeries[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -405,11 +445,15 @@ export function usePaginatedSeries(categoryId: string | null, search?: string) {
         let result: StoredSeries[];
 
         if (categoryId) {
-          // Filter by category
           result = await db.vodSeries.where('category_ids').equals(categoryId).toArray();
         } else {
-          // All series
           result = await db.vodSeries.toArray();
+        }
+
+        // Filter by enabled sources
+        if (enabledIds.length > 0) {
+          const enabledSet = new Set(enabledIds);
+          result = result.filter(s => enabledSet.has(s.source_id));
         }
 
         // Apply search filter
@@ -428,9 +472,8 @@ export function usePaginatedSeries(categoryId: string | null, search?: string) {
     };
 
     fetchAll();
-  }, [categoryId, search]);
+  }, [categoryId, search, enabledIds]);
 
-  // Keep API compatible - Virtuoso handles virtualization, no pagination needed
   return {
     items,
     loading,

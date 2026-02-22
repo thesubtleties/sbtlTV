@@ -15,6 +15,7 @@ import { useCssVariableSync } from './hooks/useCssVariableSync';
 import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
 import type { StoredChannel } from './db';
+import { db } from './db';
 import type { VodPlayInfo } from './types/media';
 
 // Auto-hide controls after this many milliseconds of inactivity
@@ -362,17 +363,29 @@ function App() {
       if (!window.storage) return;
       try {
         const result = await window.storage.getSources();
+        // Hydrate sources into Zustand for reactive source filtering
+        if (result.data) {
+          useUIStore.getState().hydrateSources(result.data);
+        }
         if (result.data && result.data.length > 0) {
+          // Check if forced resync needed (e.g., after DB migration)
+          const resyncPref = await db.prefs.get('needs_resync');
+          const forceResync = resyncPref?.value === 'true';
+          if (forceResync) {
+            debugLog('Forced resync needed (DB migration)', 'sync');
+            await db.prefs.delete('needs_resync');
+          }
+
           // Read refresh settings from Zustand (already hydrated)
           const { settings } = useUIStore.getState();
           const epgRefreshHrs = settings.epgRefreshHours ?? 6;
           const vodRefreshHrs = settings.vodRefreshHours ?? 24;
 
-          // Sync channels/EPG only for stale sources
+          // Sync channels/EPG only for stale sources (or all if forced)
           const enabledSources = result.data.filter(s => s.enabled);
           const staleSources = [];
           for (const source of enabledSources) {
-            const stale = await isEpgStale(source.id, epgRefreshHrs);
+            const stale = forceResync || await isEpgStale(source.id, epgRefreshHrs);
             if (stale) {
               staleSources.push(source);
             } else {
@@ -393,7 +406,7 @@ function App() {
           if (xtreamSources.length > 0) {
             const staleVodSources = [];
             for (const source of xtreamSources) {
-              const stale = await isVodStale(source.id, vodRefreshHrs);
+              const stale = forceResync || await isVodStale(source.id, vodRefreshHrs);
               if (stale) {
                 staleVodSources.push(source);
               } else {
