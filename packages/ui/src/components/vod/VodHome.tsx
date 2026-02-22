@@ -24,6 +24,7 @@ import {
 } from '../../hooks/useTmdbLists';
 import { useRecentMovies, useRecentSeries } from '../../hooks/useVod';
 import { useDedupedMovies, useDedupedSeries } from '../../hooks/useVodDedup';
+import { useWatchlistMovies, useWatchlistSeries } from '../../hooks/useWatchlist';
 import './VodHome.css';
 
 // TMDB genre IDs
@@ -52,6 +53,7 @@ export function VodHome({ type, onItemClick, onPlay }: VodHomeProps) {
   const { movies: comedyMovies, loading: comedyMoviesLoading } = useMoviesByGenre(tmdbApiKey, GENRE_COMEDY);
   const { movies: rawRecentMovies, loading: recentMoviesLoading } = useRecentMovies(20);
   const recentMovies = useDedupedMovies(rawRecentMovies).map(d => d.item);
+  const watchlistMovies = useWatchlistMovies();
 
   // Series hooks
   const { series: trendingSeries, loading: trendingSeriesLoading } = useTrendingSeries(tmdbApiKey);
@@ -61,6 +63,7 @@ export function VodHome({ type, onItemClick, onPlay }: VodHomeProps) {
   const { series: comedySeries, loading: comedySeriesLoading } = useSeriesByGenre(tmdbApiKey, GENRE_COMEDY_TV);
   const { series: rawRecentSeries, loading: recentSeriesLoading } = useRecentSeries(20);
   const recentSeries = useDedupedSeries(rawRecentSeries).map(d => d.item);
+  const watchlistSeries = useWatchlistSeries();
 
   const handleHeroPlay = useCallback((item: StoredMovie | StoredSeries) => {
     onPlay(item);
@@ -83,6 +86,16 @@ export function VodHome({ type, onItemClick, onPlay }: VodHomeProps) {
         />
 
         <div className="vod-home__carousels">
+          {watchlistMovies.length > 0 && (
+            <HorizontalCarousel
+              title="My Watchlist"
+              items={watchlistMovies}
+              type="movie"
+              onItemClick={onItemClick}
+              maxItems={20}
+            />
+          )}
+
           <HorizontalCarousel
             title="Trending This Week"
             items={trendingMovies}
@@ -154,6 +167,16 @@ export function VodHome({ type, onItemClick, onPlay }: VodHomeProps) {
       />
 
       <div className="vod-home__carousels">
+        {watchlistSeries.length > 0 && (
+          <HorizontalCarousel
+            title="My Watchlist"
+            items={watchlistSeries}
+            type="series"
+            onItemClick={onItemClick}
+            maxItems={20}
+          />
+        )}
+
         <HorizontalCarousel
           title="Trending This Week"
           items={trendingSeries}
