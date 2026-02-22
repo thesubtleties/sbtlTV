@@ -1,8 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getLastCategory, setLastCategory } from '../db';
 import type { StoredChannel, StoredCategory, SourceMeta, StoredProgram } from '../db';
-import { useState, useEffect, useCallback } from 'react';
-import { useEnabledSourceIds } from './useSourceFiltering';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useEnabledSourceIds, useLiveSourceOrder, useSourceMap } from './useSourceFiltering';
 
 // Hook to get all categories across enabled sources
 export function useCategories() {
@@ -282,4 +282,75 @@ export function usePrograms(streamIds: string[]): Map<string, StoredProgram | nu
     [streamIds.join(',')]
   );
   return programs ?? new Map();
+}
+
+// Grouped category for adaptive category strip
+export interface GroupedCategory {
+  name: string;              // Category display name (e.g., "News")
+  // Single-source: one entry, clickable directly
+  // Multi-source: header with sub-items per source
+  sources: {
+    sourceId: string;
+    sourceName: string;
+    categoryId: string;
+    channelCount: number;
+  }[];
+  totalCount: number;
+}
+
+// Hook to get categories grouped by name for adaptive display.
+// Single-source categories render as a normal clickable item.
+// Multi-source categories render as a header with per-source sub-items.
+export function useGroupedCategories(): GroupedCategory[] {
+  const categoriesWithCounts = useCategoriesWithCounts();
+  const liveSourceOrder = useLiveSourceOrder();
+  const sourceMap = useSourceMap();
+
+  return useMemo(() => {
+    // Group categories by normalized name
+    const grouped = new Map<string, GroupedCategory>();
+
+    for (const cat of categoriesWithCounts) {
+      if (cat.channelCount === 0) continue;
+
+      const normalizedName = cat.category_name.trim();
+      const existing = grouped.get(normalizedName);
+      const sourceName = sourceMap.get(cat.source_id)?.name ?? cat.source_id;
+
+      const entry = {
+        sourceId: cat.source_id,
+        sourceName,
+        categoryId: cat.category_id,
+        channelCount: cat.channelCount,
+      };
+
+      if (existing) {
+        existing.sources.push(entry);
+        existing.totalCount += cat.channelCount;
+      } else {
+        grouped.set(normalizedName, {
+          name: normalizedName,
+          sources: [entry],
+          totalCount: cat.channelCount,
+        });
+      }
+    }
+
+    // Sort sub-items by live source preference order
+    const orderIndex = new Map(liveSourceOrder.map((id, i) => [id, i]));
+    for (const group of grouped.values()) {
+      if (group.sources.length > 1) {
+        group.sources.sort((a, b) => {
+          const aIdx = orderIndex.get(a.sourceId) ?? 999;
+          const bIdx = orderIndex.get(b.sourceId) ?? 999;
+          return aIdx - bIdx;
+        });
+      }
+    }
+
+    // Sort groups alphabetically by name
+    return Array.from(grouped.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [categoriesWithCounts, liveSourceOrder, sourceMap]);
 }
