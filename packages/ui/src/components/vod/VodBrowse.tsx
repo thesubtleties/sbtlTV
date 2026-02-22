@@ -16,6 +16,7 @@ import {
   useAlphabetIndex,
   useCurrentLetter,
 } from '../../hooks/useVod';
+import { useDedupedMovies, useDedupedSeries } from '../../hooks/useVodDedup';
 import './VodBrowse.css';
 
 // Debounce hook - delays value updates to avoid expensive operations on every keystroke
@@ -86,7 +87,17 @@ export function VodBrowse({
   const moviesData = usePaginatedMovies(type === 'movies' ? categoryId : null, debouncedSearch);
   const seriesData = usePaginatedSeries(type === 'series' ? categoryId : null, debouncedSearch);
 
-  const { items, loading, hasMore, loadMore } = type === 'movies' ? moviesData : seriesData;
+  const { items: rawItems, loading, hasMore, loadMore } = type === 'movies' ? moviesData : seriesData;
+
+  // Dedup by tmdb_id — silent, no UI indicator
+  const dedupedMovies = useDedupedMovies(type === 'movies' ? (rawItems as StoredMovie[]) : []);
+  const dedupedSeries = useDedupedSeries(type === 'series' ? (rawItems as StoredSeries[]) : []);
+  const items = useMemo(
+    () => type === 'movies'
+      ? dedupedMovies.map(d => d.item)
+      : dedupedSeries.map(d => d.item),
+    [type, dedupedMovies, dedupedSeries]
+  );
 
   // Alphabet navigation
   const alphabetIndex = useAlphabetIndex(items);

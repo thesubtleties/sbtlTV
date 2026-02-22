@@ -11,7 +11,7 @@ import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { DetailHeader } from './DetailHeader';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useLazyCredits } from '../../hooks/useLazyCredits';
-import { useSeriesDetails } from '../../hooks/useVod';
+import { useMergedEpisodes } from '../../hooks/useVodDedup';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
@@ -31,8 +31,8 @@ export interface SeriesDetailProps {
 export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey }: SeriesDetailProps) {
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
 
-  // Fetch episodes
-  const { seasons, loading, error, refetch } = useSeriesDetails(series.series_id);
+  // Fetch episodes (cross-source merge when tmdb_id matches multiple sources)
+  const { seasons, loading, error, refetch } = useMergedEpisodes(series.series_id, series.tmdb_id);
 
   // Get sorted season numbers
   const seasonNumbers = Object.keys(seasons)

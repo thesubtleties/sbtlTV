@@ -23,6 +23,7 @@ import {
   useTvGenres,
 } from '../../hooks/useTmdbLists';
 import { useRecentMovies, useRecentSeries } from '../../hooks/useVod';
+import { useDedupedMovies, useDedupedSeries } from '../../hooks/useVodDedup';
 import './VodHome.css';
 
 // TMDB genre IDs
@@ -49,7 +50,8 @@ export function VodHome({ type, onItemClick, onPlay }: VodHomeProps) {
   const { movies: topRatedMovies, loading: topRatedMoviesLoading } = useTopRatedMovies(tmdbApiKey);
   const { movies: actionMovies, loading: actionMoviesLoading } = useMoviesByGenre(tmdbApiKey, GENRE_ACTION);
   const { movies: comedyMovies, loading: comedyMoviesLoading } = useMoviesByGenre(tmdbApiKey, GENRE_COMEDY);
-  const { movies: recentMovies, loading: recentMoviesLoading } = useRecentMovies(20);
+  const { movies: rawRecentMovies, loading: recentMoviesLoading } = useRecentMovies(20);
+  const recentMovies = useDedupedMovies(rawRecentMovies).map(d => d.item);
 
   // Series hooks
   const { series: trendingSeries, loading: trendingSeriesLoading } = useTrendingSeries(tmdbApiKey);
@@ -57,7 +59,8 @@ export function VodHome({ type, onItemClick, onPlay }: VodHomeProps) {
   const { series: topRatedSeries, loading: topRatedSeriesLoading } = useTopRatedSeries(tmdbApiKey);
   const { series: actionSeries, loading: actionSeriesLoading } = useSeriesByGenre(tmdbApiKey, GENRE_ACTION_TV);
   const { series: comedySeries, loading: comedySeriesLoading } = useSeriesByGenre(tmdbApiKey, GENRE_COMEDY_TV);
-  const { series: recentSeries, loading: recentSeriesLoading } = useRecentSeries(20);
+  const { series: rawRecentSeries, loading: recentSeriesLoading } = useRecentSeries(20);
+  const recentSeries = useDedupedSeries(rawRecentSeries).map(d => d.item);
 
   const handleHeroPlay = useCallback((item: StoredMovie | StoredSeries) => {
     onPlay(item);

@@ -14,6 +14,7 @@ import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
+import { useMoviePlaySources } from '../../hooks/usePlayResolver';
 import type { StoredMovie } from '../../db';
 import './MovieDetail.css';
 
@@ -44,8 +45,15 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
   const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(movie, apiKey);
   const lazyCredits = useLazyCredits(movie, apiKey);
 
+  const playSources = useMoviePlaySources(movie.tmdb_id, movie.stream_id);
+  const hasMultipleSources = playSources.length > 1;
+
   const handlePlay = useCallback(() => {
     onPlay?.(movie, lazyPlot || movie.plot);
+  }, [movie, onPlay, lazyPlot]);
+
+  const handlePlayFromSource = useCallback((url: string) => {
+    onPlay?.({ ...movie, direct_url: url }, lazyPlot || movie.plot);
   }, [movie, onPlay, lazyPlot]);
 
   // Load RPDB settings for poster
@@ -171,6 +179,27 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
                 </div>
               )}
             </div>
+
+            {/* Source picker — only when multiple sources */}
+            {hasMultipleSources && (
+              <div className="movie-detail__sources">
+                <span className="movie-detail__sources-label">Available from</span>
+                <div className="movie-detail__sources-list">
+                  {playSources.map((src) => (
+                    <button
+                      key={src.sourceId}
+                      className="movie-detail__source-btn"
+                      onClick={() => handlePlayFromSource(src.url)}
+                    >
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      {src.sourceName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useEnabledSourceIds } from './useSourceFiltering';
 import { db, type StoredMovie, type StoredSeries } from '../db';
 import {
   // WithCache functions (work with or without token)
@@ -95,21 +96,32 @@ export function useEnabledSeriesGenres(): number[] | undefined {
  * Much faster than filtering all movies!
  */
 function useMoviesByTmdbIds(tmdbIds: number[]) {
+  const enabledIds = useEnabledSourceIds();
   return useLiveQuery(async () => {
     if (tmdbIds.length === 0) return [];
-    // Use indexed lookup - O(log n) per ID instead of O(n) full scan
-    return db.vodMovies.where('tmdb_id').anyOf(tmdbIds).toArray();
-  }, [tmdbIds.join(',')]);
+    let movies = await db.vodMovies.where('tmdb_id').anyOf(tmdbIds).toArray();
+    if (enabledIds.length > 0) {
+      const enabledSet = new Set(enabledIds);
+      movies = movies.filter(m => enabledSet.has(m.source_id));
+    }
+    return movies;
+  }, [tmdbIds.join(','), enabledIds.join(',')]);
 }
 
 /**
- * Query local series by TMDB IDs using the tmdb_id index
+ * Query local series by TMDB IDs using the tmdb_id index (source-filtered)
  */
 function useSeriesByTmdbIds(tmdbIds: number[]) {
+  const enabledIds = useEnabledSourceIds();
   return useLiveQuery(async () => {
     if (tmdbIds.length === 0) return [];
-    return db.vodSeries.where('tmdb_id').anyOf(tmdbIds).toArray();
-  }, [tmdbIds.join(',')]);
+    let series = await db.vodSeries.where('tmdb_id').anyOf(tmdbIds).toArray();
+    if (enabledIds.length > 0) {
+      const enabledSet = new Set(enabledIds);
+      series = series.filter(s => enabledSet.has(s.source_id));
+    }
+    return series;
+  }, [tmdbIds.join(','), enabledIds.join(',')]);
 }
 
 /**
@@ -119,8 +131,15 @@ function sortByTmdbOrder<T extends { tmdb_id?: number }>(
   items: T[],
   tmdbOrder: Map<number, number>
 ): T[] {
+  // Dedup: one item per tmdb_id (first encountered wins — Dexie returns in insert order)
+  const seen = new Set<number>();
   return items
-    .filter((item) => item.tmdb_id !== undefined && tmdbOrder.has(item.tmdb_id))
+    .filter((item) => {
+      if (item.tmdb_id === undefined || !tmdbOrder.has(item.tmdb_id)) return false;
+      if (seen.has(item.tmdb_id)) return false;
+      seen.add(item.tmdb_id);
+      return true;
+    })
     .sort(
       (a, b) =>
         (tmdbOrder.get(a.tmdb_id!) ?? 0) - (tmdbOrder.get(b.tmdb_id!) ?? 0)
@@ -234,14 +253,27 @@ export function useUpcomingMovies(accessToken: string | null) {
  * Get local movies sorted by popularity (no TMDB required)
  */
 export function useLocalPopularMovies(limit = 20) {
+  const enabledIds = useEnabledSourceIds();
   const movies = useLiveQuery(async () => {
-    return db.vodMovies
+    let all = await db.vodMovies
       .orderBy('popularity')
       .reverse()
       .filter((m) => m.popularity !== undefined && m.popularity > 0)
-      .limit(limit)
       .toArray();
-  }, [limit]);
+    if (enabledIds.length > 0) {
+      const enabledSet = new Set(enabledIds);
+      all = all.filter(m => enabledSet.has(m.source_id));
+    }
+    // Dedup by tmdb_id
+    const seen = new Set<number>();
+    const deduped = all.filter(m => {
+      if (!m.tmdb_id) return true;
+      if (seen.has(m.tmdb_id)) return false;
+      seen.add(m.tmdb_id);
+      return true;
+    });
+    return deduped.slice(0, limit);
+  }, [limit, enabledIds.join(',')]);
 
   return {
     movies: movies ?? [],
@@ -317,14 +349,27 @@ export function useAiringTodaySeries(accessToken: string | null) {
  * Get local series sorted by popularity (no TMDB required)
  */
 export function useLocalPopularSeries(limit = 20) {
+  const enabledIds = useEnabledSourceIds();
   const series = useLiveQuery(async () => {
-    return db.vodSeries
+    let all = await db.vodSeries
       .orderBy('popularity')
       .reverse()
       .filter((s) => s.popularity !== undefined && s.popularity > 0)
-      .limit(limit)
       .toArray();
-  }, [limit]);
+    if (enabledIds.length > 0) {
+      const enabledSet = new Set(enabledIds);
+      all = all.filter(s => enabledSet.has(s.source_id));
+    }
+    // Dedup by tmdb_id
+    const seen = new Set<number>();
+    const deduped = all.filter(s => {
+      if (!s.tmdb_id) return true;
+      if (seen.has(s.tmdb_id)) return false;
+      seen.add(s.tmdb_id);
+      return true;
+    });
+    return deduped.slice(0, limit);
+  }, [limit, enabledIds.join(',')]);
 
   return {
     series: series ?? [],
