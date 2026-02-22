@@ -27,6 +27,7 @@ import {
   useMultipleMoviesByGenre,
   useMultipleSeriesByGenre,
 } from '../hooks/useTmdbLists';
+import { useWatchlistMovies, useWatchlistSeries } from '../hooks/useWatchlist';
 import { useVodNavigation } from '../stores/uiStore';
 import type { StoredMovie, StoredSeries } from '../db';
 import { type MediaItem, type VodType, type VodPlayInfo } from '../types/media';
@@ -222,6 +223,11 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const nowOrOnAirItems = type === 'movie' ? nowPlayingMovies : onTheAirSeries;
   const nowOrOnAirLoading = type === 'movie' ? nowPlayingLoading : onTheAirLoading;
 
+  // Watchlist
+  const watchlistMovies = useWatchlistMovies();
+  const watchlistSeries = useWatchlistSeries();
+  const watchlistItems = type === 'movie' ? watchlistMovies : watchlistSeries;
+
   // Fallback: local popularity
   const { movies: localPopularMovies } = useLocalPopularMovies(type === 'movie' ? 20 : 0);
   const { series: localPopularSeries } = useLocalPopularSeries(type === 'series' ? 20 : 0);
@@ -272,6 +278,15 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // Only includes rows that have content (or are loading)
   const carouselRows = useMemo((): CarouselRow[] => {
     const rows: CarouselRow[] = [];
+
+    // Watchlist (top of home, only when non-empty)
+    if (watchlistItems.length > 0) {
+      rows.push({
+        key: 'watchlist',
+        title: 'My Watchlist',
+        items: watchlistItems,
+      });
+    }
 
     // Trending
     if (trendingItems.length > 0 || trendingLoading) {
@@ -331,6 +346,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
     return rows;
   }, [
+    watchlistItems,
     trendingItems, trendingLoading,
     popularItems, popularLoading,
     topRatedItems, topRatedLoading,

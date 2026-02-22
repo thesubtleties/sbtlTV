@@ -3,7 +3,6 @@ import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { useIsOnWatchlist, useToggleWatchlist } from '../../hooks/useWatchlist';
-import { useMovieProgressByTmdb } from '../../hooks/useWatchProgress';
 import type { StoredMovie, StoredSeries } from '../../db';
 import './MediaCard.css';
 
@@ -12,9 +11,10 @@ export interface MediaCardProps {
   type: 'movie' | 'series';
   onClick?: (item: StoredMovie | StoredSeries) => void;
   size?: 'small' | 'medium' | 'large';
+  progress?: number; // 0-100 watch progress, passed from parent
 }
 
-export const MediaCard = memo(function MediaCard({ item, type, onClick, size = 'medium' }: MediaCardProps) {
+export const MediaCard = memo(function MediaCard({ item, type, onClick, size = 'medium', progress }: MediaCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [titleOverflows, setTitleOverflows] = useState(false);
@@ -58,9 +58,7 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
   const parsedRating = item.rating ? parseFloat(item.rating) : NaN;
   const rating = !isNaN(parsedRating) && parsedRating > 0 ? parsedRating : null;
 
-  // Watch progress bar (movies only — episodes don't show on cards)
-  const watchProgress = useMovieProgressByTmdb(type === 'movie' ? item.tmdb_id : undefined);
-  const progressPercent = watchProgress && !watchProgress.completed ? watchProgress.progress : 0;
+  const progressPercent = progress ?? 0;
 
   const onWatchlist = useIsOnWatchlist(type, item.tmdb_id, 'stream_id' in item ? item.stream_id : (item as StoredSeries).series_id);
   const toggleWatchlist = useToggleWatchlist();

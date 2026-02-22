@@ -55,6 +55,10 @@ const GridScroller = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElem
   )
 );
 
+// Stable empty arrays to prevent dedup hooks from recalculating every render
+const EMPTY_MOVIES: StoredMovie[] = [];
+const EMPTY_SERIES: StoredSeries[] = [];
+
 export interface VodBrowseProps {
   type: 'movies' | 'series';
   categoryId: string | null;  // null = all items
@@ -90,8 +94,8 @@ export function VodBrowse({
   const { items: rawItems, loading, hasMore, loadMore } = type === 'movies' ? moviesData : seriesData;
 
   // Dedup by tmdb_id — silent, no UI indicator
-  const dedupedMovies = useDedupedMovies(type === 'movies' ? (rawItems as StoredMovie[]) : []);
-  const dedupedSeries = useDedupedSeries(type === 'series' ? (rawItems as StoredSeries[]) : []);
+  const dedupedMovies = useDedupedMovies(type === 'movies' ? (rawItems as StoredMovie[]) : EMPTY_MOVIES);
+  const dedupedSeries = useDedupedSeries(type === 'series' ? (rawItems as StoredSeries[]) : EMPTY_SERIES);
   const items = useMemo(
     () => type === 'movies'
       ? dedupedMovies.map(d => d.item)
