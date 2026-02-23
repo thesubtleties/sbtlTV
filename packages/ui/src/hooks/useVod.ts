@@ -261,33 +261,29 @@ export function useSeriesDetails(seriesId: string | null) {
  */
 export function useVodCategories(type: 'movie' | 'series') {
   const enabledIds = useEnabledSourceIds();
-  const categories = useLiveQuery(async () => {
-    let allCategories = await db.vodCategories.where('type').equals(type).toArray();
 
-    // Filter categories by enabled sources
+  // Phase 1: instant — all categories from the indexed table
+  const allCategories = useLiveQuery(async () => {
+    let cats = await db.vodCategories.where('type').equals(type).toArray();
     if (enabledIds.length > 0) {
       const enabledSet = new Set(enabledIds);
-      allCategories = allCategories.filter(cat => enabledSet.has(cat.source_id));
+      cats = cats.filter(cat => enabledSet.has(cat.source_id));
     }
-
-    // Filter out categories with no items from enabled sources
-    const nonEmptyCategories = await Promise.all(
-      allCategories.map(async (cat) => {
-        const table = type === 'movie' ? db.vodMovies : db.vodSeries;
-        const items = await table.where('category_ids').equals(cat.category_id).toArray();
-        const count = enabledIds.length > 0
-          ? items.filter(item => new Set(enabledIds).has(item.source_id)).length
-          : items.length;
-        return count > 0 ? cat : null;
-      })
-    );
-
-    return nonEmptyCategories.filter((cat): cat is VodCategory => cat !== null);
+    return cats;
   }, [type, enabledIds.join(',')]);
 
+  // Phase 2: lazy prune — single index read for all populated category IDs
+  const prunedCategories = useLiveQuery(async () => {
+    const cats = allCategories;
+    if (!cats || cats.length === 0) return undefined;
+    const table = type === 'movie' ? db.vodMovies : db.vodSeries;
+    const populatedIds = new Set(await table.orderBy('category_ids').uniqueKeys() as string[]);
+    return cats.filter(cat => populatedIds.has(cat.category_id));
+  }, [allCategories]);
+
   return {
-    categories: categories ?? [],
-    loading: categories === undefined,
+    categories: prunedCategories ?? allCategories ?? [],
+    loading: allCategories === undefined,
   };
 }
 
