@@ -228,9 +228,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const watchlistSeries = useWatchlistSeries();
   const watchlistItems = type === 'movie' ? watchlistMovies : watchlistSeries;
 
-  // Fallback: local popularity
-  const { movies: localPopularMovies } = useLocalPopularMovies(type === 'movie' ? 20 : 0);
-  const { series: localPopularSeries } = useLocalPopularSeries(type === 'series' ? 20 : 0);
+  // Fallback: local popularity (only when no TMDB API key)
+  const { movies: localPopularMovies } = useLocalPopularMovies(type === 'movie' && !tmdbApiKey ? 20 : 0);
+  const { series: localPopularSeries } = useLocalPopularSeries(type === 'series' && !tmdbApiKey ? 20 : 0);
   const localPopularItems = type === 'movie' ? localPopularMovies : localPopularSeries;
 
   // VOD categories

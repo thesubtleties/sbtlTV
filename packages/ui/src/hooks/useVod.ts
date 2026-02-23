@@ -264,7 +264,9 @@ export function useVodCategories(type: 'movie' | 'series') {
 
   // Phase 1: instant — all categories from the indexed table
   const allCategories = useLiveQuery(async () => {
+    const t0 = performance.now();
     let cats = await db.vodCategories.where('type').equals(type).toArray();
+    console.log(`[perf] vodCategories phase1: ${(performance.now() - t0).toFixed(0)}ms, ${cats.length} cats`);
     if (enabledIds.length > 0) {
       const enabledSet = new Set(enabledIds);
       cats = cats.filter(cat => enabledSet.has(cat.source_id));
@@ -272,13 +274,22 @@ export function useVodCategories(type: 'movie' | 'series') {
     return cats;
   }, [type, enabledIds.join(',')]);
 
-  // Phase 2: lazy prune — single index read for all populated category IDs
+  // Phase 2: lazy prune — per-category indexed exists check
   const prunedCategories = useLiveQuery(async () => {
     const cats = allCategories;
     if (!cats || cats.length === 0) return undefined;
+    const t0 = performance.now();
     const table = type === 'movie' ? db.vodMovies : db.vodSeries;
-    const populatedIds = new Set(await table.orderBy('category_ids').uniqueKeys() as string[]);
-    return cats.filter(cat => populatedIds.has(cat.category_id));
+    // Check each category with a fast indexed lookup (stops at first match)
+    const checks = await Promise.all(
+      cats.map(async (cat) => {
+        const item = await table.where('category_ids').equals(cat.category_id).limit(1).first();
+        return item ? cat : null;
+      })
+    );
+    const populated = checks.filter((c): c is VodCategory => c !== null);
+    console.log(`[perf] vodCategories phase2 (per-cat exists): ${(performance.now() - t0).toFixed(0)}ms, ${populated.length}/${cats.length} populated`);
+    return populated;
   }, [allCategories]);
 
   return {

@@ -45,8 +45,9 @@ export function useToggleWatchlist() {
 export function useWatchlistMovies() {
   const enabledIds = useEnabledSourceIds();
   return useLiveQuery(async () => {
+    const t0 = performance.now();
     const items = await db.watchlist.where('type').equals('movie').toArray();
-    if (items.length === 0) return [];
+    if (items.length === 0) { console.log(`[perf] watchlistMovies: ${(performance.now() - t0).toFixed(0)}ms, empty`); return []; }
 
     const byTmdb = items.filter(i => i.tmdb_id).map(i => i.tmdb_id!);
     const byStream = items.filter(i => !i.tmdb_id && i.stream_id).map(i => i.stream_id!);
@@ -63,10 +64,12 @@ export function useWatchlistMovies() {
       all = all.filter(m => enabledSet.has(m.source_id));
     }
 
+    // Dedup by tmdb_id (cross-source), fall back to stream_id
     const seen = new Set<string>();
     return all.filter(m => {
-      if (seen.has(m.stream_id)) return false;
-      seen.add(m.stream_id);
+      const key = m.tmdb_id ? `tmdb_${m.tmdb_id}` : m.stream_id;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
   }, [enabledIds.join(',')]) ?? [];
@@ -93,10 +96,12 @@ export function useWatchlistSeries() {
       all = all.filter(s => enabledSet.has(s.source_id));
     }
 
+    // Dedup by tmdb_id (cross-source), fall back to series_id
     const seen = new Set<string>();
     return all.filter(s => {
-      if (seen.has(s.series_id)) return false;
-      seen.add(s.series_id);
+      const key = s.tmdb_id ? `tmdb_${s.tmdb_id}` : s.series_id;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
   }, [enabledIds.join(',')]) ?? [];
