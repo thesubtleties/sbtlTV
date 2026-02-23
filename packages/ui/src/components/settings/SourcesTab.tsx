@@ -1,13 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Source } from '../../types/electron';
-import { syncAllSources, syncAllVod, markSourceDeleted, type SyncResult, type VodSyncResult } from '../../db/sync';
+import { syncAllSources, syncAllVod, markSourceDeleted } from '../../db/sync';
 import { clearSourceData, clearVodData, db } from '../../db';
 import { useSyncStatus } from '../../hooks/useChannels';
 import { useChannelSyncing, useSetChannelSyncing, useVodSyncing, useSetVodSyncing, useUIStore, useUpdateSettings } from '../../stores/uiStore';
 import { parseM3U } from '@sbtltv/local-adapter';
-import { DragDropProvider } from '@dnd-kit/react';
-import { useSortable, isSortable } from '@dnd-kit/react/sortable';
 
 interface SourcesTabProps {
   sources: Source[];
@@ -37,84 +35,12 @@ const emptyForm: SourceFormData = {
   epgUrl: '',
 };
 
-// Sortable source item for priority lists
-function SortableSourceItem({ id, index, name, type }: { id: string; index: number; name: string; type: string }) {
-  const { ref, isDragSource } = useSortable({ id, index });
-
-  return (
-    <div
-      ref={ref}
-      className={`priority-item${isDragSource ? ' dragging' : ''}`}
-    >
-      <span className="priority-grip">⠿</span>
-      <span className="priority-name">{name}</span>
-      <span className="priority-type">{type.toUpperCase()}</span>
-    </div>
-  );
-}
-
-// Drag-and-drop priority list
-function SourcePriorityList({
-  title,
-  description,
-  sourceIds,
-  sources,
-  onReorder,
-}: {
-  title: string;
-  description: string;
-  sourceIds: string[];
-  sources: Source[];
-  onReorder: (newOrder: string[]) => void;
-}) {
-  const handleDragEnd = useCallback(({ operation }: any) => {
-    if (isSortable(operation.source)) {
-      const from = operation.source.sortable.initialIndex;
-      const to = operation.source.sortable.index;
-      if (from !== to) {
-        const newOrder = [...sourceIds];
-        const [moved] = newOrder.splice(from, 1);
-        newOrder.splice(to, 0, moved);
-        onReorder(newOrder);
-      }
-    }
-  }, [sourceIds, onReorder]);
-
-  if (sourceIds.length < 2) return null;
-
-  return (
-    <div className="priority-list-section">
-      <h4>{title}</h4>
-      <p className="priority-description">{description}</p>
-      <DragDropProvider onDragEnd={handleDragEnd}>
-        <div className="priority-list">
-          {sourceIds.map((id, index) => {
-            const source = sources.find(s => s.id === id);
-            if (!source) return null;
-            return (
-              <SortableSourceItem
-                key={id}
-                id={id}
-                index={index}
-                name={source.name}
-                type={source.type}
-              />
-            );
-          })}
-        </div>
-      </DragDropProvider>
-    </div>
-  );
-}
-
 export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: SourcesTabProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<SourceFormData>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [syncResults, setSyncResults] = useState<Map<string, SyncResult> | null>(null);
-  const [vodSyncResults, setVodSyncResults] = useState<Map<string, VodSyncResult> | null>(null);
   const syncStatus = useSyncStatus();
 
   // Global sync state - persists across Settings open/close
@@ -126,37 +52,12 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
   const hasXtreamSource = sources.some(s => s.type === 'xtream');
   const updateSettings = useUpdateSettings();
 
-  // Source ordering state from settings
-  const liveSourceOrder = useUIStore((s) => s.settings.liveSourceOrder);
-  const vodSourceOrder = useUIStore((s) => s.settings.vodSourceOrder);
-
-  // Compute effective live order: custom order or all enabled sources in insertion order
-  const enabledSources = sources.filter(s => s.enabled);
-  const effectiveLiveOrder = (liveSourceOrder && liveSourceOrder.length > 0)
-    ? liveSourceOrder.filter(id => enabledSources.some(s => s.id === id))
-    : enabledSources.map(s => s.id);
-  // VOD order: Xtream sources only
-  const enabledXtream = enabledSources.filter(s => s.type === 'xtream');
-  const effectiveVodOrder = (vodSourceOrder && vodSourceOrder.length > 0)
-    ? vodSourceOrder.filter(id => enabledXtream.some(s => s.id === id))
-    : enabledXtream.map(s => s.id);
-
   async function handleToggleEnabled(source: Source) {
     if (!window.storage) return;
     const updated = { ...source, enabled: !source.enabled };
     await window.storage.saveSource(updated);
     useUIStore.getState().updateSource(updated);
     onSourcesChange();
-  }
-
-  function handleLiveReorder(newOrder: string[]) {
-    updateSettings({ liveSourceOrder: newOrder });
-    window.storage?.updateSettings({ liveSourceOrder: newOrder });
-  }
-
-  function handleVodReorder(newOrder: string[]) {
-    updateSettings({ vodSourceOrder: newOrder });
-    window.storage?.updateSettings({ vodSourceOrder: newOrder });
   }
 
   // Track imported M3U data (file import flow)
@@ -238,6 +139,20 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
     await clearSourceData(id);
     await clearVodData(id);
     await window.storage.deleteSource(id);
+
+    // Clean deleted source from priority order lists
+    const { liveSourceOrder: lso, vodSourceOrder: vso } = useUIStore.getState().settings;
+    const cleanedLive = lso?.filter(sid => sid !== id);
+    const cleanedVod = vso?.filter(sid => sid !== id);
+    if (cleanedLive) {
+      updateSettings({ liveSourceOrder: cleanedLive });
+      window.storage?.updateSettings({ liveSourceOrder: cleanedLive });
+    }
+    if (cleanedVod) {
+      updateSettings({ vodSourceOrder: cleanedVod });
+      window.storage?.updateSettings({ vodSourceOrder: cleanedVod });
+    }
+
     onSourcesChange();
   }
 
@@ -280,6 +195,21 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       return;
     }
 
+    // Append new source to priority order lists (only for new sources, not edits)
+    if (!editingId) {
+      const { liveSourceOrder: lso, vodSourceOrder: vso } = useUIStore.getState().settings;
+      if (lso && lso.length > 0) {
+        const newLive = [...lso, sourceId];
+        updateSettings({ liveSourceOrder: newLive });
+        window.storage?.updateSettings({ liveSourceOrder: newLive });
+      }
+      if (source.type === 'xtream' && vso && vso.length > 0) {
+        const newVod = [...vso, sourceId];
+        updateSettings({ vodSourceOrder: newVod });
+        window.storage?.updateSettings({ vodSourceOrder: newVod });
+      }
+    }
+
     // For file imports, store channels directly in the database
     if (importedM3U) {
       const parsed = parseM3U(importedM3U.rawContent, sourceId);
@@ -318,11 +248,9 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
 
   async function handleSync() {
     setSyncing(true);
-    setSyncResults(null);
     setSyncError(null);
     try {
-      const results = await syncAllSources();
-      setSyncResults(results);
+      await syncAllSources();
     } catch (err) {
       console.error('Sync error:', err);
       setSyncError(err instanceof Error ? err.message : 'Channel sync failed');
@@ -333,11 +261,9 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
 
   async function handleVodSync() {
     setVodSyncing(true);
-    setVodSyncResults(null);
     setSyncError(null);
     try {
-      const results = await syncAllVod();
-      setVodSyncResults(results);
+      await syncAllVod();
     } catch (err) {
       console.error('VOD sync error:', err);
       setSyncError(err instanceof Error ? err.message : 'VOD sync failed');
@@ -382,100 +308,52 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
           </div>
         ) : (
           <ul className="sources-list">
-            {sources.map((source) => (
-              <li key={source.id} className={`source-item${source.enabled ? '' : ' disabled'}`}>
-                <div className="source-info">
-                  <label className="source-toggle" title={source.enabled ? 'Disable source' : 'Enable source'}>
-                    <input
-                      type="checkbox"
-                      checked={source.enabled}
-                      onChange={() => handleToggleEnabled(source)}
-                    />
-                    <span className="toggle-slider" />
-                  </label>
-                  <span className="source-name">{source.name}</span>
-                  <span className="source-type">{source.type.toUpperCase()}</span>
-                </div>
-                <div className="source-actions">
-                  <button onClick={() => handleEdit(source)}>Edit</button>
-                  <button className="delete" onClick={() => handleDelete(source.id, source.name)}>Delete</button>
-                </div>
-              </li>
-            ))}
+            {sources.map((source) => {
+              const meta = syncStatus.find(s => s.source_id === source.id);
+              const parts: string[] = [];
+              if (meta?.channel_count) parts.push(`${meta.channel_count.toLocaleString()} channels`);
+              if (meta?.vod_movie_count) parts.push(`${meta.vod_movie_count.toLocaleString()} movies`);
+              if (meta?.vod_series_count) parts.push(`${meta.vod_series_count.toLocaleString()} series`);
+              return (
+                <li key={source.id} className={`source-item${source.enabled ? '' : ' disabled'}`}>
+                  <div className="source-row">
+                    <div className="source-info">
+                      <label className="source-toggle" title={source.enabled ? 'Disable source' : 'Enable source'}>
+                        <input
+                          type="checkbox"
+                          checked={source.enabled}
+                          onChange={() => handleToggleEnabled(source)}
+                        />
+                        <span className="toggle-slider" />
+                      </label>
+                      <span className="source-name">{source.name}</span>
+                      <span className="source-type">{source.type.toUpperCase()}</span>
+                    </div>
+                    <div className="source-actions">
+                      <button onClick={() => handleEdit(source)}>Edit</button>
+                      <button className="delete" onClick={() => handleDelete(source.id, source.name)}>Delete</button>
+                    </div>
+                  </div>
+                  {(parts.length > 0 || meta?.error || meta?.last_synced) && (
+                    <div className="source-detail">
+                      {meta?.error ? (
+                        <span className="source-error">{meta.error}</span>
+                      ) : (
+                        <>
+                          {parts.length > 0 && <span className="source-stats">{parts.join(' · ')}</span>}
+                          {meta?.last_synced && (
+                            <span className="source-synced">Synced {new Date(meta.last_synced).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
-
-        {/* Sync Status - shown below sources list */}
-        {syncStatus.length > 0 && (
-          <div className="sync-status">
-            {syncStatus.map((status) => {
-              const source = sources.find((s) => s.id === status.source_id);
-              return (
-                <div key={status.source_id} className={`sync-status-item ${status.error ? 'error' : 'success'}`}>
-                  <span className="status-name">{source?.name || status.source_id}</span>
-                  {status.error ? (
-                    <span className="status-error">{status.error}</span>
-                  ) : (
-                    <span className="status-count">{status.channel_count} channels</span>
-                  )}
-                  {status.last_synced && (
-                    <span className="status-time">
-                      {new Date(status.last_synced).toLocaleTimeString()}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* VOD Sync Results */}
-        {vodSyncResults && vodSyncResults.size > 0 && (
-          <div className="sync-status">
-            {Array.from(vodSyncResults.entries()).map(([sourceId, result]) => {
-              const source = sources.find((s) => s.id === sourceId);
-              return (
-                <div key={sourceId} className={`sync-status-item ${result.error ? 'error' : 'success'}`}>
-                  <span className="status-name">{source?.name || sourceId}</span>
-                  {result.error ? (
-                    <span className="status-error">{result.error}</span>
-                  ) : (
-                    <span className="status-count">
-                      {result.movieCount} movies, {result.seriesCount} series
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
-
-      {/* Source Priority */}
-      {enabledSources.length > 1 && (
-        <div className="settings-section">
-          <div className="section-header">
-            <h3>Source Priority</h3>
-          </div>
-          <p className="section-description">
-            Drag to reorder. Higher sources are preferred when content exists in multiple sources.
-          </p>
-          <SourcePriorityList
-            title="Live TV"
-            description="Priority for live channels across all source types"
-            sourceIds={effectiveLiveOrder}
-            sources={sources}
-            onReorder={handleLiveReorder}
-          />
-          <SourcePriorityList
-            title="Movies & Series"
-            description="Priority for VOD content (Xtream sources only)"
-            sourceIds={effectiveVodOrder}
-            sources={sources}
-            onReorder={handleVodReorder}
-          />
-        </div>
-      )}
 
       {/* Add/Edit Form */}
       {showAddForm && createPortal(

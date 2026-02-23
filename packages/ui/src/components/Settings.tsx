@@ -3,6 +3,7 @@ import type { Source } from '../types/electron';
 import { useUIStore, useSettingsLoaded } from '../stores/uiStore';
 import { SettingsSidebar, type SettingsTabId } from './settings/SettingsSidebar';
 import { SourcesTab } from './settings/SourcesTab';
+import { PriorityTab } from './settings/PriorityTab';
 import { TmdbTab } from './settings/TmdbTab';
 import { DataRefreshTab } from './settings/DataRefreshTab';
 import { EpgTab } from './settings/ChannelsTab';
@@ -141,11 +142,13 @@ export function Settings({ onClose }: SettingsProps) {
 
   // Reset to sources tab if current tab becomes hidden
   useEffect(() => {
-    const libraryTabs: SettingsTabId[] = ['movies', 'series'];
-    if (libraryTabs.includes(activeTab) && !hasXtreamSource) {
+    if ((activeTab === 'movies' || activeTab === 'series') && !hasXtreamSource) {
       setActiveTab('sources');
     }
-  }, [hasXtreamSource, activeTab]);
+    if (activeTab === 'priority' && sources.length <= 1) {
+      setActiveTab('sources');
+    }
+  }, [hasXtreamSource, activeTab, sources.length]);
 
   // Memoized callbacks for genre changes
   const handleMovieGenresChange = useCallback((genres: number[]) => {
@@ -165,6 +168,10 @@ export function Settings({ onClose }: SettingsProps) {
             isEncryptionAvailable={isEncryptionAvailable}
             onSourcesChange={loadSources}
           />
+        );
+      case 'priority':
+        return (
+          <PriorityTab sources={sources} />
         );
       case 'tmdb':
         return (
@@ -276,6 +283,7 @@ export function Settings({ onClose }: SettingsProps) {
             activeTab={activeTab}
             onTabChange={setActiveTab}
             hasXtreamSource={hasXtreamSource}
+            hasMultipleSources={sources.length > 1}
           />
 
           {/* Tab Content */}

@@ -99,13 +99,11 @@ function useMoviesByTmdbIds(tmdbIds: number[]) {
   const enabledIds = useEnabledSourceIds();
   return useLiveQuery(async () => {
     if (tmdbIds.length === 0) return [];
-    const t0 = performance.now();
     let movies = await db.vodMovies.where('tmdb_id').anyOf(tmdbIds).toArray();
     if (enabledIds.length > 0) {
       const enabledSet = new Set(enabledIds);
       movies = movies.filter(m => enabledSet.has(m.source_id));
     }
-    console.log(`[perf] Dexie moviesByTmdbIds: ${(performance.now() - t0).toFixed(0)}ms, ${tmdbIds.length} ids → ${movies.length} movies`);
     return movies;
   }, [tmdbIds.join(','), enabledIds.join(',')]);
 }
@@ -117,13 +115,11 @@ function useSeriesByTmdbIds(tmdbIds: number[]) {
   const enabledIds = useEnabledSourceIds();
   return useLiveQuery(async () => {
     if (tmdbIds.length === 0) return [];
-    const t0 = performance.now();
     let series = await db.vodSeries.where('tmdb_id').anyOf(tmdbIds).toArray();
     if (enabledIds.length > 0) {
       const enabledSet = new Set(enabledIds);
       series = series.filter(s => enabledSet.has(s.source_id));
     }
-    console.log(`[perf] Dexie seriesByTmdbIds: ${(performance.now() - t0).toFixed(0)}ms, ${tmdbIds.length} ids → ${series.length} series`);
     return series;
   }, [tmdbIds.join(','), enabledIds.join(',')]);
 }
@@ -165,13 +161,9 @@ function useMovieList(
   useEffect(() => {
     setLoading(true);
     setError(null);
-    const t0 = performance.now();
 
     fetchFn(accessToken)
-      .then((results) => {
-        console.log(`[perf] TMDB movie fetch (${fetchFn.name}): ${(performance.now() - t0).toFixed(0)}ms, ${results.length} items`);
-        setTmdbMovies(results);
-      })
+      .then((results) => setTmdbMovies(results))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [accessToken]);
@@ -207,13 +199,9 @@ function useSeriesList(
   useEffect(() => {
     setLoading(true);
     setError(null);
-    const t0 = performance.now();
 
     fetchFn(accessToken)
-      .then((results) => {
-        console.log(`[perf] TMDB series fetch (${fetchFn.name}): ${(performance.now() - t0).toFixed(0)}ms, ${results.length} items`);
-        setTmdbSeries(results);
-      })
+      .then((results) => setTmdbSeries(results))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [accessToken]);
@@ -268,7 +256,6 @@ export function useLocalPopularMovies(limit = 20) {
   const enabledIds = useEnabledSourceIds();
   const movies = useLiveQuery(async () => {
     if (limit === 0) return [];
-    const t0 = performance.now();
     // Fetch a generous buffer for source filtering + dedup, not the full table
     const BUFFER = limit * 10;
     let all = await db.vodMovies
@@ -277,7 +264,6 @@ export function useLocalPopularMovies(limit = 20) {
       .filter((m) => m.popularity !== undefined && m.popularity > 0)
       .limit(BUFFER)
       .toArray();
-    console.log(`[perf] localPopularMovies scan: ${(performance.now() - t0).toFixed(0)}ms, ${all.length} items (limited from ${BUFFER})`);
     if (enabledIds.length > 0) {
       const enabledSet = new Set(enabledIds);
       all = all.filter(m => enabledSet.has(m.source_id));
@@ -370,7 +356,6 @@ export function useLocalPopularSeries(limit = 20) {
   const enabledIds = useEnabledSourceIds();
   const series = useLiveQuery(async () => {
     if (limit === 0) return [];
-    const t0 = performance.now();
     const BUFFER = limit * 10;
     let all = await db.vodSeries
       .orderBy('popularity')
@@ -378,7 +363,6 @@ export function useLocalPopularSeries(limit = 20) {
       .filter((s) => s.popularity !== undefined && s.popularity > 0)
       .limit(BUFFER)
       .toArray();
-    console.log(`[perf] localPopularSeries scan: ${(performance.now() - t0).toFixed(0)}ms, ${all.length} items (limited from ${BUFFER})`);
     if (enabledIds.length > 0) {
       const enabledSet = new Set(enabledIds);
       all = all.filter(s => enabledSet.has(s.source_id));

@@ -45,9 +45,8 @@ export function useToggleWatchlist() {
 export function useWatchlistMovies() {
   const enabledIds = useEnabledSourceIds();
   return useLiveQuery(async () => {
-    const t0 = performance.now();
     const items = await db.watchlist.where('type').equals('movie').toArray();
-    if (items.length === 0) { console.log(`[perf] watchlistMovies: ${(performance.now() - t0).toFixed(0)}ms, empty`); return []; }
+    if (items.length === 0) return [];
 
     const byTmdb = items.filter(i => i.tmdb_id).map(i => i.tmdb_id!);
     const byStream = items.filter(i => !i.tmdb_id && i.stream_id).map(i => i.stream_id!);

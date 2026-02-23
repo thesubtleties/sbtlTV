@@ -11,20 +11,12 @@ export function useEnabledSourceIds(): string[] {
   const sourcesLoaded = useUIStore((s) => s.sourcesLoaded);
 
   return useMemo(() => {
-    if (!sourcesLoaded) {
-      console.log('[perf] enabledSourceIds: not loaded yet → []');
-      return [];
-    }
+    if (!sourcesLoaded) return [];
     const enabled = sources.filter(s => s.enabled);
     // All sources enabled (including single-source) → return [] ("show all")
     // This prevents the dep change from [] → [id] that triggers double-query waves
-    if (enabled.length === sources.length) {
-      console.log(`[perf] enabledSourceIds: all ${sources.length} enabled → [] (no filtering)`);
-      return [];
-    }
-    const ids = enabled.map(s => s.id);
-    console.log(`[perf] enabledSourceIds: ${ids.length}/${sources.length} enabled → [${ids.join(', ')}]`);
-    return ids;
+    if (enabled.length === sources.length) return [];
+    return enabled.map(s => s.id);
   }, [sources, sourcesLoaded]);
 }
 

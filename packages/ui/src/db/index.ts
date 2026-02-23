@@ -124,7 +124,7 @@ class SbtltvDatabase extends Dexie {
   vodMovies!: Table<StoredMovie, string>;
   vodSeries!: Table<StoredSeries, string>;
   vodEpisodes!: Table<StoredEpisode, string>;
-  vodCategories!: Table<VodCategory, string>;
+  vodCategories!: Table<VodCategory, [string, string]>;
   favorites!: Table<StoredFavorite, string>;
   watchlist!: Table<StoredWatchlistItem, string>;
   watchProgress!: Table<StoredWatchProgress, string>;
@@ -233,6 +233,31 @@ class SbtltvDatabase extends Dexie {
       watchProgress: 'id, type, tmdb_id, stream_id, updated_at, [type+completed]',
     }).upgrade(async (tx) => {
       // Set forced resync flag so app re-syncs with stable M3U IDs
+      await tx.table('prefs').put({ key: 'needs_resync', value: 'true' });
+    });
+
+    // Compound PK for vodCategories: [source_id+category_id] prevents silent overwrites
+    // when two sources share the same Xtream category_id.
+    // Dexie can't change a primary key in-place, so we drop (v9) and recreate (v10).
+    this.version(9).stores({
+      vodCategories: null, // Drop table — PK change requires delete+recreate
+    });
+
+    this.version(10).stores({
+      channels: 'stream_id, source_id, *category_ids, name, channel_num',
+      categories: 'category_id, source_id, category_name',
+      sourcesMeta: 'source_id',
+      prefs: 'key',
+      programs: 'id, stream_id, source_id, start, end, [stream_id+start]',
+      vodMovies: 'stream_id, source_id, *category_ids, name, tmdb_id, added, popularity, [source_id+tmdb_id]',
+      vodSeries: 'series_id, source_id, *category_ids, name, tmdb_id, added, popularity, [source_id+tmdb_id]',
+      vodEpisodes: 'id, series_id, season_num, episode_num',
+      vodCategories: '[source_id+category_id], source_id, category_id, name, type',
+      favorites: 'id, type, stream_id, tmdb_id, added',
+      watchlist: 'id, type, tmdb_id, added',
+      watchProgress: 'id, type, tmdb_id, stream_id, updated_at, [type+completed]',
+    }).upgrade(async (tx) => {
+      // Trigger resync so VOD categories get re-populated with compound keys
       await tx.table('prefs').put({ key: 'needs_resync', value: 'true' });
     });
   }

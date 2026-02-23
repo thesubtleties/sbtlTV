@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory } from '../db';
 import { syncSeriesEpisodes, syncAllVod, type VodSyncResult } from '../db/sync';
@@ -264,9 +264,7 @@ export function useVodCategories(type: 'movie' | 'series') {
 
   // Phase 1: instant — all categories from the indexed table
   const allCategories = useLiveQuery(async () => {
-    const t0 = performance.now();
     let cats = await db.vodCategories.where('type').equals(type).toArray();
-    console.log(`[perf] vodCategories phase1: ${(performance.now() - t0).toFixed(0)}ms, ${cats.length} cats`);
     if (enabledIds.length > 0) {
       const enabledSet = new Set(enabledIds);
       cats = cats.filter(cat => enabledSet.has(cat.source_id));
@@ -278,7 +276,6 @@ export function useVodCategories(type: 'movie' | 'series') {
   const prunedCategories = useLiveQuery(async () => {
     const cats = allCategories;
     if (!cats || cats.length === 0) return undefined;
-    const t0 = performance.now();
     const table = type === 'movie' ? db.vodMovies : db.vodSeries;
     // Check each category with a fast indexed lookup (stops at first match)
     const checks = await Promise.all(
@@ -287,15 +284,51 @@ export function useVodCategories(type: 'movie' | 'series') {
         return item ? cat : null;
       })
     );
-    const populated = checks.filter((c): c is VodCategory => c !== null);
-    console.log(`[perf] vodCategories phase2 (per-cat exists): ${(performance.now() - t0).toFixed(0)}ms, ${populated.length}/${cats.length} populated`);
-    return populated;
+    return checks.filter((c): c is VodCategory => c !== null);
   }, [allCategories]);
 
   return {
     categories: prunedCategories ?? allCategories ?? [],
     loading: allCategories === undefined,
   };
+}
+
+// Grouped VOD category (deduped by name across sources)
+export interface GroupedVodCategory {
+  name: string;
+  categoryIds: string[];
+  groupKey: string; // `vgrp_${name}` — stable, won't collide with raw numeric category_ids
+}
+
+/**
+ * Group VOD categories by name (same dedup pattern as live TV's useGroupedCategories)
+ * Merges categories with the same name across sources into one entry
+ */
+export function useGroupedVodCategories(type: 'movie' | 'series') {
+  const { categories, loading } = useVodCategories(type);
+
+  const grouped = useMemo((): GroupedVodCategory[] => {
+    const groupMap = new Map<string, GroupedVodCategory>();
+
+    for (const cat of categories) {
+      const normalizedName = cat.name.trim();
+      const existing = groupMap.get(normalizedName);
+
+      if (existing) {
+        existing.categoryIds.push(cat.category_id);
+      } else {
+        groupMap.set(normalizedName, {
+          name: normalizedName,
+          categoryIds: [cat.category_id],
+          groupKey: `vgrp_${normalizedName}`,
+        });
+      }
+    }
+
+    return Array.from(groupMap.values());
+  }, [categories]);
+
+  return { groupedCategories: grouped, loading };
 }
 
 /**
@@ -384,12 +417,13 @@ export function useVodCounts() {
 /**
  * All movies for browse view (optionally filtered by category, source-aware)
  * Returns items sorted alphabetically - Virtuoso handles virtualization
- * Pass null for categoryId to get ALL movies
+ * Pass null for categoryIds to get ALL movies, or array of category IDs to filter
  */
-export function usePaginatedMovies(categoryId: string | null, search?: string) {
+export function usePaginatedMovies(categoryIds: string[] | null, search?: string) {
   const enabledIds = useEnabledSourceIds();
   const [items, setItems] = useState<StoredMovie[]>([]);
   const [loading, setLoading] = useState(false);
+  const categoryKey = categoryIds?.join(',') ?? null;
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -397,8 +431,10 @@ export function usePaginatedMovies(categoryId: string | null, search?: string) {
       try {
         let result: StoredMovie[];
 
-        if (categoryId) {
-          result = await db.vodMovies.where('category_ids').equals(categoryId).toArray();
+        if (categoryIds && categoryIds.length === 1) {
+          result = await db.vodMovies.where('category_ids').equals(categoryIds[0]).toArray();
+        } else if (categoryIds && categoryIds.length > 1) {
+          result = await db.vodMovies.where('category_ids').anyOf(categoryIds).toArray();
         } else {
           result = await db.vodMovies.toArray();
         }
@@ -425,7 +461,7 @@ export function usePaginatedMovies(categoryId: string | null, search?: string) {
     };
 
     fetchAll();
-  }, [categoryId, search, enabledIds]);
+  }, [categoryKey, search, enabledIds]);
 
   return {
     items,
@@ -438,12 +474,13 @@ export function usePaginatedMovies(categoryId: string | null, search?: string) {
 /**
  * All series for browse view (optionally filtered by category, source-aware)
  * Returns items sorted alphabetically - Virtuoso handles virtualization
- * Pass null for categoryId to get ALL series
+ * Pass null for categoryIds to get ALL series, or array of category IDs to filter
  */
-export function usePaginatedSeries(categoryId: string | null, search?: string) {
+export function usePaginatedSeries(categoryIds: string[] | null, search?: string) {
   const enabledIds = useEnabledSourceIds();
   const [items, setItems] = useState<StoredSeries[]>([]);
   const [loading, setLoading] = useState(false);
+  const categoryKey = categoryIds?.join(',') ?? null;
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -451,8 +488,10 @@ export function usePaginatedSeries(categoryId: string | null, search?: string) {
       try {
         let result: StoredSeries[];
 
-        if (categoryId) {
-          result = await db.vodSeries.where('category_ids').equals(categoryId).toArray();
+        if (categoryIds && categoryIds.length === 1) {
+          result = await db.vodSeries.where('category_ids').equals(categoryIds[0]).toArray();
+        } else if (categoryIds && categoryIds.length > 1) {
+          result = await db.vodSeries.where('category_ids').anyOf(categoryIds).toArray();
         } else {
           result = await db.vodSeries.toArray();
         }
@@ -479,7 +518,7 @@ export function usePaginatedSeries(categoryId: string | null, search?: string) {
     };
 
     fetchAll();
-  }, [categoryId, search, enabledIds]);
+  }, [categoryKey, search, enabledIds]);
 
   return {
     items,

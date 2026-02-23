@@ -61,7 +61,7 @@ const EMPTY_SERIES: StoredSeries[] = [];
 
 export interface VodBrowseProps {
   type: 'movies' | 'series';
-  categoryId: string | null;  // null = all items
+  categoryIds: string[] | null;  // null = all items, array = grouped category IDs
   categoryName: string;
   search?: string;
   onItemClick: (item: StoredMovie | StoredSeries) => void;
@@ -69,7 +69,7 @@ export interface VodBrowseProps {
 
 export function VodBrowse({
   type,
-  categoryId,
+  categoryIds,
   categoryName,
   search,
   onItemClick,
@@ -80,16 +80,19 @@ export function VodBrowse({
   // Debounce search to avoid expensive filtering on every keystroke
   const debouncedSearch = useDebouncedValue(search, 300);
 
+  // Stable key for category changes (scroll to top)
+  const categoryKey = categoryIds?.join(',') ?? null;
+
   // Scroll to top when category changes
   useEffect(() => {
     if (virtuosoRef.current) {
       virtuosoRef.current.scrollToIndex({ index: 0, align: 'start' });
     }
-  }, [categoryId]);
+  }, [categoryKey]);
 
   // Get paginated data (using debounced search)
-  const moviesData = usePaginatedMovies(type === 'movies' ? categoryId : null, debouncedSearch);
-  const seriesData = usePaginatedSeries(type === 'series' ? categoryId : null, debouncedSearch);
+  const moviesData = usePaginatedMovies(type === 'movies' ? categoryIds : null, debouncedSearch);
+  const seriesData = usePaginatedSeries(type === 'series' ? categoryIds : null, debouncedSearch);
 
   const { items: rawItems, loading, hasMore, loadMore } = type === 'movies' ? moviesData : seriesData;
 

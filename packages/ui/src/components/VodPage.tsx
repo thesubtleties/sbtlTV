@@ -6,7 +6,7 @@ import { HorizontalCategoryStrip } from './vod/HorizontalCategoryStrip';
 import { VodBrowse } from './vod/VodBrowse';
 import { MovieDetail } from './vod/MovieDetail';
 import { SeriesDetail } from './vod/SeriesDetail';
-import { useVodCategories } from '../hooks/useVod';
+import { useGroupedVodCategories } from '../hooks/useVod';
 import {
   useTrendingMovies,
   usePopularMovies,
@@ -233,11 +233,12 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const { series: localPopularSeries } = useLocalPopularSeries(type === 'series' && !tmdbApiKey ? 20 : 0);
   const localPopularItems = type === 'movie' ? localPopularMovies : localPopularSeries;
 
-  // VOD categories
-  const { categories } = useVodCategories(type);
+  // VOD categories (grouped by name across sources)
+  const { groupedCategories } = useGroupedVodCategories(type);
 
-  // Get selected category name for VodBrowse
-  const selectedCategory = categories.find(c => c.category_id === selectedCategoryId);
+  // Resolve selected groupKey back to category IDs for VodBrowse
+  const selectedGroup = groupedCategories.find(g => g.groupKey === selectedCategoryId);
+  const selectedCategoryIds = selectedGroup?.categoryIds ?? null;
 
   // Enabled genres from settings
   const enabledMovieGenres = useEnabledMovieGenres();
@@ -463,7 +464,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     <div className={pageClasses}>
       {/* Unified header: back + categories + search */}
       <HorizontalCategoryStrip
-        categories={categories.map(c => ({ id: c.category_id, name: c.name }))}
+        categories={groupedCategories.map(g => ({ id: g.groupKey, name: g.name }))}
         selectedId={selectedCategoryId}
         onSelect={handleCategorySelect}
         type={type}
@@ -483,17 +484,17 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
           // All items: Virtualized grid with no filter
           <VodBrowse
             type={browseType}
-            categoryId={null}
+            categoryIds={null}
             categoryName={`All ${typeLabel}`}
             search={searchQuery || undefined}
             onItemClick={handleItemClick}
           />
-        ) : selectedCategoryId && selectedCategory ? (
-          // Category view: Virtualized grid filtered by category
+        ) : selectedCategoryId && selectedGroup ? (
+          // Category view: Virtualized grid filtered by grouped category IDs
           <VodBrowse
             type={browseType}
-            categoryId={selectedCategoryId}
-            categoryName={selectedCategory.name}
+            categoryIds={selectedCategoryIds}
+            categoryName={selectedGroup.name}
             search={searchQuery || undefined}
             onItemClick={handleItemClick}
           />

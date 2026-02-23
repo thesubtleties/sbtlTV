@@ -288,8 +288,7 @@
 
 .source-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -303,10 +302,24 @@
   border-color: rgba(255, 255, 255, 0.1);
 }
 
+.source-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .source-info {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.source-detail {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 6px;
+  padding-left: 46px; /* align with name (toggle width + gap) */
 }
 
 .source-name {
@@ -324,6 +337,22 @@
   padding: 2px 6px;
   border-radius: 3px;
   color: rgba(255, 255, 255, 0.5);
+}
+
+.source-stats {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.source-synced {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.25);
+  margin-left: auto;
+}
+
+.source-error {
+  font-size: 0.75rem;
+  color: #e74c3c;
 }
 
 .source-actions {
@@ -490,6 +519,14 @@
   padding: 2px 5px;
   border-radius: 3px;
   color: rgba(255, 255, 255, 0.4);
+}
+
+.priority-item.disabled {
+  opacity: 0.4;
+}
+
+.priority-item.disabled .priority-name {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 /* Source Form Overlay */
