@@ -15,6 +15,7 @@ import { useMergedEpisodes } from '../../hooks/useVodDedup';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
+import { useUIStore } from '../../stores/uiStore';
 import type { StoredSeries, StoredEpisode } from '../../db';
 import type { VodPlayInfo } from '../../types/media';
 import './SeriesDetail.css';
@@ -29,7 +30,16 @@ export interface SeriesDetailProps {
 }
 
 export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey }: SeriesDetailProps) {
-  const [selectedSeason, setSelectedSeason] = useState<number>(1);
+  const seriesKey = series.tmdb_id?.toString() ?? series.series_id;
+  const rememberedSeason = useUIStore((s) => s.seriesSeasonMap[seriesKey]);
+  const setSeriesSeason = useUIStore((s) => s.setSeriesSeason);
+  const clearSeriesSeason = useUIStore((s) => s.clearSeriesSeason);
+  const [selectedSeason, setSelectedSeasonLocal] = useState<number>(rememberedSeason ?? 1);
+
+  const setSelectedSeason = useCallback((season: number) => {
+    setSelectedSeasonLocal(season);
+    setSeriesSeason(seriesKey, season);
+  }, [seriesKey, setSeriesSeason]);
 
   // Fetch episodes (cross-source merge when tmdb_id matches multiple sources)
   const { seasons, loading, error, refetch } = useMergedEpisodes(series.series_id, series.tmdb_id);
@@ -39,24 +49,30 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
     .map(Number)
     .sort((a, b) => a - b);
 
-  // Set first season as default when loaded
+  // Set first season as default when loaded (only if no remembered season)
   useEffect(() => {
     if (seasonNumbers.length > 0 && !seasonNumbers.includes(selectedSeason)) {
       setSelectedSeason(seasonNumbers[0]);
     }
-  }, [seasonNumbers, selectedSeason]);
+  }, [seasonNumbers, selectedSeason, setSelectedSeason]);
+
+  // Clear remembered season and close (back button / escape)
+  const handleBack = useCallback(() => {
+    clearSeriesSeason(seriesKey);
+    onClose();
+  }, [clearSeriesSeason, seriesKey, onClose]);
 
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        handleBack();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [handleBack]);
 
   // Lazy-load backdrop, plot, genre, and credits from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(series, apiKey);
@@ -121,7 +137,7 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
       </div>
 
       {/* Header with back button and collapse */}
-      <DetailHeader className="series-detail" onBack={onClose} onCollapse={onCollapse} />
+      <DetailHeader className="series-detail" onBack={handleBack} onCollapse={onCollapse} />
 
       {/* Content */}
       <div className="series-detail__content">

@@ -75,6 +75,11 @@ interface UIState {
   hydrateSettings: (data: AppSettings) => void;
   updateSettings: (partial: Partial<AppSettings>) => void;
 
+  // Series season memory (persists through collapse/play, clears on back)
+  seriesSeasonMap: Record<string, number>;
+  setSeriesSeason: (seriesId: string, season: number) => void;
+  clearSeriesSeason: (seriesId: string) => void;
+
   // Sources (hydrated from electron-store for reactive filtering)
   sources: Source[];
   sourcesLoaded: boolean;
@@ -161,6 +166,16 @@ export const useUIStore = create<UIState>((set) => ({
       merged.guideOpacity = Number.isNaN(val) ? 0.95 : Math.max(0.5, Math.min(1.0, val));
     }
     return { settings: merged };
+  }),
+
+  // Series season memory
+  seriesSeasonMap: {},
+  setSeriesSeason: (seriesId, season) => set((state) => ({
+    seriesSeasonMap: { ...state.seriesSeasonMap, [seriesId]: season },
+  })),
+  clearSeriesSeason: (seriesId) => set((state) => {
+    const { [seriesId]: _, ...rest } = state.seriesSeasonMap;
+    return { seriesSeasonMap: rest };
   }),
 
   // Sources
