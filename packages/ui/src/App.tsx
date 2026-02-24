@@ -400,6 +400,10 @@ function App() {
           useUIStore.getState().hydrateSources(result.data);
         }
         if (result.data && result.data.length > 0) {
+          // Purge orphaned data from deleted sources
+          const { purgeOrphanedData } = await import('./db');
+          await purgeOrphanedData(result.data.map(s => s.id));
+
           // Check if forced resync needed (e.g., after DB migration)
           const resyncPref = await db.prefs.get('needs_resync');
           const forceResync = resyncPref?.value === 'true';

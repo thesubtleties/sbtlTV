@@ -293,6 +293,57 @@ export async function clearVodData(sourceId: string): Promise<void> {
   });
 }
 
+// Purge orphaned data from deleted sources on startup
+export async function purgeOrphanedData(validSourceIds: string[]): Promise<void> {
+  const { debugLog } = await import('../utils/debugLog');
+  const validSet = new Set(validSourceIds);
+  if (validSet.size === 0) return; // Sources not loaded yet
+
+  let liveOrphans = 0;
+  let vodOrphans = 0;
+
+  await db.transaction('rw', [
+    db.channels, db.categories, db.sourcesMeta, db.programs,
+    db.vodMovies, db.vodSeries, db.vodEpisodes, db.vodCategories,
+  ], async () => {
+    // Find orphaned source_ids in categories
+    const allCategories = await db.categories.toArray();
+    const orphanedCatSourceIds = new Set(
+      allCategories.filter(c => !validSet.has(c.source_id)).map(c => c.source_id)
+    );
+    liveOrphans = orphanedCatSourceIds.size;
+
+    // Clean up each orphaned source
+    for (const orphanId of orphanedCatSourceIds) {
+      await db.channels.where('source_id').equals(orphanId).delete();
+      await db.categories.where('source_id').equals(orphanId).delete();
+      await db.sourcesMeta.where('source_id').equals(orphanId).delete();
+      await db.programs.where('source_id').equals(orphanId).delete();
+    }
+
+    // VOD side
+    const allVodCats = await db.vodCategories.toArray();
+    const orphanedVodSourceIds = new Set(
+      allVodCats.filter(c => !validSet.has(c.source_id)).map(c => c.source_id)
+    );
+    vodOrphans = orphanedVodSourceIds.size;
+
+    for (const orphanId of orphanedVodSourceIds) {
+      const series = await db.vodSeries.where('source_id').equals(orphanId).toArray();
+      for (const s of series) {
+        await db.vodEpisodes.where('series_id').equals(s.series_id).delete();
+      }
+      await db.vodMovies.where('source_id').equals(orphanId).delete();
+      await db.vodSeries.where('source_id').equals(orphanId).delete();
+      await db.vodCategories.where('source_id').equals(orphanId).delete();
+    }
+  });
+
+  if (liveOrphans + vodOrphans > 0) {
+    debugLog(`Purged orphaned data from ${liveOrphans} live + ${vodOrphans} VOD deleted source(s)`, 'db');
+  }
+}
+
 // Helper to clear ALL cached data (channels, EPG, VOD, metadata)
 // Keeps: prefs (user preferences), electron-store settings, source configs
 export async function clearAllCachedData(): Promise<void> {
