@@ -185,7 +185,8 @@
 
 .hero__btn--primary:hover {
   background: rgba(255, 255, 255, 0.9);
-  transform: scale(1.02);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .hero__btn--secondary {
@@ -197,8 +198,9 @@
 }
 
 .hero__btn--secondary:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.18);
   border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
 }
 
 /* Navigation dots */
