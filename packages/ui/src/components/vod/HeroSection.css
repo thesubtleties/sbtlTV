@@ -179,8 +179,10 @@
 }
 
 .hero__btn--primary {
-  background: #fff;
+  background: rgba(255, 255, 255, 0.85);
   color: #0d0d0d;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .hero__btn--primary:hover {
