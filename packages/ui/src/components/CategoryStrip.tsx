@@ -33,7 +33,7 @@ export function CategoryStrip({ selectedCategoryId, onSelectCategory, visible, s
         {/* Favorites (shown when user has favorites) */}
         {favoriteCount > 0 && (
           <button
-            className={`category-item category-favorites ${selectedCategoryId === '__favorites__' ? 'selected' : ''}`}
+            className={`category-item ${selectedCategoryId === '__favorites__' ? 'selected' : ''}`}
             onClick={() => onSelectCategory('__favorites__')}
           >
             <span className="category-name">Favorites</span>
