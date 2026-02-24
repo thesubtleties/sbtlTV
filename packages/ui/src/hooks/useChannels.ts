@@ -312,6 +312,8 @@ export function useGroupedCategories(): GroupedCategory[] {
 
     for (const cat of categoriesWithCounts) {
       if (cat.channelCount === 0) continue;
+      // Skip categories from unknown/deleted sources
+      if (sourceMap.size > 0 && !sourceMap.has(cat.source_id)) continue;
 
       const normalizedName = cat.category_name.trim();
       const existing = grouped.get(normalizedName);

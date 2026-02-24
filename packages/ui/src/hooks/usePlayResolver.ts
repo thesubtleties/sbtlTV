@@ -37,6 +37,9 @@ export function useMoviePlaySources(tmdbId?: number, streamId?: string): SourceO
     if (enabledIds.length > 0) {
       const enabledSet = new Set(enabledIds);
       filtered = movies.filter(m => enabledSet.has(m.source_id));
+    } else if (sourceMap.size > 0) {
+      // Filter out stale data from deleted sources
+      filtered = movies.filter(m => sourceMap.has(m.source_id));
     }
 
     if (filtered.length === 0) return [];
@@ -112,6 +115,9 @@ export function useEpisodePlaySources(
     if (enabledIds.length > 0) {
       const enabledSet = new Set(enabledIds);
       filtered = episodes.filter(ep => ep.source_id && enabledSet.has(ep.source_id));
+    } else if (sourceMap.size > 0) {
+      // Filter out stale data from deleted sources
+      filtered = episodes.filter(ep => ep.source_id && sourceMap.has(ep.source_id));
     }
 
     if (filtered.length === 0) return [];
