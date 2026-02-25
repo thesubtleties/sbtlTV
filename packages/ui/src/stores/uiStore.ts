@@ -75,6 +75,10 @@ interface UIState {
   hydrateSettings: (data: AppSettings) => void;
   updateSettings: (partial: Partial<AppSettings>) => void;
 
+  // Live TV category filter (persists across sidebar open/close)
+  categoryFilter: string;
+  setCategoryFilter: (filter: string) => void;
+
   // Series season memory (persists through collapse/play, clears on back)
   seriesSeasonMap: Record<string, number>;
   setSeriesSeason: (seriesId: string, season: number) => void;
@@ -168,6 +172,10 @@ export const useUIStore = create<UIState>((set) => ({
     return { settings: merged };
   }),
 
+  // Live TV category filter
+  categoryFilter: '',
+  setCategoryFilter: (filter) => set({ categoryFilter: filter }),
+
   // Series season memory
   seriesSeasonMap: {},
   setSeriesSeason: (seriesId, season) => set((state) => ({
@@ -193,6 +201,10 @@ export const useSetMoviesCategory = () => useUIStore((s) => s.setMoviesSelectedC
 
 export const useSeriesCategory = () => useUIStore((s) => s.seriesSelectedCategory);
 export const useSetSeriesCategory = () => useUIStore((s) => s.setSeriesSelectedCategory);
+
+// Category filter selectors
+export const useCategoryFilter = () => useUIStore((s) => s.categoryFilter);
+export const useSetCategoryFilter = () => useUIStore((s) => s.setCategoryFilter);
 
 // Sync state selectors
 export const useChannelSyncing = () => useUIStore((s) => s.channelSyncing);

@@ -1,5 +1,7 @@
-import { useGroupedCategories, useChannelCount, type GroupedCategory } from '../hooks/useChannels';
+import { useRef, useMemo, useCallback } from 'react';
+import { useGroupedCategories, useChannelCount } from '../hooks/useChannels';
 import { useFavoriteChannelCount } from '../hooks/useFavorites';
+import { useCategoryFilter, useSetCategoryFilter } from '../stores/uiStore';
 import './CategoryStrip.css';
 
 interface CategoryStripProps {
@@ -13,6 +15,20 @@ export function CategoryStrip({ selectedCategoryId, onSelectCategory, visible, s
   const groupedCategories = useGroupedCategories();
   const totalChannels = useChannelCount();
   const favoriteCount = useFavoriteChannelCount();
+  const categoryFilter = useCategoryFilter();
+  const setCategoryFilter = useSetCategoryFilter();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filteredCategories = useMemo(() => {
+    if (!categoryFilter) return groupedCategories;
+    const q = categoryFilter.toLowerCase();
+    return groupedCategories.filter(g => g.name.toLowerCase().includes(q));
+  }, [groupedCategories, categoryFilter]);
+
+  const handleClear = useCallback(() => {
+    setCategoryFilter('');
+    inputRef.current?.focus();
+  }, [setCategoryFilter]);
 
   return (
     <div className={`category-strip ${visible ? 'visible' : 'hidden'} ${sidebarExpanded ? 'sidebar-expanded' : ''}`}>
@@ -20,8 +36,32 @@ export function CategoryStrip({ selectedCategoryId, onSelectCategory, visible, s
         <span className="category-strip-title">Categories</span>
       </div>
 
+      <div className="category-filter">
+        <svg className="category-filter__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+          <path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" />
+          <path d="M21 21l-6 -6" />
+        </svg>
+        <input
+          ref={inputRef}
+          type="text"
+          className="category-filter__input"
+          placeholder="Filter"
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          spellCheck={false}
+        />
+        {categoryFilter && (
+          <button className="category-filter__clear" onClick={handleClear} tabIndex={-1}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
       <div className="category-strip-list">
-        {/* "All Channels" option */}
+        {/* "All Channels" option — always visible */}
         <button
           className={`category-item ${selectedCategoryId === null ? 'selected' : ''}`}
           onClick={() => onSelectCategory(null)}
@@ -30,7 +70,7 @@ export function CategoryStrip({ selectedCategoryId, onSelectCategory, visible, s
           <span className="category-count">{totalChannels}</span>
         </button>
 
-        {/* Favorites (shown when user has favorites) */}
+        {/* Favorites — always visible when present */}
         {favoriteCount > 0 && (
           <button
             className={`category-item ${selectedCategoryId === '__favorites__' ? 'selected' : ''}`}
@@ -41,8 +81,8 @@ export function CategoryStrip({ selectedCategoryId, onSelectCategory, visible, s
           </button>
         )}
 
-        {/* Adaptive category list */}
-        {groupedCategories.map((group) =>
+        {/* Filtered category list */}
+        {filteredCategories.map((group) =>
           group.sources.length === 1 ? (
             // Single source: flat clickable item (same as before)
             <button
