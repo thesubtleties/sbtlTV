@@ -65,12 +65,24 @@ export function useWatchlistMovies() {
 
     // Dedup by tmdb_id (cross-source), fall back to stream_id
     const seen = new Set<string>();
-    return all.filter(m => {
+    const deduped = all.filter(m => {
       const key = m.tmdb_id ? `tmdb_${m.tmdb_id}` : m.stream_id;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+
+    // Sort by watchlist added date (oldest first, newest last)
+    const addedMap = new Map(items.map(i => [i.tmdb_id ? `tmdb_${i.tmdb_id}` : i.stream_id, i.added]));
+    deduped.sort((a, b) => {
+      const keyA = a.tmdb_id ? `tmdb_${a.tmdb_id}` : a.stream_id;
+      const keyB = b.tmdb_id ? `tmdb_${b.tmdb_id}` : b.stream_id;
+      const dateA = addedMap.get(keyA)?.getTime() ?? 0;
+      const dateB = addedMap.get(keyB)?.getTime() ?? 0;
+      return dateA - dateB;
+    });
+
+    return deduped;
   }, [enabledIds.join(',')]) ?? [];
 }
 
@@ -97,11 +109,23 @@ export function useWatchlistSeries() {
 
     // Dedup by tmdb_id (cross-source), fall back to series_id
     const seen = new Set<string>();
-    return all.filter(s => {
+    const deduped = all.filter(s => {
       const key = s.tmdb_id ? `tmdb_${s.tmdb_id}` : s.series_id;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+
+    // Sort by watchlist added date (oldest first, newest last)
+    const addedMap = new Map(items.map(i => [i.tmdb_id ? `tmdb_${i.tmdb_id}` : i.stream_id, i.added]));
+    deduped.sort((a, b) => {
+      const keyA = a.tmdb_id ? `tmdb_${a.tmdb_id}` : a.series_id;
+      const keyB = b.tmdb_id ? `tmdb_${b.tmdb_id}` : b.series_id;
+      const dateA = addedMap.get(keyA)?.getTime() ?? 0;
+      const dateB = addedMap.get(keyB)?.getTime() ?? 0;
+      return dateA - dateB;
+    });
+
+    return deduped;
   }, [enabledIds.join(',')]) ?? [];
 }
