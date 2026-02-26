@@ -15,6 +15,7 @@ import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
 import { useMoviePlaySources } from '../../hooks/usePlayResolver';
+import { useMovieProgressByTmdb, useMovieProgress } from '../../hooks/useWatchProgress';
 import type { StoredMovie } from '../../db';
 import './MovieDetail.css';
 
@@ -46,6 +47,9 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
   const lazyCredits = useLazyCredits(movie, apiKey);
 
   const playSources = useMoviePlaySources(movie.tmdb_id, movie.stream_id);
+  const progressByTmdb = useMovieProgressByTmdb(movie.tmdb_id);
+  const progressByStream = useMovieProgress(movie.stream_id);
+  const watchProgress = (progressByTmdb ?? progressByStream)?.progress ?? 0;
   const hasMultipleSources = playSources.length > 1;
 
   const handlePlay = useCallback(() => {
@@ -107,6 +111,11 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
             ) : (
               <div className="movie-detail__poster-placeholder">
                 <span>{movie.name.charAt(0).toUpperCase()}</span>
+              </div>
+            )}
+            {watchProgress > 0 && (
+              <div className="movie-detail__progress">
+                <div className="movie-detail__progress-bar" style={{ width: `${watchProgress}%` }} />
               </div>
             )}
           </div>
