@@ -646,16 +646,16 @@ function handleMpvMessage(msg: MpvMessage): void {
         updateSleepBlock(mpvState.playing);
         break;
       case 'volume':
-        mpvState.volume = (msg.data as number) || 100;
+        mpvState.volume = (msg.data as number) ?? 100;
         break;
       case 'mute':
-        mpvState.muted = (msg.data as boolean) || false;
+        mpvState.muted = (msg.data as boolean) ?? false;
         break;
       case 'time-pos':
-        mpvState.position = (msg.data as number) || 0;
+        mpvState.position = (msg.data as number) ?? 0;
         break;
       case 'duration':
-        mpvState.duration = (msg.data as number) || 0;
+        mpvState.duration = (msg.data as number) ?? 0;
         // File loaded — execute pending resume seek
         if (pendingResumePosition && mpvState.duration > 0) {
           const seekTo = pendingResumePosition;
