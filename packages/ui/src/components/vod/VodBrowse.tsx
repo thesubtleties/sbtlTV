@@ -9,6 +9,7 @@ import { useState, useCallback, useMemo, useRef, forwardRef, useEffect } from 'r
 import { VirtuosoGrid, VirtuosoGridHandle } from 'react-virtuoso';
 import { MediaCard } from './MediaCard';
 import { AlphabetRail } from './AlphabetRail';
+import { useMovieProgressMap, getMovieProgress } from '../../hooks/useWatchProgress';
 import type { StoredMovie, StoredSeries } from '../../db';
 import {
   usePaginatedMovies,
@@ -76,6 +77,7 @@ export function VodBrowse({
 }: VodBrowseProps) {
   const virtuosoRef = useRef<VirtuosoGridHandle>(null);
   const [visibleRange, setVisibleRange] = useState({ startIndex: 0, endIndex: 0 });
+  const progressMap = useMovieProgressMap();
 
   // Debounce search to avoid expensive filtering on every keystroke
   const debouncedSearch = useDebouncedValue(search, 300);
@@ -161,10 +163,11 @@ export function VodBrowse({
           type={type === 'movies' ? 'movie' : 'series'}
           onClick={onItemClick}
           size="medium"
+          progress={type === 'movies' ? getMovieProgress(progressMap, item) : undefined}
         />
       );
     },
-    [type, onItemClick]
+    [type, onItemClick, progressMap]
   );
 
   // Empty state

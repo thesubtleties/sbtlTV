@@ -54,7 +54,7 @@ public:
     bool isInitialized() const { return m_initialized; }
 
     // Playback control
-    bool load(const std::string& url);
+    bool load(const std::string& url, const std::string& options = "");
     void play();
     void pause();
     void stop();

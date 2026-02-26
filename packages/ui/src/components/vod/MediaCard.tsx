@@ -133,13 +133,14 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
           </div>
         </div>
 
-        {/* Watch progress bar */}
-        {progressPercent > 0 && (
-          <div className="media-card__progress">
-            <div className="media-card__progress-bar" style={{ width: `${progressPercent}%` }} />
-          </div>
-        )}
       </div>
+
+      {/* Watch progress bar — on the seam between poster and info */}
+      {progressPercent > 0 && (
+        <div className="media-card__progress">
+          <div className="media-card__progress-bar" style={{ width: `${progressPercent}%` }} />
+        </div>
+      )}
 
       <div className="media-card__info">
         <h3

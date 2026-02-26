@@ -100,3 +100,53 @@ export function useClearProgress() {
     await db.watchProgress.delete(id);
   }, []);
 }
+
+/** One-time DB lookup for resume position (seconds). Returns 0 if none or completed. */
+export async function getResumePosition(
+  type: 'movie' | 'episode',
+  opts: { streamId?: string; seriesTmdbId?: number; seasonNum?: number; episodeNum?: number },
+): Promise<number> {
+  let id: string;
+  if (type === 'episode' && opts.seriesTmdbId && opts.seasonNum != null && opts.episodeNum != null) {
+    id = episodeProgressId(opts.seriesTmdbId, opts.seasonNum, opts.episodeNum);
+  } else if (opts.streamId) {
+    id = movieProgressId(opts.streamId);
+  } else {
+    return 0;
+  }
+  const entry = await db.watchProgress.get(id);
+  if (!entry || entry.completed) return 0;
+  // Don't resume if less than 10s in — not worth it
+  if (entry.position < 10) return 0;
+  return entry.position;
+}
+
+const EMPTY_PROGRESS_MAP = new Map<string, number>();
+
+/** Bulk progress map for movies — one query, O(1) lookup per card.
+ *  Keyed by both tmdb_id and stream_id so lookup always hits. */
+export function useMovieProgressMap(): Map<string, number> {
+  return useLiveQuery(async () => {
+    const items = await db.watchProgress.where('type').equals('movie').toArray();
+    const map = new Map<string, number>();
+    for (const item of items) {
+      if (item.completed) continue;
+      if (item.tmdb_id) map.set(`tmdb_${item.tmdb_id}`, item.progress);
+      if (item.stream_id) map.set(`stream_${item.stream_id}`, item.progress);
+    }
+    return map;
+  }, []) ?? EMPTY_PROGRESS_MAP;
+}
+
+/** Look up progress for a movie from the bulk map */
+export function getMovieProgress(map: Map<string, number>, item: { tmdb_id?: number; stream_id?: string }): number {
+  if (item.tmdb_id) {
+    const p = map.get(`tmdb_${item.tmdb_id}`);
+    if (p !== undefined) return p;
+  }
+  if (item.stream_id) {
+    const p = map.get(`stream_${item.stream_id}`);
+    if (p !== undefined) return p;
+  }
+  return 0;
+}

@@ -118,7 +118,7 @@ contextBridge.exposeInMainWorld('electronWindow', {
 // Expose mpv API to the renderer process
 contextBridge.exposeInMainWorld('mpv', {
   // Control functions
-  load: (url: string) => ipcRenderer.invoke('mpv-load', url),
+  load: (url: string, startPosition?: number) => ipcRenderer.invoke('mpv-load', url, startPosition),
   play: () => ipcRenderer.invoke('mpv-play'),
   pause: () => ipcRenderer.invoke('mpv-pause'),
   togglePause: () => ipcRenderer.invoke('mpv-toggle-pause'),

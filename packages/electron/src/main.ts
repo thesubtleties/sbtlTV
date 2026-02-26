@@ -65,6 +65,9 @@ const mpvState: MpvState = {
   duration: 0,
 };
 
+// Pending resume position — seek when duration first arrives (file loaded)
+let pendingResumePosition: number | null = null;
+
 // Prevent screen sleep during playback
 let sleepBlockerId: number | null = null;
 
@@ -653,6 +656,15 @@ function handleMpvMessage(msg: MpvMessage): void {
         break;
       case 'duration':
         mpvState.duration = (msg.data as number) || 0;
+        // File loaded — execute pending resume seek
+        if (pendingResumePosition && mpvState.duration > 0) {
+          const seekTo = pendingResumePosition;
+          pendingResumePosition = null;
+          debugLog(`Resume: seeking to ${seekTo}s (duration: ${mpvState.duration}s)`, 'mpv');
+          sendMpvCommand('seek', [seekTo, 'absolute']).catch(() => {
+            debugLog('Resume: seek failed', 'mpv');
+          });
+        }
         break;
     }
 
@@ -727,13 +739,19 @@ ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
 });
 
 // IPC Handlers - mpv control
-ipcMain.handle('mpv-load', async (_event, url: string) => {
-  debugLog(`mpv-load called with URL: ${url}`, 'mpv');
+ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number) => {
+  const resumeAt = startPosition && startPosition > 0 ? Math.floor(startPosition) : 0;
+  debugLog(`mpv-load called with URL: ${url}${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
+
+  // Set pending resume — will seek when duration property arrives (file loaded)
+  pendingResumePosition = resumeAt || null;
+
+  const options = resumeAt ? `start=${resumeAt}` : '';
 
   // Route to native bridge if available
   if (useNativeMpv && mpvBridge) {
     try {
-      await mpvBridge.load(url);
+      await mpvBridge.load(url, options);
       debugLog('mpv-load SUCCESS (native)', 'mpv');
       return { success: true };
     } catch (error) {

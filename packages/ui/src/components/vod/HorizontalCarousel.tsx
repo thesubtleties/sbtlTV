@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type { StoredMovie, StoredSeries } from '../../db';
 import { MediaCard } from './MediaCard';
+import { getMovieProgress } from '../../hooks/useWatchProgress';
 import './HorizontalCarousel.css';
 
 export interface HorizontalCarouselProps {
@@ -12,6 +13,7 @@ export interface HorizontalCarouselProps {
   loading?: boolean;
   maxItems?: number; // Limit items for performance
   hidden?: boolean; // Hide but maintain minimal height for Virtuoso
+  progressMap?: Map<string, number>; // Bulk movie progress lookup
 }
 
 export function HorizontalCarousel({
@@ -23,6 +25,7 @@ export function HorizontalCarousel({
   loading = false,
   maxItems = 20,
   hidden = false,
+  progressMap,
 }: HorizontalCarouselProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -124,6 +127,7 @@ export function HorizontalCarousel({
                 type={type}
                 onClick={onItemClick}
                 size={cardSize}
+                progress={progressMap ? getMovieProgress(progressMap, item) : undefined}
               />
             ))
           )}

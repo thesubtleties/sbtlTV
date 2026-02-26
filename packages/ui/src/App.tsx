@@ -17,7 +17,7 @@ import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync'
 import type { StoredChannel } from './db';
 import { db } from './db';
 import type { VodPlayInfo } from './types/media';
-import { updateWatchProgress } from './hooks/useWatchProgress';
+import { updateWatchProgress, getResumePosition } from './hooks/useWatchProgress';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -80,12 +80,13 @@ function getStreamFallbacks(url: string, isLive: boolean): string[] {
 async function tryLoadWithFallbacks(
   primaryUrl: string,
   isLive: boolean,
-  mpv: NonNullable<typeof window.mpv>
+  mpv: NonNullable<typeof window.mpv>,
+  startPosition?: number,
 ): Promise<{ success: boolean; url: string; error?: string }> {
-  debugLog(`Attempting to load: ${primaryUrl} (isLive: ${isLive})`);
+  debugLog(`Attempting to load: ${primaryUrl} (isLive: ${isLive})${startPosition ? ` resume@${startPosition}s` : ''}`);
 
   // Try primary URL first
-  const result = await mpv.load(primaryUrl);
+  const result = await mpv.load(primaryUrl, startPosition);
   if (!result.error) {
     debugLog(`Primary URL loaded successfully`);
     return { success: true, url: primaryUrl };
@@ -97,7 +98,7 @@ async function tryLoadWithFallbacks(
   debugLog(`Trying ${fallbacks.length} fallback URLs...`);
   for (const fallbackUrl of fallbacks) {
     debugLog(`Trying fallback: ${fallbackUrl}`);
-    const fallbackResult = await mpv.load(fallbackUrl);
+    const fallbackResult = await mpv.load(fallbackUrl, startPosition);
     if (!fallbackResult.error) {
       debugLog(`Fallback succeeded: ${fallbackUrl}`);
       return { success: true, url: fallbackUrl };
@@ -311,12 +312,17 @@ function App() {
       return;
     }
     setError(null);
-    const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
+    // Look up resume position before loading
+    const resumePos = await getResumePosition(
+      info.type === 'movie' ? 'movie' : 'episode',
+      { streamId: info.streamId, seriesTmdbId: info.tmdbId, seasonNum: info.seasonNum, episodeNum: info.episodeNum },
+    );
+    const result = await tryLoadWithFallbacks(info.url, false, window.mpv, resumePos || undefined);
     if (!result.success) {
       debugLog(`  FAILED: ${result.error}`);
       setError(result.error ?? 'Failed to load stream');
     } else {
-      debugLog(`  SUCCESS: playing`);
+      debugLog(`  SUCCESS: playing${resumePos ? ` (resumed @ ${resumePos}s)` : ''}`);
       // Create a pseudo-channel for the now playing bar
       const workingUrl = result.url;
       setCurrentChannel({

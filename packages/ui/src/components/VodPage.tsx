@@ -28,6 +28,7 @@ import {
   useMultipleSeriesByGenre,
 } from '../hooks/useTmdbLists';
 import { useWatchlistMovies, useWatchlistSeries } from '../hooks/useWatchlist';
+import { useMovieProgressMap } from '../hooks/useWatchProgress';
 import { useVodNavigation } from '../stores/uiStore';
 import type { StoredMovie, StoredSeries } from '../db';
 import { type MediaItem, type VodType, type VodPlayInfo } from '../types/media';
@@ -54,6 +55,7 @@ interface HomeVirtuosoContext {
   heroLoading: boolean;
   onItemClick: (item: MediaItem) => void;
   onHeroPlay: (item: MediaItem) => void;
+  progressMap?: Map<string, number>;
 }
 
 // Header component for Virtuoso (defined outside render to prevent remounting)
@@ -80,7 +82,7 @@ const CarouselRowContent = (
   context: HomeVirtuosoContext | undefined
 ) => {
   if (!context) return null;
-  const { type, onItemClick } = context;
+  const { type, onItemClick, progressMap } = context;
 
   return (
     <HorizontalCarousel
@@ -89,6 +91,7 @@ const CarouselRowContent = (
       type={type}
       onItemClick={onItemClick}
       loading={row.loading}
+      progressMap={type === 'movie' ? progressMap : undefined}
     />
   );
 };
@@ -227,6 +230,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const watchlistMovies = useWatchlistMovies();
   const watchlistSeries = useWatchlistSeries();
   const watchlistItems = type === 'movie' ? watchlistMovies : watchlistSeries;
+
+  // Bulk movie progress (one query, passed down to cards as props)
+  const movieProgressMap = useMovieProgressMap();
 
   // Fallback: local popularity (only when no TMDB API key)
   const { movies: localPopularMovies } = useLocalPopularMovies(type === 'movie' && !tmdbApiKey ? 20 : 0);
@@ -408,7 +414,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     heroLoading,
     onItemClick: handleItemClick,
     onHeroPlay: handleHeroPlay,
-  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, handleItemClick, handleHeroPlay]);
+    progressMap: type === 'movie' ? movieProgressMap : undefined,
+  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, handleItemClick, handleHeroPlay, movieProgressMap]);
 
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {

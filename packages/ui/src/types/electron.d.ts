@@ -22,7 +22,7 @@ export interface MpvModeInfo {
 }
 
 export interface MpvApi {
-  load: (url: string) => Promise<MpvResult>;
+  load: (url: string, startPosition?: number) => Promise<MpvResult>;
   play: () => Promise<MpvResult>;
   pause: () => Promise<MpvResult>;
   togglePause: () => Promise<MpvResult>;
