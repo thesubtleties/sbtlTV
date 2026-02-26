@@ -138,6 +138,25 @@ export function useMovieProgressMap(): Map<string, number> {
   }, []) ?? EMPTY_PROGRESS_MAP;
 }
 
+const EMPTY_EPISODE_MAP = new Map<string, number>();
+
+/** Bulk progress map for episodes of a series — one query, O(1) lookup per row.
+ *  Keyed by "S{season}_E{episode}" for easy lookup from episode rows. */
+export function useEpisodeProgressMap(seriesTmdbId?: number): Map<string, number> {
+  return useLiveQuery(async () => {
+    if (!seriesTmdbId) return EMPTY_EPISODE_MAP;
+    const items = await db.watchProgress
+      .where('series_tmdb_id').equals(seriesTmdbId)
+      .toArray();
+    const map = new Map<string, number>();
+    for (const item of items) {
+      if (item.completed || item.season_num == null || item.episode_num == null) continue;
+      map.set(`S${item.season_num}_E${item.episode_num}`, item.progress);
+    }
+    return map;
+  }, [seriesTmdbId]) ?? EMPTY_EPISODE_MAP;
+}
+
 /** Look up progress for a movie from the bulk map */
 export function getMovieProgress(map: Map<string, number>, item: { tmdb_id?: number; stream_id?: string }): number {
   if (item.tmdb_id) {

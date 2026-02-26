@@ -260,6 +260,11 @@ class SbtltvDatabase extends Dexie {
       // Trigger resync so VOD categories get re-populated with compound keys
       await tx.table('prefs').put({ key: 'needs_resync', value: 'true' });
     });
+
+    // Add series_tmdb_id index to watchProgress for efficient per-series episode lookups
+    this.version(11).stores({
+      watchProgress: 'id, type, tmdb_id, stream_id, series_tmdb_id, updated_at, [type+completed]',
+    });
   }
 }
 

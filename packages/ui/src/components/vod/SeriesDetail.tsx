@@ -15,6 +15,7 @@ import { useMergedEpisodes } from '../../hooks/useVodDedup';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
+import { useEpisodeProgressMap } from '../../hooks/useWatchProgress';
 import { useUIStore } from '../../stores/uiStore';
 import type { StoredSeries, StoredEpisode } from '../../db';
 import type { VodPlayInfo } from '../../types/media';
@@ -124,6 +125,9 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
   const rating = !isNaN(parsedRating) && parsedRating > 0 ? parsedRating : null;
   const genreSource = series.genre || lazyGenre;
   const genres = genreSource?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
+
+  // Episode progress (bulk query for entire series)
+  const episodeProgressMap = useEpisodeProgressMap(series.tmdb_id);
 
   // Current season episodes
   const currentEpisodes = seasons[selectedSeason] ?? [];
@@ -276,6 +280,14 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
                     >
                       <path d="M8 5v14l11-7z" />
                     </svg>
+                    {(() => {
+                      const p = episodeProgressMap.get(`S${episode.season_num}_E${episode.episode_num}`);
+                      return p ? (
+                        <div className="series-detail__episode-progress">
+                          <div className="series-detail__episode-progress-bar" style={{ width: `${p}%` }} />
+                        </div>
+                      ) : null;
+                    })()}
                   </button>
                 ))}
               </div>
