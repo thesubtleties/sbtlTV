@@ -130,7 +130,6 @@ export function useMovieProgressMap(): Map<string, number> {
     const items = await db.watchProgress.where('type').equals('movie').toArray();
     const map = new Map<string, number>();
     for (const item of items) {
-      if (item.completed) continue;
       if (item.tmdb_id) map.set(`tmdb_${item.tmdb_id}`, item.progress);
       if (item.stream_id) map.set(`stream_${item.stream_id}`, item.progress);
     }
@@ -150,7 +149,7 @@ export function useEpisodeProgressMap(seriesTmdbId?: number): Map<string, number
       .toArray();
     const map = new Map<string, number>();
     for (const item of items) {
-      if (item.completed || item.season_num == null || item.episode_num == null) continue;
+      if (item.season_num == null || item.episode_num == null) continue;
       map.set(`S${item.season_num}_E${item.episode_num}`, item.progress);
     }
     return map;

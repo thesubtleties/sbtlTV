@@ -436,6 +436,19 @@
   color: #fff;
 }
 
+/* Watched eye icon — replaces play icon for completed episodes */
+.series-detail__episode-watched {
+  width: 24px;
+  height: 24px;
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+  transition: color 150ms ease;
+}
+
+.series-detail__episode:hover .series-detail__episode-watched {
+  color: rgba(255, 255, 255, 0.6);
+}
+
 /* Episode watch progress bar */
 .series-detail__episode-progress {
   position: absolute;

@@ -113,7 +113,10 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
                 <span>{movie.name.charAt(0).toUpperCase()}</span>
               </div>
             )}
-            {watchProgress > 0 && (
+            {watchProgress >= 90 && (
+              <div className="movie-detail__watched" />
+            )}
+            {watchProgress > 0 && watchProgress < 90 && (
               <div className="movie-detail__progress">
                 <div className="movie-detail__progress-bar" style={{ width: `${watchProgress}%` }} />
               </div>

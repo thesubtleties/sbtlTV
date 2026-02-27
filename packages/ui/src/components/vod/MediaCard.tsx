@@ -106,6 +106,11 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
           </div>
         )}
 
+        {/* Watched indicator — top-right, eye-shaped blur */}
+        {progressPercent >= 90 && (
+          <div className="media-card__watched" />
+        )}
+
         {/* Hover overlay */}
         <div className="media-card__overlay">
           <button
@@ -135,8 +140,8 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
 
       </div>
 
-      {/* Watch progress bar — on the seam between poster and info */}
-      {progressPercent > 0 && (
+      {/* Watch progress bar — on the seam between poster and info (not shown when completed) */}
+      {progressPercent > 0 && progressPercent < 90 && (
         <div className="media-card__progress">
           <div className="media-card__progress-bar" style={{ width: `${progressPercent}%` }} />
         </div>
