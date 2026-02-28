@@ -444,12 +444,6 @@
 }
 
 /* Source Priority Section */
-.section-description {
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.5);
-  margin: 0 0 16px;
-}
-
 .priority-list-section {
   margin-bottom: 16px;
 }

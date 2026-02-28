@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type { Source } from '../../types/electron';
 import { useUIStore, useUpdateSettings } from '../../stores/uiStore';
-import { DragDropProvider } from '@dnd-kit/react';
+import { DragDropProvider, type DragEndEvent } from '@dnd-kit/react';
 import { useSortable, isSortable } from '@dnd-kit/react/sortable';
 
 // Sortable source item for priority lists
@@ -35,7 +35,7 @@ function SourcePriorityList({
   sources: Source[];
   onReorder: (newOrder: string[]) => void;
 }) {
-  const handleDragEnd = useCallback(({ operation }: any) => {
+  const handleDragEnd = useCallback(({ operation }: Parameters<DragEndEvent>[0]) => {
     if (isSortable(operation.source)) {
       const from = operation.source.sortable.initialIndex;
       const to = operation.source.sortable.index;
