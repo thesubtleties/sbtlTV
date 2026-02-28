@@ -61,32 +61,6 @@ export function useMovie(movieId: string | null) {
   };
 }
 
-/**
- * Get recently added movies (from enabled sources)
- */
-export function useRecentMovies(limit = 20) {
-  const enabledIds = useEnabledSourceIds();
-  const movies = useLiveQuery(async () => {
-    const all = await db.vodMovies
-      .orderBy('added')
-      .reverse()
-      .toArray();
-
-    let filtered = all;
-    if (enabledIds.length > 0) {
-      const enabledSet = new Set(enabledIds);
-      filtered = all.filter(m => enabledSet.has(m.source_id));
-    }
-
-    return filtered.slice(0, limit);
-  }, [limit, enabledIds.join(',')]);
-
-  return {
-    movies: movies ?? [],
-    loading: movies === undefined,
-  };
-}
-
 // ===========================================================================
 // Series Hooks
 // ===========================================================================
@@ -139,32 +113,6 @@ export function useSeriesById(seriesId: string | null) {
 
   return {
     series: series ?? null,
-    loading: series === undefined,
-  };
-}
-
-/**
- * Get recently added series (from enabled sources)
- */
-export function useRecentSeries(limit = 20) {
-  const enabledIds = useEnabledSourceIds();
-  const series = useLiveQuery(async () => {
-    const all = await db.vodSeries
-      .orderBy('added')
-      .reverse()
-      .toArray();
-
-    let filtered = all;
-    if (enabledIds.length > 0) {
-      const enabledSet = new Set(enabledIds);
-      filtered = all.filter(s => enabledSet.has(s.source_id));
-    }
-
-    return filtered.slice(0, limit);
-  }, [limit, enabledIds.join(',')]);
-
-  return {
-    series: series ?? [],
     loading: series === undefined,
   };
 }
@@ -334,17 +282,6 @@ export function useGroupedVodCategories(type: 'movie' | 'series') {
 /**
  * Get all VOD categories
  */
-export function useAllVodCategories() {
-  const categories = useLiveQuery(async () => {
-    return db.vodCategories.toArray();
-  });
-
-  return {
-    categories: categories ?? [],
-    loading: categories === undefined,
-  };
-}
-
 // ===========================================================================
 // Sync Hooks
 // ===========================================================================

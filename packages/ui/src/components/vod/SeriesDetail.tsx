@@ -267,7 +267,7 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
                       <span className="series-detail__episode-title">
                         {episode.title || `Episode ${episode.episode_num}`}
                       </span>
-                      {(episode.duration ?? (episode.info?.duration as number | undefined)) ? (
+                      {(episode.duration ?? (typeof episode.info?.duration === 'number' ? episode.info.duration : undefined)) ? (
                         <span className="series-detail__episode-duration">
                           {Math.round((episode.duration ?? Number(episode.info?.duration) ?? 0) / 60)}m
                         </span>

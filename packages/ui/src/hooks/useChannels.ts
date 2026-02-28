@@ -84,20 +84,6 @@ export function useChannelCount() {
 }
 
 // Hook to get channel count for a category (from enabled sources)
-export function useCategoryChannelCount(categoryId: string) {
-  const enabledIds = useEnabledSourceIds();
-  const count = useLiveQuery(
-    async () => {
-      const channels = await db.channels.where('category_ids').equals(categoryId).toArray();
-      if (enabledIds.length === 0) return channels.length;
-      const enabledSet = new Set(enabledIds);
-      return channels.filter(ch => enabledSet.has(ch.source_id)).length;
-    },
-    [categoryId, enabledIds.join(',')]
-  );
-  return count ?? 0;
-}
-
 // Hook to get sync metadata for all sources
 export function useSyncStatus() {
   const status = useLiveQuery(() => db.sourcesMeta.toArray());

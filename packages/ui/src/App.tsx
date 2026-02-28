@@ -181,12 +181,12 @@ function App() {
         setDuration(status.duration);
       }
 
-      // Save watch progress for VOD (throttled to every 5 seconds)
+      // Save watch progress for VOD (throttled to every 15 seconds)
       if (status.position !== undefined && status.duration && status.duration > 0) {
         const info = vodInfoRef.current;
         if (info?.streamId) {
           const now = Date.now();
-          if (now - lastProgressSaveRef.current >= 5000) {
+          if (now - lastProgressSaveRef.current >= 15000) {
             lastProgressSaveRef.current = now;
             updateWatchProgress({
               type: info.type === 'series' ? 'episode' : 'movie',
@@ -282,6 +282,22 @@ function App() {
   const handleStop = async () => {
     debugLog('handleStop called');
     if (!window.mpv) return;
+    // Save progress immediately before stopping
+    const info = vodInfoRef.current;
+    if (info?.streamId && duration > 0) {
+      updateWatchProgress({
+        type: info.type === 'series' ? 'episode' : 'movie',
+        streamId: info.streamId,
+        tmdbId: info.tmdbId,
+        seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
+        seasonNum: info.seasonNum,
+        episodeNum: info.episodeNum,
+        name: info.title + (info.episodeInfo ? ` ${info.episodeInfo}` : ''),
+        position,
+        duration,
+        sourceId: info.sourceId,
+      });
+    }
     await window.mpv.stop();
     debugLog('handleStop: mpv.stop() completed');
     setPlaying(false);
