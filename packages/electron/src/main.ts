@@ -65,8 +65,10 @@ const mpvState: MpvState = {
   duration: 0,
 };
 
-// Pending resume position — seek when duration first arrives (file loaded)
-let pendingResumePosition: number | null = null;
+// Pending resume — seek when duration first arrives (file loaded).
+// Generation counter prevents stale seeks on rapid re-load.
+let pendingResume: { position: number; generation: number } | null = null;
+let loadGeneration = 0;
 
 // Prevent screen sleep during playback
 let sleepBlockerId: number | null = null;
@@ -558,6 +560,19 @@ async function initNativeMpv(): Promise<boolean> {
       mpvState.duration = status.duration;
       mpvState.width = status.width;
       mpvState.height = status.height;
+
+      // File loaded — execute pending resume seek (native path)
+      if (pendingResume && status.duration > 0 && mpvBridge) {
+        const { position, generation } = pendingResume;
+        if (generation === loadGeneration) {
+          pendingResume = null;
+          debugLog(`Resume (native): seeking to ${position}s (duration: ${status.duration}s)`, 'mpv');
+          mpvBridge.seek(position);
+        } else {
+          pendingResume = null; // stale, discard
+        }
+      }
+
       sendToRenderer('mpv-status', status);
     });
 
@@ -642,8 +657,10 @@ function handleMpvMessage(msg: MpvMessage): void {
   if (msg.event === 'property-change') {
     switch (msg.name) {
       case 'pause':
-        mpvState.playing = !msg.data;
-        updateSleepBlock(mpvState.playing);
+        if (msg.data !== null && msg.data !== undefined) {
+          mpvState.playing = !msg.data;
+          updateSleepBlock(mpvState.playing);
+        }
         break;
       case 'volume':
         mpvState.volume = (msg.data as number) ?? 100;
@@ -656,14 +673,18 @@ function handleMpvMessage(msg: MpvMessage): void {
         break;
       case 'duration':
         mpvState.duration = (msg.data as number) ?? 0;
-        // File loaded — execute pending resume seek
-        if (pendingResumePosition && mpvState.duration > 0) {
-          const seekTo = pendingResumePosition;
-          pendingResumePosition = null;
-          debugLog(`Resume: seeking to ${seekTo}s (duration: ${mpvState.duration}s)`, 'mpv');
-          sendMpvCommand('seek', [seekTo, 'absolute']).catch(() => {
-            debugLog('Resume: seek failed', 'mpv');
-          });
+        // File loaded — execute pending resume seek (socket path)
+        if (pendingResume && mpvState.duration > 0) {
+          const { position, generation } = pendingResume;
+          if (generation === loadGeneration) {
+            pendingResume = null;
+            debugLog(`Resume: seeking to ${position}s (duration: ${mpvState.duration}s)`, 'mpv');
+            sendMpvCommand('seek', [position, 'absolute']).catch(() => {
+              debugLog('Resume: seek failed', 'mpv');
+            });
+          } else {
+            pendingResume = null; // stale, discard
+          }
         }
         break;
     }
@@ -743,15 +764,16 @@ ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number) =
   const resumeAt = startPosition && startPosition > 0 ? Math.floor(startPosition) : 0;
   debugLog(`mpv-load called with URL: ${url}${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
 
-  // Set pending resume — will seek when duration property arrives (file loaded)
-  pendingResumePosition = resumeAt || null;
+  // Set pending resume — will seek when duration property arrives (file loaded).
+  // Generation counter ensures stale seeks from previous loads are discarded.
+  loadGeneration++;
+  pendingResume = resumeAt > 0 ? { position: resumeAt, generation: loadGeneration } : null;
 
-  const options = resumeAt ? `start=${resumeAt}` : '';
-
-  // Route to native bridge if available
+  // Route to native bridge if available — plain loadfile, no options string
+  // (start= option is unreliable across mpv versions; seek-on-duration is used instead)
   if (useNativeMpv && mpvBridge) {
     try {
-      await mpvBridge.load(url, options);
+      await mpvBridge.load(url, '');
       debugLog('mpv-load SUCCESS (native)', 'mpv');
       return { success: true };
     } catch (error) {
@@ -899,6 +921,7 @@ ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
 
 ipcMain.handle('mpv-stop', async () => {
   debugLog('mpv-stop called', 'mpv');
+  pendingResume = null;
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.stop();
