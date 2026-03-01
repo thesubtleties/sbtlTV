@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-02-28
+
+### Added
+- **Multi-source system** — connect multiple Xtream sources simultaneously with unified browsing across all providers
+- **Source management UI** — add, reorder (drag-and-drop), enable/disable, and delete sources with priority-based ordering
+- **Source filtering** — filter channels and VOD content by enabled sources; priority determines which duplicate to show
+- **VOD dedup + source picker** — duplicate movies/series across sources are merged with a source selector for playback
+- **Channel favorites** — heart icon on channels with Tabler SVG icons, pulse animation, and glassmorphism styling
+- **VOD watchlist** — save movies and series to a persistent watchlist with a dedicated carousel on the home page
+- **Watch progress tracking** — resume playback from where you left off; progress bars on movie cards, movie detail posters, and episode rows
+- **Cross-source resume** — watch progress follows content across sources using TMDB ID matching (falls back to stream ID)
+- **Episode watch progress** — per-episode progress bars and watched indicators (eye-shaped blur overlay) on series detail
+- **Category filter for live TV** — filter channels by category in the sidebar
+- **Remember selected season** — series detail preserves your season selection through collapse/play cycles
+- **Hero navigation redesign** — sliding frosted-glass pill indicator with spring physics, progress fill animation, and magnetic dot repulsion effect
+- **Linux mpv keybindings** — external mpv window now supports default keybindings (f=fullscreen, m=mute, arrows=seek, space=pause)
+
+### Fixed
+- VOD performance regression — limited table scans, prevented double-queries, indexed category pruning
+- Virtuoso infinite loop when rendering watchlist carousel
+- Volume slider snapping to 100% when dragged to zero
+- mpv resume reliability — generation counter prevents stale seeks, native seek for accuracy, null guards
+- Purge orphaned data from deleted sources on startup
+- Filter out stale data from deleted sources in queries
+- node-gyp rebuild no longer nukes bundled dylibs during macOS packaging
+- PriorityTab drag handler type safety
+- Watchlist sort order — oldest first, newest last (matches user expectation)
+
+### Changed
+- **VOD hook architecture** — `useVod` split into `useVodCategories`, `useVodBrowse`, and `useVod` (single-item); deleted unused `useMovies`/`useSeries`
+- **VodPage data extraction** — 88 lines of hook calls moved from VodPage into dedicated `useVodHomeData` hook
+- `EpisodeRow` extracted as standalone component from SeriesDetail
+- VOD categories use compound primary key `[source_id+category_id]` for multi-source support
+- Adaptive category strip groups categories by name across sources
+- Hero buttons upgraded with premium styling, Tabler icons, and subtle lift hover effect
+- MediaCard hearts use glassmorphism with Tabler icons
+- Play buttons use translucent white with backdrop blur
+- Detail page buttons and watchlist icons refined
+- macOS code signing and notarization added to CI workflow
+
 ## [0.5.3] - 2026-02-19
 
 ### Added

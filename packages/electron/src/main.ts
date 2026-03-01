@@ -452,6 +452,11 @@ async function initMpv(): Promise<void> {
     if (useSeparateWindow) {
       const reason = isMac ? 'macOS' : 'Linux';
       console.log(`[mpv] ${reason} detected, using separate window mode`);
+      if (isLinux) {
+        // Linux separate window: enable default keybindings (f=fullscreen, m=mute, arrows=seek, etc.)
+        mpvArgs = mpvArgs.filter(a => a !== '--input-default-bindings=no' && a !== '--no-input-cursor' && a !== '--cursor-autohide=no');
+        mpvArgs.push('--input-default-bindings=yes', '--cursor-autohide=1000');
+      }
     } else {
       console.log('[mpv] Using --wid embedding (single window mode)');
       mpvArgs = [...mpvArgs, `--wid=${windowId}`];
