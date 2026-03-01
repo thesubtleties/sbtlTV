@@ -1,46 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory } from '../db';
+import { db, type StoredEpisode } from '../db';
 import { syncSeriesEpisodes, syncAllVod, type VodSyncResult } from '../db/sync';
-import type { Source } from '../types/electron';
+import { useEnabledSourceIds } from './useSourceFiltering';
 
 // ===========================================================================
-// Movies Hooks
+// Single-Item Hooks
 // ===========================================================================
-
-/**
- * Query movies with optional category filter and search
- */
-export function useMovies(categoryId?: string | null, search?: string) {
-  const movies = useLiveQuery(async () => {
-    let query = db.vodMovies.toCollection();
-
-    if (categoryId) {
-      // Filter by category
-      const allMovies = await db.vodMovies.where('category_ids').equals(categoryId).toArray();
-      if (search) {
-        const searchLower = search.toLowerCase();
-        return allMovies.filter(m => m.name.toLowerCase().includes(searchLower));
-      }
-      return allMovies;
-    }
-
-    // No category filter
-    let allMovies = await query.toArray();
-
-    if (search) {
-      const searchLower = search.toLowerCase();
-      allMovies = allMovies.filter(m => m.name.toLowerCase().includes(searchLower));
-    }
-
-    return allMovies;
-  }, [categoryId, search]);
-
-  return {
-    movies: movies ?? [],
-    loading: movies === undefined,
-  };
-}
 
 /**
  * Get a single movie by ID
@@ -61,62 +27,6 @@ export function useMovie(movieId: string | null) {
 }
 
 /**
- * Get recently added movies
- */
-export function useRecentMovies(limit = 20) {
-  const movies = useLiveQuery(async () => {
-    return db.vodMovies
-      .orderBy('added')
-      .reverse()
-      .limit(limit)
-      .toArray();
-  }, [limit]);
-
-  return {
-    movies: movies ?? [],
-    loading: movies === undefined,
-  };
-}
-
-// ===========================================================================
-// Series Hooks
-// ===========================================================================
-
-/**
- * Query series with optional category filter and search
- */
-export function useSeries(categoryId?: string | null, search?: string) {
-  const series = useLiveQuery(async () => {
-    let query = db.vodSeries.toCollection();
-
-    if (categoryId) {
-      // Filter by category
-      const allSeries = await db.vodSeries.where('category_ids').equals(categoryId).toArray();
-      if (search) {
-        const searchLower = search.toLowerCase();
-        return allSeries.filter(s => s.name.toLowerCase().includes(searchLower));
-      }
-      return allSeries;
-    }
-
-    // No category filter
-    let allSeries = await query.toArray();
-
-    if (search) {
-      const searchLower = search.toLowerCase();
-      allSeries = allSeries.filter(s => s.name.toLowerCase().includes(searchLower));
-    }
-
-    return allSeries;
-  }, [categoryId, search]);
-
-  return {
-    series: series ?? [],
-    loading: series === undefined,
-  };
-}
-
-/**
  * Get a single series by ID
  */
 export function useSeriesById(seriesId: string | null) {
@@ -130,24 +40,6 @@ export function useSeriesById(seriesId: string | null) {
 
   return {
     series: series ?? null,
-    loading: series === undefined,
-  };
-}
-
-/**
- * Get recently added series
- */
-export function useRecentSeries(limit = 20) {
-  const series = useLiveQuery(async () => {
-    return db.vodSeries
-      .orderBy('added')
-      .reverse()
-      .limit(limit)
-      .toArray();
-  }, [limit]);
-
-  return {
-    series: series ?? [],
     loading: series === undefined,
   };
 }
@@ -236,49 +128,6 @@ export function useSeriesDetails(seriesId: string | null) {
 }
 
 // ===========================================================================
-// Category Hooks
-// ===========================================================================
-
-/**
- * Get VOD categories by type (excludes empty categories)
- */
-export function useVodCategories(type: 'movie' | 'series') {
-  const categories = useLiveQuery(async () => {
-    const allCategories = await db.vodCategories.where('type').equals(type).toArray();
-
-    // Filter out categories with no items
-    const nonEmptyCategories = await Promise.all(
-      allCategories.map(async (cat) => {
-        const table = type === 'movie' ? db.vodMovies : db.vodSeries;
-        const count = await table.where('category_ids').equals(cat.category_id).count();
-        return count > 0 ? cat : null;
-      })
-    );
-
-    return nonEmptyCategories.filter((cat): cat is VodCategory => cat !== null);
-  }, [type]);
-
-  return {
-    categories: categories ?? [],
-    loading: categories === undefined,
-  };
-}
-
-/**
- * Get all VOD categories
- */
-export function useAllVodCategories() {
-  const categories = useLiveQuery(async () => {
-    return db.vodCategories.toArray();
-  });
-
-  return {
-    categories: categories ?? [],
-    loading: categories === undefined,
-  };
-}
-
-// ===========================================================================
 // Sync Hooks
 // ===========================================================================
 
@@ -317,162 +166,28 @@ export function useVodSync() {
 // ===========================================================================
 
 /**
- * Get total counts of movies and series
+ * Get total counts of movies and series (from enabled sources)
  */
 export function useVodCounts() {
+  const enabledIds = useEnabledSourceIds();
   const counts = useLiveQuery(async () => {
+    if (enabledIds.length === 0) {
+      const [movieCount, seriesCount] = await Promise.all([
+        db.vodMovies.count(),
+        db.vodSeries.count(),
+      ]);
+      return { movieCount, seriesCount };
+    }
     const [movieCount, seriesCount] = await Promise.all([
-      db.vodMovies.count(),
-      db.vodSeries.count(),
+      db.vodMovies.where('source_id').anyOf(enabledIds).count(),
+      db.vodSeries.where('source_id').anyOf(enabledIds).count(),
     ]);
     return { movieCount, seriesCount };
-  });
+  }, [enabledIds.join(',')]);
 
   return {
     movieCount: counts?.movieCount ?? 0,
     seriesCount: counts?.seriesCount ?? 0,
     loading: counts === undefined,
   };
-}
-
-// ===========================================================================
-// Browse Hooks (for gallery view with Virtuoso)
-// ===========================================================================
-
-/**
- * All movies for browse view (optionally filtered by category)
- * Returns items sorted alphabetically - Virtuoso handles virtualization
- * Pass null for categoryId to get ALL movies
- */
-export function usePaginatedMovies(categoryId: string | null, search?: string) {
-  const [items, setItems] = useState<StoredMovie[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      try {
-        let result: StoredMovie[];
-
-        if (categoryId) {
-          // Filter by category
-          result = await db.vodMovies.where('category_ids').equals(categoryId).toArray();
-        } else {
-          // All movies
-          result = await db.vodMovies.toArray();
-        }
-
-        // Apply search filter
-        if (search) {
-          const searchLower = search.toLowerCase();
-          result = result.filter(m => m.name.toLowerCase().includes(searchLower));
-        }
-
-        // Sort alphabetically
-        result.sort((a, b) => a.name.localeCompare(b.name));
-
-        setItems(result);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAll();
-  }, [categoryId, search]);
-
-  // Keep API compatible - Virtuoso handles virtualization, no pagination needed
-  return {
-    items,
-    loading,
-    hasMore: false,
-    loadMore: () => {},
-  };
-}
-
-/**
- * All series for browse view (optionally filtered by category)
- * Returns items sorted alphabetically - Virtuoso handles virtualization
- * Pass null for categoryId to get ALL series
- */
-export function usePaginatedSeries(categoryId: string | null, search?: string) {
-  const [items, setItems] = useState<StoredSeries[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      try {
-        let result: StoredSeries[];
-
-        if (categoryId) {
-          // Filter by category
-          result = await db.vodSeries.where('category_ids').equals(categoryId).toArray();
-        } else {
-          // All series
-          result = await db.vodSeries.toArray();
-        }
-
-        // Apply search filter
-        if (search) {
-          const searchLower = search.toLowerCase();
-          result = result.filter(s => s.name.toLowerCase().includes(searchLower));
-        }
-
-        // Sort alphabetically
-        result.sort((a, b) => a.name.localeCompare(b.name));
-
-        setItems(result);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAll();
-  }, [categoryId, search]);
-
-  // Keep API compatible - Virtuoso handles virtualization, no pagination needed
-  return {
-    items,
-    loading,
-    hasMore: false,
-    loadMore: () => {},
-  };
-}
-
-/**
- * Get alphabet index for A-Z rail
- * Returns map of letter -> first item index for that letter
- */
-export function useAlphabetIndex(items: Array<{ name: string }>) {
-  const [index, setIndex] = useState<Map<string, number>>(new Map());
-
-  useEffect(() => {
-    const newIndex = new Map<string, number>();
-    items.forEach((item, i) => {
-      const firstChar = item.name.charAt(0).toUpperCase();
-      const letter = /[A-Z]/.test(firstChar) ? firstChar : '#';
-      if (!newIndex.has(letter)) {
-        newIndex.set(letter, i);
-      }
-    });
-    setIndex(newIndex);
-  }, [items]);
-
-  return index;
-}
-
-/**
- * Get current letter based on scroll position
- */
-export function useCurrentLetter(
-  items: Array<{ name: string }>,
-  visibleStartIndex: number
-): string {
-  if (items.length === 0 || visibleStartIndex < 0) return 'A';
-
-  const currentItem = items[Math.min(visibleStartIndex, items.length - 1)];
-  if (!currentItem) return 'A';
-
-  const firstChar = currentItem.name.charAt(0).toUpperCase();
-  return /[A-Z]/.test(firstChar) ? firstChar : '#';
 }

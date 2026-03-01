@@ -76,34 +76,29 @@ jobs:
           chmod +x packages/mpv-texture/scripts/bundle-dylibs-mac.sh
           packages/mpv-texture/scripts/bundle-dylibs-mac.sh
 
-      # Build Electron app
+      # Build Electron app (mirrors release.yml — same signing + notarization)
       - name: Build Electron app
         run: pnpm dist:${{ matrix.platform }} --publish never
+        env:
+          # macOS code signing
+          CSC_LINK: ${{ matrix.platform == 'mac' && secrets.MAC_CERTS || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.MAC_CERTS_PASSWORD || '' }}
+          # macOS notarization
+          APPLE_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.platform == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_TEAM_ID || '' }}
 
-      # Upload artifacts
-      - name: Upload app (Windows)
-        if: matrix.platform == 'win'
+      # Upload artifacts (mirrors release.yml artifact set)
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sbtlTV-win
+          name: sbtlTV-${{ matrix.platform }}
           path: |
             release/*.exe
-          if-no-files-found: warn
-
-      - name: Upload app (macOS)
-        if: matrix.platform == 'mac'
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbtlTV-mac
-          path: release/*.dmg
-          if-no-files-found: warn
-
-      - name: Upload app (Linux)
-        if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbtlTV-linux
-          path: |
+            release/*.dmg
+            release/*.zip
             release/*.AppImage
             release/*.deb
+            release/*.yml
+            release/*.yaml
           if-no-files-found: warn

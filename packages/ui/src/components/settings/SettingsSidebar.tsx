@@ -2,6 +2,7 @@ import './SettingsSidebar.css';
 
 export type SettingsTabId =
   | 'sources'
+  | 'priority'
   | 'tmdb'
   | 'refresh'
   | 'channels'
@@ -26,6 +27,7 @@ const SETTINGS_CATEGORIES: SettingsCategory[] = [
     label: 'Content',
     tabs: [
       { id: 'sources', label: 'Sources' },
+      { id: 'priority', label: 'Priority' },
       { id: 'refresh', label: 'Data Refresh' },
       { id: 'tmdb', label: 'TMDB' },
       { id: 'posterdb', label: 'Poster DB' },
@@ -53,12 +55,14 @@ interface SettingsSidebarProps {
   activeTab: SettingsTabId;
   onTabChange: (tab: SettingsTabId) => void;
   hasXtreamSource: boolean;
+  hasMultipleSources: boolean;
 }
 
 export function SettingsSidebar({
   activeTab,
   onTabChange,
   hasXtreamSource,
+  hasMultipleSources,
 }: SettingsSidebarProps) {
   return (
     <nav className="settings-sidebar">
@@ -71,6 +75,10 @@ export function SettingsSidebar({
             // Hide Movies/Series tabs if no Xtream source
             const isLibraryTab = tab.id === 'movies' || tab.id === 'series';
             if (isLibraryTab && !hasXtreamSource) {
+              return null;
+            }
+            // Hide Priority tab if only one source
+            if (tab.id === 'priority' && !hasMultipleSources) {
               return null;
             }
 

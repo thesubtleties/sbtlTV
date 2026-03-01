@@ -13,6 +13,9 @@ import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
+import { WatchlistButton } from './WatchlistButton';
+import { useMoviePlaySources } from '../../hooks/usePlayResolver';
+import { useMovieProgressByTmdb, useMovieProgress } from '../../hooks/useWatchProgress';
 import type { StoredMovie } from '../../db';
 import './MovieDetail.css';
 
@@ -43,8 +46,18 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
   const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(movie, apiKey);
   const lazyCredits = useLazyCredits(movie, apiKey);
 
+  const playSources = useMoviePlaySources(movie.tmdb_id, movie.stream_id);
+  const progressByTmdb = useMovieProgressByTmdb(movie.tmdb_id);
+  const progressByStream = useMovieProgress(movie.stream_id);
+  const watchProgress = (progressByTmdb ?? progressByStream)?.progress ?? 0;
+  const hasMultipleSources = playSources.length > 1;
+
   const handlePlay = useCallback(() => {
     onPlay?.(movie, lazyPlot || movie.plot);
+  }, [movie, onPlay, lazyPlot]);
+
+  const handlePlayFromSource = useCallback((url: string) => {
+    onPlay?.({ ...movie, direct_url: url }, lazyPlot || movie.plot);
   }, [movie, onPlay, lazyPlot]);
 
   // Load RPDB settings for poster
@@ -100,6 +113,14 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
                 <span>{movie.name.charAt(0).toUpperCase()}</span>
               </div>
             )}
+            {watchProgress >= 90 && (
+              <div className="movie-detail__watched" />
+            )}
+            {watchProgress > 0 && watchProgress < 90 && (
+              <div className="movie-detail__progress">
+                <div className="movie-detail__progress-bar" style={{ width: `${watchProgress}%` }} />
+              </div>
+            )}
           </div>
 
           {/* Info */}
@@ -141,11 +162,19 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
                 className="movie-detail__btn movie-detail__btn--primary"
                 onClick={handlePlay}
               >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M8 5v14l11-7z" />
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <path d="M6 4v16a1 1 0 0 0 1.524 .852l13 -8a1 1 0 0 0 0 -1.704l-13 -8a1 1 0 0 0 -1.524 .852z" />
                 </svg>
                 Play
               </button>
+              <WatchlistButton
+                type="movie"
+                tmdbId={movie.tmdb_id}
+                streamId={movie.stream_id}
+                name={movie.name}
+                className="movie-detail__btn movie-detail__btn--secondary"
+              />
             </div>
 
             {/* Credits */}
@@ -163,6 +192,27 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
                 </div>
               )}
             </div>
+
+            {/* Source picker — only when multiple sources */}
+            {hasMultipleSources && (
+              <div className="movie-detail__sources">
+                <span className="movie-detail__sources-label">Available from</span>
+                <div className="movie-detail__sources-list">
+                  {playSources.map((src) => (
+                    <button
+                      key={src.sourceId}
+                      className="movie-detail__source-btn"
+                      onClick={() => handlePlayFromSource(src.url)}
+                    >
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      {src.sourceName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

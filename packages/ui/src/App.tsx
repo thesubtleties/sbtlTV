@@ -15,7 +15,9 @@ import { useCssVariableSync } from './hooks/useCssVariableSync';
 import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
 import type { StoredChannel } from './db';
+import { db } from './db';
 import type { VodPlayInfo } from './types/media';
+import { updateWatchProgress, getResumePosition } from './hooks/useWatchProgress';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -78,12 +80,13 @@ function getStreamFallbacks(url: string, isLive: boolean): string[] {
 async function tryLoadWithFallbacks(
   primaryUrl: string,
   isLive: boolean,
-  mpv: NonNullable<typeof window.mpv>
+  mpv: NonNullable<typeof window.mpv>,
+  startPosition?: number,
 ): Promise<{ success: boolean; url: string; error?: string }> {
-  debugLog(`Attempting to load: ${primaryUrl} (isLive: ${isLive})`);
+  debugLog(`Attempting to load: ${primaryUrl} (isLive: ${isLive})${startPosition ? ` resume@${startPosition}s` : ''}`);
 
   // Try primary URL first
-  const result = await mpv.load(primaryUrl);
+  const result = await mpv.load(primaryUrl, startPosition);
   if (!result.error) {
     debugLog(`Primary URL loaded successfully`);
     return { success: true, url: primaryUrl };
@@ -95,7 +98,7 @@ async function tryLoadWithFallbacks(
   debugLog(`Trying ${fallbacks.length} fallback URLs...`);
   for (const fallbackUrl of fallbacks) {
     debugLog(`Trying fallback: ${fallbackUrl}`);
-    const fallbackResult = await mpv.load(fallbackUrl);
+    const fallbackResult = await mpv.load(fallbackUrl, startPosition);
     if (!fallbackResult.error) {
       debugLog(`Fallback succeeded: ${fallbackUrl}`);
       return { success: true, url: fallbackUrl };
@@ -138,6 +141,10 @@ function App() {
   const tmdbMatching = useTmdbMatching();
   const setChannelSyncing = useSetChannelSyncing();
   const setVodSyncing = useSetVodSyncing();
+  // Track current VOD info for progress updates (ref avoids stale closure in onStatus)
+  const vodInfoRef = useRef<VodPlayInfo | null>(null);
+  const lastProgressSaveRef = useRef(0);
+
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
 
@@ -172,6 +179,29 @@ function App() {
       }
       if (status.duration !== undefined) {
         setDuration(status.duration);
+      }
+
+      // Save watch progress for VOD (throttled to every 15 seconds)
+      if (status.position !== undefined && status.duration && status.duration > 0) {
+        const info = vodInfoRef.current;
+        if (info?.streamId) {
+          const now = Date.now();
+          if (now - lastProgressSaveRef.current >= 15000) {
+            lastProgressSaveRef.current = now;
+            updateWatchProgress({
+              type: info.type === 'series' ? 'episode' : 'movie',
+              streamId: info.streamId,
+              tmdbId: info.tmdbId,
+              seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
+              seasonNum: info.seasonNum,
+              episodeNum: info.episodeNum,
+              name: info.title + (info.episodeInfo ? ` ${info.episodeInfo}` : ''),
+              position: status.position,
+              duration: status.duration,
+              sourceId: info.sourceId,
+            });
+          }
+        }
       }
     });
 
@@ -252,10 +282,27 @@ function App() {
   const handleStop = async () => {
     debugLog('handleStop called');
     if (!window.mpv) return;
+    // Save progress immediately before stopping
+    const info = vodInfoRef.current;
+    if (info?.streamId && duration > 0) {
+      updateWatchProgress({
+        type: info.type === 'series' ? 'episode' : 'movie',
+        streamId: info.streamId,
+        tmdbId: info.tmdbId,
+        seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
+        seasonNum: info.seasonNum,
+        episodeNum: info.episodeNum,
+        name: info.title + (info.episodeInfo ? ` ${info.episodeInfo}` : ''),
+        position,
+        duration,
+        sourceId: info.sourceId,
+      });
+    }
     await window.mpv.stop();
     debugLog('handleStop: mpv.stop() completed');
     setPlaying(false);
     setCurrentChannel(null);
+    vodInfoRef.current = null;
   };
 
   const handleSeek = async (seconds: number) => {
@@ -281,12 +328,23 @@ function App() {
       return;
     }
     setError(null);
-    const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
+    // Look up resume position before loading
+    const resumePos = await getResumePosition(
+      info.type === 'movie' ? 'movie' : 'episode',
+      {
+        streamId: info.streamId,
+        tmdbId: info.type === 'movie' ? info.tmdbId : undefined,
+        seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
+        seasonNum: info.seasonNum,
+        episodeNum: info.episodeNum,
+      },
+    );
+    const result = await tryLoadWithFallbacks(info.url, false, window.mpv, resumePos || undefined);
     if (!result.success) {
       debugLog(`  FAILED: ${result.error}`);
       setError(result.error ?? 'Failed to load stream');
     } else {
-      debugLog(`  SUCCESS: playing`);
+      debugLog(`  SUCCESS: playing${resumePos ? ` (resumed @ ${resumePos}s)` : ''}`);
       // Create a pseudo-channel for the now playing bar
       const workingUrl = result.url;
       setCurrentChannel({
@@ -298,7 +356,10 @@ function App() {
         direct_url: workingUrl,
         source_id: 'vod',
       });
-      setVodInfo({ ...info, url: workingUrl });
+      const updatedInfo = { ...info, url: workingUrl };
+      setVodInfo(updatedInfo);
+      vodInfoRef.current = updatedInfo;
+      lastProgressSaveRef.current = 0; // Reset throttle for new content
       setPlaying(true);
       // Close VOD pages when playing
       setActiveView('none');
@@ -362,17 +423,33 @@ function App() {
       if (!window.storage) return;
       try {
         const result = await window.storage.getSources();
+        // Hydrate sources into Zustand for reactive source filtering
+        if (result.data) {
+          useUIStore.getState().hydrateSources(result.data);
+        }
         if (result.data && result.data.length > 0) {
+          // Purge orphaned data from deleted sources
+          const { purgeOrphanedData } = await import('./db');
+          await purgeOrphanedData(result.data.map(s => s.id));
+
+          // Check if forced resync needed (e.g., after DB migration)
+          const resyncPref = await db.prefs.get('needs_resync');
+          const forceResync = resyncPref?.value === 'true';
+          if (forceResync) {
+            debugLog('Forced resync needed (DB migration)', 'sync');
+            await db.prefs.delete('needs_resync');
+          }
+
           // Read refresh settings from Zustand (already hydrated)
           const { settings } = useUIStore.getState();
           const epgRefreshHrs = settings.epgRefreshHours ?? 6;
           const vodRefreshHrs = settings.vodRefreshHours ?? 24;
 
-          // Sync channels/EPG only for stale sources
+          // Sync channels/EPG only for stale sources (or all if forced)
           const enabledSources = result.data.filter(s => s.enabled);
           const staleSources = [];
           for (const source of enabledSources) {
-            const stale = await isEpgStale(source.id, epgRefreshHrs);
+            const stale = forceResync || await isEpgStale(source.id, epgRefreshHrs);
             if (stale) {
               staleSources.push(source);
             } else {
@@ -393,7 +470,7 @@ function App() {
           if (xtreamSources.length > 0) {
             const staleVodSources = [];
             for (const source of xtreamSources) {
-              const stale = await isVodStale(source.id, vodRefreshHrs);
+              const stale = forceResync || await isVodStale(source.id, vodRefreshHrs);
               if (stale) {
                 staleVodSources.push(source);
               } else {

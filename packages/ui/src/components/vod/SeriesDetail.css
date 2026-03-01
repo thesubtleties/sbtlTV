@@ -245,6 +245,48 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
+/* Actions */
+.series-detail__actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.series-detail__btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.series-detail__btn--secondary {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.series-detail__btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.series-detail__btn--secondary.active {
+  color: #fff;
+}
+
+.series-detail__btn--secondary.active svg {
+  color: rgba(220, 60, 60, 0.85);
+}
+
 /* Episodes section */
 .series-detail__episodes-section {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -329,6 +371,7 @@
 }
 
 .series-detail__episode {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -391,6 +434,37 @@
 
 .series-detail__episode:hover .series-detail__episode-play {
   color: #fff;
+}
+
+/* Watched eye icon — replaces play icon for completed episodes */
+.series-detail__episode-watched {
+  width: 24px;
+  height: 24px;
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+  transition: color 150ms ease;
+}
+
+.series-detail__episode:hover .series-detail__episode-watched {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Episode watch progress bar */
+.series-detail__episode-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 0 0 4px 4px;
+}
+
+.series-detail__episode-progress-bar {
+  height: 100%;
+  background: rgba(229, 9, 20, 0.65);
+  border-radius: 0 1px 1px 0;
+  transition: width 0.3s ease;
 }
 
 /* Loading/Error/Empty states */

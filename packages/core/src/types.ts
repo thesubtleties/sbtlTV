@@ -110,6 +110,7 @@ export interface Movie {
 
   // External IDs (if provider includes them)
   tmdb_id?: number;
+  external_ids?: ExternalIds;
 }
 
 export interface Series {
@@ -130,6 +131,7 @@ export interface Series {
 
   // External IDs (if provider includes them)
   tmdb_id?: number;
+  external_ids?: ExternalIds;
 }
 
 export interface Season {
@@ -143,11 +145,24 @@ export interface Episode {
   episode_num: number;
   season_num: number;
   direct_url: string;
+  source_id?: string;
 
   // Metadata
   plot?: string;
   duration?: number;
   info?: Record<string, unknown>;
+
+  // External IDs (if provider includes them)
+  tmdb_id?: number;
+  external_ids?: ExternalIds;
+}
+
+// External IDs for cross-service matching (Trakt, TMDB, etc.)
+export interface ExternalIds {
+  tmdb?: number;
+  imdb?: string;
+  tvdb?: number;
+  trakt?: number;
 }
 
 // =============================================================================

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { StoredMovie, StoredSeries } from '../../db';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
@@ -59,6 +59,18 @@ export function HeroSection({
 }: HeroSectionProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isContentTransitioning, setIsContentTransitioning] = useState(false);
+  // Bumped on manual nav to restart the auto-rotate interval
+  const [rotateEpoch, setRotateEpoch] = useState(0);
+  // Briefly true when slider arrives — shrinks to circle, then stretches to pill
+  const [sliderCompact, setSliderCompact] = useState(false);
+  const compactTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Trigger stretch animation only when the actual slide index changes
+  useEffect(() => {
+    setSliderCompact(true);
+    compactTimer.current = setTimeout(() => setSliderCompact(false), 60);
+    return () => clearTimeout(compactTimer.current);
+  }, [currentIndex]);
 
   const currentItem = items[currentIndex];
 
@@ -66,7 +78,7 @@ export function HeroSection({
   const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(currentItem, apiKey);
   const displayGenre = currentItem?.genre || lazyGenre;
 
-  // Auto-rotate through items
+  // Auto-rotate through items (resets when rotateEpoch changes via manual click)
   useEffect(() => {
     if (!autoRotate || items.length <= 1) return;
 
@@ -81,7 +93,7 @@ export function HeroSection({
     }, rotateInterval);
 
     return () => clearInterval(timer);
-  }, [autoRotate, items.length, rotateInterval]);
+  }, [autoRotate, items.length, rotateInterval, rotateEpoch]);
 
   const handleDotClick = useCallback((index: number) => {
     if (index === currentIndex) return;
@@ -90,6 +102,8 @@ export function HeroSection({
       setCurrentIndex(index);
       setIsContentTransitioning(false);
     }, 300);
+    // Reset auto-rotate timer so it waits a full interval from this click
+    setRotateEpoch((e) => e + 1);
   }, [currentIndex]);
 
   // Show loading state while data is being fetched
@@ -168,8 +182,9 @@ export function HeroSection({
               className="hero__btn hero__btn--primary"
               onClick={() => onPlay?.(currentItem)}
             >
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z" />
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                <path d="M6 4v16a1 1 0 0 0 1.524 .852l13 -8a1 1 0 0 0 0 -1.704l-13 -8a1 1 0 0 0 -1.524 .852z" />
               </svg>
               Play
             </button>
@@ -177,9 +192,11 @@ export function HeroSection({
               className="hero__btn hero__btn--secondary"
               onClick={() => onMoreInfo?.(currentItem)}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 16v-4M12 8h.01" />
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+                <path d="M12 9h.01" />
+                <path d="M11 12h1v4h1" />
               </svg>
               More Info
             </button>
@@ -187,18 +204,44 @@ export function HeroSection({
         </div>
       </div>
 
-      {/* Navigation dots */}
+      {/* Navigation indicators */}
       {items.length > 1 && (
-        <div className="hero__dots">
-          {items.map((item, index) => (
-            <button
-              key={index}
-              className={`hero__dot ${index === currentIndex ? 'active' : ''}`}
-              onClick={() => handleDotClick(index)}
-              aria-label={`Go to slide ${index + 1}`}
+        <nav
+          className="hero__nav"
+          style={{
+            '--hero-rotate-interval': `${rotateInterval}ms`,
+            '--hero-dot-count': items.length,
+            '--hero-active-index': currentIndex,
+          } as React.CSSProperties}
+        >
+          {/* Sliding highlight — glides between dot positions */}
+          <div className={`hero__nav-slider${sliderCompact ? ' hero__nav-slider--compact' : ''}`}>
+            {/* Progress fill — remounts on change to restart animation */}
+            <div
+              key={`fill-${currentIndex}-${rotateEpoch}`}
+              className="hero__nav-fill"
             />
-          ))}
-        </div>
+          </div>
+          {items.map((_, index) => {
+            // Dots near the active slider get pushed away (magnetic repulsion)
+            const dist = index - currentIndex;
+            const absDist = Math.abs(dist);
+            // Neighboring dots push 5px, next-nearest 2px, others 0
+            const push = absDist === 0 ? 0
+              : absDist === 1 ? Math.sign(dist) * 5
+              : absDist === 2 ? Math.sign(dist) * 2
+              : 0;
+            return (
+              <button
+                key={index}
+                className={`hero__nav-dot${index === currentIndex ? ' hero__nav-dot--active' : ''}`}
+                style={{ '--dot-push': push } as React.CSSProperties}
+                onClick={() => handleDotClick(index)}
+                aria-label={`Go to slide ${index + 1}`}
+              />
+            );
+          })}
+        </nav>
       )}
     </section>
   );

@@ -2,17 +2,24 @@ import { useState, useCallback, useRef, useEffect, memo } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
+import { useIsOnWatchlist, useToggleWatchlist } from '../../hooks/useWatchlist';
 import type { StoredMovie, StoredSeries } from '../../db';
+import { isMovie } from '../../types/media';
 import './MediaCard.css';
 
+// Not a discriminated union ({ type: 'movie'; item: StoredMovie } | ...) by design:
+// callers pass mixed (StoredMovie | StoredSeries)[] arrays, so a union here would
+// cascade type-narrowing into HorizontalCarousel and VodBrowse with marginal benefit.
+// Type safety is handled by isMovie() guards below.
 export interface MediaCardProps {
   item: StoredMovie | StoredSeries;
   type: 'movie' | 'series';
   onClick?: (item: StoredMovie | StoredSeries) => void;
   size?: 'small' | 'medium' | 'large';
+  progress?: number; // 0-100 watch progress, passed from parent
 }
 
-export const MediaCard = memo(function MediaCard({ item, type, onClick, size = 'medium' }: MediaCardProps) {
+export const MediaCard = memo(function MediaCard({ item, type, onClick, size = 'medium', progress }: MediaCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [titleOverflows, setTitleOverflows] = useState(false);
@@ -30,9 +37,7 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
   const { apiKey: rpdbApiKey } = useRpdbSettings();
 
   // Get the appropriate image URL
-  const posterUrl = 'stream_icon' in item
-    ? item.stream_icon
-    : (item as StoredSeries).cover;
+  const posterUrl = isMovie(item) ? item.stream_icon : item.cover;
 
   // Use RPDB poster if we have an API key and tmdb_id
   const rpdbPosterUrl = rpdbApiKey && item.tmdb_id
@@ -40,7 +45,7 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
     : null;
 
   // Try TMDB image if we have tmdb_id but no local poster
-  const tmdbPosterPath = (item as StoredMovie | StoredSeries).backdrop_path;
+  const tmdbPosterPath = item.backdrop_path;
 
   // Priority: RPDB (if available) > local poster > TMDB fallback
   const displayUrl = rpdbPosterUrl || posterUrl || getTmdbImageUrl(tmdbPosterPath, TMDB_POSTER_SIZES.medium);
@@ -55,6 +60,16 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
   // Rating - only show if it's a meaningful value (not 0, not NaN)
   const parsedRating = item.rating ? parseFloat(item.rating) : NaN;
   const rating = !isNaN(parsedRating) && parsedRating > 0 ? parsedRating : null;
+
+  const progressPercent = progress ?? 0;
+
+  const onWatchlist = useIsOnWatchlist(type, item.tmdb_id, isMovie(item) ? item.stream_id : item.series_id);
+  const toggleWatchlist = useToggleWatchlist();
+  const handleToggleWatchlist = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    const streamId = isMovie(item) ? item.stream_id : item.series_id;
+    toggleWatchlist(type, { tmdbId: item.tmdb_id, streamId, name: item.name });
+  }, [toggleWatchlist, type, item]);
 
   const handleClick = useCallback(() => {
     onClick?.(item);
@@ -94,8 +109,30 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
           </div>
         )}
 
+        {/* Watched indicator — top-right, eye-shaped blur */}
+        {progressPercent >= 90 && (
+          <div className="media-card__watched" />
+        )}
+
         {/* Hover overlay */}
         <div className="media-card__overlay">
+          <button
+            className={`media-card__heart${onWatchlist ? ' media-card__heart--active' : ''}`}
+            onClick={handleToggleWatchlist}
+            aria-label={onWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
+          >
+            {onWatchlist ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                <path d="M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                <path d="M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572" />
+              </svg>
+            )}
+          </button>
           <div className="media-card__play-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="rgba(255,255,255,0.55)">
               <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -103,7 +140,15 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
             </svg>
           </div>
         </div>
+
       </div>
+
+      {/* Watch progress bar — on the seam between poster and info (not shown when completed) */}
+      {progressPercent > 0 && progressPercent < 90 && (
+        <div className="media-card__progress">
+          <div className="media-card__progress-bar" style={{ width: `${progressPercent}%` }} />
+        </div>
+      )}
 
       <div className="media-card__info">
         <h3

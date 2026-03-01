@@ -56,7 +56,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
+  padding: 6px 24px 7px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
 }
@@ -306,6 +306,50 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+}
+
+/* Favorite button on channel row */
+.channel-fav-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1),
+              color 200ms cubic-bezier(0.2, 0, 0, 1),
+              transform 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.guide-channel-info:hover .channel-fav-btn {
+  opacity: 1;
+}
+
+.channel-fav-btn.active {
+  color: rgba(220, 60, 60, 0.85);
+  opacity: 1;
+  animation: channel-heart-pulse 300ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.channel-fav-btn:hover {
+  color: rgba(255, 255, 255, 0.7);
+  transform: scale(1.2);
+}
+
+.channel-fav-btn.active:hover {
+  color: rgba(200, 50, 50, 0.9);
+  transform: scale(1.2);
+}
+
+@keyframes channel-heart-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.25); }
+  100% { transform: scale(1); }
 }
 
 /* Program Grid (EPG area) */

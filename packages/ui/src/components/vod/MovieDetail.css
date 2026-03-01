@@ -139,13 +139,53 @@
 /* Poster */
 .movie-detail__poster {
   flex-shrink: 0;
+  align-self: flex-start;
   width: 200px;
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 .movie-detail__poster img {
   width: 100%;
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  display: block;
+}
+
+/* Watched indicator — top-right of poster, eye-shaped blur */
+.movie-detail__watched {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 4c4.29 0 7.863 2.429 10.665 7.154l.22 .379l.045 .1l.03 .083l.014 .055l.014 .082l.011 .1v.11l-.014 .111a.992 .992 0 0 1 -.026 .11l-.039 .108l-.036 .075l-.016 .03c-2.764 4.836 -6.3 7.38 -10.555 7.499l-.313 .004c-4.396 0 -8.037 -2.549 -10.868 -7.504a1 1 0 0 1 0 -.992c2.831 -4.955 6.472 -7.504 10.868 -7.504zm0 5a3 3 0 1 0 0 6a3 3 0 0 0 0 -6'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 4c4.29 0 7.863 2.429 10.665 7.154l.22 .379l.045 .1l.03 .083l.014 .055l.014 .082l.011 .1v.11l-.014 .111a.992 .992 0 0 1 -.026 .11l-.039 .108l-.036 .075l-.016 .03c-2.764 4.836 -6.3 7.38 -10.555 7.499l-.313 .004c-4.396 0 -8.037 -2.549 -10.868 -7.504a1 1 0 0 1 0 -.992c2.831 -4.955 6.472 -7.504 10.868 -7.504zm0 5a3 3 0 1 0 0 6a3 3 0 0 0 0 -6'/%3E%3C/svg%3E");
+  -webkit-mask-size: 32px 32px;
+  mask-size: 32px 32px;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+/* Watch progress bar — bottom of poster, inside rounded corners + shadow */
+.movie-detail__progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.movie-detail__progress-bar {
+  height: 100%;
+  background: rgba(229, 9, 20, 0.65);
+  border-radius: 0 1px 0 0;
 }
 
 .movie-detail__poster-placeholder {
@@ -241,12 +281,12 @@
   align-items: center;
   gap: 8px;
   padding: 12px 28px;
-  font-size: 1rem;
-  font-weight: 500;
+  font-size: 0.9rem;
+  font-weight: 600;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .movie-detail__btn svg {
@@ -255,13 +295,38 @@
 }
 
 .movie-detail__btn--primary {
-  background: #fff;
+  background: rgba(255, 255, 255, 0.85);
   color: #0d0d0d;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .movie-detail__btn--primary:hover {
   background: rgba(255, 255, 255, 0.9);
-  transform: scale(1.02);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.movie-detail__btn--secondary {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.movie-detail__btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.movie-detail__btn--secondary.active {
+  color: #fff;
+}
+
+.movie-detail__btn--secondary.active svg {
+  color: rgba(220, 60, 60, 0.85);
 }
 
 /* Credits */
@@ -284,6 +349,53 @@
 
 .movie-detail__credit-value {
   color: rgba(255, 255, 255, 0.8);
+}
+
+/* Source picker */
+.movie-detail__sources {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.movie-detail__sources-label {
+  display: block;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.movie-detail__sources-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.movie-detail__source-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.movie-detail__source-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.movie-detail__source-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* Responsive */

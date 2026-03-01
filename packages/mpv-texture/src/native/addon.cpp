@@ -131,11 +131,13 @@ Napi::Value Load(const Napi::CallbackInfo& info) {
     }
 
     std::string url = info[0].As<Napi::String>().Utf8Value();
+    std::string options = info.Length() > 1 && info[1].IsString()
+        ? info[1].As<Napi::String>().Utf8Value() : "";
 
     // Return a promise
     auto deferred = Napi::Promise::Deferred::New(env);
 
-    if (g_context->load(url)) {
+    if (g_context->load(url, options)) {
         deferred.Resolve(env.Undefined());
     } else {
         deferred.Reject(Napi::Error::New(env, "Failed to load URL").Value());

@@ -11,9 +11,13 @@ import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { DetailHeader } from './DetailHeader';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useLazyCredits } from '../../hooks/useLazyCredits';
-import { useSeriesDetails } from '../../hooks/useVod';
+import { useMergedEpisodes } from '../../hooks/useVodDedup';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
+import { WatchlistButton } from './WatchlistButton';
+import { EpisodeRow } from './EpisodeRow';
+import { useEpisodeProgressMap } from '../../hooks/useWatchProgress';
+import { useUIStore } from '../../stores/uiStore';
 import type { StoredSeries, StoredEpisode } from '../../db';
 import type { VodPlayInfo } from '../../types/media';
 import './SeriesDetail.css';
@@ -28,34 +32,49 @@ export interface SeriesDetailProps {
 }
 
 export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey }: SeriesDetailProps) {
-  const [selectedSeason, setSelectedSeason] = useState<number>(1);
+  const seriesKey = series.tmdb_id?.toString() ?? series.series_id;
+  const rememberedSeason = useUIStore((s) => s.seriesSeasonMap[seriesKey]);
+  const setSeriesSeason = useUIStore((s) => s.setSeriesSeason);
+  const clearSeriesSeason = useUIStore((s) => s.clearSeriesSeason);
+  const [selectedSeason, setSelectedSeasonLocal] = useState<number>(rememberedSeason ?? 1);
 
-  // Fetch episodes
-  const { seasons, loading, error, refetch } = useSeriesDetails(series.series_id);
+  const setSelectedSeason = useCallback((season: number) => {
+    setSelectedSeasonLocal(season);
+    setSeriesSeason(seriesKey, season);
+  }, [seriesKey, setSeriesSeason]);
+
+  // Fetch episodes (cross-source merge when tmdb_id matches multiple sources)
+  const { seasons, loading, error, refetch } = useMergedEpisodes(series.series_id, series.tmdb_id);
 
   // Get sorted season numbers
   const seasonNumbers = Object.keys(seasons)
     .map(Number)
     .sort((a, b) => a - b);
 
-  // Set first season as default when loaded
+  // Set first season as default when loaded (only if no remembered season)
   useEffect(() => {
     if (seasonNumbers.length > 0 && !seasonNumbers.includes(selectedSeason)) {
       setSelectedSeason(seasonNumbers[0]);
     }
-  }, [seasonNumbers, selectedSeason]);
+  }, [seasonNumbers, selectedSeason, setSelectedSeason]);
+
+  // Clear remembered season and close (back button / escape)
+  const handleBack = useCallback(() => {
+    clearSeriesSeason(seriesKey);
+    onClose();
+  }, [clearSeriesSeason, seriesKey, onClose]);
 
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        handleBack();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [handleBack]);
 
   // Lazy-load backdrop, plot, genre, and credits from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(series, apiKey);
@@ -71,6 +90,11 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
         plot: lazyPlot || series.plot,
         type: 'series',
         episodeInfo: `S${episode.season_num} E${episode.episode_num}${episode.title ? ` · ${episode.title}` : ''}`,
+        streamId: episode.id,
+        tmdbId: series.tmdb_id,
+        sourceId: episode.source_id,
+        seasonNum: episode.season_num,
+        episodeNum: episode.episode_num,
       });
     },
     [series, onPlayEpisode, lazyPlot]
@@ -103,6 +127,9 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
   const genreSource = series.genre || lazyGenre;
   const genres = genreSource?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
 
+  // Episode progress (bulk query for entire series)
+  const episodeProgressMap = useEpisodeProgressMap(series.tmdb_id);
+
   // Current season episodes
   const currentEpisodes = seasons[selectedSeason] ?? [];
 
@@ -115,7 +142,7 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
       </div>
 
       {/* Header with back button and collapse */}
-      <DetailHeader className="series-detail" onBack={onClose} onCollapse={onCollapse} />
+      <DetailHeader className="series-detail" onBack={handleBack} onCollapse={onCollapse} />
 
       {/* Content */}
       <div className="series-detail__content">
@@ -173,6 +200,17 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
                 <span className="series-detail__credit-value">{lazyCredits.cast}</span>
               </div>
             )}
+
+            {/* Actions */}
+            <div className="series-detail__actions">
+              <WatchlistButton
+                type="series"
+                tmdbId={series.tmdb_id}
+                streamId={series.series_id}
+                name={series.name}
+                className="series-detail__btn series-detail__btn--secondary"
+              />
+            </div>
           </div>
         </div>
 
@@ -218,32 +256,12 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
             ) : (
               <div className="series-detail__episode-list">
                 {currentEpisodes.map((episode) => (
-                  <button
+                  <EpisodeRow
                     key={episode.id}
-                    className="series-detail__episode"
-                    onClick={() => handlePlayEpisode(episode)}
-                  >
-                    <span className="series-detail__episode-number">
-                      {episode.episode_num}
-                    </span>
-                    <div className="series-detail__episode-info">
-                      <span className="series-detail__episode-title">
-                        {episode.title || `Episode ${episode.episode_num}`}
-                      </span>
-                      {(episode.duration ?? (episode.info?.duration as number | undefined)) ? (
-                        <span className="series-detail__episode-duration">
-                          {Math.round((episode.duration ?? Number(episode.info?.duration) ?? 0) / 60)}m
-                        </span>
-                      ) : null}
-                    </div>
-                    <svg
-                      className="series-detail__episode-play"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                    >
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </button>
+                    episode={episode}
+                    progress={episodeProgressMap.get(`S${episode.season_num}_E${episode.episode_num}`) ?? 0}
+                    onPlay={handlePlayEpisode}
+                  />
                 ))}
               </div>
             )}

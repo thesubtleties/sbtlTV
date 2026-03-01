@@ -1,5 +1,6 @@
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { ProgramBlock, EmptyProgramBlock } from './ProgramBlock';
+import { useIsFavoriteChannel, useToggleFavoriteChannel } from '../hooks/useFavorites';
 import type { StoredChannel, StoredProgram } from '../db';
 
 // Width of the channel info column (must match ChannelPanel)
@@ -28,6 +29,12 @@ export const ChannelRow = memo(function ChannelRow({
   visibleHours,
   onPlay,
 }: ChannelRowProps) {
+  const isFavorite = useIsFavoriteChannel(channel.stream_id);
+  const toggleFavorite = useToggleFavoriteChannel();
+  const handleToggleFavorite = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleFavorite(channel.stream_id, channel.name);
+  }, [toggleFavorite, channel.stream_id, channel.name]);
   // Show channel_num when sorting by number, otherwise show list position
   const displayNumber = sortOrder === 'number' && channel.channel_num !== undefined
     ? channel.channel_num
@@ -56,6 +63,23 @@ export const ChannelRow = memo(function ChannelRow({
           )}
         </div>
         <span className="guide-channel-name">{channel.name}</span>
+        <button
+          className={`channel-fav-btn${isFavorite ? ' active' : ''}`}
+          onClick={handleToggleFavorite}
+          title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          {isFavorite ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+              <path d="M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z" />
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+              <path d="M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572" />
+            </svg>
+          )}
+        </button>
       </div>
 
       {/* Program grid */}

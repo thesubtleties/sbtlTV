@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
+import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { ChannelRow } from './ChannelRow';
 import { useChannelSortOrder } from '../stores/uiStore';
@@ -28,7 +29,10 @@ export function ChannelPanel({
   onClose,
 }: ChannelPanelProps) {
   const channelSortOrder = useChannelSortOrder();
-  const channels = useChannels(categoryId, channelSortOrder);
+  const isFavoritesView = categoryId === '__favorites__';
+  const regularChannels = useChannels(isFavoritesView ? null : categoryId, channelSortOrder);
+  const favoriteChannels = useFavoriteChannels();
+  const channels = isFavoritesView ? favoriteChannels : regularChannels;
   const categories = useCategories();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [availableWidth, setAvailableWidth] = useState(800);
@@ -143,10 +147,12 @@ export function ChannelPanel({
   }, [visible, goBack, goForward]);
 
   // Get current category name
-  const currentCategory = categoryId
+  const currentCategory = categoryId && !isFavoritesView
     ? categories.find((c) => c.category_id === categoryId)
     : null;
-  const categoryName = currentCategory?.category_name ?? 'All Channels';
+  const categoryName = isFavoritesView
+    ? 'Favorites'
+    : currentCategory?.category_name ?? 'All Channels';
 
   // Format time
   const formatTime = useCallback((date: Date) => {

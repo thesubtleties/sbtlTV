@@ -6,27 +6,7 @@ import { HorizontalCategoryStrip } from './vod/HorizontalCategoryStrip';
 import { VodBrowse } from './vod/VodBrowse';
 import { MovieDetail } from './vod/MovieDetail';
 import { SeriesDetail } from './vod/SeriesDetail';
-import { useVodCategories } from '../hooks/useVod';
-import {
-  useTrendingMovies,
-  usePopularMovies,
-  useTopRatedMovies,
-  useNowPlayingMovies,
-  useLocalPopularMovies,
-  useTrendingSeries,
-  usePopularSeries,
-  useTopRatedSeries,
-  useOnTheAirSeries,
-  useLocalPopularSeries,
-  useFeaturedContent,
-  useTmdbApiKey,
-  useMovieGenres,
-  useTvGenres,
-  useEnabledMovieGenres,
-  useEnabledSeriesGenres,
-  useMultipleMoviesByGenre,
-  useMultipleSeriesByGenre,
-} from '../hooks/useTmdbLists';
+import { useVodHomeData } from '../hooks/useVodHomeData';
 import { useVodNavigation } from '../stores/uiStore';
 import type { StoredMovie, StoredSeries } from '../db';
 import { type MediaItem, type VodType, type VodPlayInfo } from '../types/media';
@@ -53,6 +33,7 @@ interface HomeVirtuosoContext {
   heroLoading: boolean;
   onItemClick: (item: MediaItem) => void;
   onHeroPlay: (item: MediaItem) => void;
+  progressMap?: Map<string, number>;
 }
 
 // Header component for Virtuoso (defined outside render to prevent remounting)
@@ -79,7 +60,7 @@ const CarouselRowContent = (
   context: HomeVirtuosoContext | undefined
 ) => {
   if (!context) return null;
-  const { type, onItemClick } = context;
+  const { type, onItemClick, progressMap } = context;
 
   return (
     <HorizontalCarousel
@@ -88,6 +69,7 @@ const CarouselRowContent = (
       type={type}
       onItemClick={onItemClick}
       loading={row.loading}
+      progressMap={type === 'movie' ? progressMap : undefined}
     />
   );
 };
@@ -187,91 +169,35 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const { isEntering, pageContentVisible, handleCollapsePage, handlePageBack } =
     useVodPageAnimation(selectedItem, setSelectedItem, setPageCollapsed, onClose);
 
-  // API key for TMDB
-  const tmdbApiKey = useTmdbApiKey();
+  // All home view data (TMDB lists, watchlist, categories, genres)
+  const {
+    tmdbApiKey, featuredItems,
+    trendingItems, trendingLoading,
+    popularItems, popularLoading,
+    topRatedItems, topRatedLoading,
+    nowOrOnAirItems, nowOrOnAirLoading,
+    watchlistItems, movieProgressMap,
+    localPopularItems, groupedCategories,
+    genresToShow, genreData,
+  } = useVodHomeData(type);
 
-  // Genres from TMDB
-  const { genres: movieGenres } = useMovieGenres(type === 'movie' ? tmdbApiKey : null);
-  const { genres: tvGenres } = useTvGenres(type === 'series' ? tmdbApiKey : null);
-  const genres = type === 'movie' ? movieGenres : tvGenres;
-
-  // Featured content for hero
-  const { items: featuredItems } = useFeaturedContent(tmdbApiKey, type === 'movie' ? 'movies' : 'series', 5);
-
-  // Trending and popular from TMDB (if API key available)
-  const { movies: trendingMovies, loading: trendingMoviesLoading } = useTrendingMovies(type === 'movie' ? tmdbApiKey : null);
-  const { series: trendingSeries, loading: trendingSeriesLoading } = useTrendingSeries(type === 'series' ? tmdbApiKey : null);
-  const { movies: popularMovies, loading: popularMoviesLoading } = usePopularMovies(type === 'movie' ? tmdbApiKey : null);
-  const { series: popularSeries, loading: popularSeriesLoading } = usePopularSeries(type === 'series' ? tmdbApiKey : null);
-
-  // Top rated
-  const { movies: topRatedMovies, loading: topRatedMoviesLoading } = useTopRatedMovies(type === 'movie' ? tmdbApiKey : null);
-  const { series: topRatedSeries, loading: topRatedSeriesLoading } = useTopRatedSeries(type === 'series' ? tmdbApiKey : null);
-
-  // Now playing (movies) / On the air (series)
-  const { movies: nowPlayingMovies, loading: nowPlayingLoading } = useNowPlayingMovies(type === 'movie' ? tmdbApiKey : null);
-  const { series: onTheAirSeries, loading: onTheAirLoading } = useOnTheAirSeries(type === 'series' ? tmdbApiKey : null);
-
-  // Select the right data based on type
-  const trendingItems = type === 'movie' ? trendingMovies : trendingSeries;
-  const trendingLoading = type === 'movie' ? trendingMoviesLoading : trendingSeriesLoading;
-  const popularItems = type === 'movie' ? popularMovies : popularSeries;
-  const popularLoading = type === 'movie' ? popularMoviesLoading : popularSeriesLoading;
-  const topRatedItems = type === 'movie' ? topRatedMovies : topRatedSeries;
-  const topRatedLoading = type === 'movie' ? topRatedMoviesLoading : topRatedSeriesLoading;
-  const nowOrOnAirItems = type === 'movie' ? nowPlayingMovies : onTheAirSeries;
-  const nowOrOnAirLoading = type === 'movie' ? nowPlayingLoading : onTheAirLoading;
-
-  // Fallback: local popularity
-  const { movies: localPopularMovies } = useLocalPopularMovies(type === 'movie' ? 20 : 0);
-  const { series: localPopularSeries } = useLocalPopularSeries(type === 'series' ? 20 : 0);
-  const localPopularItems = type === 'movie' ? localPopularMovies : localPopularSeries;
-
-  // VOD categories
-  const { categories } = useVodCategories(type);
-
-  // Get selected category name for VodBrowse
-  const selectedCategory = categories.find(c => c.category_id === selectedCategoryId);
-
-  // Enabled genres from settings
-  const enabledMovieGenres = useEnabledMovieGenres();
-  const enabledSeriesGenres = useEnabledSeriesGenres();
-  const enabledGenreIds = type === 'movie' ? enabledMovieGenres : enabledSeriesGenres;
-
-  // Filter genres to only show enabled ones
-  // No hard limit - user controls via Settings which genres to show
-  const genresToShow = useMemo(() => {
-    if (!genres.length) return [];
-    // If no enabled genres defined yet (undefined), show all genres
-    if (enabledGenreIds === undefined) {
-      return genres;
-    }
-    // Show all enabled genres (user chose these in Settings)
-    return genres.filter(g => enabledGenreIds.includes(g.id));
-  }, [genres, enabledGenreIds]);
-
-  // Get genre IDs for pre-fetching
-  const genreIdsToFetch = useMemo(
-    () => genresToShow.map(g => g.id),
-    [genresToShow]
-  );
-
-  // Pre-fetch all genre data at once (not lazily per-carousel)
-  // This ensures smooth scrolling - data is ready before carousels render
-  const movieGenreData = useMultipleMoviesByGenre(
-    type === 'movie' ? tmdbApiKey : null,
-    type === 'movie' ? genreIdsToFetch : []
-  );
-  const seriesGenreData = useMultipleSeriesByGenre(
-    type === 'series' ? tmdbApiKey : null,
-    type === 'series' ? genreIdsToFetch : []
-  );
-  const genreData = type === 'movie' ? movieGenreData : seriesGenreData;
+  // Resolve selected groupKey back to category IDs for VodBrowse
+  const selectedGroup = groupedCategories.find(g => g.groupKey === selectedCategoryId);
+  const selectedCategoryIds = selectedGroup?.categoryIds ?? null;
 
   // Build carousel rows for virtualization
   // Only includes rows that have content (or are loading)
   const carouselRows = useMemo((): CarouselRow[] => {
     const rows: CarouselRow[] = [];
+
+    // Watchlist (top of home, only when non-empty)
+    if (watchlistItems.length > 0) {
+      rows.push({
+        key: 'watchlist',
+        title: 'My Watchlist',
+        items: watchlistItems,
+      });
+    }
 
     // Trending
     if (trendingItems.length > 0 || trendingLoading) {
@@ -331,6 +257,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
     return rows;
   }, [
+    watchlistItems,
     trendingItems, trendingLoading,
     popularItems, popularLoading,
     topRatedItems, topRatedLoading,
@@ -368,6 +295,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         year: movie.year || movie.release_date?.slice(0, 4),
         plot: movie.plot,
         type: 'movie',
+        streamId: movie.stream_id,
+        tmdbId: movie.tmdb_id,
+        sourceId: movie.source_id,
       });
     } else {
       setSelectedItem(item);
@@ -388,7 +318,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     heroLoading,
     onItemClick: handleItemClick,
     onHeroPlay: handleHeroPlay,
-  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, handleItemClick, handleHeroPlay]);
+    progressMap: type === 'movie' ? movieProgressMap : undefined,
+  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, handleItemClick, handleHeroPlay, movieProgressMap]);
 
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {
@@ -444,7 +375,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     <div className={pageClasses}>
       {/* Unified header: back + categories + search */}
       <HorizontalCategoryStrip
-        categories={categories.map(c => ({ id: c.category_id, name: c.name }))}
+        categories={groupedCategories.map(g => ({ id: g.groupKey, name: g.name }))}
         selectedId={selectedCategoryId}
         onSelect={handleCategorySelect}
         type={type}
@@ -464,17 +395,17 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
           // All items: Virtualized grid with no filter
           <VodBrowse
             type={browseType}
-            categoryId={null}
+            categoryIds={null}
             categoryName={`All ${typeLabel}`}
             search={searchQuery || undefined}
             onItemClick={handleItemClick}
           />
-        ) : selectedCategoryId && selectedCategory ? (
-          // Category view: Virtualized grid filtered by category
+        ) : selectedCategoryId && selectedGroup ? (
+          // Category view: Virtualized grid filtered by grouped category IDs
           <VodBrowse
             type={browseType}
-            categoryId={selectedCategoryId}
-            categoryName={selectedCategory.name}
+            categoryIds={selectedCategoryIds}
+            categoryName={selectedGroup.name}
             search={searchQuery || undefined}
             onItemClick={handleItemClick}
           />
@@ -513,6 +444,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             year: movie.year || movie.release_date?.slice(0, 4),
             plot: plot || movie.plot,
             type: 'movie',
+            streamId: movie.stream_id,
+            tmdbId: movie.tmdb_id,
+            sourceId: movie.source_id,
           })}
           apiKey={tmdbApiKey}
         />

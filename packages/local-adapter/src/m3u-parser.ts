@@ -38,7 +38,6 @@ export function parseM3U(content: string, sourceId: string): M3UParseResult {
 
   let epgUrl: string | null = null;
   let currentMetadata: ExtInfMetadata | null = null;
-  let channelCounter = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -65,7 +64,7 @@ export function parseM3U(content: string, sourceId: string): M3UParseResult {
 
     // This should be a URL - create channel if we have metadata
     if (currentMetadata && (line.startsWith('http://') || line.startsWith('https://') || line.startsWith('rtmp://'))) {
-      channelCounter++;
+      const displayName = currentMetadata.displayName || currentMetadata.tvgName || 'Unknown';
 
       // Create category if needed
       const categoryId = createCategoryId(sourceId, currentMetadata.groupTitle);
@@ -77,10 +76,10 @@ export function parseM3U(content: string, sourceId: string): M3UParseResult {
         });
       }
 
-      // Create channel
+      // Create channel with stable hash-based ID (survives resyncs)
       const channel: Channel = {
-        stream_id: `${sourceId}_${channelCounter}`,
-        name: currentMetadata.displayName || currentMetadata.tvgName || `Channel ${channelCounter}`,
+        stream_id: `${sourceId}_${stableHash(displayName + '|' + line)}`,
+        name: displayName,
         stream_icon: currentMetadata.tvgLogo || '',
         epg_channel_id: currentMetadata.tvgId || '',
         category_ids: categoryId ? [categoryId] : [],
@@ -189,6 +188,18 @@ function parseExtInf(line: string): ExtInfMetadata {
   }
 
   return metadata;
+}
+
+/**
+ * Create a stable hash from a string (djb2 algorithm).
+ * Returns a positive 32-bit integer as hex string.
+ */
+function stableHash(input: string): string {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) + hash + input.charCodeAt(i)) | 0; // hash * 33 + char
+  }
+  return (hash >>> 0).toString(16); // unsigned 32-bit hex
 }
 
 /**
