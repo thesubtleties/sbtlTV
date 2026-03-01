@@ -331,7 +331,13 @@ function App() {
     // Look up resume position before loading
     const resumePos = await getResumePosition(
       info.type === 'movie' ? 'movie' : 'episode',
-      { streamId: info.streamId, seriesTmdbId: info.tmdbId, seasonNum: info.seasonNum, episodeNum: info.episodeNum },
+      {
+        streamId: info.streamId,
+        tmdbId: info.type === 'movie' ? info.tmdbId : undefined,
+        seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
+        seasonNum: info.seasonNum,
+        episodeNum: info.episodeNum,
+      },
     );
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv, resumePos || undefined);
     if (!result.success) {

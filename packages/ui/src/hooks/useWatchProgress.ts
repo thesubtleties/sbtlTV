@@ -104,17 +104,28 @@ export function useClearProgress() {
 /** One-time DB lookup for resume position (seconds). Returns 0 if none or completed. */
 export async function getResumePosition(
   type: 'movie' | 'episode',
-  opts: { streamId?: string; seriesTmdbId?: number; seasonNum?: number; episodeNum?: number },
+  opts: { streamId?: string; tmdbId?: number; seriesTmdbId?: number; seasonNum?: number; episodeNum?: number },
 ): Promise<number> {
-  let id: string;
-  if (type === 'episode' && opts.seriesTmdbId && opts.seasonNum != null && opts.episodeNum != null) {
-    id = episodeProgressId(opts.seriesTmdbId, opts.seasonNum, opts.episodeNum);
-  } else if (opts.streamId) {
-    id = movieProgressId(opts.streamId);
-  } else {
-    return 0;
+  let entry: StoredWatchProgress | undefined;
+
+  if (type === 'episode' && opts.seasonNum != null && opts.episodeNum != null) {
+    // Prefer tmdb_id keyed lookup (cross-source), fall back to stream_id scan
+    if (opts.seriesTmdbId) {
+      entry = await db.watchProgress.get(episodeProgressId(opts.seriesTmdbId, opts.seasonNum, opts.episodeNum));
+    }
+    if (!entry && opts.streamId) {
+      entry = await db.watchProgress.where('stream_id').equals(opts.streamId).first();
+    }
+  } else if (type === 'movie') {
+    // Prefer tmdb_id lookup (cross-source), fall back to stream_id
+    if (opts.tmdbId) {
+      entry = await db.watchProgress.where('tmdb_id').equals(opts.tmdbId).first();
+    }
+    if (!entry && opts.streamId) {
+      entry = await db.watchProgress.get(movieProgressId(opts.streamId));
+    }
   }
-  const entry = await db.watchProgress.get(id);
+
   if (!entry || entry.completed) return 0;
   // Don't resume if less than 10s in — not worth it
   if (entry.position < 10) return 0;
