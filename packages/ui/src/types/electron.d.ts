@@ -22,7 +22,7 @@ export interface MpvModeInfo {
 }
 
 export interface MpvApi {
-  load: (url: string) => Promise<MpvResult>;
+  load: (url: string, startPosition?: number) => Promise<MpvResult>;
   play: () => Promise<MpvResult>;
   pause: () => Promise<MpvResult>;
   togglePause: () => Promise<MpvResult>;
@@ -68,6 +68,8 @@ export interface AppSettings {
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
   categoryBarWidth?: number;    // Category strip content width in px (default 160)
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
+  liveSourceOrder?: string[];   // Source IDs in priority order for live TV
+  vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
 }
 
 export interface Source {

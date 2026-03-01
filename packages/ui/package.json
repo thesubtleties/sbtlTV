@@ -12,6 +12,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@dnd-kit/helpers": "^0.3.2",
+    "@dnd-kit/react": "^0.3.2",
     "@sbtltv/core": "workspace:*",
     "@sbtltv/local-adapter": "workspace:*",
     "dexie": "^4.0.0",

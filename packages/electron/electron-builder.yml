@@ -6,6 +6,12 @@ directories:
   output: ../../release
   buildResources: assets
 
+# Disable electron-builder's automatic native module rebuild.
+# CI explicitly controls the build order: build:native → bundle-dylibs → package.
+# Without this, electron-builder triggers node-gyp rebuild which nukes the
+# transitive dylibs that bundle-dylibs-mac.sh placed in build/Release/.
+npmRebuild: false
+
 files:
   - dist/**/*
   - assets/**/*

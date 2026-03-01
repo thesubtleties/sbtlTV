@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Channel, Category, Movie, Series, Episode } from '@sbtltv/core';
+import type { Channel, Category, Movie, Series, Episode, ExternalIds } from '@sbtltv/core';
 
 // Extended channel with local metadata
 export interface StoredChannel extends Channel {
@@ -75,6 +75,46 @@ export interface StoredProgram {
   source_id: string;
 }
 
+// Favorite item (channels + VOD, survives sync)
+export interface StoredFavorite {
+  id: string;              // `${type}_${key}` where key is stream_id or tmdb_id
+  type: 'channel' | 'movie' | 'series';
+  stream_id?: string;      // For channels (source-specific)
+  tmdb_id?: number;        // For VOD (cross-source)
+  name?: string;           // Display name snapshot
+  added: Date;
+  sort_order?: number;
+}
+
+// Watchlist item (want-to-watch VOD)
+export interface StoredWatchlistItem {
+  id: string;              // `${type}_${key}`
+  type: 'movie' | 'series';
+  tmdb_id?: number;
+  stream_id?: string;      // Fallback when no tmdb_id
+  name: string;
+  poster_path?: string;
+  added: Date;
+}
+
+// Watch progress (position tracking, Trakt-compatible)
+export interface StoredWatchProgress {
+  id: string;              // `${type}_${stream_id}` or `episode_${series_tmdb_id}_S${season}_E${episode}`
+  type: 'movie' | 'episode';
+  tmdb_id?: number;
+  stream_id?: string;
+  series_tmdb_id?: number; // For episodes: the parent series tmdb_id
+  season_num?: number;
+  episode_num?: number;
+  position: number;        // Seconds
+  duration: number;        // Total duration seconds
+  progress: number;        // 0-100%
+  completed: boolean;      // true when progress >= 90%
+  name?: string;
+  updated_at: Date;
+  source_id?: string;
+}
+
 class SbtltvDatabase extends Dexie {
   channels!: Table<StoredChannel, string>;
   categories!: Table<StoredCategory, string>;
@@ -84,7 +124,10 @@ class SbtltvDatabase extends Dexie {
   vodMovies!: Table<StoredMovie, string>;
   vodSeries!: Table<StoredSeries, string>;
   vodEpisodes!: Table<StoredEpisode, string>;
-  vodCategories!: Table<VodCategory, string>;
+  vodCategories!: Table<VodCategory, [string, string]>;
+  favorites!: Table<StoredFavorite, string>;
+  watchlist!: Table<StoredWatchlistItem, string>;
+  watchProgress!: Table<StoredWatchProgress, string>;
 
   constructor() {
     super('sbtltv');
@@ -173,6 +216,55 @@ class SbtltvDatabase extends Dexie {
       vodEpisodes: 'id, series_id, season_num, episode_num',
       vodCategories: 'category_id, source_id, name, type',
     });
+
+    // Add favorites, watchlist, watch progress tables + forced resync flag
+    this.version(8).stores({
+      channels: 'stream_id, source_id, *category_ids, name, channel_num',
+      categories: 'category_id, source_id, category_name',
+      sourcesMeta: 'source_id',
+      prefs: 'key',
+      programs: 'id, stream_id, source_id, start, end, [stream_id+start]',
+      vodMovies: 'stream_id, source_id, *category_ids, name, tmdb_id, added, popularity, [source_id+tmdb_id]',
+      vodSeries: 'series_id, source_id, *category_ids, name, tmdb_id, added, popularity, [source_id+tmdb_id]',
+      vodEpisodes: 'id, series_id, season_num, episode_num',
+      vodCategories: 'category_id, source_id, name, type',
+      favorites: 'id, type, stream_id, tmdb_id, added',
+      watchlist: 'id, type, tmdb_id, added',
+      watchProgress: 'id, type, tmdb_id, stream_id, updated_at, [type+completed]',
+    }).upgrade(async (tx) => {
+      // Set forced resync flag so app re-syncs with stable M3U IDs
+      await tx.table('prefs').put({ key: 'needs_resync', value: 'true' });
+    });
+
+    // Compound PK for vodCategories: [source_id+category_id] prevents silent overwrites
+    // when two sources share the same Xtream category_id.
+    // Dexie can't change a primary key in-place, so we drop (v9) and recreate (v10).
+    this.version(9).stores({
+      vodCategories: null, // Drop table — PK change requires delete+recreate
+    });
+
+    this.version(10).stores({
+      channels: 'stream_id, source_id, *category_ids, name, channel_num',
+      categories: 'category_id, source_id, category_name',
+      sourcesMeta: 'source_id',
+      prefs: 'key',
+      programs: 'id, stream_id, source_id, start, end, [stream_id+start]',
+      vodMovies: 'stream_id, source_id, *category_ids, name, tmdb_id, added, popularity, [source_id+tmdb_id]',
+      vodSeries: 'series_id, source_id, *category_ids, name, tmdb_id, added, popularity, [source_id+tmdb_id]',
+      vodEpisodes: 'id, series_id, season_num, episode_num',
+      vodCategories: '[source_id+category_id], source_id, category_id, name, type',
+      favorites: 'id, type, stream_id, tmdb_id, added',
+      watchlist: 'id, type, tmdb_id, added',
+      watchProgress: 'id, type, tmdb_id, stream_id, updated_at, [type+completed]',
+    }).upgrade(async (tx) => {
+      // Trigger resync so VOD categories get re-populated with compound keys
+      await tx.table('prefs').put({ key: 'needs_resync', value: 'true' });
+    });
+
+    // Add series_tmdb_id index to watchProgress for efficient per-series episode lookups
+    this.version(11).stores({
+      watchProgress: 'id, type, tmdb_id, stream_id, series_tmdb_id, updated_at, [type+completed]',
+    });
   }
 }
 
@@ -204,6 +296,57 @@ export async function clearVodData(sourceId: string): Promise<void> {
     }
     await db.vodCategories.where('source_id').equals(sourceId).delete();
   });
+}
+
+// Purge orphaned data from deleted sources on startup
+export async function purgeOrphanedData(validSourceIds: string[]): Promise<void> {
+  const { debugLog } = await import('../utils/debugLog');
+  const validSet = new Set(validSourceIds);
+  if (validSet.size === 0) return; // Sources not loaded yet
+
+  let liveOrphans = 0;
+  let vodOrphans = 0;
+
+  await db.transaction('rw', [
+    db.channels, db.categories, db.sourcesMeta, db.programs,
+    db.vodMovies, db.vodSeries, db.vodEpisodes, db.vodCategories,
+  ], async () => {
+    // Find orphaned source_ids in categories
+    const allCategories = await db.categories.toArray();
+    const orphanedCatSourceIds = new Set(
+      allCategories.filter(c => !validSet.has(c.source_id)).map(c => c.source_id)
+    );
+    liveOrphans = orphanedCatSourceIds.size;
+
+    // Clean up each orphaned source
+    for (const orphanId of orphanedCatSourceIds) {
+      await db.channels.where('source_id').equals(orphanId).delete();
+      await db.categories.where('source_id').equals(orphanId).delete();
+      await db.sourcesMeta.where('source_id').equals(orphanId).delete();
+      await db.programs.where('source_id').equals(orphanId).delete();
+    }
+
+    // VOD side
+    const allVodCats = await db.vodCategories.toArray();
+    const orphanedVodSourceIds = new Set(
+      allVodCats.filter(c => !validSet.has(c.source_id)).map(c => c.source_id)
+    );
+    vodOrphans = orphanedVodSourceIds.size;
+
+    for (const orphanId of orphanedVodSourceIds) {
+      const series = await db.vodSeries.where('source_id').equals(orphanId).toArray();
+      for (const s of series) {
+        await db.vodEpisodes.where('series_id').equals(s.series_id).delete();
+      }
+      await db.vodMovies.where('source_id').equals(orphanId).delete();
+      await db.vodSeries.where('source_id').equals(orphanId).delete();
+      await db.vodCategories.where('source_id').equals(orphanId).delete();
+    }
+  });
+
+  if (liveOrphans + vodOrphans > 0) {
+    debugLog(`Purged orphaned data from ${liveOrphans} live + ${vodOrphans} VOD deleted source(s)`, 'db');
+  }
 }
 
 // Helper to clear ALL cached data (channels, EPG, VOD, metadata)

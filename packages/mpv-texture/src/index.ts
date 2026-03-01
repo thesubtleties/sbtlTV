@@ -111,7 +111,7 @@ export interface MpvConfig {
 interface NativeAddon {
   create(config?: MpvConfig): void;
   destroy(): void;
-  load(url: string): Promise<void>;
+  load(url: string, options?: string): Promise<void>;
   play(): void;
   pause(): void;
   stop(): void;
@@ -207,9 +207,9 @@ export class MpvTexture {
    * @param url - URL to load (file://, http://, https://, or stream URL)
    * @returns Promise that resolves when loading starts
    */
-  load(url: string): Promise<void> {
+  load(url: string, options?: string): Promise<void> {
     this.ensureInitialized();
-    return addon.load(url);
+    return options ? addon.load(url, options) : addon.load(url);
   }
 
   /**

@@ -7,7 +7,7 @@
 
 import { create } from 'zustand';
 
-import type { AppSettings, UpdateInfo } from '../types/electron';
+import type { AppSettings, UpdateInfo, Source } from '../types/electron';
 import type { MediaItem } from '../types/media';
 
 // Auto-updater state machine
@@ -74,6 +74,21 @@ interface UIState {
   settingsLoaded: boolean;
   hydrateSettings: (data: AppSettings) => void;
   updateSettings: (partial: Partial<AppSettings>) => void;
+
+  // Live TV category filter (persists across sidebar open/close)
+  categoryFilter: string;
+  setCategoryFilter: (filter: string) => void;
+
+  // Series season memory (persists through collapse/play, clears on back)
+  seriesSeasonMap: Record<string, number>;
+  setSeriesSeason: (seriesId: string, season: number) => void;
+  clearSeriesSeason: (seriesId: string) => void;
+
+  // Sources (hydrated from electron-store for reactive filtering)
+  sources: Source[];
+  sourcesLoaded: boolean;
+  hydrateSources: (sources: Source[]) => void;
+  updateSource: (source: Source) => void;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -156,6 +171,28 @@ export const useUIStore = create<UIState>((set) => ({
     }
     return { settings: merged };
   }),
+
+  // Live TV category filter
+  categoryFilter: '',
+  setCategoryFilter: (filter) => set({ categoryFilter: filter }),
+
+  // Series season memory
+  seriesSeasonMap: {},
+  setSeriesSeason: (seriesId, season) => set((state) => ({
+    seriesSeasonMap: { ...state.seriesSeasonMap, [seriesId]: season },
+  })),
+  clearSeriesSeason: (seriesId) => set((state) => {
+    const { [seriesId]: _, ...rest } = state.seriesSeasonMap;
+    return { seriesSeasonMap: rest };
+  }),
+
+  // Sources
+  sources: [],
+  sourcesLoaded: false,
+  hydrateSources: (sources) => set({ sources, sourcesLoaded: true }),
+  updateSource: (source) => set((state) => ({
+    sources: state.sources.map(s => s.id === source.id ? source : s),
+  })),
 }));
 
 // Selectors for cleaner component code
@@ -164,6 +201,10 @@ export const useSetMoviesCategory = () => useUIStore((s) => s.setMoviesSelectedC
 
 export const useSeriesCategory = () => useUIStore((s) => s.seriesSelectedCategory);
 export const useSetSeriesCategory = () => useUIStore((s) => s.setSeriesSelectedCategory);
+
+// Category filter selectors
+export const useCategoryFilter = () => useUIStore((s) => s.categoryFilter);
+export const useSetCategoryFilter = () => useUIStore((s) => s.setCategoryFilter);
 
 // Sync state selectors
 export const useChannelSyncing = () => useUIStore((s) => s.channelSyncing);
@@ -222,6 +263,12 @@ export const useUpdaterDismissed = () => useUIStore((s) => s.updaterDismissed);
 export const useSetUpdaterState = () => useUIStore((s) => s.setUpdaterState);
 export const useSetUpdaterDownloadProgress = () => useUIStore((s) => s.setUpdaterDownloadProgress);
 export const useDismissUpdater = () => useUIStore((s) => s.dismissUpdater);
+
+// Source selectors
+export const useSources = () => useUIStore((s) => s.sources);
+export const useSourcesLoaded = () => useUIStore((s) => s.sourcesLoaded);
+export const useHydrateSources = () => useUIStore((s) => s.hydrateSources);
+export const useUpdateSource = () => useUIStore((s) => s.updateSource);
 
 // Convenience hook - selects movies or series navigation state by type
 export function useVodNavigation(type: 'movie' | 'series') {

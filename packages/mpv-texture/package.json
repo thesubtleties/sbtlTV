@@ -6,12 +6,12 @@
   "types": "./dist/index.d.ts",
   "private": true,
   "scripts": {
-    "build": "npm run build:native && npm run build:ts",
-    "//build:native": "Native addon only works on macOS (uses IOSurface). Windows/Linux use external mpv via --wid flag instead.",
+    "build": "npm run build:ts",
+    "//build:native": "Native addon only works on macOS (uses IOSurface). Windows/Linux use external mpv via --wid flag instead. Called explicitly in CI — NOT part of 'build' to prevent pnpm lifecycle from triggering node-gyp rebuild during electron-builder packaging (which nukes bundled dylibs).",
     "build:native": "node -e \"process.platform === 'darwin' ? require('child_process').execSync('node-gyp rebuild', {stdio:'inherit'}) : console.log('[mpv-texture] Skipping native build — macOS only')\"",
     "build:ts": "tsc",
     "clean": "node-gyp clean && rm -rf dist",
-    "prepare": "npm run build"
+    "prepare": "npm run build:ts"
   },
   "dependencies": {
     "node-addon-api": "^8.3.0"

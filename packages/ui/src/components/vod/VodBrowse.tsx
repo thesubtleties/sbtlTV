@@ -9,13 +9,15 @@ import { useState, useCallback, useMemo, useRef, forwardRef, useEffect } from 'r
 import { VirtuosoGrid, VirtuosoGridHandle } from 'react-virtuoso';
 import { MediaCard } from './MediaCard';
 import { AlphabetRail } from './AlphabetRail';
+import { useMovieProgressMap, getMovieProgress } from '../../hooks/useWatchProgress';
 import type { StoredMovie, StoredSeries } from '../../db';
 import {
   usePaginatedMovies,
   usePaginatedSeries,
   useAlphabetIndex,
   useCurrentLetter,
-} from '../../hooks/useVod';
+} from '../../hooks/useVodBrowse';
+import { useDedupedMovies, useDedupedSeries } from '../../hooks/useVodDedup';
 import './VodBrowse.css';
 
 // Debounce hook - delays value updates to avoid expensive operations on every keystroke
@@ -54,9 +56,13 @@ const GridScroller = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElem
   )
 );
 
+// Stable empty arrays to prevent dedup hooks from recalculating every render
+const EMPTY_MOVIES: StoredMovie[] = [];
+const EMPTY_SERIES: StoredSeries[] = [];
+
 export interface VodBrowseProps {
   type: 'movies' | 'series';
-  categoryId: string | null;  // null = all items
+  categoryIds: string[] | null;  // null = all items, array = grouped category IDs
   categoryName: string;
   search?: string;
   onItemClick: (item: StoredMovie | StoredSeries) => void;
@@ -64,29 +70,43 @@ export interface VodBrowseProps {
 
 export function VodBrowse({
   type,
-  categoryId,
+  categoryIds,
   categoryName,
   search,
   onItemClick,
 }: VodBrowseProps) {
   const virtuosoRef = useRef<VirtuosoGridHandle>(null);
   const [visibleRange, setVisibleRange] = useState({ startIndex: 0, endIndex: 0 });
+  const progressMap = useMovieProgressMap();
 
   // Debounce search to avoid expensive filtering on every keystroke
   const debouncedSearch = useDebouncedValue(search, 300);
+
+  // Stable key for category changes (scroll to top)
+  const categoryKey = categoryIds?.join(',') ?? null;
 
   // Scroll to top when category changes
   useEffect(() => {
     if (virtuosoRef.current) {
       virtuosoRef.current.scrollToIndex({ index: 0, align: 'start' });
     }
-  }, [categoryId]);
+  }, [categoryKey]);
 
   // Get paginated data (using debounced search)
-  const moviesData = usePaginatedMovies(type === 'movies' ? categoryId : null, debouncedSearch);
-  const seriesData = usePaginatedSeries(type === 'series' ? categoryId : null, debouncedSearch);
+  const moviesData = usePaginatedMovies(type === 'movies' ? categoryIds : null, debouncedSearch);
+  const seriesData = usePaginatedSeries(type === 'series' ? categoryIds : null, debouncedSearch);
 
-  const { items, loading, hasMore, loadMore } = type === 'movies' ? moviesData : seriesData;
+  const { items: rawItems, loading, hasMore, loadMore } = type === 'movies' ? moviesData : seriesData;
+
+  // Dedup by tmdb_id — silent, no UI indicator
+  const dedupedMovies = useDedupedMovies(type === 'movies' ? (rawItems as StoredMovie[]) : EMPTY_MOVIES);
+  const dedupedSeries = useDedupedSeries(type === 'series' ? (rawItems as StoredSeries[]) : EMPTY_SERIES);
+  const items = useMemo(
+    () => type === 'movies'
+      ? dedupedMovies.map(d => d.item)
+      : dedupedSeries.map(d => d.item),
+    [type, dedupedMovies, dedupedSeries]
+  );
 
   // Alphabet navigation
   const alphabetIndex = useAlphabetIndex(items);
@@ -143,10 +163,11 @@ export function VodBrowse({
           type={type === 'movies' ? 'movie' : 'series'}
           onClick={onItemClick}
           size="medium"
+          progress={type === 'movies' ? getMovieProgress(progressMap, item) : undefined}
         />
       );
     },
-    [type, onItemClick]
+    [type, onItemClick, progressMap]
   );
 
   // Empty state

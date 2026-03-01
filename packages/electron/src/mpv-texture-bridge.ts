@@ -184,11 +184,11 @@ export class MpvTextureBridge {
   /**
    * Load a media URL
    */
-  async load(url: string): Promise<void> {
+  async load(url: string, options?: string): Promise<void> {
     if (!this.mpv || !this.initialized) {
       throw new Error('Bridge not initialized');
     }
-    return this.mpv.load(url);
+    return this.mpv.load(url, options);
   }
 
   /**

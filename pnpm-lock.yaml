@@ -75,6 +75,12 @@ importers:
 
   packages/ui:
     dependencies:
+      '@dnd-kit/helpers':
+        specifier: ^0.3.2
+        version: 0.3.2
+      '@dnd-kit/react':
+        specifier: ^0.3.2
+        version: 0.3.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@sbtltv/core':
         specifier: workspace:*
         version: link:../core
@@ -213,6 +219,30 @@ packages:
   '@develar/schema-utils@2.6.5':
     resolution: {integrity: sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig==}
     engines: {node: '>= 8.9.0'}
+
+  '@dnd-kit/abstract@0.3.2':
+    resolution: {integrity: sha512-uvPVK+SZYD6Viddn9M0K0JQdXknuVSxA/EbMlFRanve3P/XTc18oLa5zGftKSGjfQGmuzkZ34E26DSbly1zi3Q==}
+
+  '@dnd-kit/collision@0.3.2':
+    resolution: {integrity: sha512-pNmNSLCI8S9fNQ7QJ3fBCDjiT0sqBhUFcKgmyYaGvGCAU+kq0AP8OWlh0JSisc9k5mFyxmRpmFQcnJpILz/RPA==}
+
+  '@dnd-kit/dom@0.3.2':
+    resolution: {integrity: sha512-cIUAVgt2szQyz6JRy7I+0r+xeyOAGH21Y15hb5bIyHoDEaZBvIDH+OOlD9eoLjCbsxDLN9WloU2CBi3OE6LYDg==}
+
+  '@dnd-kit/geometry@0.3.2':
+    resolution: {integrity: sha512-3UBPuIS7E3oGiHxOE8h810QA+0pnrnCtGxl4Os1z3yy5YkC/BEYGY+TxWPTQaY1/OMV7GCX7ZNMlama2QN3n3w==}
+
+  '@dnd-kit/helpers@0.3.2':
+    resolution: {integrity: sha512-pj7pCE6BiysNetpPnzb3BJOrcKiqueUr1LFg6wYoi2fIFYpz66n2Ojd7HTwfwkpv0oyC3QlvA6Dk8cOmi6VavA==}
+
+  '@dnd-kit/react@0.3.2':
+    resolution: {integrity: sha512-1Opg1xw6I75Z95c+rF2NJa0pdGb8rLAENtuopKtJ1J0PudWlz+P6yL137xy/6DV43uaRmNGtsdbMbR0yRYJ72g==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+
+  '@dnd-kit/state@0.3.2':
+    resolution: {integrity: sha512-dLUIkoYrIJhGXfF2wGLTfb46vUokEsO/OoE21TSfmahYrx7ysTmnwbePsznFaHlwgZhQEh6AlLvthLCeY21b1A==}
 
   '@electron/asar@3.4.1':
     resolution: {integrity: sha512-i4/rNPRS84t0vSRa2HorerGRXWyF4vThfHesw0dmcWHp+cspK743UanA0suA5Q5y8kzY2y6YKrvbIUn69BCAiA==}
@@ -603,6 +633,9 @@ packages:
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
+
+  '@preact/signals-core@1.13.0':
+    resolution: {integrity: sha512-slT6XeTCAbdql61GVLlGU4x7XHI7kCZV5Um5uhE4zLX4ApgiiXc0UYFvVOKq06xcovzp7p+61l68oPi563ARKg==}
 
   '@rolldown/pluginutils@1.0.0-beta.27':
     resolution: {integrity: sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA==}
@@ -2151,6 +2184,9 @@ packages:
   truncate-utf8-bytes@1.0.2:
     resolution: {integrity: sha512-95Pu1QXQvruGEhv62XCMO3Mm90GscOCClvrIUwCM0PYOXK3kaF3l3sIHxx71ThJfcbM2O5Au6SO3AWCSEfW4mQ==}
 
+  tslib@2.8.1:
+    resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
+
   type-fest@0.13.1:
     resolution: {integrity: sha512-34R7HTnG0XIJcBSn5XhDd7nNFPRcXYRZrBB2O2jdKqYODldSzBAqzsWoZYYvduky73toYS/ESqxPvkDf/F0XMg==}
     engines: {node: '>=10'}
@@ -2531,6 +2567,50 @@ snapshots:
       ajv: 6.12.6
       ajv-keywords: 3.5.2(ajv@6.12.6)
 
+  '@dnd-kit/abstract@0.3.2':
+    dependencies:
+      '@dnd-kit/geometry': 0.3.2
+      '@dnd-kit/state': 0.3.2
+      tslib: 2.8.1
+
+  '@dnd-kit/collision@0.3.2':
+    dependencies:
+      '@dnd-kit/abstract': 0.3.2
+      '@dnd-kit/geometry': 0.3.2
+      tslib: 2.8.1
+
+  '@dnd-kit/dom@0.3.2':
+    dependencies:
+      '@dnd-kit/abstract': 0.3.2
+      '@dnd-kit/collision': 0.3.2
+      '@dnd-kit/geometry': 0.3.2
+      '@dnd-kit/state': 0.3.2
+      tslib: 2.8.1
+
+  '@dnd-kit/geometry@0.3.2':
+    dependencies:
+      '@dnd-kit/state': 0.3.2
+      tslib: 2.8.1
+
+  '@dnd-kit/helpers@0.3.2':
+    dependencies:
+      '@dnd-kit/abstract': 0.3.2
+      tslib: 2.8.1
+
+  '@dnd-kit/react@0.3.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
+    dependencies:
+      '@dnd-kit/abstract': 0.3.2
+      '@dnd-kit/dom': 0.3.2
+      '@dnd-kit/state': 0.3.2
+      react: 19.2.3
+      react-dom: 19.2.3(react@19.2.3)
+      tslib: 2.8.1
+
+  '@dnd-kit/state@0.3.2':
+    dependencies:
+      '@preact/signals-core': 1.13.0
+      tslib: 2.8.1
+
   '@electron/asar@3.4.1':
     dependencies:
       commander: 5.1.0
@@ -2846,6 +2926,8 @@ snapshots:
 
   '@pkgjs/parseargs@0.11.0':
     optional: true
+
+  '@preact/signals-core@1.13.0': {}
 
   '@rolldown/pluginutils@1.0.0-beta.27': {}
 
@@ -4571,6 +4653,8 @@ snapshots:
   truncate-utf8-bytes@1.0.2:
     dependencies:
       utf8-byte-length: 1.0.5
+
+  tslib@2.8.1: {}
 
   type-fest@0.13.1:
     optional: true

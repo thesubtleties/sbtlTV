@@ -381,9 +381,14 @@ void MpvContext::destroy() {
     m_initialized = false;
 }
 
-bool MpvContext::load(const std::string& url) {
+bool MpvContext::load(const std::string& url, const std::string& options) {
     if (!m_mpv) return false;
 
+    if (!options.empty()) {
+        const char* cmd[] = {"loadfile", url.c_str(), "replace", options.c_str(), nullptr};
+        int result = mpv_command(m_mpv, cmd);
+        return result >= 0;
+    }
     const char* cmd[] = {"loadfile", url.c_str(), nullptr};
     int result = mpv_command(m_mpv, cmd);
     return result >= 0;

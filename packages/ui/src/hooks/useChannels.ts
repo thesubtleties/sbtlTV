@@ -1,11 +1,21 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getLastCategory, setLastCategory } from '../db';
 import type { StoredChannel, StoredCategory, SourceMeta, StoredProgram } from '../db';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useEnabledSourceIds, useLiveSourceOrder, useSourceMap } from './useSourceFiltering';
 
-// Hook to get all categories across all sources
+// Hook to get all categories across enabled sources
 export function useCategories() {
-  const categories = useLiveQuery(() => db.categories.orderBy('category_name').toArray());
+  const enabledIds = useEnabledSourceIds();
+  const categories = useLiveQuery(
+    () => {
+      if (enabledIds.length === 0) return db.categories.orderBy('category_name').toArray();
+      return db.categories
+        .where('source_id').anyOf(enabledIds)
+        .sortBy('category_name');
+    },
+    [enabledIds.join(',')]
+  );
   return categories ?? [];
 }
 
@@ -21,6 +31,7 @@ export function useCategoriesForSource(sourceId: string | null) {
 // Hook to get channels for a category (or all if categoryId is null)
 // sortOrder: 'alphabetical' (default) or 'number' (by channel_num from provider)
 export function useChannels(categoryId: string | null, sortOrder: 'alphabetical' | 'number' = 'alphabetical') {
+  const enabledIds = useEnabledSourceIds();
   const channels = useLiveQuery(
     async () => {
       let results: StoredChannel[];
@@ -29,6 +40,12 @@ export function useChannels(categoryId: string | null, sortOrder: 'alphabetical'
       } else {
         // Channels in this category
         results = await db.channels.where('category_ids').equals(categoryId).toArray();
+      }
+
+      // Filter by enabled sources
+      if (enabledIds.length > 0) {
+        const enabledSet = new Set(enabledIds);
+        results = results.filter(ch => enabledSet.has(ch.source_id));
       }
 
       // Sort based on preference
@@ -48,23 +65,25 @@ export function useChannels(categoryId: string | null, sortOrder: 'alphabetical'
       // Default: alphabetical
       return results.sort((a, b) => a.name.localeCompare(b.name));
     },
-    [categoryId, sortOrder]
+    [categoryId, sortOrder, enabledIds.join(',')]
   );
   return channels ?? [];
 }
 
-// Hook to get total channel count
+// Hook to get total channel count (from enabled sources)
 export function useChannelCount() {
-  const count = useLiveQuery(() => db.channels.count());
+  const enabledIds = useEnabledSourceIds();
+  const count = useLiveQuery(
+    async () => {
+      if (enabledIds.length === 0) return db.channels.count();
+      return db.channels.where('source_id').anyOf(enabledIds).count();
+    },
+    [enabledIds.join(',')]
+  );
   return count ?? 0;
 }
 
-// Hook to get channel count for a category
-export function useCategoryChannelCount(categoryId: string) {
-  const count = useLiveQuery(() => db.channels.where('category_ids').equals(categoryId).count(), [categoryId]);
-  return count ?? 0;
-}
-
+// Hook to get channel count for a category (from enabled sources)
 // Hook to get sync metadata for all sources
 export function useSyncStatus() {
   const status = useLiveQuery(() => db.sourcesMeta.toArray());
@@ -95,20 +114,28 @@ export function useSelectedCategory() {
   return { categoryId, setCategoryId, loading };
 }
 
-// Hook to search channels by name
+// Hook to search channels by name (from enabled sources)
 export function useChannelSearch(query: string, limit = 50) {
+  const enabledIds = useEnabledSourceIds();
   const channels = useLiveQuery(
-    () => {
+    async () => {
       if (!query || query.length < 2) {
         return [];
       }
       const lowerQuery = query.toLowerCase();
-      return db.channels
+      let results = await db.channels
         .filter((ch) => ch.name.toLowerCase().includes(lowerQuery))
-        .limit(limit)
+        .limit(enabledIds.length > 0 ? limit * 3 : limit) // over-fetch before source filter
         .toArray();
+
+      if (enabledIds.length > 0) {
+        const enabledSet = new Set(enabledIds);
+        results = results.filter(ch => enabledSet.has(ch.source_id));
+      }
+
+      return results.slice(0, limit);
     },
-    [query, limit]
+    [query, limit, enabledIds.join(',')]
   );
   return channels ?? [];
 }
@@ -118,18 +145,29 @@ export interface CategoryWithCount extends StoredCategory {
   channelCount: number;
 }
 
-// Hook to get categories with their channel counts
+// Hook to get categories with their channel counts (from enabled sources)
 export function useCategoriesWithCounts(): CategoryWithCount[] {
+  const enabledIds = useEnabledSourceIds();
   const data = useLiveQuery(async () => {
-    const categories = await db.categories.orderBy('category_name').toArray();
+    let categories: StoredCategory[];
+    if (enabledIds.length === 0) {
+      categories = await db.categories.orderBy('category_name').toArray();
+    } else {
+      categories = await db.categories.where('source_id').anyOf(enabledIds).sortBy('category_name');
+    }
+
+    const enabledSet = enabledIds.length > 0 ? new Set(enabledIds) : null;
     const withCounts: CategoryWithCount[] = await Promise.all(
       categories.map(async (cat) => {
-        const count = await db.channels.where('category_ids').equals(cat.category_id).count();
+        const channels = await db.channels.where('category_ids').equals(cat.category_id).toArray();
+        const count = enabledSet
+          ? channels.filter(ch => enabledSet.has(ch.source_id)).length
+          : channels.length;
         return { ...cat, channelCount: count };
       })
     );
     return withCounts;
-  });
+  }, [enabledIds.join(',')]);
   return data ?? [];
 }
 
@@ -230,4 +268,77 @@ export function usePrograms(streamIds: string[]): Map<string, StoredProgram | nu
     [streamIds.join(',')]
   );
   return programs ?? new Map();
+}
+
+// Grouped category for adaptive category strip
+export interface GroupedCategory {
+  name: string;              // Category display name (e.g., "News")
+  // Single-source: one entry, clickable directly
+  // Multi-source: header with sub-items per source
+  sources: {
+    sourceId: string;
+    sourceName: string;
+    categoryId: string;
+    channelCount: number;
+  }[];
+  totalCount: number;
+}
+
+// Hook to get categories grouped by name for adaptive display.
+// Single-source categories render as a normal clickable item.
+// Multi-source categories render as a header with per-source sub-items.
+export function useGroupedCategories(): GroupedCategory[] {
+  const categoriesWithCounts = useCategoriesWithCounts();
+  const liveSourceOrder = useLiveSourceOrder();
+  const sourceMap = useSourceMap();
+
+  return useMemo(() => {
+    // Group categories by normalized name
+    const grouped = new Map<string, GroupedCategory>();
+
+    for (const cat of categoriesWithCounts) {
+      if (cat.channelCount === 0) continue;
+      // Skip categories from unknown/deleted sources
+      if (sourceMap.size > 0 && !sourceMap.has(cat.source_id)) continue;
+
+      const normalizedName = cat.category_name.trim();
+      const existing = grouped.get(normalizedName);
+      const sourceName = sourceMap.get(cat.source_id)?.name ?? cat.source_id;
+
+      const entry = {
+        sourceId: cat.source_id,
+        sourceName,
+        categoryId: cat.category_id,
+        channelCount: cat.channelCount,
+      };
+
+      if (existing) {
+        existing.sources.push(entry);
+        existing.totalCount += cat.channelCount;
+      } else {
+        grouped.set(normalizedName, {
+          name: normalizedName,
+          sources: [entry],
+          totalCount: cat.channelCount,
+        });
+      }
+    }
+
+    // Sort sub-items by live source preference order
+    const orderIndex = new Map(liveSourceOrder.map((id, i) => [id, i]));
+    for (const group of grouped.values()) {
+      if (group.sources.length > 1) {
+        group.sources.sort((a, b) => {
+          const aIdx = orderIndex.get(a.sourceId) ?? 999;
+          const bIdx = orderIndex.get(b.sourceId) ?? 999;
+          return aIdx - bIdx;
+        });
+      }
+    }
+
+    // Sort groups alphabetically by name
+    return Array.from(grouped.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [categoriesWithCounts, liveSourceOrder, sourceMap]);
 }

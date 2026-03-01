@@ -38,6 +38,8 @@ interface AppSettings {
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
   categoryBarWidth?: number;    // Category strip content width in px (default 160)
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
+  liveSourceOrder?: string[];   // Source IDs in priority order for live TV
+  vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
 }
 
 // Internal storage format (encrypted)
@@ -57,6 +59,8 @@ interface StoredSettings {
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch
   categoryBarWidth?: number;    // Category strip content width in px
   guideOpacity?: number;        // Background opacity for EPG/category/title bar
+  liveSourceOrder?: string[];   // Source IDs in priority order for live TV
+  vodSourceOrder?: string[];    // Source IDs in priority order for VOD
 }
 
 const store = new Store<StoreSchema>({
@@ -198,6 +202,8 @@ export function getSettings(): AppSettings {
   result.autoUpdateEnabled = stored.autoUpdateEnabled ?? true;
   result.categoryBarWidth = stored.categoryBarWidth ?? 160;
   result.guideOpacity = stored.guideOpacity ?? 0.95;
+  result.liveSourceOrder = stored.liveSourceOrder;
+  result.vodSourceOrder = stored.vodSourceOrder;
   return result;
 }
 
@@ -240,6 +246,12 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.guideOpacity !== undefined) {
     updated.guideOpacity = settings.guideOpacity;
+  }
+  if (settings.liveSourceOrder !== undefined) {
+    updated.liveSourceOrder = settings.liveSourceOrder;
+  }
+  if (settings.vodSourceOrder !== undefined) {
+    updated.vodSourceOrder = settings.vodSourceOrder;
   }
 
   store.set('settings', updated);
