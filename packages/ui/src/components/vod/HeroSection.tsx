@@ -59,6 +59,8 @@ export function HeroSection({
 }: HeroSectionProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isContentTransitioning, setIsContentTransitioning] = useState(false);
+  // Bumped on manual nav to restart the auto-rotate interval
+  const [rotateEpoch, setRotateEpoch] = useState(0);
 
   const currentItem = items[currentIndex];
 
@@ -66,7 +68,7 @@ export function HeroSection({
   const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(currentItem, apiKey);
   const displayGenre = currentItem?.genre || lazyGenre;
 
-  // Auto-rotate through items
+  // Auto-rotate through items (resets when rotateEpoch changes via manual click)
   useEffect(() => {
     if (!autoRotate || items.length <= 1) return;
 
@@ -81,7 +83,7 @@ export function HeroSection({
     }, rotateInterval);
 
     return () => clearInterval(timer);
-  }, [autoRotate, items.length, rotateInterval]);
+  }, [autoRotate, items.length, rotateInterval, rotateEpoch]);
 
   const handleDotClick = useCallback((index: number) => {
     if (index === currentIndex) return;
@@ -90,6 +92,8 @@ export function HeroSection({
       setCurrentIndex(index);
       setIsContentTransitioning(false);
     }, 300);
+    // Reset auto-rotate timer so it waits a full interval from this click
+    setRotateEpoch((e) => e + 1);
   }, [currentIndex]);
 
   // Show loading state while data is being fetched
@@ -192,10 +196,14 @@ export function HeroSection({
 
       {/* Navigation dots */}
       {items.length > 1 && (
-        <div className="hero__dots">
-          {items.map((item, index) => (
+        <div
+          className="hero__dots"
+          style={{ '--hero-rotate-interval': `${rotateInterval}ms` } as React.CSSProperties}
+        >
+          {items.map((_, index) => (
             <button
-              key={index}
+              // key includes currentIndex so active dot remounts → restarts CSS animation
+              key={index === currentIndex ? `dot-${index}-${currentIndex}` : `dot-${index}`}
               className={`hero__dot ${index === currentIndex ? 'active' : ''}`}
               onClick={() => handleDotClick(index)}
               aria-label={`Go to slide ${index + 1}`}
