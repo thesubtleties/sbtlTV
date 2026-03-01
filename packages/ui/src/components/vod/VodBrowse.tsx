@@ -16,7 +16,7 @@ import {
   usePaginatedSeries,
   useAlphabetIndex,
   useCurrentLetter,
-} from '../../hooks/useVod';
+} from '../../hooks/useVodBrowse';
 import { useDedupedMovies, useDedupedSeries } from '../../hooks/useVodDedup';
 import './VodBrowse.css';
 

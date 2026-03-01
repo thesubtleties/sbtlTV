@@ -166,6 +166,8 @@ function useMovieList(
       .then((results) => setTmdbMovies(results))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+  // fetchFn intentionally omitted — callers pass inline arrows, so including
+  // it would cause an infinite re-fetch loop on every render.
   }, [accessToken]);
 
   const tmdbIds = useMemo(() => tmdbMovies.map((m) => m.id), [tmdbMovies]);
@@ -204,6 +206,8 @@ function useSeriesList(
       .then((results) => setTmdbSeries(results))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+  // fetchFn intentionally omitted — callers pass inline arrows, so including
+  // it would cause an infinite re-fetch loop on every render.
   }, [accessToken]);
 
   const tmdbIds = useMemo(() => tmdbSeries.map((s) => s.id), [tmdbSeries]);
@@ -692,7 +696,7 @@ const featuredCache = new Map<string, (StoredMovie | StoredSeries)[]>();
  * Returns random items from trending (with local popular fallback).
  * Randomizes once per app session per type - stable across tab switches.
  */
-export function useFeaturedContent(accessToken: string | null, type: 'movies' | 'series', count = 5) {
+export function useFeaturedContent(accessToken: string | null, type: 'movie' | 'series', count = 5) {
   const { loaded: tokenLoaded } = useTmdbAccessTokenState();
   const { movies: trendingMovies } = useTrendingMovies(accessToken);
   const { series: trendingSeries } = useTrendingSeries(accessToken);
@@ -713,7 +717,7 @@ export function useFeaturedContent(accessToken: string | null, type: 'movies' | 
     // Prefer trending (TMDB), fall back to local popular
     let items: (StoredMovie | StoredSeries)[];
 
-    if (type === 'movies') {
+    if (type === 'movie') {
       items = trendingMovies.length > 0 ? trendingMovies : popularMovies;
     } else {
       items = trendingSeries.length > 0 ? trendingSeries : popularSeries;

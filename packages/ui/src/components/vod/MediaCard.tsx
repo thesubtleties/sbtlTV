@@ -4,8 +4,13 @@ import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { useIsOnWatchlist, useToggleWatchlist } from '../../hooks/useWatchlist';
 import type { StoredMovie, StoredSeries } from '../../db';
+import { isMovie } from '../../types/media';
 import './MediaCard.css';
 
+// Not a discriminated union ({ type: 'movie'; item: StoredMovie } | ...) by design:
+// callers pass mixed (StoredMovie | StoredSeries)[] arrays, so a union here would
+// cascade type-narrowing into HorizontalCarousel and VodBrowse with marginal benefit.
+// Type safety is handled by isMovie() guards below.
 export interface MediaCardProps {
   item: StoredMovie | StoredSeries;
   type: 'movie' | 'series';
@@ -32,9 +37,7 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
   const { apiKey: rpdbApiKey } = useRpdbSettings();
 
   // Get the appropriate image URL
-  const posterUrl = 'stream_icon' in item
-    ? item.stream_icon
-    : (item as StoredSeries).cover;
+  const posterUrl = isMovie(item) ? item.stream_icon : item.cover;
 
   // Use RPDB poster if we have an API key and tmdb_id
   const rpdbPosterUrl = rpdbApiKey && item.tmdb_id
@@ -42,7 +45,7 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
     : null;
 
   // Try TMDB image if we have tmdb_id but no local poster
-  const tmdbPosterPath = (item as StoredMovie | StoredSeries).backdrop_path;
+  const tmdbPosterPath = item.backdrop_path;
 
   // Priority: RPDB (if available) > local poster > TMDB fallback
   const displayUrl = rpdbPosterUrl || posterUrl || getTmdbImageUrl(tmdbPosterPath, TMDB_POSTER_SIZES.medium);
@@ -60,11 +63,11 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
 
   const progressPercent = progress ?? 0;
 
-  const onWatchlist = useIsOnWatchlist(type, item.tmdb_id, 'stream_id' in item ? item.stream_id : (item as StoredSeries).series_id);
+  const onWatchlist = useIsOnWatchlist(type, item.tmdb_id, isMovie(item) ? item.stream_id : item.series_id);
   const toggleWatchlist = useToggleWatchlist();
   const handleToggleWatchlist = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    const streamId = 'stream_id' in item ? item.stream_id : (item as StoredSeries).series_id;
+    const streamId = isMovie(item) ? item.stream_id : item.series_id;
     toggleWatchlist(type, { tmdbId: item.tmdb_id, streamId, name: item.name });
   }, [toggleWatchlist, type, item]);
 

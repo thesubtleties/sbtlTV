@@ -7,6 +7,16 @@ function wlId(type: 'movie' | 'series', key: string): string {
   return `${type}_${key}`;
 }
 
+/**
+ * Build a dedup/sort key for watchlist items.
+ * Movies use stream_id, series use series_id — but watchlist entries store the
+ * id as `stream_id` for both (it's how the toggle persists the value).
+ * This helper makes the coupling between storage key and lookup key explicit.
+ */
+function wlSortKey(tmdbId: number | undefined, streamOrSeriesId: string | undefined): string {
+  return tmdbId ? `tmdb_${tmdbId}` : streamOrSeriesId ?? '';
+}
+
 export function useIsOnWatchlist(type: 'movie' | 'series', tmdbId?: number, streamId?: string): boolean {
   const key = tmdbId ? String(tmdbId) : streamId;
   const item = useLiveQuery(
@@ -66,19 +76,17 @@ export function useWatchlistMovies() {
     // Dedup by tmdb_id (cross-source), fall back to stream_id
     const seen = new Set<string>();
     const deduped = all.filter(m => {
-      const key = m.tmdb_id ? `tmdb_${m.tmdb_id}` : m.stream_id;
+      const key = wlSortKey(m.tmdb_id, m.stream_id);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
 
     // Sort by watchlist added date (oldest first, newest last)
-    const addedMap = new Map(items.map(i => [i.tmdb_id ? `tmdb_${i.tmdb_id}` : i.stream_id, i.added]));
+    const addedMap = new Map(items.map(i => [wlSortKey(i.tmdb_id, i.stream_id), i.added]));
     deduped.sort((a, b) => {
-      const keyA = a.tmdb_id ? `tmdb_${a.tmdb_id}` : a.stream_id;
-      const keyB = b.tmdb_id ? `tmdb_${b.tmdb_id}` : b.stream_id;
-      const dateA = addedMap.get(keyA)?.getTime() ?? 0;
-      const dateB = addedMap.get(keyB)?.getTime() ?? 0;
+      const dateA = addedMap.get(wlSortKey(a.tmdb_id, a.stream_id))?.getTime() ?? 0;
+      const dateB = addedMap.get(wlSortKey(b.tmdb_id, b.stream_id))?.getTime() ?? 0;
       return dateA - dateB;
     });
 
@@ -110,17 +118,18 @@ export function useWatchlistSeries() {
     // Dedup by tmdb_id (cross-source), fall back to series_id
     const seen = new Set<string>();
     const deduped = all.filter(s => {
-      const key = s.tmdb_id ? `tmdb_${s.tmdb_id}` : s.series_id;
+      const key = wlSortKey(s.tmdb_id, s.series_id);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
 
     // Sort by watchlist added date (oldest first, newest last)
-    const addedMap = new Map(items.map(i => [i.tmdb_id ? `tmdb_${i.tmdb_id}` : i.stream_id, i.added]));
+    // Note: watchlist entries store the id as stream_id for both movies and series
+    const addedMap = new Map(items.map(i => [wlSortKey(i.tmdb_id, i.stream_id), i.added]));
     deduped.sort((a, b) => {
-      const keyA = a.tmdb_id ? `tmdb_${a.tmdb_id}` : a.series_id;
-      const keyB = b.tmdb_id ? `tmdb_${b.tmdb_id}` : b.series_id;
+      const keyA = wlSortKey(a.tmdb_id, a.series_id);
+      const keyB = wlSortKey(b.tmdb_id, b.series_id);
       const dateA = addedMap.get(keyA)?.getTime() ?? 0;
       const dateB = addedMap.get(keyB)?.getTime() ?? 0;
       return dateA - dateB;
