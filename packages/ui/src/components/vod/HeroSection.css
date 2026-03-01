@@ -205,65 +205,106 @@
   transform: translateY(-1px);
 }
 
-/* Navigation dots */
-.hero__dots {
+/* Navigation indicators */
+.hero__nav {
+  --dot-size: 8px;
+  --dot-gap: 14px;
+  --dot-step: calc(var(--dot-size) + var(--dot-gap));
   position: absolute;
-  bottom: 20px;
+  bottom: 22px;
   right: 48px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--dot-gap);
   z-index: 2;
 }
 
-.hero__dot {
-  width: 10px;
-  height: 10px;
+/* Dot marks — subtle frosted circles */
+.hero__nav-dot {
+  width: var(--dot-size);
+  height: var(--dot-size);
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  cursor: pointer;
-  transition: width 500ms cubic-bezier(0.4, 0, 0.2, 1),
-              border-radius 500ms cubic-bezier(0.4, 0, 0.2, 1),
-              background 400ms ease,
-              transform 300ms ease;
   padding: 0;
+  cursor: pointer;
   position: relative;
-  overflow: hidden;
-}
-
-.hero__dot:hover {
-  background: rgba(255, 255, 255, 0.2);
-  transform: scale(1.2);
-}
-
-.hero__dot.active {
-  width: 32px;
-  border-radius: 5px;
   background: rgba(255, 255, 255, 0.12);
-  transform: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background 300ms ease, transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Progress fill — frosted white that fills over the auto-rotate interval */
-.hero__dot.active::after {
-  content: '';
+.hero__nav-dot:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Active dot becomes transparent — slider sits behind it */
+.hero__nav-dot--active {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.hero__nav-dot--active:hover {
+  transform: none;
+  background: transparent;
+}
+
+/* Reactive dot displacement — dots nudge away from the active slider */
+.hero__nav-dot {
+  transform: translateX(calc(var(--dot-push, 0) * 1px));
+  transition: background 300ms ease,
+              transform 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Sliding highlight — glides between positions with spring physics */
+.hero__nav-slider {
+  --slider-width: 28px;
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: var(--slider-width);
+  height: var(--dot-size);
+  border-radius: calc(var(--dot-size) / 2);
+  /* Center pill over the dot position */
+  transform: translate(
+    calc(var(--hero-active-index) * var(--dot-step) + (var(--dot-size) - var(--slider-width)) / 2),
+    -50%
+  );
+  /* Spring-like overshoot curves — position slides, width stretches */
+  transition: transform 600ms cubic-bezier(0.34, 1.56, 0.64, 1),
+              width 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+  overflow: hidden;
+  /* Frosted glass base */
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: none;
+}
+
+/* Briefly applied on arrival — slider shrinks to circle then stretches back */
+.hero__nav-slider--compact {
+  --slider-width: var(--dot-size);
+  transition: none;
+}
+
+/* Kill the fill instantly when leaving — prevents half-filled flash */
+.hero__nav-slider--compact .hero__nav-fill {
+  opacity: 0;
+}
+
+/* Progress fill inside slider (remounts to restart animation) */
+.hero__nav-fill {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  animation: hero-dot-progress var(--hero-rotate-interval, 8s) linear forwards;
+  background: rgba(255, 255, 255, 0.5);
   transform-origin: left center;
+  animation: hero-nav-fill var(--hero-rotate-interval, 8s) linear forwards;
 }
 
-.hero__dot.active:hover {
-  transform: none;
-}
-
-@keyframes hero-dot-progress {
+@keyframes hero-nav-fill {
   from { transform: scaleX(0); }
   to   { transform: scaleX(1); }
 }
@@ -308,9 +349,9 @@
     font-size: 0.85rem;
   }
 
-  .hero__dots {
+  .hero__nav {
     right: 24px;
     bottom: 14px;
-    gap: 8px;
+    --dot-gap: 12px;
   }
 }

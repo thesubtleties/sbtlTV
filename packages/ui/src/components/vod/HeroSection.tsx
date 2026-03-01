@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { StoredMovie, StoredSeries } from '../../db';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
@@ -61,6 +61,16 @@ export function HeroSection({
   const [isContentTransitioning, setIsContentTransitioning] = useState(false);
   // Bumped on manual nav to restart the auto-rotate interval
   const [rotateEpoch, setRotateEpoch] = useState(0);
+  // Briefly true when slider arrives — shrinks to circle, then stretches to pill
+  const [sliderCompact, setSliderCompact] = useState(false);
+  const compactTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Trigger stretch animation only when the actual slide index changes
+  useEffect(() => {
+    setSliderCompact(true);
+    compactTimer.current = setTimeout(() => setSliderCompact(false), 60);
+    return () => clearTimeout(compactTimer.current);
+  }, [currentIndex]);
 
   const currentItem = items[currentIndex];
 
@@ -194,22 +204,44 @@ export function HeroSection({
         </div>
       </div>
 
-      {/* Navigation dots */}
+      {/* Navigation indicators */}
       {items.length > 1 && (
-        <div
-          className="hero__dots"
-          style={{ '--hero-rotate-interval': `${rotateInterval}ms` } as React.CSSProperties}
+        <nav
+          className="hero__nav"
+          style={{
+            '--hero-rotate-interval': `${rotateInterval}ms`,
+            '--hero-dot-count': items.length,
+            '--hero-active-index': currentIndex,
+          } as React.CSSProperties}
         >
-          {items.map((_, index) => (
-            <button
-              // key includes currentIndex so active dot remounts → restarts CSS animation
-              key={index === currentIndex ? `dot-${index}-${currentIndex}` : `dot-${index}`}
-              className={`hero__dot ${index === currentIndex ? 'active' : ''}`}
-              onClick={() => handleDotClick(index)}
-              aria-label={`Go to slide ${index + 1}`}
+          {/* Sliding highlight — glides between dot positions */}
+          <div className={`hero__nav-slider${sliderCompact ? ' hero__nav-slider--compact' : ''}`}>
+            {/* Progress fill — remounts on change to restart animation */}
+            <div
+              key={`fill-${currentIndex}-${rotateEpoch}`}
+              className="hero__nav-fill"
             />
-          ))}
-        </div>
+          </div>
+          {items.map((_, index) => {
+            // Dots near the active slider get pushed away (magnetic repulsion)
+            const dist = index - currentIndex;
+            const absDist = Math.abs(dist);
+            // Neighboring dots push 5px, next-nearest 2px, others 0
+            const push = absDist === 0 ? 0
+              : absDist === 1 ? Math.sign(dist) * 5
+              : absDist === 2 ? Math.sign(dist) * 2
+              : 0;
+            return (
+              <button
+                key={index}
+                className={`hero__nav-dot${index === currentIndex ? ' hero__nav-dot--active' : ''}`}
+                style={{ '--dot-push': push } as React.CSSProperties}
+                onClick={() => handleDotClick(index)}
+                aria-label={`Go to slide ${index + 1}`}
+              />
+            );
+          })}
+        </nav>
       )}
     </section>
   );
