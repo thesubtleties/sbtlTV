@@ -104,7 +104,7 @@ while [ -s "$QUEUE_FILE" ]; do
     # Copy if not already in build/Release
     if [ ! -f "$BUILD_DIR/$DEP_BASENAME" ] && [ -f "$REAL_DEP" ]; then
       cp "$REAL_DEP" "$BUILD_DIR/$DEP_BASENAME"
-      chmod 644 "$BUILD_DIR/$DEP_BASENAME"
+      chmod 755 "$BUILD_DIR/$DEP_BASENAME"
       install_name_tool -id "@loader_path/$DEP_BASENAME" "$BUILD_DIR/$DEP_BASENAME" 2>/dev/null || true
       echo "[bundle]   + $DEP_BASENAME"
       echo "$BUILD_DIR/$DEP_BASENAME" >> "$QUEUE_FILE"
@@ -116,12 +116,16 @@ while [ -s "$QUEUE_FILE" ]; do
 done
 
 # Copy everything to mpv-bundle for electron-builder extraResources
+# Ensure writable permissions so Squirrel.Mac can overwrite during auto-update
 cp "$BUILD_DIR/mpv_texture.node" "$BUNDLE_DIR/"
+chmod 755 "$BUNDLE_DIR/mpv_texture.node"
 cp "$BUILD_DIR"/*.dylib "$BUNDLE_DIR/" 2>/dev/null || true
+chmod 755 "$BUNDLE_DIR"/*.dylib 2>/dev/null || true
 # Also copy any non-.dylib shared libs (e.g. libsharpyuv might not have .dylib ext)
 for f in "$BUILD_DIR"/*.so "$BUILD_DIR"/*.0; do
   [ -f "$f" ] && cp "$f" "$BUNDLE_DIR/" 2>/dev/null || true
 done
+chmod 755 "$BUNDLE_DIR"/*.so "$BUNDLE_DIR"/*.0 2>/dev/null || true
 
 echo ""
 DYLIB_COUNT=$(ls "$BUILD_DIR"/*.dylib 2>/dev/null | wc -l | tr -d ' ')
