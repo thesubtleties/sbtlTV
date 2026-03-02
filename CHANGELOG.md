@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2026-03-01
+
+### Fixed
+- macOS auto-update not applying — bundled dylibs had read-only permissions (644) which caused Squirrel.Mac's ShipIt to fail with "Permission denied" when replacing the app bundle; changed to 755
+
 ## [0.6.0] - 2026-02-28
 
 ### Added
