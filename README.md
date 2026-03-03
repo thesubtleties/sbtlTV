@@ -2,17 +2,23 @@
 
 A desktop IPTV player built with Electron and mpv.
 
-<!-- Screenshot or demo video here -->
+<p align="center">
+  <img src="https://storage.sbtl.dev/spookyspot/sbtltv.webp" alt="sbtlTV UI" width="720" />
+</p>
 
 > **Early Development** - This project is new and actively evolving. The goal is a dead-simple, low-latency player that balances aesthetics, ease of use, and quality-of-life features. We're constantly fixing bugs, adding features, and improving the experience. Check back often for updates, and feel free to [open an issue](../../issues) if you run into problems or have suggestions.
 
 ## Features
 
 - **Live TV with EPG** - Browse channels by category with a full program guide
-- **Movies & Series** - Browse your VOD library with poster art and metadata
-- **TMDB Integration** - Suggested, popular, and genre-based browsing for movies and series
+- **Movies & Series** - Netflix-style home page with hero section, carousels, and detail views
+- **Multi-source with Priority** - Connect multiple Xtream sources; drag-and-drop to set priority for dedup and playback order
+- **Cross-source Merging** - VOD deduplicates across sources; series gap-fill episodes from other providers
+- **Watchlist & Favorites** - Save movies/series to a watchlist carousel; favorite channels for quick access
+- **Watch Progress** - Resume playback where you left off; progress bars on cards and episodes; works across sources via TMDB matching
+- **TMDB Integration** - Trending, popular, top-rated, and genre-based browsing; automatic offline metadata matching
 - **Poster Overlays** - Optional rating badges on posters via RPDB
-- **Multi-source Support** - Connect via Xtream Codes API or M3U playlists
+- **M3U Support** - Import local M3U playlists alongside Xtream sources
 - **EPG from Multiple Sources** - Fetch guide data from your provider or external URLs
 - **Channel Ordering** - Sort channels by provider numbers or alphabetically
 - **Offline Storage** - Channels, EPG, and catalog cached locally for fast browsing
@@ -41,13 +47,7 @@ If the native renderer fails, the app falls back to system mpv. Install via Home
 brew install mpv
 ```
 
-Starting with **v0.5.3**, macOS builds are code-signed and notarized - the app should open without Gatekeeper warnings. If you're upgrading from v0.5.2 or earlier, you'll need to **manually download and install v0.5.3** from the [Releases](../../releases) page (auto-update can't transition from unsigned to signed). After v0.5.3, auto-updates will work normally.
-
-If you're on a version older than v0.5.3 and macOS blocks the app, remove the quarantine flag:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/sbtlTV.app
-```
+macOS builds are code-signed and notarized — the app should open without Gatekeeper warnings.
 
 ### Linux Users
 
