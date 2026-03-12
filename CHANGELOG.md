@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.2] - 2026-03-11
+
+### Fixed
+- M3U channels duplicated into custom groups (e.g. via IPTVEditor) now appear in all assigned categories instead of only the last one
+
 ## [0.6.1] - 2026-03-01
 
 ### Fixed
