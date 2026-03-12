@@ -1,5 +1,10 @@
 # sbtlTV
 
+[![Version](https://img.shields.io/github/v/release/thesubtleties/sbtlTV?style=for-the-badge&label=version&labelColor=0d0d0d&color=006a80)](https://github.com/thesubtleties/sbtlTV/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/thesubtleties/sbtlTV/total?style=for-the-badge&labelColor=0d0d0d&color=8b1a1a)](https://github.com/thesubtleties/sbtlTV/releases)
+[![License](https://img.shields.io/github/license/thesubtleties/sbtlTV?style=for-the-badge&labelColor=0d0d0d&color=d9d9d9)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-windows%20%7C%20macos%20%7C%20linux-2a2a2a?style=for-the-badge&labelColor=0d0d0d)](https://github.com/thesubtleties/sbtlTV/releases/latest)
+
 A desktop IPTV player built with Electron and mpv.
 
 <p align="center">
