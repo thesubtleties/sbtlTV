@@ -77,18 +77,28 @@ export function parseM3U(content: string, sourceId: string): M3UParseResult {
       }
 
       // Create channel with stable hash-based ID (survives resyncs)
-      const channel: Channel = {
-        stream_id: `${sourceId}_${stableHash(displayName + '|' + line)}`,
-        name: displayName,
-        stream_icon: currentMetadata.tvgLogo || '',
-        epg_channel_id: currentMetadata.tvgId || '',
-        category_ids: categoryId ? [categoryId] : [],
-        direct_url: line,
-        source_id: sourceId,
-        ...(currentMetadata.tvgChno !== null && { channel_num: currentMetadata.tvgChno }),
-      };
+      const streamId = `${sourceId}_${stableHash(displayName + '|' + line)}`;
 
-      channels.push(channel);
+      // If this stream already exists (same channel in multiple groups),
+      // merge category_ids instead of creating a duplicate
+      const existing = channels.find(ch => ch.stream_id === streamId);
+      if (existing) {
+        if (categoryId && !existing.category_ids.includes(categoryId)) {
+          existing.category_ids.push(categoryId);
+        }
+      } else {
+        channels.push({
+          stream_id: streamId,
+          name: displayName,
+          stream_icon: currentMetadata.tvgLogo || '',
+          epg_channel_id: currentMetadata.tvgId || '',
+          category_ids: categoryId ? [categoryId] : [],
+          direct_url: line,
+          source_id: sourceId,
+          ...(currentMetadata.tvgChno !== null && { channel_num: currentMetadata.tvgChno }),
+        });
+      }
+
       currentMetadata = null;
     }
   }
