@@ -240,9 +240,15 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       console.log('[VideoCanvas] WebGL context restored, reinitializing');
       window.debug?.logFromRenderer('[VideoCanvas] WebGL context restored');
       if (canvas) {
-        glStateRef.current = initWebGL(canvas);
-        contextLostRef.current = false;
-        drawErrorCount.current = 0;
+        const newState = initWebGL(canvas);
+        if (newState) {
+          glStateRef.current = newState;
+          contextLostRef.current = false;
+          drawErrorCount.current = 0;
+        } else {
+          console.error('[VideoCanvas] Failed to reinitialize WebGL after context restore');
+          window.debug?.logFromRenderer('[VideoCanvas] Failed to reinitialize WebGL after context restore');
+        }
       }
     };
 
@@ -286,12 +292,16 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
 
     window.sharedTexture.onClear(() => {
       const glState = glStateRef.current;
-      if (glState) {
+      if (glState && !contextLostRef.current) {
         const { gl } = glState;
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
       }
     });
+
+    return () => {
+      window.sharedTexture?.removeClearListener();
+    };
   }, []);
 
   // Don't render if sharedTexture not available

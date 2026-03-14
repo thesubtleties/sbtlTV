@@ -72,6 +72,7 @@ let loadGeneration = 0;
 
 // Prevent screen sleep during playback
 let sleepBlockerId: number | null = null;
+let resumeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function updateSleepBlock(playing: boolean): void {
   if (playing && sleepBlockerId === null) {
@@ -1288,12 +1289,22 @@ app.whenReady().then(async () => {
 
   powerMonitor.on('suspend', () => {
     debugLog('System suspending', 'power');
+    if (resumeTimer) {
+      clearTimeout(resumeTimer);
+      resumeTimer = null;
+    }
     if (mpvState.playing) {
       wasPlayingBeforeSuspend = true;
       if (useNativeMpv && mpvBridge) {
-        mpvBridge.pause();
+        try {
+          mpvBridge.pause();
+        } catch (err) {
+          debugLog(`Failed to pause mpv bridge on suspend: ${err instanceof Error ? err.message : err}`, 'power');
+        }
       } else if (mpvSocket) {
-        sendMpvCommand('set_property', ['pause', true]).catch(() => {});
+        sendMpvCommand('set_property', ['pause', true]).catch((err) => {
+          debugLog(`Failed to pause mpv on suspend: ${err instanceof Error ? err.message : err}`, 'power');
+        });
       }
     } else {
       wasPlayingBeforeSuspend = false;
@@ -1304,12 +1315,19 @@ app.whenReady().then(async () => {
     debugLog('System resumed', 'power');
     if (wasPlayingBeforeSuspend) {
       // Delay resume to allow GPU to reinitialize
-      setTimeout(() => {
+      resumeTimer = setTimeout(() => {
+        resumeTimer = null;
         debugLog('Resuming playback after wake', 'power');
         if (useNativeMpv && mpvBridge) {
-          mpvBridge.play();
+          try {
+            mpvBridge.play();
+          } catch (err) {
+            debugLog(`Failed to resume mpv bridge after wake: ${err instanceof Error ? err.message : err}`, 'power');
+          }
         } else if (mpvSocket) {
-          sendMpvCommand('set_property', ['pause', false]).catch(() => {});
+          sendMpvCommand('set_property', ['pause', false]).catch((err) => {
+            debugLog(`Failed to resume mpv after wake: ${err instanceof Error ? err.message : err}`, 'power');
+          });
         }
         wasPlayingBeforeSuspend = false;
       }, 1000);
@@ -1318,6 +1336,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
   updateSleepBlock(false);
   killMpv();
   if (process.platform !== 'darwin') {

@@ -220,6 +220,7 @@ export interface SharedTextureApi {
   onFrame: (callback: (videoFrame: VideoFrame, index: number) => void) => void;
   removeFrameListener: () => void;
   onClear: (callback: () => void) => void;
+  removeClearListener: () => void;
   isAvailable: boolean;
 }
 
@@ -283,6 +284,9 @@ contextBridge.exposeInMainWorld('sharedTexture', {
   },
   onClear: (callback: () => void) => {
     clearCallback = callback;
+  },
+  removeClearListener: () => {
+    clearCallback = null;
   },
   isAvailable: sharedTextureAvailable,
 } satisfies SharedTextureApi);

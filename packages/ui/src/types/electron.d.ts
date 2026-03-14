@@ -159,6 +159,8 @@ export interface SharedTextureApi {
   removeFrameListener: () => void;
   /** Register callback for canvas clear on content switch */
   onClear: (callback: () => void) => void;
+  /** Remove the clear callback */
+  removeClearListener: () => void;
   /** Whether sharedTexture API is available (native mpv mode) */
   isAvailable: boolean;
 }
