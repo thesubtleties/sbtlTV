@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
 import * as net from 'net';
@@ -72,6 +72,7 @@ let loadGeneration = 0;
 
 // Prevent screen sleep during playback
 let sleepBlockerId: number | null = null;
+let resumeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function updateSleepBlock(playing: boolean): void {
   if (playing && sleepBlockerId === null) {
@@ -1282,9 +1283,60 @@ app.whenReady().then(async () => {
       debugLog('Auto-update disabled by user setting', 'updater');
     }
   }
+
+  // Sleep/wake handling — pause mpv on suspend to avoid GPU pipeline errors
+  let wasPlayingBeforeSuspend = false;
+
+  powerMonitor.on('suspend', () => {
+    debugLog('System suspending', 'power');
+    if (resumeTimer) {
+      clearTimeout(resumeTimer);
+      resumeTimer = null;
+    }
+    if (mpvState.playing) {
+      wasPlayingBeforeSuspend = true;
+      if (useNativeMpv && mpvBridge) {
+        try {
+          mpvBridge.pause();
+        } catch (err) {
+          debugLog(`Failed to pause mpv bridge on suspend: ${err instanceof Error ? err.message : err}`, 'power');
+        }
+      } else if (mpvSocket) {
+        sendMpvCommand('set_property', ['pause', true]).catch((err) => {
+          debugLog(`Failed to pause mpv on suspend: ${err instanceof Error ? err.message : err}`, 'power');
+        });
+      }
+    } else {
+      wasPlayingBeforeSuspend = false;
+    }
+  });
+
+  powerMonitor.on('resume', () => {
+    debugLog('System resumed', 'power');
+    if (wasPlayingBeforeSuspend) {
+      // Delay resume to allow GPU to reinitialize
+      resumeTimer = setTimeout(() => {
+        resumeTimer = null;
+        debugLog('Resuming playback after wake', 'power');
+        if (useNativeMpv && mpvBridge) {
+          try {
+            mpvBridge.play();
+          } catch (err) {
+            debugLog(`Failed to resume mpv bridge after wake: ${err instanceof Error ? err.message : err}`, 'power');
+          }
+        } else if (mpvSocket) {
+          sendMpvCommand('set_property', ['pause', false]).catch((err) => {
+            debugLog(`Failed to resume mpv after wake: ${err instanceof Error ? err.message : err}`, 'power');
+          });
+        }
+        wasPlayingBeforeSuspend = false;
+      }, 1000);
+    }
+  });
 });
 
 app.on('window-all-closed', () => {
+  if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
   updateSleepBlock(false);
   killMpv();
   if (process.platform !== 'darwin') {

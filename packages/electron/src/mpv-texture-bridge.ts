@@ -188,6 +188,11 @@ export class MpvTextureBridge {
     if (!this.mpv || !this.initialized) {
       throw new Error('Bridge not initialized');
     }
+    // Clear stale frame in renderer and discard any queued frame
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.webContents.send('video-clear');
+    }
+    this.pendingFrame = null;
     return this.mpv.load(url, options);
   }
 
