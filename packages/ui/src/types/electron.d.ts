@@ -157,6 +157,8 @@ export interface SharedTextureApi {
   onFrame: (callback: (videoFrame: VideoFrame, index: number) => void) => void;
   /** Remove the frame callback */
   removeFrameListener: () => void;
+  /** Register callback for canvas clear on content switch */
+  onClear: (callback: () => void) => void;
   /** Whether sharedTexture API is available (native mpv mode) */
   isAvailable: boolean;
 }

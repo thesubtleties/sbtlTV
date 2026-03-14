@@ -219,6 +219,7 @@ contextBridge.exposeInMainWorld('updater', {
 export interface SharedTextureApi {
   onFrame: (callback: (videoFrame: VideoFrame, index: number) => void) => void;
   removeFrameListener: () => void;
+  onClear: (callback: () => void) => void;
   isAvailable: boolean;
 }
 
@@ -238,6 +239,12 @@ if (process.platform === 'darwin') {
 
 // Frame callback storage
 let frameCallback: ((videoFrame: VideoFrame, index: number) => void) | null = null;
+let clearCallback: (() => void) | null = null;
+
+// Listen for clear signal from main process (content switch)
+ipcRenderer.on('video-clear', () => {
+  clearCallback?.();
+});
 
 // Set up frame receiver if available
 if (sharedTextureAvailable) {
@@ -273,6 +280,9 @@ contextBridge.exposeInMainWorld('sharedTexture', {
   },
   removeFrameListener: () => {
     frameCallback = null;
+  },
+  onClear: (callback: () => void) => {
+    clearCallback = callback;
   },
   isAvailable: sharedTextureAvailable,
 } satisfies SharedTextureApi);

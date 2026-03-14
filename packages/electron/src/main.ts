@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
 import * as net from 'net';
@@ -1282,6 +1282,39 @@ app.whenReady().then(async () => {
       debugLog('Auto-update disabled by user setting', 'updater');
     }
   }
+
+  // Sleep/wake handling — pause mpv on suspend to avoid GPU pipeline errors
+  let wasPlayingBeforeSuspend = false;
+
+  powerMonitor.on('suspend', () => {
+    debugLog('System suspending', 'power');
+    if (mpvState.playing) {
+      wasPlayingBeforeSuspend = true;
+      if (useNativeMpv && mpvBridge) {
+        mpvBridge.pause();
+      } else if (mpvSocket) {
+        sendMpvCommand('set_property', ['pause', true]).catch(() => {});
+      }
+    } else {
+      wasPlayingBeforeSuspend = false;
+    }
+  });
+
+  powerMonitor.on('resume', () => {
+    debugLog('System resumed', 'power');
+    if (wasPlayingBeforeSuspend) {
+      // Delay resume to allow GPU to reinitialize
+      setTimeout(() => {
+        debugLog('Resuming playback after wake', 'power');
+        if (useNativeMpv && mpvBridge) {
+          mpvBridge.play();
+        } else if (mpvSocket) {
+          sendMpvCommand('set_property', ['pause', false]).catch(() => {});
+        }
+        wasPlayingBeforeSuspend = false;
+      }, 1000);
+    }
+  });
 });
 
 app.on('window-all-closed', () => {
