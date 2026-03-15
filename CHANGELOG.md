@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.3] - 2026-03-15
+
+### Fixed
+- macOS auto-update failing silently — Squirrel.Mac's ShipIt couldn't remove quarantine xattr from a read-only `libmpv.dylib` in the asar-unpacked directory; fixed dylib permissions and excluded build-time deps from packaging
+- macOS playback resilience — WebGL context recovery after GPU reset, pause/resume on sleep/wake to prevent GPU pipeline errors, stale frame clearing on channel switch
+- VOD sync failures now logged to debug file (previously console-only), making issues diagnosable from exported logs
+- VOD sync no longer overwrites existing movie/series counts when a fetch fails — preserves previous good data
+- VOD sync timestamp only updates when at least one content type actually synced, preventing failed syncs from suppressing retries
+- Xtream API responses validated as arrays before processing — prevents silent crash on non-standard server responses
+- LAN blocked error message now correctly says "Settings > System > Security" matching actual UI navigation
+
 ## [0.6.2] - 2026-03-11
 
 ### Fixed
