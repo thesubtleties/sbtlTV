@@ -719,7 +719,7 @@ export async function syncVodMovies(source: Source): Promise<{ count: number; ca
     const toRemove = existingMovies.filter(m => !newIds.has(m.stream_id)).map(m => m.stream_id);
     if (toRemove.length > 0) {
       await db.vodMovies.bulkDelete(toRemove);
-      console.log(`[VOD Movies] Removed ${toRemove.length} movies no longer in source`);
+      debugLog(`Removed ${toRemove.length} movies no longer in source`, 'vod');
     }
   });
 
@@ -808,7 +808,7 @@ export async function syncVodSeries(source: Source): Promise<{ count: number; ca
       // Delete orphaned episodes first (they reference series_id)
       await db.vodEpisodes.where('series_id').anyOf(toRemove).delete();
       await db.vodSeries.bulkDelete(toRemove);
-      console.log(`[VOD Series] Removed ${toRemove.length} series (and their episodes) no longer in source`);
+      debugLog(`Removed ${toRemove.length} series (and their episodes) no longer in source`, 'vod');
     }
   });
 
@@ -952,9 +952,11 @@ export async function syncVodForSource(source: Source): Promise<VodSyncResult> {
     // Update source meta with VOD counts and sync timestamp
     // Only update counts for types that actually synced (not skipped)
     const meta = await db.sourcesMeta.get(source.id);
-    const updates: Partial<SourceMeta> = { vod_last_synced: new Date() };
+    const updates: Partial<SourceMeta> = {};
     if (!moviesResult.skipped) updates.vod_movie_count = moviesResult.count;
     if (!seriesResult.skipped) updates.vod_series_count = seriesResult.count;
+    // Only update sync timestamp if at least one type actually synced
+    if (!moviesResult.skipped || !seriesResult.skipped) updates.vod_last_synced = new Date();
 
     if (meta) {
       await db.sourcesMeta.update(source.id, updates);

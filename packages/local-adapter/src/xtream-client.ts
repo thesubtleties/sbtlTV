@@ -253,6 +253,7 @@ export class XtreamClient {
     const seasons: Season[] = [];
 
     for (const [seasonNum, episodes] of Object.entries(data.episodes)) {
+      if (!Array.isArray(episodes)) continue;
       const seasonEpisodes = (episodes as XtreamEpisode[]).map(ep => ({
         id: `${this.sourceId}_${ep.id}`,
         title: ep.title,
