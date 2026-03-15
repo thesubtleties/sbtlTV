@@ -49,6 +49,7 @@ echo "Source dylib: $MPV_DYLIB"
 
 # Copy libmpv
 cp "$MPV_DYLIB" "$DEPS_DIR/libmpv.dylib"
+chmod 755 "$DEPS_DIR/libmpv.dylib"
 
 # Rewrite the dylib's install_name to @rpath/libmpv.dylib
 # This is critical: when node-gyp links mpv_texture.node against this dylib,
