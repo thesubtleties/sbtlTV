@@ -17,6 +17,7 @@ files:
   - assets/**/*
   - "!**/*.ts"
   - "!**/tsconfig.json"
+  - "!**/deps/**"
 
 # Unpack native addons and their dylib/dll deps from the asar archive.
 # Electron auto-unpacks .node files, but the co-located dylibs need

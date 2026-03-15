@@ -169,13 +169,14 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glStateRef = useRef<WebGLState | null>(null);
   const drawErrorCount = useRef(0);
+  const contextLostRef = useRef(false);
 
   // Handle frame - render immediately
   const handleFrame = useCallback((videoFrame: VideoFrame, _index: number) => {
     const canvas = canvasRef.current;
     const glState = glStateRef.current;
 
-    if (!canvas || !glState || videoFrame.codedWidth <= 0) {
+    if (!canvas || !glState || videoFrame.codedWidth <= 0 || contextLostRef.current) {
       videoFrame.close();
       return;
     }
@@ -226,7 +227,37 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       glStateRef.current = initWebGL(canvas);
     }
 
+    // Handle GPU reset / sleep-wake context loss
+    const handleContextLost = (e: Event) => {
+      e.preventDefault(); // Required to allow context restoration
+      console.warn('[VideoCanvas] WebGL context lost');
+      window.debug?.logFromRenderer('[VideoCanvas] WebGL context lost');
+      glStateRef.current = null;
+      contextLostRef.current = true;
+    };
+
+    const handleContextRestored = () => {
+      console.log('[VideoCanvas] WebGL context restored, reinitializing');
+      window.debug?.logFromRenderer('[VideoCanvas] WebGL context restored');
+      if (canvas) {
+        const newState = initWebGL(canvas);
+        if (newState) {
+          glStateRef.current = newState;
+          contextLostRef.current = false;
+          drawErrorCount.current = 0;
+        } else {
+          console.error('[VideoCanvas] Failed to reinitialize WebGL after context restore');
+          window.debug?.logFromRenderer('[VideoCanvas] Failed to reinitialize WebGL after context restore');
+        }
+      }
+    };
+
+    canvas?.addEventListener('webglcontextlost', handleContextLost);
+    canvas?.addEventListener('webglcontextrestored', handleContextRestored);
+
     return () => {
+      canvas?.removeEventListener('webglcontextlost', handleContextLost);
+      canvas?.removeEventListener('webglcontextrestored', handleContextRestored);
       // Cleanup WebGL resources
       const glState = glStateRef.current;
       if (glState) {
@@ -254,6 +285,24 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       window.sharedTexture?.removeFrameListener();
     };
   }, [handleFrame]);
+
+  // Clear canvas to black on content switch (prevents stale freeze-frame)
+  useEffect(() => {
+    if (!window.sharedTexture?.isAvailable) return;
+
+    window.sharedTexture.onClear(() => {
+      const glState = glStateRef.current;
+      if (glState && !contextLostRef.current) {
+        const { gl } = glState;
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+    });
+
+    return () => {
+      window.sharedTexture?.removeClearListener();
+    };
+  }, []);
 
   // Don't render if sharedTexture not available
   if (!window.sharedTexture?.isAvailable) {
