@@ -123,6 +123,7 @@ export class XtreamClient {
   async getLiveCategories(): Promise<Category[]> {
     const url = this.buildApiUrl('get_live_categories');
     const data = await this.fetchJson<XtreamCategory[]>(url);
+    if (!Array.isArray(data)) return [];
 
     return data.map(cat => ({
       category_id: `${this.sourceId}_${cat.category_id}`,
@@ -140,6 +141,7 @@ export class XtreamClient {
     }
 
     const data = await this.fetchJson<XtreamStream[]>(url);
+    if (!Array.isArray(data)) return [];
 
     return data.map(stream => ({
       stream_id: `${this.sourceId}_${stream.stream_id}`,
@@ -161,6 +163,7 @@ export class XtreamClient {
   async getVodCategories(): Promise<Category[]> {
     const url = this.buildApiUrl('get_vod_categories');
     const data = await this.fetchJson<XtreamCategory[]>(url);
+    if (!Array.isArray(data)) return [];
 
     return data.map(cat => ({
       category_id: `${this.sourceId}_vod_${cat.category_id}`,
@@ -177,6 +180,7 @@ export class XtreamClient {
     }
 
     const data = await this.fetchJson<XtreamVodStream[]>(url);
+    if (!Array.isArray(data)) return [];
 
     return data.map(vod => ({
       stream_id: `${this.sourceId}_${vod.stream_id}`,
@@ -203,6 +207,7 @@ export class XtreamClient {
   async getSeriesCategories(): Promise<Category[]> {
     const url = this.buildApiUrl('get_series_categories');
     const data = await this.fetchJson<XtreamCategory[]>(url);
+    if (!Array.isArray(data)) return [];
 
     return data.map(cat => ({
       category_id: `${this.sourceId}_series_${cat.category_id}`,
@@ -219,6 +224,7 @@ export class XtreamClient {
     }
 
     const data = await this.fetchJson<XtreamSeries[]>(url);
+    if (!Array.isArray(data)) return [];
 
     return data.map(series => ({
       series_id: `${this.sourceId}_${series.series_id}`,
