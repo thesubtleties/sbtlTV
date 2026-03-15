@@ -658,14 +658,17 @@ export async function syncVodMovies(source: Source): Promise<{ count: number; ca
     categories = await client.getVodCategories();
     movies = await client.getVodStreams();
   } catch (err) {
-    console.warn('[VOD Movies] Fetch failed, keeping existing data:', err);
+    const msg = err instanceof Error ? err.message : String(err);
+    debugLog(`Movie fetch failed, keeping existing data: ${msg}`, 'vod');
     return { count: 0, categoryCount: 0, skipped: true };
   }
+
+  debugLog(`Fetched ${movies.length} movies, ${categories.length} categories`, 'vod');
 
   // Check if fetch returned empty when we have existing data
   const existingCount = await db.vodMovies.where('source_id').equals(source.id).count();
   if (movies.length === 0 && existingCount > 0) {
-    console.warn('[VOD Movies] Fetch returned empty but we have existing data, keeping it');
+    debugLog('Movie fetch returned empty but we have existing data, keeping it', 'vod');
     return { count: existingCount, categoryCount: 0, skipped: true };
   }
 
@@ -716,7 +719,7 @@ export async function syncVodMovies(source: Source): Promise<{ count: number; ca
     const toRemove = existingMovies.filter(m => !newIds.has(m.stream_id)).map(m => m.stream_id);
     if (toRemove.length > 0) {
       await db.vodMovies.bulkDelete(toRemove);
-      console.log(`[VOD Movies] Removed ${toRemove.length} movies no longer in source`);
+      debugLog(`Removed ${toRemove.length} movies no longer in source`, 'vod');
     }
   });
 
@@ -742,14 +745,17 @@ export async function syncVodSeries(source: Source): Promise<{ count: number; ca
     categories = await client.getSeriesCategories();
     series = await client.getSeries();
   } catch (err) {
-    console.warn('[VOD Series] Fetch failed, keeping existing data:', err);
+    const msg = err instanceof Error ? err.message : String(err);
+    debugLog(`Series fetch failed, keeping existing data: ${msg}`, 'vod');
     return { count: 0, categoryCount: 0, skipped: true };
   }
+
+  debugLog(`Fetched ${series.length} series, ${categories.length} categories`, 'vod');
 
   // Check if fetch returned empty when we have existing data
   const existingCount = await db.vodSeries.where('source_id').equals(source.id).count();
   if (series.length === 0 && existingCount > 0) {
-    console.warn('[VOD Series] Fetch returned empty but we have existing data, keeping it');
+    debugLog('Series fetch returned empty but we have existing data, keeping it', 'vod');
     return { count: existingCount, categoryCount: 0, skipped: true };
   }
 
@@ -802,7 +808,7 @@ export async function syncVodSeries(source: Source): Promise<{ count: number; ca
       // Delete orphaned episodes first (they reference series_id)
       await db.vodEpisodes.where('series_id').anyOf(toRemove).delete();
       await db.vodSeries.bulkDelete(toRemove);
-      console.log(`[VOD Series] Removed ${toRemove.length} series (and their episodes) no longer in source`);
+      debugLog(`Removed ${toRemove.length} series (and their episodes) no longer in source`, 'vod');
     }
   });
 
@@ -944,21 +950,23 @@ export async function syncVodForSource(source: Source): Promise<VodSyncResult> {
     ]);
 
     // Update source meta with VOD counts and sync timestamp
+    // Only update counts for types that actually synced (not skipped)
     const meta = await db.sourcesMeta.get(source.id);
+    const updates: Partial<SourceMeta> = {};
+    if (!moviesResult.skipped) updates.vod_movie_count = moviesResult.count;
+    if (!seriesResult.skipped) updates.vod_series_count = seriesResult.count;
+    // Only update sync timestamp if at least one type actually synced
+    if (!moviesResult.skipped || !seriesResult.skipped) updates.vod_last_synced = new Date();
+
     if (meta) {
-      await db.sourcesMeta.update(source.id, {
-        vod_movie_count: moviesResult.count,
-        vod_series_count: seriesResult.count,
-        vod_last_synced: new Date(),
-      });
+      await db.sourcesMeta.update(source.id, updates);
     } else {
-      // Create meta if it doesn't exist (shouldn't happen, but be safe)
       await db.sourcesMeta.put({
         source_id: source.id,
         channel_count: 0,
         category_count: 0,
-        vod_movie_count: moviesResult.count,
-        vod_series_count: seriesResult.count,
+        vod_movie_count: moviesResult.skipped ? 0 : moviesResult.count,
+        vod_series_count: seriesResult.skipped ? 0 : seriesResult.count,
         vod_last_synced: new Date(),
       });
     }

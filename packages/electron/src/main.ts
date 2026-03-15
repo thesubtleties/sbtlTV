@@ -1148,7 +1148,7 @@ ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: s
     if (!settings.allowLanSources && isBlockedUrl(url)) {
       return {
         success: false,
-        error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > Security if you trust this source.',
+        error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > System > Security if you trust this source.',
       };
     }
 
@@ -1180,7 +1180,7 @@ ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: s
 ipcMain.handle('fetch-binary', async (_event, url: string) => {
   const settings = storage.getSettings();
   if (!isAllowedBinaryUrl(url, settings.allowLanSources ?? false)) {
-    return { success: false, error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > Security if you trust this source.' };
+    return { success: false, error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > System > Security if you trust this source.' };
   }
   try {
     const response = await electronNet.fetch(url);
