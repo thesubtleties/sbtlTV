@@ -110,7 +110,6 @@ export interface FetchProxyResponse {
 export interface FetchProxyApi {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<StorageResult<FetchProxyResponse>>;
   fetchBinary: (url: string) => Promise<StorageResult<string>>; // Returns base64-encoded data
-  fetchAndDecompress: (url: string) => Promise<StorageResult<string>>; // Fetches + gunzips in main, returns text
   fetchAndParseEpg: (url: string, providerChannels?: { epg_channel_id: string; name: string; stream_id: string }[]) => Promise<StorageResult<{ channels: { id: string; displayNames: string[] }[]; programs: { channel_id: string; title: string; description: string; start: string; stop: string }[] }>>;
 }
 

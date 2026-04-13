@@ -214,25 +214,6 @@ function buildMatchedXmltvIds(xmltvChannels: EpgChannel[], providerChannels: Pro
     }
   }
 
-  // Debug
-  const unmatched = providerChannels.filter(ch => !providerMatched.has(ch.stream_id));
-  if (unmatched.length > 0) {
-    console.log(`[epg-worker] Sample unmatched provider channels (first 15):`);
-    for (const ch of unmatched.slice(0, 15)) {
-      const norm = normalize(ch.name);
-      const slug = ch.epg_channel_id ? slugify(ch.epg_channel_id) : '';
-      const base = ch.epg_channel_id ? stripTld(ch.epg_channel_id) : '';
-      console.log(`  provider: name="${ch.name}" epg_id="${ch.epg_channel_id}" norm="${norm}" slug="${slug}" base="${base}"`);
-    }
-    console.log(`[epg-worker] Sample EPG channels (first 15):`);
-    for (const xch of xmltvChannels.slice(0, 15)) {
-      const code = extractCodes(xch.id).join(',');
-      const slug = slugify(xch.id);
-      const norms = xch.displayNames.map(dn => normalize(dn));
-      console.log(`  epg: id="${xch.id}" code="${code}" slug="${slug}" names=${JSON.stringify(xch.displayNames)} norms=${JSON.stringify(norms)}`);
-    }
-  }
-
   return matched;
 }
 

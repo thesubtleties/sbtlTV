@@ -109,13 +109,13 @@ function getEpgWorker(): Worker {
   return epgWorker;
 }
 
-// Parse EPG data using Web Worker (off main thread)
-async function parseEpgInWorker(data: string, isGzipped: boolean): Promise<EpgParseResult> {
+// Parse plain XML in Web Worker (off main thread)
+async function parseEpgInWorker(data: string): Promise<EpgParseResult> {
   return new Promise((resolve, reject) => {
     const id = ++epgWorkerIdCounter;
     epgWorkerCallbacks.set(id, { resolve, reject });
     debugLog(`Sending ${Math.round(data.length / 1024 / 1024)}MB to worker for parsing...`, 'epg');
-    getEpgWorker().postMessage({ type: 'parse', id, data, isGzipped });
+    getEpgWorker().postMessage({ type: 'parse', id, data });
   });
 }
 
@@ -161,7 +161,7 @@ async function fetchXmltvFromUrl(epgUrl: string, providerChannels?: Channel[]): 
     throw new Error(`Failed to fetch XMLTV: ${response.data?.status || 'unknown error'}`);
   }
   debugLog(`Got ${Math.round(response.data.text.length / 1024 / 1024)}MB XML, parsing in worker...`, 'epg');
-  const result = await parseEpgInWorker(response.data.text, false);
+  const result = await parseEpgInWorker(response.data.text);
   debugLog(`Worker parsed ${result.programs.length} programs, ${result.channels.length} EPG channels`, 'epg');
   return result;
 }
