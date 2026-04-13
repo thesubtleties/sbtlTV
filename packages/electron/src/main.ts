@@ -1126,7 +1126,9 @@ function isAllowedBinaryUrl(url: string, allowLan: boolean): boolean {
 const BLOCKED_URL_PATTERNS = [
   /^https?:\/\/localhost(?::\d+)?(?:\/|$)/i,
   /^https?:\/\/127\.\d+\.\d+\.\d+/,
+  /^https?:\/\/0\.0\.0\.0/,                     // Alternative localhost
   /^https?:\/\/\[?::1\]?/,                      // IPv6 localhost
+  /^https?:\/\/\[?::ffff:127\./,                // IPv4-mapped IPv6 localhost
   /^https?:\/\/10\.\d+\.\d+\.\d+/,              // Private Class A
   /^https?:\/\/172\.(1[6-9]|2\d|3[01])\./,      // Private Class B
   /^https?:\/\/192\.168\./,                     // Private Class C
@@ -1223,19 +1225,46 @@ function parseEpgInWorkerThread(filePath: string, providerChannels?: ProviderCha
       workerData: { filePath, providerChannels },
       resourceLimits: { maxOldGenerationSizeMb: 8192 },
     });
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      worker.terminate();
+      reject(new Error('EPG parse timed out after 8 minutes'));
+    }, 8 * 60 * 1000);
     worker.on('message', (result) => {
-      resolve(result);
+      if (result.type === 'log') {
+        debugLog(result.message, 'epg');
+        return;
+      }
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (result.error) {
+        reject(new Error(`EPG worker error: ${result.error}`));
+      } else {
+        resolve(result);
+      }
       worker.terminate();
     });
     worker.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
       reject(err);
       worker.terminate();
     });
     worker.on('exit', (code) => {
-      if (code !== 0) reject(new Error(`EPG worker exited with code ${code}`));
+      if (!settled && code !== 0) {
+        settled = true;
+        reject(new Error(`EPG worker exited with code ${code}`));
+      }
     });
   });
 }
+
+const MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024;   // 500MB compressed
+const MAX_DECOMPRESS_BYTES = 4 * 1024 * 1024 * 1024; // 4GB decompressed
 
 // Stream download to temp file (avoids ArrayBuffer size limits for large EPG files)
 async function downloadToTempFile(url: string): Promise<string> {
@@ -1261,8 +1290,13 @@ async function downloadToTempFile(url: string): Promise<string> {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      fileStream.write(Buffer.from(value));
       totalBytes += value.byteLength;
+      if (totalBytes > MAX_DOWNLOAD_BYTES) {
+        fileStream.destroy();
+        try { (await import('fs')).unlinkSync(tmpPath); } catch {}
+        throw new Error(`EPG download exceeds ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB limit`);
+      }
+      fileStream.write(Buffer.from(value));
     }
     fileStream.end();
     await new Promise<void>((resolve, reject) => {
@@ -1271,6 +1305,7 @@ async function downloadToTempFile(url: string): Promise<string> {
     });
   } catch (err) {
     fileStream.destroy();
+    try { (await import('fs')).unlinkSync(tmpPath); } catch {}
     throw err;
   }
 
@@ -1306,14 +1341,30 @@ async function decompressToFile(filePath: string, isGz: boolean): Promise<{ xmlP
   const compressedSize = statSync(filePath).size;
   console.log(`[epg] Streaming decompression of ${Math.round(compressedSize / 1024 / 1024)}MB...`);
 
+  const { Transform } = await import('stream');
+  let decompressedBytes = 0;
+  const sizeGuard = new Transform({
+    transform(chunk, _encoding, callback) {
+      decompressedBytes += chunk.length;
+      if (decompressedBytes > MAX_DECOMPRESS_BYTES) {
+        callback(new Error(`EPG decompression exceeds ${MAX_DECOMPRESS_BYTES / 1024 / 1024 / 1024}GB limit`));
+      } else {
+        callback(null, chunk);
+      }
+    },
+  });
+
   await pipeline(
     createReadStream(filePath),
     createGunzip(),
+    sizeGuard,
     createWriteStream(xmlPath),
   );
 
   // Clean up compressed file
-  try { unlinkSync(filePath); } catch {}
+  try { unlinkSync(filePath); } catch (e) {
+    console.warn(`[epg] Failed to clean up compressed temp file ${filePath}:`, e);
+  }
 
   const decompressedSize = statSync(xmlPath).size;
   console.log(`[epg] Decompressed to ${Math.round(decompressedSize / 1024 / 1024)}MB on disk`);
@@ -1326,25 +1377,31 @@ ipcMain.handle('fetch-and-parse-epg', async (_event, url: string, providerChanne
   if (!isAllowedBinaryUrl(url, settings.allowLanSources ?? false)) {
     return { success: false, error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > System > Security if you trust this source.' };
   }
+  const tempFiles: string[] = [];
   try {
     console.log(`[epg] Fetching ${url}...`);
     const tmpPath = await downloadToTempFile(url);
+    tempFiles.push(tmpPath);
 
     const isGz = url.endsWith('.gz');
     const { xmlPath, sizeMB } = await decompressToFile(tmpPath, isGz);
+    if (xmlPath !== tmpPath) tempFiles.push(xmlPath);
 
     // Worker stream-parses from the file — no memory limits
     console.log(`[epg] Parsing ${sizeMB}MB in worker thread...`);
     const t0 = Date.now();
     const result = await parseEpgInWorkerThread(xmlPath, providerChannels);
-    // Clean up temp file
-    try { (await import('fs')).unlinkSync(xmlPath); } catch {}
     console.log(`[epg] Parsed ${result.channels.length} channels, ${result.programs.length} programs in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
     return { success: true, data: result };
   } catch (error) {
     console.error('[epg] Parse failed:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Fetch/parse failed' };
+  } finally {
+    const { unlinkSync } = await import('fs');
+    for (const f of tempFiles) {
+      try { unlinkSync(f); } catch {}
+    }
   }
 });
 

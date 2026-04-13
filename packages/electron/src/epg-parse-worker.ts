@@ -1,8 +1,12 @@
 /**
- * EPG Parse Worker Thread
- * Stream-parses XMLTV from a file — constant memory usage, handles any file size.
- * If provider channels are given, matches them first (quick channel scan) then
- * only parses matching programmes on the second pass.
+ * EPG Parse Worker Thread (Node.js Worker Thread in main process)
+ *
+ * Uses a worker thread (not web worker) because gzipped EPG files need native
+ * fs/zlib for streaming decompression — unavailable in browser web workers.
+ *
+ * Stream-parses XMLTV from a file — constant memory, handles any file size.
+ * Two-phase parsing: Phase 1 scans only <channel> elements to build a matched
+ * ID set, Phase 2 uses that set to skip ~90% of <programme> data.
  */
 import { parentPort, workerData } from 'worker_threads';
 import { createReadStream, statSync } from 'fs';
@@ -11,14 +15,18 @@ interface EpgChannel { id: string; displayNames: string[]; }
 interface EpgProgram { channel_id: string; title: string; description: string; start: string; stop: string; }
 interface ProviderChannel { epg_channel_id: string; name: string; stream_id: string; }
 
-// ---- Matching helpers (same logic as epg-matcher.ts) ----
+function workerLog(msg: string) {
+  parentPort?.postMessage({ type: 'log', message: msg });
+}
+
+// ---- Matching helpers (duplicated from epg-matcher.ts) ----
+// Worker thread runs in Node.js main process and can't import from the
+// renderer-side UI package. Keep these in sync with epg-matcher.ts manually.
 
 function normalize(name: string): string {
   let s = name;
   s = s.replace(/^(USA?|UK|CA|AU|NZ|FR|DE|ES|IT|PT|NL|BE|AT|CH|IE|IN)\s*[:\-|]?\s*/i, '');
-  while (/[\s*]*(L?HD|UHD|FHD|SD|4K|East|West|\+1|\*)\s*$/i.test(s)) {
-    s = s.replace(/[\s*]*(L?HD|UHD|FHD|SD|4K|East|West|\+1|\*)\s*$/i, '');
-  }
+  s = s.replace(/([\s*]*(L?HD|UHD|FHD|SD|4K|East|West|\+1|\*))+\s*$/i, '');
   s = s.toLowerCase();
   s = s.replace(/&/g, 'and').replace(/\+/g, 'plus');
   return s.replace(/[^a-z0-9]/g, '');
@@ -27,7 +35,9 @@ function normalize(name: string): string {
 function normalizeLooser(name: string): string {
   let s = normalize(name);
   s = s.replace(/^the/, '');
-  s = s.replace(/(channel|network|television|tv)$/, '');
+  s = s.replace(/(channel|network|television)$/, '');
+  // Only strip trailing "tv" if preceded by 3+ chars (avoid mangling acronyms like MTV, CTV, ATV)
+  s = s.replace(/(?<=.{3})tv$/, '');
   return s;
 }
 
@@ -38,7 +48,7 @@ function extractCodes(epgId: string): string[] {
 }
 
 function slugify(id: string): string {
-  return id.replace(/\.\w{2,3}$/, '').replace(/\([^)]*\)/, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return id.replace(/\.\w{2,3}$/, '').replace(/\([^)]*\)/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function stripTld(id: string): string {
@@ -50,7 +60,8 @@ function decodeEntities(s: string): string {
   return s
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, c) => String.fromCharCode(parseInt(c, 10)));
+    .replace(/&#(\d+);/g, (_, c) => String.fromCharCode(parseInt(c, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, c) => String.fromCharCode(parseInt(c, 16)));
 }
 
 function parseDate(d: string): string | null {
@@ -76,6 +87,8 @@ function buildMatchedXmltvIds(xmltvChannels: EpgChannel[], providerChannels: Pro
     exactMap.set(xch.id, xch.id);
     for (const code of extractCodes(xch.id)) {
       codeMap.set(code, xch.id);
+      // US/CA local stations use DT (digital television) suffix in XMLTV (e.g. "wabcdt"),
+      // but providers use bare call signs ("wabc"). Map base call to catch these.
       const dtMatch = code.match(/^(.+?)dt(\d?)$/);
       if (dtMatch) {
         const baseCall = dtMatch[1];
@@ -100,6 +113,7 @@ function buildMatchedXmltvIds(xmltvChannels: EpgChannel[], providerChannels: Pro
   }
 
   const providerMatched = new Set<string>();
+  const callsignSkip = new Set(['USA', 'UHD', 'WEST', 'EAST', 'COZI', 'CBSN', 'CSPAN', 'CNBC', 'CMT', 'CNN', 'CBS', 'CMA', 'CITY', 'CRIME', 'WORLD', 'CGTN', 'WWE', 'NBC', 'ABC', 'FOX', 'PBS', 'CW']);
 
   for (const ch of providerChannels) {
     if (providerMatched.has(ch.stream_id)) continue;
@@ -135,14 +149,13 @@ function buildMatchedXmltvIds(xmltvChannels: EpgChannel[], providerChannels: Pro
 
     // Strategy 11: Extract call signs from channel name
     {
-      const skip = new Set(['USA', 'UHD', 'WEST', 'EAST', 'COZI', 'CBSN', 'CSPAN', 'CNBC', 'CMT', 'CNN', 'CBS', 'CMA', 'CITY', 'CRIME', 'WORLD', 'CGTN', 'WWE', 'NBC', 'ABC', 'FOX', 'PBS', 'CW']);
       const parenMatches = ch.name.match(/\(([A-Z][A-Z0-9\-]{2,8})\)/g) || [];
       const parenSigns = parenMatches.map(s => s.slice(1, -1).replace(/-/g, ''));
       const textSigns = ch.name.match(/\b([KWCX][A-Z]{2,4}(?:-?DT\d?)?)\b/g) || [];
       const allSigns = [...parenSigns, ...textSigns.map(s => s.replace(/-/g, ''))];
 
       for (const sign of allSigns) {
-        if (skip.has(sign) || sign.length < 3) continue;
+        if (callsignSkip.has(sign) || sign.length < 3) continue;
         const code = sign.toLowerCase();
         const cm = codeMap.get(code)
           || codeMap.get(code + 'dt')
@@ -210,7 +223,7 @@ function buildMatchedXmltvIds(xmltvChannels: EpgChannel[], providerChannels: Pro
       }
     }
     if (fuzzyMatched > 0) {
-      console.log(`[epg-worker] Fuzzy fallback matched ${fuzzyMatched} additional channels`);
+      workerLog(`[epg-worker] Fuzzy fallback matched ${fuzzyMatched} additional channels`);
     }
   }
 
@@ -238,12 +251,16 @@ function streamParseXmltv(
     let skipped = 0;
 
     function extractAttr(tag: string, name: string): string | null {
-      const key = name + '="';
-      const i = tag.indexOf(key);
-      if (i === -1) return null;
-      const s = i + key.length;
-      const e = tag.indexOf('"', s);
-      return e === -1 ? null : tag.slice(s, e);
+      for (const q of ['"', "'"]) {
+        const key = name + '=' + q;
+        const i = tag.indexOf(key);
+        if (i === -1) continue;
+        const s = i + key.length;
+        const e = tag.indexOf(q, s);
+        if (e === -1) continue;
+        return tag.slice(s, e);
+      }
+      return null;
     }
 
     function extractChild(block: string, tagName: string): string {
@@ -351,6 +368,7 @@ function streamParseXmltv(
       // Prevent remainder from growing unbounded — if it's huge and has no complete elements,
       // keep only the last 64KB (enough for any single element)
       if (remainder.length > 1024 * 1024) {
+        workerLog(`[epg-worker] WARNING: Remainder buffer overflow (${remainder.length} bytes), truncating to 64KB — possible oversized element`);
         const keepFrom = remainder.length - 64 * 1024;
         remainder = remainder.slice(keepFrom);
       }
@@ -367,47 +385,55 @@ function streamParseXmltv(
 }
 
 // ---- Entry point ----
-const { filePath, providerChannels } = workerData as {
-  filePath: string;
-  providerChannels?: ProviderChannel[];
-};
+if (!parentPort) throw new Error('epg-parse-worker must be run as a worker thread');
 
-const fileSize = statSync(filePath).size;
-console.log(`[epg-worker] Stream-parsing ${Math.round(fileSize / 1024 / 1024)}MB file (${providerChannels?.length ?? 0} provider channels for filtering)...`);
-const t0 = Date.now();
+try {
+  const { filePath, providerChannels } = workerData as {
+    filePath: string;
+    providerChannels?: ProviderChannel[];
+  };
 
-let filterIds: Set<string> | null = null;
+  const fileSize = statSync(filePath).size;
+  workerLog(`[epg-worker] Stream-parsing ${Math.round(fileSize / 1024 / 1024)}MB file (${providerChannels?.length ?? 0} provider channels for filtering)...`);
+  const t0 = Date.now();
 
-if (providerChannels && providerChannels.length > 0) {
-  // Phase 1: Quick stream scan for <channel> elements only
-  console.log(`[epg-worker] Phase 1: scanning for channel elements...`);
-  const xmltvChannels: EpgChannel[] = [];
+  let filterIds: Set<string> | null = null;
 
-  await streamParseXmltv(filePath, null,
-    (ch) => xmltvChannels.push(ch),
-    () => {}, // skip all programmes in phase 1
+  if (providerChannels && providerChannels.length > 0) {
+    // Phase 1: Quick stream scan for <channel> elements only
+    workerLog(`[epg-worker] Phase 1: scanning for channel elements...`);
+    const xmltvChannels: EpgChannel[] = [];
+
+    await streamParseXmltv(filePath, null,
+      (ch) => xmltvChannels.push(ch),
+      () => {}, // skip all programmes in phase 1
+    );
+    workerLog(`[epg-worker] Found ${xmltvChannels.length} EPG channels`);
+
+    // Run matching
+    filterIds = buildMatchedXmltvIds(xmltvChannels, providerChannels);
+    workerLog(`[epg-worker] Matched ${filterIds.size}/${providerChannels.length} provider channels — will filter programmes`);
+  }
+
+  // Phase 2: Full parse with filter
+  const channels: EpgChannel[] = [];
+  const programs: EpgProgram[] = [];
+
+  const stats = await streamParseXmltv(filePath, filterIds,
+    (ch) => channels.push(ch),
+    (p) => programs.push(p),
   );
-  console.log(`[epg-worker] Found ${xmltvChannels.length} EPG channels`);
 
-  // Run matching
-  filterIds = buildMatchedXmltvIds(xmltvChannels, providerChannels);
-  console.log(`[epg-worker] Matched ${filterIds.size}/${providerChannels.length} provider channels — will filter programmes`);
+  if (stats.skipped > 0) {
+    workerLog(`[epg-worker] Skipped ${stats.skipped} programmes for non-matching channels`);
+  }
+
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  workerLog(`[epg-worker] Done: ${channels.length} channels, ${programs.length} programs in ${elapsed}s`);
+
+  parentPort.postMessage({ channels, programs });
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  workerLog(`[epg-worker] ERROR: Fatal error: ${msg}`);
+  parentPort.postMessage({ error: msg });
 }
-
-// Phase 2: Full parse with filter
-const channels: EpgChannel[] = [];
-const programs: EpgProgram[] = [];
-
-const stats = await streamParseXmltv(filePath, filterIds,
-  (ch) => channels.push(ch),
-  (p) => programs.push(p),
-);
-
-if (stats.skipped > 0) {
-  console.log(`[epg-worker] Skipped ${stats.skipped} programmes for non-matching channels`);
-}
-
-const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-console.log(`[epg-worker] Done: ${channels.length} channels, ${programs.length} programs in ${elapsed}s`);
-
-parentPort!.postMessage({ channels, programs });

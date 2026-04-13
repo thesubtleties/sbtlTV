@@ -66,7 +66,7 @@ export interface UserPrefs {
 
 // EPG program entry
 export interface StoredProgram {
-  id: string; // `${stream_id}_${start}` compound key
+  id: string; // `${source_id}-${stream_id}-${start_ms}` compound key
   stream_id: string;
   title: string;
   description: string;
@@ -97,6 +97,12 @@ export interface StoredWatchlistItem {
   added: Date;
 }
 
+export type MatchStrategy =
+  | 'exact_id' | 'code_match' | 'display_name' | 'name_code'
+  | 'slug_match' | 'base_display' | 'loose_name' | 'loose_code'
+  | 'base_loose' | 'base_looseslug' | 'loose_looseslug'
+  | 'callsign' | 'fuzzy' | 'manual';
+
 // EPG channel mapping (external EPG → provider channels)
 export interface EpgMapping {
   id: string;                  // `${source_id}::${epg_source}::${epg_channel_id}`
@@ -106,7 +112,7 @@ export interface EpgMapping {
   epg_source: string;          // EPG URL this mapping applies to
   stream_id: string;           // Channel's stream_id for fast lookup
   confidence: 'exact' | 'high' | 'medium' | 'manual';
-  strategy: string;            // Which strategy produced this match
+  strategy: MatchStrategy;
 }
 
 // Watch progress (position tracking, Trakt-compatible)

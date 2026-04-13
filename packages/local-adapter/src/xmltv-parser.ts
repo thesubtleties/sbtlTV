@@ -48,13 +48,16 @@ function parseXmltvDate(dateStr: string): Date | null {
  * e.g. extractAttr('<programme start="2025" channel="abc">', 'channel') → 'abc'
  */
 function extractAttr(tag: string, name: string): string | null {
-  const key = name + '="';
-  const i = tag.indexOf(key);
-  if (i === -1) return null;
-  const start = i + key.length;
-  const end = tag.indexOf('"', start);
-  if (end === -1) return null;
-  return tag.slice(start, end);
+  for (const q of ['"', "'"]) {
+    const key = name + '=' + q;
+    const i = tag.indexOf(key);
+    if (i === -1) continue;
+    const start = i + key.length;
+    const end = tag.indexOf(q, start);
+    if (end === -1) continue;
+    return tag.slice(start, end);
+  }
+  return null;
 }
 
 /**
@@ -82,7 +85,8 @@ function extractChildText(xml: string, from: number, to: number, tagName: string
 
 /**
  * Parse XMLTV format returning both channel metadata and programs.
- * Uses indexOf-based scanning instead of regex to handle files of any size.
+ * Uses indexOf-based scanning instead of regex — V8's regex engine silently
+ * returns 0 matches on strings exceeding ~500MB with no error.
  */
 export function parseXmltvFull(xml: string): XmltvParseResult {
   const channels: XmltvChannel[] = [];
@@ -92,7 +96,9 @@ export function parseXmltvFull(xml: string): XmltvParseResult {
   const len = xml.length;
 
   // Once indexOf('<channel ', pos) returns -1, stop searching for channels —
-  // avoids rescanning the entire remaining string on every iteration
+  // avoids rescanning the entire remaining string on every iteration.
+  // NOTE: assumes channels appear before programmes (XMLTV convention, not spec requirement).
+  // Files with interleaved channels/programmes would silently miss late channels.
   let channelsDone = false;
 
   while (pos < len) {
@@ -196,5 +202,6 @@ function decodeXmlEntities(str: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
 }
