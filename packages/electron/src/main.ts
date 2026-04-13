@@ -1204,6 +1204,150 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
   }
 });
 
+// =========================================================================
+// EPG: Fetch, decompress, and parse XMLTV in a worker thread
+// Main process stays unblocked; only structured results cross IPC
+// =========================================================================
+import { Worker as WorkerThread } from 'worker_threads';
+
+interface ProviderChannelInfo {
+  epg_channel_id: string;
+  name: string;
+  stream_id: string;
+}
+
+function parseEpgInWorkerThread(filePath: string, providerChannels?: ProviderChannelInfo[]): Promise<{ channels: { id: string; displayNames: string[] }[]; programs: { channel_id: string; title: string; description: string; start: string; stop: string }[] }> {
+  return new Promise((resolve, reject) => {
+    const workerPath = path.join(__dirname, 'epg-parse-worker.js');
+    const worker = new WorkerThread(workerPath, {
+      workerData: { filePath, providerChannels },
+      resourceLimits: { maxOldGenerationSizeMb: 8192 },
+    });
+    worker.on('message', (result) => {
+      resolve(result);
+      worker.terminate();
+    });
+    worker.on('error', (err) => {
+      reject(err);
+      worker.terminate();
+    });
+    worker.on('exit', (code) => {
+      if (code !== 0) reject(new Error(`EPG worker exited with code ${code}`));
+    });
+  });
+}
+
+// Stream download to temp file (avoids ArrayBuffer size limits for large EPG files)
+async function downloadToTempFile(url: string): Promise<string> {
+  const { createWriteStream } = await import('fs');
+  const { randomUUID } = await import('crypto');
+  const { tmpdir } = await import('os');
+
+  const tmpPath = path.join(tmpdir(), `epg-${randomUUID()}.tmp`);
+  const response = await electronNet.fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  if (!response.body) {
+    throw new Error('No response body');
+  }
+
+  // Stream response body to file
+  const fileStream = createWriteStream(tmpPath);
+  // Convert Web ReadableStream to Node stream
+  const reader = response.body.getReader();
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      fileStream.write(Buffer.from(value));
+      totalBytes += value.byteLength;
+    }
+    fileStream.end();
+    await new Promise<void>((resolve, reject) => {
+      fileStream.on('finish', resolve);
+      fileStream.on('error', reject);
+    });
+  } catch (err) {
+    fileStream.destroy();
+    throw err;
+  }
+
+  console.log(`[epg] Downloaded ${Math.round(totalBytes / 1024 / 1024)}MB to temp file`);
+  return tmpPath;
+}
+
+// Read file, optionally decompress via streaming to another temp file, return path to raw XML
+// Streaming avoids holding 3GB+ decompressed data in a single Buffer
+async function decompressToFile(filePath: string, isGz: boolean): Promise<{ xmlPath: string; sizeMB: number }> {
+  const { createReadStream, createWriteStream, statSync, unlinkSync } = await import('fs');
+  const { createGunzip } = await import('zlib');
+  const { pipeline } = await import('stream/promises');
+  const { randomUUID } = await import('crypto');
+  const { tmpdir } = await import('os');
+
+  // Check magic bytes
+  if (!isGz) {
+    const { readSync, openSync, closeSync } = await import('fs');
+    const fd = openSync(filePath, 'r');
+    const header = Buffer.alloc(2);
+    readSync(fd, header, 0, 2, 0);
+    closeSync(fd);
+    isGz = header[0] === 0x1f && header[1] === 0x8b;
+  }
+
+  if (!isGz) {
+    const size = statSync(filePath).size;
+    return { xmlPath: filePath, sizeMB: Math.round(size / 1024 / 1024) };
+  }
+
+  const xmlPath = path.join(tmpdir(), `epg-xml-${randomUUID()}.tmp`);
+  const compressedSize = statSync(filePath).size;
+  console.log(`[epg] Streaming decompression of ${Math.round(compressedSize / 1024 / 1024)}MB...`);
+
+  await pipeline(
+    createReadStream(filePath),
+    createGunzip(),
+    createWriteStream(xmlPath),
+  );
+
+  // Clean up compressed file
+  try { unlinkSync(filePath); } catch {}
+
+  const decompressedSize = statSync(xmlPath).size;
+  console.log(`[epg] Decompressed to ${Math.round(decompressedSize / 1024 / 1024)}MB on disk`);
+  return { xmlPath, sizeMB: Math.round(decompressedSize / 1024 / 1024) };
+}
+
+// Fetch, decompress, and parse EPG — parsing runs in a worker thread
+ipcMain.handle('fetch-and-parse-epg', async (_event, url: string, providerChannels?: ProviderChannelInfo[]) => {
+  const settings = storage.getSettings();
+  if (!isAllowedBinaryUrl(url, settings.allowLanSources ?? false)) {
+    return { success: false, error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > System > Security if you trust this source.' };
+  }
+  try {
+    console.log(`[epg] Fetching ${url}...`);
+    const tmpPath = await downloadToTempFile(url);
+
+    const isGz = url.endsWith('.gz');
+    const { xmlPath, sizeMB } = await decompressToFile(tmpPath, isGz);
+
+    // Worker stream-parses from the file — no memory limits
+    console.log(`[epg] Parsing ${sizeMB}MB in worker thread...`);
+    const t0 = Date.now();
+    const result = await parseEpgInWorkerThread(xmlPath, providerChannels);
+    // Clean up temp file
+    try { (await import('fs')).unlinkSync(xmlPath); } catch {}
+    console.log(`[epg] Parsed ${result.channels.length} channels, ${result.programs.length} programs in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('[epg] Parse failed:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Fetch/parse failed' };
+  }
+});
+
 // App lifecycle
 app.whenReady().then(async () => {
   // Initialize debug logging from saved settings

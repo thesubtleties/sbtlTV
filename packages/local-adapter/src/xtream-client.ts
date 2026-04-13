@@ -11,7 +11,7 @@
  */
 
 import type { Channel, Category, Movie, Series, Season } from '@sbtltv/core';
-import { parseXmltv, type XmltvProgram } from './xmltv-parser';
+import { parseXmltv, parseXmltvFull, type XmltvProgram, type XmltvParseResult } from './xmltv-parser';
 
 export interface XtreamConfig {
   baseUrl: string;
@@ -312,6 +312,28 @@ export class XtreamClient {
 
     // Parse XMLTV using shared parser
     return parseXmltv(xmlText);
+  }
+
+  // Fetch full XMLTV EPG data with channel metadata
+  async getXmltvEpgFull(): Promise<XmltvParseResult> {
+    const url = this.getEpgUrl();
+
+    let xmlText: string;
+    if (typeof window !== 'undefined' && window.fetchProxy) {
+      const result = await window.fetchProxy.fetch(url);
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'Failed to fetch XMLTV');
+      }
+      xmlText = result.data.text;
+    } else {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch XMLTV: ${response.status}`);
+      }
+      xmlText = await response.text();
+    }
+
+    return parseXmltvFull(xmlText);
   }
 
   // ===========================================================================

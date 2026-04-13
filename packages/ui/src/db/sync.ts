@@ -1,6 +1,7 @@
 import { type Table } from 'dexie';
-import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory } from './index';
-import { fetchAndParseM3U, XtreamClient, type XmltvProgram } from '@sbtltv/local-adapter';
+import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory, type EpgMapping } from './index';
+import { fetchAndParseM3U, XtreamClient, type XmltvProgram, type XmltvChannel } from '@sbtltv/local-adapter';
+import { matchChannelsToEpg } from '../services/epg-matcher';
 import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
 import { getEnrichedMovieExports, getEnrichedTvExports, findBestMatch, extractMatchParams } from '../services/tmdb-exports';
 import { useUIStore } from '../stores/uiStore';
@@ -70,26 +71,26 @@ function endTmdbMatching() {
   }
 }
 
-// Safety limits for EPG fetching
-// Large files (>50MB) cause UI freezing due to IPC overhead - TODO: implement streaming
-const MAX_COMPRESSED_SIZE_MB = 50;   // Max 50MB compressed (~500MB uncompressed)
-const MAX_COMPRESSED_BYTES = MAX_COMPRESSED_SIZE_MB * 1024 * 1024;
-
 // EPG Parser Web Worker - handles decompression and parsing off main thread
 let epgWorker: Worker | null = null;
+interface EpgParseResult {
+  programs: XmltvProgram[];
+  channels: XmltvChannel[];
+}
+
 let epgWorkerIdCounter = 0;
-const epgWorkerCallbacks = new Map<number, { resolve: (programs: XmltvProgram[]) => void; reject: (err: Error) => void }>();
+const epgWorkerCallbacks = new Map<number, { resolve: (result: EpgParseResult) => void; reject: (err: Error) => void }>();
 
 function getEpgWorker(): Worker {
   if (!epgWorker) {
     epgWorker = new Worker(new URL('../workers/epg-parser.worker.ts', import.meta.url), { type: 'module' });
     epgWorker.onmessage = (event) => {
-      const { type, id, programs, error } = event.data;
+      const { type, id, programs, channels, error } = event.data;
       const callback = epgWorkerCallbacks.get(id);
       if (callback) {
         epgWorkerCallbacks.delete(id);
         if (type === 'result') {
-          callback.resolve(programs || []);
+          callback.resolve({ programs: programs || [], channels: channels || [] });
         } else {
           callback.reject(new Error(error || 'Worker error'));
         }
@@ -108,58 +109,20 @@ function getEpgWorker(): Worker {
   return epgWorker;
 }
 
-// Convert string to Uint8Array in chunks (avoids blocking for large strings)
-async function stringToBufferChunked(str: string): Promise<Uint8Array> {
-  const encoder = new TextEncoder();
-  const CHUNK_SIZE = 1_000_000; // 1MB chunks
-
-  if (str.length <= CHUNK_SIZE) {
-    return encoder.encode(str);
-  }
-
-  // For large strings, encode in chunks with yields
-  const chunks: Uint8Array[] = [];
-  for (let i = 0; i < str.length; i += CHUNK_SIZE) {
-    const chunk = str.slice(i, i + CHUNK_SIZE);
-    chunks.push(encoder.encode(chunk));
-    // Yield to event loop
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
-
-  // Combine chunks
-  const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
-  const result = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return result;
-}
-
 // Parse EPG data using Web Worker (off main thread)
-// Uses Transferable for large data to avoid blocking structured clone
-async function parseEpgInWorker(data: string, isGzipped: boolean): Promise<XmltvProgram[]> {
-  return new Promise(async (resolve, reject) => {
+async function parseEpgInWorker(data: string, isGzipped: boolean): Promise<EpgParseResult> {
+  return new Promise((resolve, reject) => {
     const id = ++epgWorkerIdCounter;
     epgWorkerCallbacks.set(id, { resolve, reject });
-
-    // For large data, convert to ArrayBuffer and transfer (avoids copy)
-    if (data.length > 1_000_000) { // > 1MB
-      debugLog(`Large EPG data (${Math.round(data.length / 1024 / 1024)}MB), using chunked transfer...`, 'epg');
-      const buffer = await stringToBufferChunked(data);
-      getEpgWorker().postMessage(
-        { type: 'parse', id, buffer, isGzipped, isBuffer: true },
-        [buffer.buffer] // Transfer ownership
-      );
-    } else {
-      getEpgWorker().postMessage({ type: 'parse', id, data, isGzipped });
-    }
+    debugLog(`Sending ${Math.round(data.length / 1024 / 1024)}MB to worker for parsing...`, 'epg');
+    getEpgWorker().postMessage({ type: 'parse', id, data, isGzipped });
   });
 }
 
-// Fetch XMLTV from a single URL and parse it (parsing happens in worker)
-async function fetchXmltvFromUrl(epgUrl: string): Promise<XmltvProgram[]> {
+// Fetch XMLTV from a single URL and parse it
+// Gzipped/large files: fetched, decompressed, and parsed entirely in main process worker thread
+// Provider channels are passed for filtered parsing (skip programmes for non-matching channels)
+async function fetchXmltvFromUrl(epgUrl: string, providerChannels?: Channel[]): Promise<EpgParseResult> {
   const url = epgUrl.trim();
   debugLog(`Fetching XMLTV from: ${url}`, 'epg');
 
@@ -167,56 +130,61 @@ async function fetchXmltvFromUrl(epgUrl: string): Promise<XmltvProgram[]> {
     throw new Error('fetchProxy not available');
   }
 
-  // Handle gzipped files
+  // For gzipped files: fetch + decompress + parse all in main process
   if (url.endsWith('.gz')) {
-    debugLog('Detected gzipped file, fetching binary...', 'epg');
-    const response = await window.fetchProxy.fetchBinary(url);
+    debugLog('Using main process fetch+decompress+parse pipeline...', 'epg');
+    // Send minimal channel info for matching/filtering in the worker
+    const channelInfo = providerChannels?.map(ch => ({
+      epg_channel_id: ch.epg_channel_id,
+      name: ch.name,
+      stream_id: ch.stream_id,
+    }));
+    const response = await window.fetchProxy.fetchAndParseEpg(url, channelInfo);
     if (!response.data) {
-      throw new Error(`Failed to fetch gzipped XMLTV: ${response.error || 'unknown error'}`);
+      throw new Error(`Failed to fetch/parse XMLTV: ${response.error || 'unknown error'}`);
     }
-
-    // Check compressed size before processing (large files freeze UI)
-    const estimatedCompressedSize = Math.floor(response.data.length * 0.75);
-    if (estimatedCompressedSize > MAX_COMPRESSED_BYTES) {
-      const sizeMB = Math.round(estimatedCompressedSize / 1024 / 1024);
-      debugLog(`Skipping oversized EPG file: ${sizeMB}MB (max ${MAX_COMPRESSED_SIZE_MB}MB) - ${url}`, 'epg');
-      throw new Error(`EPG file too large (${sizeMB}MB). Use a regional EPG instead of ALL_SOURCES.`);
-    }
-
-    debugLog(`Received ${response.data.length} bytes (base64), sending to worker for decompression...`, 'epg');
-    const programs = await parseEpgInWorker(response.data, true);
-    debugLog(`Worker parsed ${programs.length} programs`, 'epg');
-    return programs;
-  } else {
-    const response = await window.fetchProxy.fetch(url);
-    if (!response.data?.ok) {
-      throw new Error(`Failed to fetch XMLTV: ${response.data?.status || 'unknown error'}`);
-    }
-    debugLog(`Received ${response.data.text.length} bytes, sending to worker for parsing...`, 'epg');
-    const programs = await parseEpgInWorker(response.data.text, false);
-    debugLog(`Worker parsed ${programs.length} programs`, 'epg');
-    return programs;
+    // Convert ISO strings back to Dates (Dates don't survive IPC)
+    const programs: XmltvProgram[] = response.data.programs.map(p => ({
+      channel_id: p.channel_id,
+      title: p.title,
+      description: p.description,
+      start: new Date(p.start),
+      stop: new Date(p.stop),
+    }));
+    debugLog(`Main process parsed ${response.data.channels.length} channels, ${programs.length} programs`, 'epg');
+    return { programs, channels: response.data.channels };
   }
+
+  // Plain XML: fetch via proxy, parse in web worker
+  const response = await window.fetchProxy.fetch(url);
+  if (!response.data?.ok) {
+    throw new Error(`Failed to fetch XMLTV: ${response.data?.status || 'unknown error'}`);
+  }
+  debugLog(`Got ${Math.round(response.data.text.length / 1024 / 1024)}MB XML, parsing in worker...`, 'epg');
+  const result = await parseEpgInWorker(response.data.text, false);
+  debugLog(`Worker parsed ${result.programs.length} programs, ${result.channels.length} EPG channels`, 'epg');
+  return result;
 }
 
 // Fetch XMLTV from potentially multiple URLs (comma-separated)
-async function fetchXmltvFromUrls(epgUrlStr: string): Promise<XmltvProgram[]> {
+async function fetchXmltvFromUrls(epgUrlStr: string, providerChannels?: Channel[]): Promise<EpgParseResult> {
   // Split by comma and trim each URL
   const urls = epgUrlStr.split(',').map(u => u.trim()).filter(u => u.length > 0);
 
   if (urls.length === 0) {
-    return [];
+    return { programs: [], channels: [] };
   }
 
   if (urls.length === 1) {
-    return fetchXmltvFromUrl(urls[0]);
+    return fetchXmltvFromUrl(urls[0], providerChannels);
   }
 
   // Multiple URLs - fetch in parallel batches to avoid overwhelming servers
   // Yields to event loop between batches to keep UI responsive
   debugLog(`Found ${urls.length} EPG URLs, fetching in parallel batches...`, 'epg');
   const BATCH_SIZE = 5;
-  const allResults: XmltvProgram[][] = [];
+  const allPrograms: XmltvProgram[][] = [];
+  const allChannels: XmltvChannel[][] = [];
 
   for (let i = 0; i < urls.length; i += BATCH_SIZE) {
     const batch = urls.slice(i, i + BATCH_SIZE);
@@ -225,18 +193,19 @@ async function fetchXmltvFromUrls(epgUrlStr: string): Promise<XmltvProgram[]> {
     const results = await Promise.all(
       batch.map(async (url) => {
         try {
-          return await fetchXmltvFromUrl(url);
+          return await fetchXmltvFromUrl(url, providerChannels);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           debugLog(`Failed to fetch from ${url}: ${errMsg}`, 'epg');
-          return []; // Return empty array on failure, continue with others
+          return { programs: [], channels: [] } as EpgParseResult;
         }
       })
     );
 
     // Collect results without spreading (faster)
     for (const r of results) {
-      if (r.length > 0) allResults.push(r);
+      if (r.programs.length > 0) allPrograms.push(r.programs);
+      if (r.channels.length > 0) allChannels.push(r.channels);
     }
 
     // Yield to event loop between batches to keep UI responsive
@@ -244,9 +213,29 @@ async function fetchXmltvFromUrls(epgUrlStr: string): Promise<XmltvProgram[]> {
   }
 
   // Flatten at the end (single operation)
-  const allPrograms = allResults.flat();
-  debugLog(`Total programs from all EPG sources: ${allPrograms.length}`, 'epg');
-  return allPrograms;
+  const programs = allPrograms.flat();
+  const channels = allChannels.flat();
+  debugLog(`Total from all EPG sources: ${programs.length} programs, ${channels.length} channels`, 'epg');
+  return { programs, channels };
+}
+
+// Build a channelMap (xmltv_channel_id → stream_id) using EPG mappings + exact fallback
+function buildChannelMap(channels: Channel[], mappings: EpgMapping[]): Map<string, string> {
+  const channelMap = new Map<string, string>();
+
+  // Mappings take priority (fuzzy-matched channels)
+  for (const m of mappings) {
+    channelMap.set(m.xmltv_channel_id, m.stream_id);
+  }
+
+  // Also include exact epg_channel_id matches as fallback (provider's own EPG case)
+  for (const ch of channels) {
+    if (ch.epg_channel_id && !channelMap.has(ch.epg_channel_id)) {
+      channelMap.set(ch.epg_channel_id, ch.stream_id);
+    }
+  }
+
+  return channelMap;
 }
 
 // Sync EPG from XMLTV URL(s) for M3U sources
@@ -254,28 +243,33 @@ async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[
   debugLog(`Starting M3U EPG sync`, 'epg');
 
   try {
-    const xmltvPrograms = await fetchXmltvFromUrls(epgUrl);
+    const { programs: xmltvPrograms, channels: xmltvChannels } = await fetchXmltvFromUrls(epgUrl, channels);
 
     if (xmltvPrograms.length === 0) {
       debugLog('No programs found in XMLTV, keeping existing data', 'epg');
       return 0;
     }
 
-    // Build a map of epg_channel_id -> stream_id for matching
-    const channelMap = new Map<string, string>();
-    let channelsWithEpgId = 0;
-    for (const ch of channels) {
-      if (ch.epg_channel_id) {
-        channelMap.set(ch.epg_channel_id, ch.stream_id);
-        channelsWithEpgId++;
+    // Run EPG channel matching and persist mappings
+    const mappings = matchChannelsToEpg(channels, xmltvChannels, source.id, epgUrl);
+    if (mappings.length > 0) {
+      const byStrategy = new Map<string, number>();
+      for (const m of mappings) {
+        byStrategy.set(m.strategy, (byStrategy.get(m.strategy) || 0) + 1);
       }
+      const strategyStr = [...byStrategy.entries()].map(([s, n]) => `${s}=${n}`).join(', ');
+      debugLog(`EPG matching: ${mappings.length}/${channels.length} channels matched (${strategyStr})`, 'epg');
+      await db.epgMappings.bulkPut(mappings);
     }
-    debugLog(`${channelsWithEpgId}/${channels.length} channels have epg_channel_id`, 'epg');
+
+    // Build channel map from mappings + exact fallback
+    const channelMap = buildChannelMap(channels, mappings);
+    debugLog(`Channel map has ${channelMap.size} entries`, 'epg');
 
     // Convert XMLTV programs to stored format (yield periodically for large datasets)
     const storedPrograms: StoredProgram[] = [];
     const unmatchedChannels = new Set<string>();
-    const YIELD_EVERY = 10000; // Yield every 10k items
+    const YIELD_EVERY = 10000;
 
     for (let i = 0; i < xmltvPrograms.length; i++) {
       const prog = xmltvPrograms[i];
@@ -293,7 +287,6 @@ async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[
       } else {
         unmatchedChannels.add(prog.channel_id);
       }
-      // Yield to event loop periodically
       if (i > 0 && i % YIELD_EVERY === 0) {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
@@ -316,7 +309,6 @@ async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[
     for (let i = 0; i < storedPrograms.length; i += BATCH_SIZE) {
       const batch = storedPrograms.slice(i, i + BATCH_SIZE);
       await db.programs.bulkPut(batch);
-      // Yield every few batches
       if ((i / BATCH_SIZE) % 10 === 0) {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
@@ -343,26 +335,34 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<nu
   );
 
   try {
-    // Fetch full XMLTV data FIRST (don't delete old data until we have new)
+    // Fetch full XMLTV data with channel metadata
     debugLog('Fetching XMLTV data...', 'epg');
-    const xmltvPrograms = await client.getXmltvEpg();
-    debugLog(`Received ${xmltvPrograms.length} programs from XMLTV`, 'epg');
+    const { programs: xmltvPrograms, channels: xmltvChannels } = await client.getXmltvEpgFull();
+    debugLog(`Received ${xmltvPrograms.length} programs, ${xmltvChannels.length} EPG channels from XMLTV`, 'epg');
 
     if (xmltvPrograms.length === 0) {
       debugLog('No programs found in XMLTV, keeping existing data', 'epg');
       return 0;
     }
 
-    // Build a map of epg_channel_id -> stream_id for matching
-    const channelMap = new Map<string, string>();
-    let channelsWithEpgId = 0;
-    for (const ch of channels) {
-      if (ch.epg_channel_id) {
-        channelMap.set(ch.epg_channel_id, ch.stream_id);
-        channelsWithEpgId++;
+    // Determine EPG source URL for mapping key
+    const epgSource = `xtream://${source.url}`;
+
+    // Run EPG channel matching and persist mappings
+    const mappings = matchChannelsToEpg(channels, xmltvChannels, source.id, epgSource);
+    if (mappings.length > 0) {
+      const byStrategy = new Map<string, number>();
+      for (const m of mappings) {
+        byStrategy.set(m.strategy, (byStrategy.get(m.strategy) || 0) + 1);
       }
+      const strategyStr = [...byStrategy.entries()].map(([s, n]) => `${s}=${n}`).join(', ');
+      debugLog(`EPG matching: ${mappings.length}/${channels.length} channels matched (${strategyStr})`, 'epg');
+      await db.epgMappings.bulkPut(mappings);
     }
-    debugLog(`${channelsWithEpgId}/${channels.length} channels have epg_channel_id`, 'epg');
+
+    // Build channel map from mappings + exact fallback
+    const channelMap = buildChannelMap(channels, mappings);
+    debugLog(`Channel map has ${channelMap.size} entries`, 'epg');
 
     // Convert XMLTV programs to stored format
     const storedPrograms: StoredProgram[] = [];
@@ -1030,4 +1030,38 @@ export async function syncAllVod(): Promise<Map<string, VodSyncResult>> {
   }
 
   return results;
+}
+
+// Re-match EPG for a source without full source re-sync
+// Use case: user added external EPG, matching was poor, EPG source updated
+export async function rematchEpg(source: Source): Promise<number> {
+  debugLog(`Starting EPG rematch for source: ${source.name || source.id}`, 'epg');
+
+  // Read current channels from DB
+  const channels = await db.channels.where('source_id').equals(source.id).toArray();
+  if (channels.length === 0) {
+    debugLog('No channels found for source, nothing to rematch', 'epg');
+    return 0;
+  }
+
+  // Clear existing mappings + programs for this source
+  await db.epgMappings.where('source_id').equals(source.id).delete();
+  await db.programs.where('source_id').equals(source.id).delete();
+
+  // Determine EPG URL
+  let programCount = 0;
+  if (source.epg_url) {
+    programCount = await syncEpgFromUrl(source, source.epg_url, channels);
+  } else if (source.type === 'xtream' && source.username && source.password) {
+    programCount = await syncEpgForSource(source, channels);
+  } else {
+    // Check if M3U had an EPG URL stored in meta
+    const meta = await db.sourcesMeta.get(source.id);
+    if (meta?.epg_url) {
+      programCount = await syncEpgFromUrl(source, meta.epg_url, channels);
+    }
+  }
+
+  debugLog(`EPG rematch complete: ${programCount} programs`, 'epg');
+  return programCount;
 }

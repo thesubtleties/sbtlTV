@@ -97,6 +97,18 @@ export interface StoredWatchlistItem {
   added: Date;
 }
 
+// EPG channel mapping (external EPG → provider channels)
+export interface EpgMapping {
+  id: string;                  // `${source_id}::${epg_source}::${epg_channel_id}`
+  source_id: string;
+  epg_channel_id: string;      // Provider's epg_channel_id
+  xmltv_channel_id: string;    // Matched XMLTV channel ID
+  epg_source: string;          // EPG URL this mapping applies to
+  stream_id: string;           // Channel's stream_id for fast lookup
+  confidence: 'exact' | 'high' | 'medium' | 'manual';
+  strategy: string;            // Which strategy produced this match
+}
+
 // Watch progress (position tracking, Trakt-compatible)
 export interface StoredWatchProgress {
   id: string;              // `${type}_${stream_id}` or `episode_${series_tmdb_id}_S${season}_E${episode}`
@@ -128,6 +140,7 @@ class SbtltvDatabase extends Dexie {
   favorites!: Table<StoredFavorite, string>;
   watchlist!: Table<StoredWatchlistItem, string>;
   watchProgress!: Table<StoredWatchProgress, string>;
+  epgMappings!: Table<EpgMapping, string>;
 
   constructor() {
     super('sbtltv');
@@ -265,6 +278,11 @@ class SbtltvDatabase extends Dexie {
     this.version(11).stores({
       watchProgress: 'id, type, tmdb_id, stream_id, series_tmdb_id, updated_at, [type+completed]',
     });
+
+    // Add EPG mapping table for external EPG channel matching
+    this.version(12).stores({
+      epgMappings: 'id, source_id, stream_id, [source_id+epg_source]',
+    });
   }
 }
 
@@ -272,11 +290,12 @@ export const db = new SbtltvDatabase();
 
 // Helper to clear all data for a source (before re-sync or on delete)
 export async function clearSourceData(sourceId: string): Promise<void> {
-  await db.transaction('rw', [db.channels, db.categories, db.sourcesMeta, db.programs], async () => {
+  await db.transaction('rw', [db.channels, db.categories, db.sourcesMeta, db.programs, db.epgMappings], async () => {
     await db.channels.where('source_id').equals(sourceId).delete();
     await db.categories.where('source_id').equals(sourceId).delete();
     await db.sourcesMeta.where('source_id').equals(sourceId).delete();
     await db.programs.where('source_id').equals(sourceId).delete();
+    await db.epgMappings.where('source_id').equals(sourceId).delete();
   });
 }
 
@@ -308,7 +327,7 @@ export async function purgeOrphanedData(validSourceIds: string[]): Promise<void>
   let vodOrphans = 0;
 
   await db.transaction('rw', [
-    db.channels, db.categories, db.sourcesMeta, db.programs,
+    db.channels, db.categories, db.sourcesMeta, db.programs, db.epgMappings,
     db.vodMovies, db.vodSeries, db.vodEpisodes, db.vodCategories,
   ], async () => {
     // Find orphaned source_ids in categories
@@ -324,6 +343,7 @@ export async function purgeOrphanedData(validSourceIds: string[]): Promise<void>
       await db.categories.where('source_id').equals(orphanId).delete();
       await db.sourcesMeta.where('source_id').equals(orphanId).delete();
       await db.programs.where('source_id').equals(orphanId).delete();
+      await db.epgMappings.where('source_id').equals(orphanId).delete();
     }
 
     // VOD side
@@ -361,6 +381,7 @@ export async function clearAllCachedData(): Promise<void> {
     db.vodSeries,
     db.vodEpisodes,
     db.vodCategories,
+    db.epgMappings,
   ], async () => {
     await db.channels.clear();
     await db.categories.clear();
@@ -370,6 +391,7 @@ export async function clearAllCachedData(): Promise<void> {
     await db.vodSeries.clear();
     await db.vodEpisodes.clear();
     await db.vodCategories.clear();
+    await db.epgMappings.clear();
   });
 }
 
