@@ -110,6 +110,9 @@ export interface FetchProxyResponse {
 export interface FetchProxyApi {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<StorageResult<FetchProxyResponse>>;
   fetchBinary: (url: string) => Promise<StorageResult<string>>; // Returns base64-encoded data
+  // Provider channel shape must match ProviderChannelInfo in main.ts and ProviderChannel in epg-parse-worker.ts
+  // Return shape must match EpgChannel/EpgProgram in epg-parse-worker.ts (dates are ISO strings over IPC)
+  fetchAndParseEpg: (url: string, providerChannels?: { epg_channel_id: string; name: string; stream_id: string }[]) => Promise<StorageResult<{ channels: { id: string; displayNames: string[] }[]; programs: { channel_id: string; title: string; description: string; start: string; stop: string }[] }>>;
 }
 
 export interface PlatformApi {
