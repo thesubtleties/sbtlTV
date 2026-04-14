@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-04-13
+
+### Added
+- **EPG channel matching with external EPG sources** — 12-strategy matcher (exact ID through fuzzy word-overlap) enables external EPG sources like epg.pw to work alongside provider EPGs
+- **Streaming XMLTV parser** — indexOf-based parser in a worker thread handles multi-GB EPG files with constant memory; two-phase parsing skips ~90% of data by filtering unmatched programmes
+- **Persistent EPG mappings** — Dexie v12 `epgMappings` table stores channel-to-EPG matches with confidence levels and strategy info, surviving across syncs
+- **Filtered EPG parsing** — only processes programmes for matched channels, dramatically reducing parse time and memory for large EPG files
+- **Call sign extraction** — matches US/Canadian local stations by extracting call signs from channel names (WABC, KGUN, etc.) with DT suffix handling
+
+### Fixed
+- EPG programme IDs now include source ID to prevent cross-source collisions for Xtream users with multiple sources
+- Single-quoted XML attributes in XMLTV files now parsed correctly (previously silently dropped)
+- Hex XML entity references (`&#x2019;`) now decoded properly
+- `slugify` now strips all parenthesized groups, not just the first
+- `normalizeLooser` no longer mangles channel acronyms (MTV, CTV, ATV)
+
+### Improved
+- Worker thread errors now propagate meaningful messages instead of generic "exited with code 1"
+- EPG sync errors return structured results with error details for debug logging
+- Temp file cleanup on all error paths (download failure, decompress failure, parse failure)
+- Download size limit (500MB) and decompression bomb guard (4GB) prevent disk exhaustion
+- 8-minute timeout on EPG worker thread prevents indefinite hangs
+- Web worker circuit breaker stops crash-recreate loops after 3 consecutive failures
+- SSRF blocklist expanded with `0.0.0.0` and IPv4-mapped IPv6 patterns
+- Worker diagnostic logs now route through main process debug logger (visible in production)
+- Failed EPG URLs tracked and reported in multi-URL configurations
+
 ## [0.6.3] - 2026-03-15
 
 ### Fixed
