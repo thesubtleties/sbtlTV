@@ -87,6 +87,7 @@ export interface FetchProxyResponse {
 export interface FetchProxyApi {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<StorageResult<FetchProxyResponse>>;
   fetchBinary: (url: string) => Promise<StorageResult<string>>; // Returns base64-encoded data
+  fetchAndParseEpg: (url: string, providerChannels?: { epg_channel_id: string; name: string; stream_id: string }[]) => Promise<StorageResult<{ channels: { id: string; displayNames: string[] }[]; programs: { channel_id: string; title: string; description: string; start: string; stop: string }[] }>>;
 }
 
 export interface DebugApi {
@@ -166,6 +167,8 @@ contextBridge.exposeInMainWorld('fetchProxy', {
     ipcRenderer.invoke('fetch-proxy', url, options),
   fetchBinary: (url: string) =>
     ipcRenderer.invoke('fetch-binary', url),
+  fetchAndParseEpg: (url: string, providerChannels?: { epg_channel_id: string; name: string; stream_id: string }[]) =>
+    ipcRenderer.invoke('fetch-and-parse-epg', url, providerChannels),
 } satisfies FetchProxyApi);
 
 // Expose platform info for conditional UI (e.g., resize grip on Windows only)
