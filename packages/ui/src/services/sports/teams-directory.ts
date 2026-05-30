@@ -1,6 +1,7 @@
 import type { LeagueId, Team, TeamsData } from './types';
 import { COLLEGE_LEAGUES } from './leagues';
 import { normalizeToken } from './normalize';
+import { TEAMS_DATA } from './teams-data';
 
 export interface Directory {
   /** normalized key -> teams that match it (collisions span leagues) */
@@ -44,4 +45,12 @@ export function resolveTeam(dir: Directory, rawName: string, leagueHint?: League
     if (filtered.length > 0) return filtered;
   }
   return hits;
+}
+
+let cached: Directory | null = null;
+
+/** Lazily build the directory from the bundled, generated team data. */
+export function getDirectory(): Directory {
+  if (!cached) cached = buildDirectory(TEAMS_DATA);
+  return cached;
 }
