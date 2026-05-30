@@ -2,6 +2,7 @@ import { type ChangeEvent, useEffect, useState, useRef, useCallback } from 'reac
 import type { StoredChannel } from '../db';
 import type { VodPlayInfo } from '../types/media';
 import { useCurrentProgram } from '../hooks/useChannels';
+import { useMatchup } from '../hooks/useMatchup';
 import './NowPlayingBar.css';
 
 interface NowPlayingBarProps {
@@ -61,6 +62,7 @@ export function NowPlayingBar({
 }: NowPlayingBarProps) {
   const canControl = mpvReady && channel !== null;
   const currentProgram = useCurrentProgram(channel?.stream_id ?? null);
+  const matchup = useMatchup(channel, currentProgram);
 
   // Progress tracking for live TV - updates every second
   const [progress, setProgress] = useState(0);
@@ -181,13 +183,33 @@ export function NowPlayingBar({
           <div className="npb-row npb-info-row">
             {/* Left: Logo + Channel/Program or VOD info */}
             <div className="npb-channel-section">
-              {channel.stream_icon && (
-                <img
-                  src={channel.stream_icon}
-                  alt=""
-                  className="npb-channel-logo"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                />
+              {!isVod && matchup ? (
+                <div
+                  className="npb-matchup"
+                  aria-label={`${matchup.away.displayName} vs ${matchup.home.displayName}`}
+                >
+                  <img
+                    src={matchup.away.logoUrl}
+                    alt=""
+                    className="npb-matchup-logo"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                  <img
+                    src={matchup.home.logoUrl}
+                    alt=""
+                    className="npb-matchup-logo"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                </div>
+              ) : (
+                channel.stream_icon && (
+                  <img
+                    src={channel.stream_icon}
+                    alt=""
+                    className="npb-channel-logo"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                )
               )}
               <div className="npb-channel-text">
                 {isVod && vodInfo ? (
