@@ -99,6 +99,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   vodRefreshHours: 24,
   epgRefreshHours: 6,
   autoUpdateEnabled: true,
+  sportsMatchupEnabled: true,
 };
 
 export const useUIStore = create<UIState>((set) => ({

@@ -57,6 +57,9 @@ export function Settings({ onClose }: SettingsProps) {
   const [categoryBarWidth, setCategoryBarWidth] = useState(160);
   const [guideOpacity, setGuideOpacity] = useState(0.95);
 
+  // Sports matchup state
+  const [sportsMatchupEnabled, setSportsMatchupEnabled] = useState(true);
+
   // Loading state for settings
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const storeSettingsLoaded = useSettingsLoaded();
@@ -134,6 +137,9 @@ export function Settings({ onClose }: SettingsProps) {
     setCategoryBarWidth(s.categoryBarWidth ?? 160);
     setGuideOpacity(s.guideOpacity ?? 0.95);
 
+    // Load sports matchup setting (default ON)
+    setSportsMatchupEnabled(s.sportsMatchupEnabled ?? true);
+
     setSettingsLoaded(true);
   }
 
@@ -200,6 +206,8 @@ export function Settings({ onClose }: SettingsProps) {
             guideOpacity={guideOpacity}
             onCategoryBarWidthChange={setCategoryBarWidth}
             onGuideOpacityChange={setGuideOpacity}
+            sportsMatchupEnabled={sportsMatchupEnabled}
+            onSportsMatchupChange={setSportsMatchupEnabled}
           />
         );
       case 'movies':

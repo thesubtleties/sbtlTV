@@ -7,6 +7,8 @@ interface EpgTabProps {
   guideOpacity: number;
   onCategoryBarWidthChange: (width: number) => void;
   onGuideOpacityChange: (opacity: number) => void;
+  sportsMatchupEnabled: boolean;
+  onSportsMatchupChange: (enabled: boolean) => void;
 }
 
 export function EpgTab({
@@ -16,6 +18,8 @@ export function EpgTab({
   guideOpacity,
   onCategoryBarWidthChange,
   onGuideOpacityChange,
+  sportsMatchupEnabled,
+  onSportsMatchupChange,
 }: EpgTabProps) {
   const updateSettings = useUpdateSettings();
 
@@ -39,6 +43,13 @@ export function EpgTab({
     updateSettings({ guideOpacity: opacity });
     if (!window.storage) return;
     await window.storage.updateSettings({ guideOpacity: opacity });
+  }
+
+  async function handleSportsMatchupChange(enabled: boolean) {
+    onSportsMatchupChange(enabled);
+    updateSettings({ sportsMatchupEnabled: enabled });
+    if (!window.storage) return;
+    await window.storage.updateSettings({ sportsMatchupEnabled: enabled });
   }
 
   return (
@@ -112,6 +123,32 @@ export function EpgTab({
             <span>Light</span>
             <span>Dark</span>
           </div>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="section-header">
+          <h3>Sports</h3>
+        </div>
+
+        <p className="section-description">
+          When you're on a live channel showing a recognized game, the bar shows the two team
+          logos instead of the channel icon. Scores are never shown.
+        </p>
+
+        <div className="tmdb-form" style={{ marginTop: '1rem' }}>
+          <label className="genre-checkbox" style={{ maxWidth: '320px' }}>
+            <input
+              type="checkbox"
+              checked={sportsMatchupEnabled}
+              onChange={(e) => handleSportsMatchupChange(e.target.checked)}
+            />
+            <span className="genre-name">Show team logos for live games</span>
+          </label>
+          <p className="form-hint" style={{ marginTop: '0.5rem' }}>
+            Matched from the program guide for NFL, NBA, MLB, NHL, and college football/basketball.
+            Shows nothing when a game can't be confidently identified.
+          </p>
         </div>
       </div>
     </div>

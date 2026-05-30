@@ -70,6 +70,7 @@ export interface AppSettings {
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
+  sportsMatchupEnabled?: boolean;  // Show team logos in the bar on a live sports game (default true)
 }
 
 export interface Source {
