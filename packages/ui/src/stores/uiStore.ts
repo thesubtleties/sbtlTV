@@ -232,6 +232,7 @@ export const useEpgRefreshHours = () => useUIStore((s) => s.settings.epgRefreshH
 export const useAllowLanSources = () => useUIStore((s) => s.settings.allowLanSources ?? false);
 export const useDebugLoggingEnabled = () => useUIStore((s) => s.settings.debugLoggingEnabled ?? false);
 export const useAutoUpdateEnabled = () => useUIStore((s) => s.settings.autoUpdateEnabled ?? true);
+export const useSportsMatchupEnabled = () => useUIStore((s) => s.settings.sportsMatchupEnabled ?? true);
 export const useUpdateSettings = () => useUIStore((s) => s.updateSettings);
 
 // Search query selectors
