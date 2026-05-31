@@ -29,7 +29,8 @@ export function detectLeagueHint(title: string, channelName?: string): LeagueId 
 
 const SPORT_LABEL_WORDS = new Set([
   'football', 'basketball', 'baseball', 'hockey', 'soccer',
-  'ncaa', 'ncaaf', 'ncaab', 'college', 'nfl', 'nba', 'mlb', 'nhl', 'cfb', 'cbb', 'mens', 'womens',
+  'ncaa', 'ncaaf', 'ncaab', 'college', 'nfl', 'nba', 'mlb', 'nhl', 'cfb', 'cbb',
+  'mens', 'womens', 'men', 'women',
 ]);
 
 /**
@@ -55,7 +56,9 @@ export function stripLeadingLabel(title: string): string {
   if (cut === -1) return title;
 
   const label = normalizeToken(title.slice(0, cut));
-  if (label && label.split(' ').every((w) => SPORT_LABEL_WORDS.has(w))) {
+  // Drop the lone "s" left over from "Men's"/"Women's" after punctuation strip.
+  const labelWords = label.split(' ').filter((w) => w && w !== 's');
+  if (labelWords.length > 0 && labelWords.every((w) => SPORT_LABEL_WORDS.has(w))) {
     return after;
   }
   return title;

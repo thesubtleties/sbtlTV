@@ -36,6 +36,10 @@ describe('stripLeadingLabel', () => {
     expect(stripLeadingLabel('7:30 Lakers @ Celtics')).toBe('7:30 Lakers @ Celtics');
     expect(stripLeadingLabel('Lakers @ Celtics')).toBe('Lakers @ Celtics');
   });
+  it("strips a Men's/Women's college label", () => {
+    expect(stripLeadingLabel("Men's College Basketball: Duke vs UNC")).toBe('Duke vs UNC');
+    expect(stripLeadingLabel("Women's College Basketball: UConn vs Tennessee")).toBe('UConn vs Tennessee');
+  });
 });
 
 describe('splitSides', () => {
