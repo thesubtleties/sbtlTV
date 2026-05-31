@@ -63,6 +63,11 @@ export function NowPlayingBar({
   const canControl = mpvReady && channel !== null;
   const currentProgram = useCurrentProgram(channel?.stream_id ?? null);
   const matchup = useMatchup(channel, currentProgram);
+  // If either team logo fails to load, fall back to the channel icon (never a hole).
+  const [logoError, setLogoError] = useState(false);
+  useEffect(() => {
+    setLogoError(false);
+  }, [matchup?.away.logoUrl, matchup?.home.logoUrl]);
 
   // Progress tracking for live TV - updates every second
   const [progress, setProgress] = useState(0);
@@ -183,22 +188,25 @@ export function NowPlayingBar({
           <div className="npb-row npb-info-row">
             {/* Left: Logo + Channel/Program or VOD info */}
             <div className="npb-channel-section">
-              {!isVod && matchup ? (
+              {!isVod && matchup && !logoError ? (
                 <div
                   className="npb-matchup"
+                  role="img"
                   aria-label={`${matchup.away.displayName} vs ${matchup.home.displayName}`}
                 >
                   <img
+                    key={matchup.away.logoUrl}
                     src={matchup.away.logoUrl}
                     alt=""
                     className="npb-matchup-logo"
-                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    onError={() => setLogoError(true)}
                   />
                   <img
+                    key={matchup.home.logoUrl}
                     src={matchup.home.logoUrl}
                     alt=""
                     className="npb-matchup-logo"
-                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    onError={() => setLogoError(true)}
                   />
                 </div>
               ) : (
