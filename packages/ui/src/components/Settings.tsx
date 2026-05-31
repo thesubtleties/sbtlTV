@@ -59,6 +59,7 @@ export function Settings({ onClose }: SettingsProps) {
 
   // Sports matchup state
   const [sportsMatchupEnabled, setSportsMatchupEnabled] = useState(true);
+  const [autoplayNextEpisode, setAutoplayNextEpisode] = useState(true);
 
   // Loading state for settings
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -139,6 +140,7 @@ export function Settings({ onClose }: SettingsProps) {
 
     // Load sports matchup setting (default ON)
     setSportsMatchupEnabled(s.sportsMatchupEnabled ?? true);
+    setAutoplayNextEpisode(s.autoplayNextEpisode ?? true);
 
     setSettingsLoaded(true);
   }
@@ -226,6 +228,8 @@ export function Settings({ onClose }: SettingsProps) {
             enabledGenres={seriesGenresEnabled}
             onEnabledGenresChange={handleSeriesGenresChange}
             settingsLoaded={settingsLoaded}
+            autoplayNextEpisode={autoplayNextEpisode}
+            onAutoplayNextEpisodeChange={setAutoplayNextEpisode}
           />
         );
       case 'posterdb':

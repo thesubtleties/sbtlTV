@@ -12,12 +12,14 @@ import { UpdateNotification } from './components/UpdateNotification';
 import { VideoCanvas } from './components/VideoCanvas';
 import { useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
-import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing } from './stores/uiStore';
+import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode } from './stores/uiStore';
 import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
-import type { StoredChannel } from './db';
+import type { StoredChannel, StoredSeries } from './db';
 import { db } from './db';
 import type { VodPlayInfo } from './types/media';
 import { updateWatchProgress, getResumePosition } from './hooks/useWatchProgress';
+import { buildNextEpisodePlayInfo } from './services/continue-watching/next-episode.playinfo';
+import { UpNextOverlay } from './components/UpNextOverlay';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -145,6 +147,28 @@ function App() {
   const vodInfoRef = useRef<VodPlayInfo | null>(null);
   const lastProgressSaveRef = useRef(0);
 
+  // Continue Watching: next-episode autoplay. Refs because the mpv status handler is mount-once.
+  const [upNext, setUpNext] = useState<{ info: VodPlayInfo; secondsLeft: number } | null>(null);
+  const upNextFiredForRef = useRef<string | null>(null);
+  const autoplayEnabled = useAutoplayNextEpisode();
+  const autoplayEnabledRef = useRef(autoplayEnabled);
+  const loadTokenRef = useRef(0);
+  const triggerUpNext = useCallback(async (cur: VodPlayInfo) => {
+    try {
+      if (cur.seasonNum == null || cur.episodeNum == null) return;
+      let series: StoredSeries | undefined;
+      if (cur.tmdbId) series = await db.vodSeries.where('tmdb_id').equals(cur.tmdbId).first();
+      if (!series && cur.seriesStreamId) series = await db.vodSeries.get(cur.seriesStreamId);
+      if (!series) return;
+      const episodes = await db.vodEpisodes.where('series_id').equals(series.series_id).toArray();
+      const nextInfo = buildNextEpisodePlayInfo(series, episodes, cur.seasonNum, cur.episodeNum);
+      if (nextInfo) setUpNext({ info: nextInfo, secondsLeft: 10 });
+    } catch (e) { console.error('Up Next resolution failed', e); }
+  }, []);
+  const triggerUpNextRef = useRef(triggerUpNext);
+  useEffect(() => { triggerUpNextRef.current = triggerUpNext; }, [triggerUpNext]);
+  useEffect(() => { autoplayEnabledRef.current = autoplayEnabled; }, [autoplayEnabled]);
+
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
 
@@ -203,6 +227,17 @@ function App() {
             });
           }
         }
+      }
+
+      // End-of-episode detection (renderer-only). Refs only (handler is mount-once).
+      const cur = vodInfoRef.current;
+      if (cur?.type === 'series' && autoplayEnabledRef.current &&
+          typeof status.duration === 'number' && status.duration > 60 &&
+          typeof status.position === 'number' && status.position > 0 &&
+          status.position >= status.duration - 5 &&
+          upNextFiredForRef.current !== cur.streamId) {
+        upNextFiredForRef.current = cur.streamId ?? null;   // set synchronously → no double-fire
+        triggerUpNextRef.current(cur);
       }
     });
 
@@ -300,6 +335,9 @@ function App() {
         sourceId: info.sourceId,
       });
     }
+    setUpNext(null);
+    upNextFiredForRef.current = null;
+    loadTokenRef.current++;
     await window.mpv.stop();
     debugLog('handleStop: mpv.stop() completed');
     setPlaying(false);
@@ -323,6 +361,9 @@ function App() {
 
   // Play VOD content (movies/series)
   const handlePlayVod = async (info: VodPlayInfo) => {
+    const myToken = ++loadTokenRef.current;
+    setUpNext(null);                    // cancel any pending Up Next immediately
+    upNextFiredForRef.current = null;   // re-arm end-detection for the new episode
     debugLog(`handlePlayVod: ${info.title} (${info.type})`);
     debugLog(`  URL: ${info.url}`);
     if (!window.mpv) {
@@ -348,6 +389,7 @@ function App() {
       debugLog(`  FAILED: ${result.error}`);
       setError(result.error ?? 'Failed to load stream');
     } else {
+      if (myToken !== loadTokenRef.current) return; // superseded by a newer load
       debugLog(`  SUCCESS: playing${resumePos ? ` (resumed @ ${resumePos}s)` : ''}`);
       // Create a pseudo-channel for the now playing bar
       const workingUrl = result.url;
@@ -369,6 +411,29 @@ function App() {
       setActiveView('none');
     }
   };
+
+  // Autoplay countdown: tick down, then advance to the next episode at 0.
+  useEffect(() => {
+    if (!upNext) return;
+    if (upNext.secondsLeft <= 0) {
+      const info = upNext.info; setUpNext(null); void handlePlayVod(info); return;
+    }
+    const t = setTimeout(() => setUpNext(u => (u ? { ...u, secondsLeft: u.secondsLeft - 1 } : null)), 1000);
+    return () => clearTimeout(t);
+  }, [upNext]);
+
+  // Manual "Next Episode" — resolves the successor on click (no-op on the last episode).
+  const handleNextEpisode = useCallback(async () => {
+    const cur = vodInfoRef.current;
+    if (!cur || cur.type !== 'series' || cur.seasonNum == null || cur.episodeNum == null) return;
+    let series: StoredSeries | undefined;
+    if (cur.tmdbId) series = await db.vodSeries.where('tmdb_id').equals(cur.tmdbId).first();
+    if (!series && cur.seriesStreamId) series = await db.vodSeries.get(cur.seriesStreamId);
+    if (!series) return;
+    const episodes = await db.vodEpisodes.where('series_id').equals(series.series_id).toArray();
+    const nextInfo = buildNextEpisodePlayInfo(series, episodes, cur.seasonNum, cur.episodeNum);
+    if (nextInfo) void handlePlayVod(nextInfo);
+  }, []);
 
   // Handle category selection - opens guide if closed
   const handleSelectCategory = (catId: string | null) => {
@@ -619,7 +684,18 @@ function App() {
         onVolumeDragEnd={() => { volumeDraggingRef.current = false; }}
         onMouseEnter={() => { controlsHoveredRef.current = true; }}
         onMouseLeave={() => { controlsHoveredRef.current = false; }}
+        onNextEpisode={handleNextEpisode}
+        showNextEpisode={vodInfo?.type === 'series'}
       />
+
+      {upNext && (
+        <UpNextOverlay
+          label={upNext.info.episodeInfo ?? upNext.info.title}
+          secondsLeft={upNext.secondsLeft}
+          onCancel={() => setUpNext(null)}
+          onPlayNow={() => { const info = upNext.info; setUpNext(null); void handlePlayVod(info); }}
+        />
+      )}
 
       {/* Sidebar Navigation - stays visible when any panel is open */}
       <Sidebar

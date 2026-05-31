@@ -100,6 +100,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   epgRefreshHours: 6,
   autoUpdateEnabled: true,
   sportsMatchupEnabled: true,
+  autoplayNextEpisode: true,
 };
 
 export const useUIStore = create<UIState>((set) => ({
@@ -233,6 +234,7 @@ export const useAllowLanSources = () => useUIStore((s) => s.settings.allowLanSou
 export const useDebugLoggingEnabled = () => useUIStore((s) => s.settings.debugLoggingEnabled ?? false);
 export const useAutoUpdateEnabled = () => useUIStore((s) => s.settings.autoUpdateEnabled ?? true);
 export const useSportsMatchupEnabled = () => useUIStore((s) => s.settings.sportsMatchupEnabled ?? true);
+export const useAutoplayNextEpisode = () => useUIStore((s) => s.settings.autoplayNextEpisode ?? true);
 export const useUpdateSettings = () => useUIStore((s) => s.updateSettings);
 
 // Search query selectors

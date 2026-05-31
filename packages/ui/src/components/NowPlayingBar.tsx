@@ -25,6 +25,8 @@ interface NowPlayingBarProps {
   onVolumeDragEnd?: () => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  onNextEpisode?: () => void;
+  showNextEpisode?: boolean;
 }
 
 // Format seconds to "H:MM:SS" or "M:SS"
@@ -59,6 +61,8 @@ export function NowPlayingBar({
   onVolumeDragEnd,
   onMouseEnter,
   onMouseLeave,
+  onNextEpisode,
+  showNextEpisode,
 }: NowPlayingBarProps) {
   const canControl = mpvReady && channel !== null;
   const currentProgram = useCurrentProgram(channel?.stream_id ?? null);
@@ -321,6 +325,16 @@ export function NowPlayingBar({
               >
                 {playing ? <PauseIcon /> : <PlayIcon />}
               </button>
+              {showNextEpisode && (
+                <button
+                  className="npb-btn"
+                  onClick={onNextEpisode}
+                  disabled={!canControl}
+                  title="Next episode"
+                >
+                  <NextIcon />
+                </button>
+              )}
               <button
                 className="npb-btn"
                 onClick={onStop}
@@ -368,6 +382,16 @@ export function NowPlayingBar({
 }
 
 // Icon components
+
+function NextIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M3 5v14a1 1 0 0 0 1.504 .864l12 -7a1 1 0 0 0 0 -1.728l-12 -7a1 1 0 0 0 -1.504 .864z" />
+      <path d="M20 5a1 1 0 0 1 1 1v12a1 1 0 0 1 -2 0v-12a1 1 0 0 1 1 -1z" />
+    </svg>
+  );
+}
 
 function PlayIcon() {
   return (

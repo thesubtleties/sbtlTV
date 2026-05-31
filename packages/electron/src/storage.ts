@@ -41,6 +41,7 @@ interface AppSettings {
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game (default true)
+  autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
 }
 
 // Internal storage format (encrypted)
@@ -63,6 +64,7 @@ interface StoredSettings {
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game
+  autoplayNextEpisode?: boolean;  // Autoplay next episode for series
 }
 
 const store = new Store<StoreSchema>({
@@ -207,6 +209,7 @@ export function getSettings(): AppSettings {
   result.liveSourceOrder = stored.liveSourceOrder;
   result.vodSourceOrder = stored.vodSourceOrder;
   result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? true;
+  result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
   return result;
 }
 
@@ -258,6 +261,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.sportsMatchupEnabled !== undefined) {
     updated.sportsMatchupEnabled = settings.sportsMatchupEnabled;
+  }
+  if (settings.autoplayNextEpisode !== undefined) {
+    updated.autoplayNextEpisode = settings.autoplayNextEpisode;
   }
 
   store.set('settings', updated);
