@@ -18,7 +18,7 @@ export function buildNextEpisodePlayInfo(
     streamId: ep.id,
     tmdbId: series.tmdb_id,
     seriesStreamId: series.series_id,
-    sourceId: ep.source_id,
+    sourceId: series.source_id, // series.source_id is always set; ep.source_id is not (adapter omits it)
     seasonNum: ep.season_num,
     episodeNum: ep.episode_num,
   };

@@ -2,7 +2,7 @@
   position: absolute;
   right: 32px;
   bottom: 96px;
-  z-index: 50;
+  z-index: 51; /* above NowPlayingBar (z-index 50) regardless of DOM order */
 }
 
 .up-next__card {

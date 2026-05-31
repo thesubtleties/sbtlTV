@@ -27,7 +27,8 @@ export function nextEpisode(episodes: EpisodeRef[], season: number, episode: num
 /** Where to resume a series: in-progress active episode, or the next episode if active is done.
  *  Returns null when finished (completed last episode) OR completed-but-no-list (don't lie about resume). */
 export function computeResumeTarget(active: ProgressRecord, episodes: EpisodeRef[]): ResumeTarget | null {
-  const s = active.season_num!, e = active.episode_num!;
+  const s = active.season_num, e = active.episode_num;
+  if (s == null || e == null) return null; // malformed/legacy episode record — can't compute a target
   if (!active.completed) {
     return { seasonNum: s, episodeNum: e, position: active.position, progressPct: active.progress };
   }

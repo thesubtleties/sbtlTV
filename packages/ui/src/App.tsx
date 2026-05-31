@@ -234,10 +234,14 @@ function App() {
       if (cur?.type === 'series' && autoplayEnabledRef.current &&
           typeof status.duration === 'number' && status.duration > 60 &&
           typeof status.position === 'number' && status.position > 0 &&
-          status.position >= status.duration - 5 &&
-          upNextFiredForRef.current !== cur.streamId) {
-        upNextFiredForRef.current = cur.streamId ?? null;   // set synchronously → no double-fire
-        triggerUpNextRef.current(cur);
+          status.position >= status.duration - 5) {
+        // Key the once-guard on a stable id (streamId, else S/E) so an undefined streamId
+        // can't make `!== undefined` always-true and storm triggerUpNext every tick.
+        const firedKey = cur.streamId ?? `${cur.seasonNum}_${cur.episodeNum}`;
+        if (upNextFiredForRef.current !== firedKey) {
+          upNextFiredForRef.current = firedKey;   // set synchronously → no double-fire
+          triggerUpNextRef.current(cur);
+        }
       }
     });
 
@@ -335,6 +339,8 @@ function App() {
         sourceId: info.sourceId,
       });
     }
+    // Null vodInfoRef BEFORE clearing the guard so a status tick during the stop await can't re-fire autoplay.
+    vodInfoRef.current = null;
     setUpNext(null);
     upNextFiredForRef.current = null;
     loadTokenRef.current++;
@@ -342,7 +348,6 @@ function App() {
     debugLog('handleStop: mpv.stop() completed');
     setPlaying(false);
     setCurrentChannel(null);
-    vodInfoRef.current = null;
   };
 
   const handleSeek = async (seconds: number) => {
@@ -360,7 +365,7 @@ function App() {
   };
 
   // Play VOD content (movies/series)
-  const handlePlayVod = async (info: VodPlayInfo) => {
+  const handlePlayVod = useCallback(async (info: VodPlayInfo) => {
     const myToken = ++loadTokenRef.current;
     setUpNext(null);                    // cancel any pending Up Next immediately
     upNextFiredForRef.current = null;   // re-arm end-detection for the new episode
@@ -410,7 +415,7 @@ function App() {
       // Close VOD pages when playing
       setActiveView('none');
     }
-  };
+  }, []);
 
   // Autoplay countdown: tick down, then advance to the next episode at 0.
   useEffect(() => {
@@ -420,7 +425,7 @@ function App() {
     }
     const t = setTimeout(() => setUpNext(u => (u ? { ...u, secondsLeft: u.secondsLeft - 1 } : null)), 1000);
     return () => clearTimeout(t);
-  }, [upNext]);
+  }, [upNext, handlePlayVod]);
 
   // Manual "Next Episode" — resolves the successor on click (no-op on the last episode).
   const handleNextEpisode = useCallback(async () => {
@@ -433,7 +438,7 @@ function App() {
     const episodes = await db.vodEpisodes.where('series_id').equals(series.series_id).toArray();
     const nextInfo = buildNextEpisodePlayInfo(series, episodes, cur.seasonNum, cur.episodeNum);
     if (nextInfo) void handlePlayVod(nextInfo);
-  }, []);
+  }, [handlePlayVod]);
 
   // Handle category selection - opens guide if closed
   const handleSelectCategory = (catId: string | null) => {

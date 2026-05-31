@@ -3,9 +3,10 @@ import { buildNextEpisodePlayInfo } from './next-episode.playinfo';
 import type { StoredSeries, StoredEpisode } from '../../db';
 
 const series = { tmdb_id: 1399, series_id: 'S9', source_id: 'src1', name: 'Show', title: 'Show' } as StoredSeries;
+// Episodes intentionally have NO source_id (the Xtream adapter omits it) — sourceId must come from the series.
 const episodes = [
-  { id: 'e1', season_num: 1, episode_num: 1, direct_url: 'u1', title: 'A', source_id: 'src1' },
-  { id: 'e2', season_num: 1, episode_num: 2, direct_url: 'u2', title: 'B', source_id: 'src1' },
+  { id: 'e1', season_num: 1, episode_num: 1, direct_url: 'u1', title: 'A' },
+  { id: 'e2', season_num: 1, episode_num: 2, direct_url: 'u2', title: 'B' },
 ] as StoredEpisode[];
 
 describe('buildNextEpisodePlayInfo', () => {
@@ -18,5 +19,12 @@ describe('buildNextEpisodePlayInfo', () => {
   });
   it('returns null at end of series', () => {
     expect(buildNextEpisodePlayInfo(series, episodes, 1, 2)).toBeNull();
+  });
+  it('takes sourceId from the series, not the (sourceId-less) episode', () => {
+    expect(buildNextEpisodePlayInfo(series, episodes, 1, 1)?.sourceId).toBe('src1');
+  });
+  it('falls back to series.name when title is absent', () => {
+    const nameless = { ...series, title: undefined } as StoredSeries;
+    expect(buildNextEpisodePlayInfo(nameless, episodes, 1, 1)?.title).toBe('Show');
   });
 });

@@ -19,6 +19,15 @@ describe('selectActiveEpisode', () => {
     ]);
     expect(a.season_num).toBe(1); expect(a.episode_num).toBe(1);
   });
+  it('breaks ties on season then episode when updated_at is equal', () => {
+    const same = new Date(1);
+    const a = selectActiveEpisode([
+      r({ season_num: 1, episode_num: 3, updated_at: same }),
+      r({ season_num: 2, episode_num: 1, updated_at: same }),
+      r({ season_num: 2, episode_num: 2, updated_at: same }),
+    ]);
+    expect(a.season_num).toBe(2); expect(a.episode_num).toBe(2);
+  });
 });
 
 describe('nextEpisode', () => {
@@ -30,6 +39,12 @@ describe('nextEpisode', () => {
   });
   it('returns null at the end of the series', () => {
     expect(nextEpisode(eps, 2, 1)).toBeNull();
+  });
+  it('handles unsorted episode input', () => {
+    const unsorted = [
+      { season_num: 2, episode_num: 1 }, { season_num: 1, episode_num: 3 }, { season_num: 1, episode_num: 1 },
+    ];
+    expect(nextEpisode(unsorted, 1, 1)).toEqual({ season_num: 1, episode_num: 3 });
   });
 });
 
@@ -51,5 +66,16 @@ describe('computeResumeTarget', () => {
   });
   it('HIDES a completed series when the episode list is unavailable (no honest successor)', () => {
     expect(computeResumeTarget(r({ season_num: 1, episode_num: 2, completed: true, position: 900, progress: 95 }), [])).toBeNull();
+  });
+  it('resumes the active in-progress episode even when earlier episodes are completed (core scenario)', () => {
+    const active = selectActiveEpisode([
+      r({ season_num: 1, episode_num: 1, completed: true,  updated_at: new Date(10) }),
+      r({ season_num: 1, episode_num: 2, completed: true,  updated_at: new Date(20) }),
+      r({ season_num: 1, episode_num: 3, completed: false, updated_at: new Date(30), position: 450, progress: 45 }),
+    ]);
+    expect(computeResumeTarget(active, eps)).toEqual({ seasonNum: 1, episodeNum: 3, position: 450, progressPct: 45 });
+  });
+  it('returns null for a malformed record missing season/episode', () => {
+    expect(computeResumeTarget(r({ season_num: undefined, episode_num: undefined, completed: false }), eps)).toBeNull();
   });
 });

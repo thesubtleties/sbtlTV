@@ -2,7 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type StoredMovie, type StoredSeries } from '../db';
 import { groupBySeriesKey } from '../services/continue-watching/grouping';
 import { selectActiveEpisode, computeResumeTarget } from '../services/continue-watching/next-episode';
-import type { ResumeTarget } from '../services/continue-watching/types';
+
+const MAX_ROW_ITEMS = 30; // cap resolution work for power users with many in-progress titles
 
 export interface ContinueItem {
   kind: 'movie' | 'series';
@@ -10,7 +11,6 @@ export interface ContinueItem {
   media: StoredMovie | StoredSeries;
   resumePct: number;
   subtitle?: string;              // "S2 · E5" for series
-  target: ResumeTarget | { position: number };
   seriesTmdbId?: number;          // series identity for indexed clearSeries (series cards only)
   seriesStreamId?: string;
   updatedAt: Date;
@@ -24,25 +24,28 @@ export function useContinueWatchingResolved(type: 'movie' | 'series'): ContinueI
     if (type === 'movie') {
       const recs = (await db.watchProgress
         .where('type').equals('movie').and(r => !r.completed).toArray())
-        .sort((a, b) => +b.updated_at - +a.updated_at);
+        .sort((a, b) => +b.updated_at - +a.updated_at)
+        .slice(0, MAX_ROW_ITEMS);
       // Bulk-resolve posters in ONE query (a movie progress record's stream_id IS the vodMovies PK).
       const movies = await db.vodMovies.bulkGet(recs.map(r => r.stream_id ?? ''));
       const out: ContinueItem[] = [];
       recs.forEach((r, i) => {
         const media = movies[i] ?? undefined;
         if (!media) return; // orphan (movie no longer synced)
-        out.push({ kind: 'movie', key: r.id, media, resumePct: r.progress,
-          target: { position: r.position }, updatedAt: r.updated_at });
+        out.push({ kind: 'movie', key: r.id, media, resumePct: r.progress, updatedAt: r.updated_at });
       });
       return out;
     }
 
-    // series: include ALL episode records (a completed active episode still yields an "up next")
+    // series: include ALL episode records (a completed active episode still yields an "up next").
+    // Pick each series' last-played head in-memory, then resolve only the most-recent N (bounds DB work).
     const epRecs = await db.watchProgress.where('type').equals('episode').toArray();
-    const groups = groupBySeriesKey(epRecs);
+    const heads = [...groupBySeriesKey(epRecs).entries()]
+      .map(([key, group]) => ({ key, active: selectActiveEpisode(group) }))
+      .sort((a, b) => +b.active.updated_at - +a.active.updated_at)
+      .slice(0, MAX_ROW_ITEMS);
     const out: ContinueItem[] = [];
-    for (const [key, group] of groups) {
-      const active = selectActiveEpisode(group);
+    for (const { key, active } of heads) {
       let series: StoredSeries | undefined;
       if (active.series_tmdb_id) series = await db.vodSeries.where('tmdb_id').equals(active.series_tmdb_id).first();
       if (!series && active.series_stream_id) series = await db.vodSeries.get(active.series_stream_id);
@@ -53,11 +56,10 @@ export function useContinueWatchingResolved(type: 'movie' | 'series'): ContinueI
       out.push({
         kind: 'series', key, media: series, resumePct: target.progressPct,
         subtitle: `S${target.seasonNum} · E${target.episodeNum}`,
-        target, seriesTmdbId: active.series_tmdb_id, seriesStreamId: active.series_stream_id,
+        seriesTmdbId: active.series_tmdb_id, seriesStreamId: active.series_stream_id,
         updatedAt: active.updated_at,
       });
     }
-    out.sort((a, b) => +b.updatedAt - +a.updatedAt);
     return out;
   }, [type]) ?? EMPTY;
 }

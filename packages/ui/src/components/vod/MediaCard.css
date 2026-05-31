@@ -236,11 +236,11 @@
   transition: width 0.3s ease;
 }
 
-/* Continue Watching: remove "×" button (beside heart) + resume label */
+/* Continue Watching: remove "×" button (top-right, opposite the heart) + resume label */
 .media-card__remove {
   position: absolute;
   top: 6px;
-  left: 42px;
+  right: 6px;
   z-index: 2;
   display: grid;
   place-items: center;

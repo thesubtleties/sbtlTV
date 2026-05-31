@@ -92,7 +92,7 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
         episodeInfo: `S${episode.season_num} E${episode.episode_num}${episode.title ? ` · ${episode.title}` : ''}`,
         streamId: episode.id,
         tmdbId: series.tmdb_id,
-        sourceId: episode.source_id,
+        sourceId: series.source_id, // series.source_id is always set; episode.source_id is not (adapter omits it)
         seasonNum: episode.season_num,
         episodeNum: episode.episode_num,
         seriesStreamId: series.series_id,
