@@ -8,9 +8,10 @@ import { getDirectory } from './teams-directory';
 import { matchProgramToMatchup } from './matchup-matcher';
 
 describe('bundled teams-data', () => {
-  it('has every league populated', () => {
+  const MIN_TEAMS: Record<string, number> = { nfl: 30, nba: 28, mlb: 28, nhl: 30, cfb: 300, cbb: 200 };
+  it('has each league populated above a sane floor (canary for a broken regen)', () => {
     for (const id of LEAGUE_IDS) {
-      expect(TEAMS_DATA[id]?.length ?? 0).toBeGreaterThan(0);
+      expect(TEAMS_DATA[id]?.length ?? 0, id).toBeGreaterThanOrEqual(MIN_TEAMS[id]);
     }
   });
   it('every team has a logo URL and abbrev', () => {
@@ -21,9 +22,19 @@ describe('bundled teams-data', () => {
       }
     }
   });
-  it('resolves a known real matchup', () => {
-    const r = matchProgramToMatchup(getDirectory(), 'NBA: Lakers @ Celtics');
-    expect(r.status).toBe('matched');
-    expect(r.matchup?.leagueId).toBe('nba');
+  it('resolves known real matchups across every league', () => {
+    const cases: Array<[string, string]> = [
+      ['NBA: Lakers @ Celtics', 'nba'],
+      ['NFL: Chiefs at Bills', 'nfl'],
+      ['MLB: Yankees vs Red Sox', 'mlb'],
+      ['NHL: Bruins vs Maple Leafs', 'nhl'],
+      ['College Football: Alabama vs Georgia', 'cfb'],
+      ['College Basketball: Duke vs North Carolina', 'cbb'],
+    ];
+    for (const [title, league] of cases) {
+      const r = matchProgramToMatchup(getDirectory(), title);
+      expect(r.status, title).toBe('matched');
+      expect(r.matchup?.leagueId, title).toBe(league);
+    }
   });
 });

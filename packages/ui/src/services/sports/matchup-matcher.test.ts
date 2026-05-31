@@ -4,7 +4,7 @@ import { matchProgramToMatchup } from './matchup-matcher';
 import type { Team, TeamsData } from './types';
 
 function team(p: Partial<Team> & Pick<Team, 'leagueId' | 'location' | 'nickname' | 'abbrev'>): Team {
-  return { displayName: `${p.location} ${p.nickname}`.trim(), aliases: [], logoUrl: 'x', ...p };
+  return { displayName: `${p.location} ${p.nickname}`.trim(), logoUrl: 'x', ...p };
 }
 
 const dir = buildDirectory({
@@ -74,5 +74,8 @@ describe('matchProgramToMatchup', () => {
   });
   it('returns unresolved when sides split but teams are unknown', () => {
     expect(matchProgramToMatchup(dir, 'Sharks @ Kings').status).toBe('unresolved');
+  });
+  it('is ambiguous when both sides resolve to the same team', () => {
+    expect(matchProgramToMatchup(dir, 'Lakers @ Lakers').status).toBe('ambiguous');
   });
 });
