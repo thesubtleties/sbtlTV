@@ -7,6 +7,9 @@ import { VodBrowse } from './vod/VodBrowse';
 import { MovieDetail } from './vod/MovieDetail';
 import { SeriesDetail } from './vod/SeriesDetail';
 import { useVodHomeData } from '../hooks/useVodHomeData';
+import { useContinueWatchingResolved, type ContinueItem } from '../hooks/useContinueWatching';
+import { useClearProgress } from '../hooks/useWatchProgress';
+import { ContinueWatchingRow } from './vod/ContinueWatchingRow';
 import { useVodNavigation } from '../stores/uiStore';
 import type { StoredMovie, StoredSeries } from '../db';
 import { type MediaItem, type VodType, type VodPlayInfo } from '../types/media';
@@ -22,6 +25,8 @@ type CarouselRow = {
   title: string;
   items: MediaItem[];
   loading?: boolean;
+  kind?: 'continue';
+  continueItems?: ContinueItem[];
 };
 
 // Context passed to Virtuoso components (must be defined outside render)
@@ -34,6 +39,8 @@ interface HomeVirtuosoContext {
   onItemClick: (item: MediaItem) => void;
   onHeroPlay: (item: MediaItem) => void;
   progressMap?: Map<string, number>;
+  onContinuePlay: (item: ContinueItem) => void;
+  onContinueRemove: (item: ContinueItem) => void;
 }
 
 // Header component for Virtuoso (defined outside render to prevent remounting)
@@ -61,6 +68,16 @@ const CarouselRowContent = (
 ) => {
   if (!context) return null;
   const { type, onItemClick, progressMap } = context;
+
+  if (row.kind === 'continue') {
+    return (
+      <ContinueWatchingRow
+        items={row.continueItems ?? []}
+        onPlay={context.onContinuePlay}
+        onRemove={context.onContinueRemove}
+      />
+    );
+  }
 
   return (
     <HorizontalCarousel
@@ -181,6 +198,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     genresToShow, genreData,
   } = useVodHomeData(type);
 
+  const continueItems = useContinueWatchingResolved(type);
+  const { clearOne, clearSeries } = useClearProgress();
+
   // Resolve selected groupKey back to category IDs for VodBrowse
   const selectedGroup = groupedCategories.find(g => g.groupKey === selectedCategoryId);
   const selectedCategoryIds = selectedGroup?.categoryIds ?? null;
@@ -189,6 +209,11 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // Only includes rows that have content (or are loading)
   const carouselRows = useMemo((): CarouselRow[] => {
     const rows: CarouselRow[] = [];
+
+    // Continue Watching — always row #1 when non-empty (Virtuoso-safe: in the data array, never CSS-hidden)
+    if (continueItems.length > 0) {
+      rows.push({ key: 'continue-watching', title: 'Continue Watching', items: [], kind: 'continue', continueItems });
+    }
 
     // Watchlist (top of home, only when non-empty)
     if (watchlistItems.length > 0) {
@@ -257,6 +282,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
     return rows;
   }, [
+    continueItems,
     watchlistItems,
     trendingItems, trendingLoading,
     popularItems, popularLoading,
@@ -304,6 +330,24 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     }
   }, [type, handlePlay]);
 
+  const handleContinuePlay = useCallback((it: ContinueItem) => {
+    if (it.kind === 'movie') {
+      const m = it.media as StoredMovie;
+      handlePlay({
+        url: m.direct_url, title: m.title || m.name, year: m.year || m.release_date?.slice(0, 4),
+        plot: m.plot, type: 'movie', streamId: m.stream_id, tmdbId: m.tmdb_id, sourceId: m.source_id,
+      });
+    } else {
+      // series: open detail (reuses SeriesDetail's resume + episode-play path)
+      setSelectedItem(it.media);
+    }
+  }, [handlePlay]);
+
+  const handleContinueRemove = useCallback((it: ContinueItem) => {
+    if (it.kind === 'movie') clearOne(it.key);
+    else clearSeries({ tmdbId: it.seriesTmdbId, seriesStreamId: it.seriesStreamId });
+  }, [clearOne, clearSeries]);
+
   // Hero is loading if we have no items AND data is still being fetched
   const heroLoading = featuredItems.length === 0 &&
     localPopularItems.length === 0 &&
@@ -319,7 +363,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     onItemClick: handleItemClick,
     onHeroPlay: handleHeroPlay,
     progressMap: type === 'movie' ? movieProgressMap : undefined,
-  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, handleItemClick, handleHeroPlay, movieProgressMap]);
+    onContinuePlay: handleContinuePlay,
+    onContinueRemove: handleContinueRemove,
+  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, handleItemClick, handleHeroPlay, movieProgressMap, handleContinuePlay, handleContinueRemove]);
 
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {

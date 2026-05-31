@@ -17,9 +17,11 @@ export interface MediaCardProps {
   onClick?: (item: StoredMovie | StoredSeries) => void;
   size?: 'small' | 'medium' | 'large';
   progress?: number; // 0-100 watch progress, passed from parent
+  onRemove?: () => void;     // when present, render a "×" in the overlay (Continue Watching)
+  resumeLabel?: string;      // e.g. "S2 · E5" badge for continue-watching series cards
 }
 
-export const MediaCard = memo(function MediaCard({ item, type, onClick, size = 'medium', progress }: MediaCardProps) {
+export const MediaCard = memo(function MediaCard({ item, type, onClick, size = 'medium', progress, onRemove, resumeLabel }: MediaCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [titleOverflows, setTitleOverflows] = useState(false);
@@ -133,6 +135,17 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
               </svg>
             )}
           </button>
+          {onRemove && (
+            <button
+              className="media-card__remove"
+              onClick={(e) => { e.stopPropagation(); onRemove(); }}
+              aria-label="Remove from Continue Watching"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 6l-12 12" /><path d="M6 6l12 12" />
+              </svg>
+            </button>
+          )}
           <div className="media-card__play-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="rgba(255,255,255,0.55)">
               <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -141,6 +154,7 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
           </div>
         </div>
 
+        {resumeLabel && <div className="media-card__resume-label">{resumeLabel}</div>}
       </div>
 
       {/* Watch progress bar — on the seam between poster and info (not shown when completed) */}
