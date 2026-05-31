@@ -3,12 +3,13 @@ import { buildDirectory, resolveTeam } from './teams-directory';
 import type { Team, TeamsData } from './types';
 
 function team(p: Partial<Team> & Pick<Team, 'leagueId' | 'location' | 'nickname' | 'abbrev'>): Team {
-  return { displayName: `${p.location} ${p.nickname}`.trim(), aliases: [], logoUrl: 'x', ...p };
+  return { displayName: `${p.location} ${p.nickname}`.trim(), logoUrl: 'x', ...p };
 }
 
 const DATA: TeamsData = {
   nba: [
     team({ leagueId: 'nba', location: 'Los Angeles', nickname: 'Lakers', abbrev: 'LAL' }),
+    team({ leagueId: 'nba', location: 'LA', nickname: 'Clippers', abbrev: 'LAC' }),
     team({ leagueId: 'nba', location: 'Boston', nickname: 'Celtics', abbrev: 'BOS' }),
   ],
   nfl: [
@@ -52,5 +53,13 @@ describe('resolveTeam', () => {
   });
   it('returns empty for unknown', () => {
     expect(resolveTeam(dir, 'Definitely Not A Team')).toEqual([]);
+  });
+
+  // City-abbreviation equivalence (ESPN stores Lakers as "Los Angeles", Clippers as "LA").
+  it('matches an LA team written in the Los Angeles form', () => {
+    expect(resolveTeam(dir, 'Los Angeles Clippers').map((t) => t.abbrev)).toEqual(['LAC']);
+  });
+  it('matches an LA team written in the abbreviated LA form', () => {
+    expect(resolveTeam(dir, 'LA Lakers').map((t) => t.abbrev)).toEqual(['LAL']);
   });
 });

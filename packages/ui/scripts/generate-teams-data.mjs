@@ -28,7 +28,6 @@ async function fetchLeague(l) {
       nickname: team.name ?? team.shortDisplayName ?? '',
       displayName: team.displayName ?? '',
       abbrev: (team.abbreviation ?? '').toUpperCase(),
-      aliases: [],
       logoUrl: team.logos?.[0]?.href ?? '',
     }))
     // Teams without a logo can't render a matchup; drop them (fail silent).

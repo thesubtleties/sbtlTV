@@ -9,7 +9,6 @@ export interface Team {
   nickname: string; // "Lakers" / "Blue Devils"
   displayName: string; // "Los Angeles Lakers" / "Duke Blue Devils"
   abbrev: string; // "LAL"
-  aliases: string[]; // extra match strings (lowercased), may be empty
   logoUrl: string; // ESPN CDN logo URL
 }
 

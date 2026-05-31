@@ -8,10 +8,22 @@ export interface Directory {
   byKey: Map<string, Team[]>;
 }
 
+// Known ambiguous city <-> abbreviation pairs. Applied ONLY to a team whose
+// `location` is one of these (never to arbitrary input), so "LA Tech" is never
+// expanded to "Los Angeles Tech". Bidirectional: covers EPGs that write "LA
+// Lakers" (ESPN stores "Los Angeles") and "Los Angeles Clippers" (ESPN: "LA").
+const CITY_EQUIV: Record<string, string> = {
+  'los angeles': 'la',
+  la: 'los angeles',
+};
+
 function keysForTeam(t: Team): string[] {
-  const keys = [t.displayName, t.nickname, `${t.location} ${t.nickname}`, t.abbrev, ...t.aliases];
+  const keys = [t.displayName, t.nickname, `${t.location} ${t.nickname}`, t.abbrev];
   // Bare school name is a safe key only for college (one program per location).
   if (COLLEGE_LEAGUES.has(t.leagueId)) keys.push(t.location);
+  // City-abbreviation equivalence for known ambiguous cities (e.g. LA teams).
+  const equiv = CITY_EQUIV[normalizeToken(t.location)];
+  if (equiv) keys.push(`${equiv} ${t.nickname}`);
   return keys.map(normalizeToken).filter((k) => k.length >= 2);
 }
 
