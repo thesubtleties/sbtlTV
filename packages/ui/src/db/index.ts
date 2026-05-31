@@ -122,6 +122,7 @@ export interface StoredWatchProgress {
   tmdb_id?: number;
   stream_id?: string;
   series_tmdb_id?: number; // For episodes: the parent series tmdb_id
+  series_stream_id?: string; // Series-level stream id; used for seriesKey when no tmdb match
   season_num?: number;
   episode_num?: number;
   position: number;        // Seconds
@@ -288,6 +289,12 @@ class SbtltvDatabase extends Dexie {
     // Add EPG mapping table for external EPG channel matching
     this.version(12).stores({
       epgMappings: 'id, source_id, stream_id, [source_id+epg_source]',
+    });
+
+    // Index series_stream_id so non-TMDB series grouping + clearSeries avoid full scans.
+    // Additive index ONLY — Dexie builds it in place, existing records preserved (no data loss).
+    this.version(13).stores({
+      watchProgress: 'id, type, tmdb_id, stream_id, series_tmdb_id, series_stream_id, updated_at, [type+completed]',
     });
   }
 }

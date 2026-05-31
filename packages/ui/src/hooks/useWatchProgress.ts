@@ -1,14 +1,7 @@
 import { useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type StoredWatchProgress } from '../db';
-
-function movieProgressId(streamId: string): string {
-  return `movie_${streamId}`;
-}
-
-function episodeProgressId(seriesTmdbId: number, season: number, episode: number): string {
-  return `episode_${seriesTmdbId}_S${season}_E${episode}`;
-}
+import { seriesKey, episodeProgressId, movieProgressId } from '../services/continue-watching/series-key';
 
 /** Get watch progress for a movie by stream_id */
 export function useMovieProgress(streamId?: string): StoredWatchProgress | undefined {
@@ -32,7 +25,7 @@ export function useEpisodeProgress(
 ): StoredWatchProgress | undefined {
   return useLiveQuery(
     () => (seriesTmdbId && season != null && episode != null)
-      ? db.watchProgress.get(episodeProgressId(seriesTmdbId, season, episode))
+      ? db.watchProgress.get(episodeProgressId(String(seriesTmdbId), season, episode))
       : undefined,
     [seriesTmdbId, season, episode]
   );
@@ -44,6 +37,7 @@ export async function updateWatchProgress(opts: {
   streamId: string;
   tmdbId?: number;
   seriesTmdbId?: number;
+  seriesStreamId?: string;
   seasonNum?: number;
   episodeNum?: number;
   name?: string;
@@ -57,8 +51,9 @@ export async function updateWatchProgress(opts: {
   const completed = progress >= 90;
 
   let id: string;
-  if (opts.type === 'episode' && opts.seriesTmdbId && opts.seasonNum != null && opts.episodeNum != null) {
-    id = episodeProgressId(opts.seriesTmdbId, opts.seasonNum, opts.episodeNum);
+  if (opts.type === 'episode' && opts.seasonNum != null && opts.episodeNum != null) {
+    const skey = seriesKey({ seriesTmdbId: opts.seriesTmdbId, sourceId: opts.sourceId, seriesStreamId: opts.seriesStreamId });
+    id = skey ? episodeProgressId(skey, opts.seasonNum, opts.episodeNum) : movieProgressId(opts.streamId);
   } else {
     id = movieProgressId(opts.streamId);
   }
@@ -69,6 +64,7 @@ export async function updateWatchProgress(opts: {
     tmdb_id: opts.tmdbId,
     stream_id: opts.streamId,
     series_tmdb_id: opts.seriesTmdbId,
+    series_stream_id: opts.seriesStreamId,
     season_num: opts.seasonNum,
     episode_num: opts.episodeNum,
     position: opts.position,
@@ -104,14 +100,14 @@ export function useClearProgress() {
 /** One-time DB lookup for resume position (seconds). Returns 0 if none or completed. */
 export async function getResumePosition(
   type: 'movie' | 'episode',
-  opts: { streamId?: string; tmdbId?: number; seriesTmdbId?: number; seasonNum?: number; episodeNum?: number },
+  opts: { streamId?: string; tmdbId?: number; seriesTmdbId?: number; seriesStreamId?: string; sourceId?: string; seasonNum?: number; episodeNum?: number },
 ): Promise<number> {
   let entry: StoredWatchProgress | undefined;
 
   if (type === 'episode' && opts.seasonNum != null && opts.episodeNum != null) {
-    // Prefer tmdb_id keyed lookup (cross-source), fall back to stream_id scan
-    if (opts.seriesTmdbId) {
-      entry = await db.watchProgress.get(episodeProgressId(opts.seriesTmdbId, opts.seasonNum, opts.episodeNum));
+    const skey = seriesKey({ seriesTmdbId: opts.seriesTmdbId, sourceId: opts.sourceId, seriesStreamId: opts.seriesStreamId });
+    if (skey) {
+      entry = await db.watchProgress.get(episodeProgressId(skey, opts.seasonNum, opts.episodeNum));
     }
     if (!entry && opts.streamId) {
       entry = await db.watchProgress.where('stream_id').equals(opts.streamId).first();
@@ -152,19 +148,26 @@ const EMPTY_EPISODE_MAP = new Map<string, number>();
 
 /** Bulk progress map for episodes of a series — one query, O(1) lookup per row.
  *  Keyed by "S{season}_E{episode}" for easy lookup from episode rows. */
-export function useEpisodeProgressMap(seriesTmdbId?: number): Map<string, number> {
+export function useEpisodeProgressMap(
+  series: { tmdbId?: number; sourceId?: string; seriesStreamId?: string }
+): Map<string, number> {
   return useLiveQuery(async () => {
-    if (!seriesTmdbId) return EMPTY_EPISODE_MAP;
-    const items = await db.watchProgress
-      .where('series_tmdb_id').equals(seriesTmdbId)
-      .toArray();
+    let items: StoredWatchProgress[];
+    if (series.tmdbId != null) {
+      items = await db.watchProgress.where('series_tmdb_id').equals(series.tmdbId).toArray();
+    } else if (series.seriesStreamId) {
+      // Indexed via the v13 series_stream_id index — covers non-TMDB series (#65 gap).
+      items = await db.watchProgress.where('series_stream_id').equals(series.seriesStreamId).toArray();
+    } else {
+      return EMPTY_EPISODE_MAP;
+    }
     const map = new Map<string, number>();
     for (const item of items) {
       if (item.season_num == null || item.episode_num == null) continue;
       map.set(`S${item.season_num}_E${item.episode_num}`, item.progress);
     }
     return map;
-  }, [seriesTmdbId]) ?? EMPTY_EPISODE_MAP;
+  }, [series.tmdbId, series.sourceId, series.seriesStreamId]) ?? EMPTY_EPISODE_MAP;
 }
 
 /** Look up progress for a movie from the bulk map */

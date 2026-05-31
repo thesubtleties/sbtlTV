@@ -95,6 +95,7 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
         sourceId: episode.source_id,
         seasonNum: episode.season_num,
         episodeNum: episode.episode_num,
+        seriesStreamId: series.series_id,
       });
     },
     [series, onPlayEpisode, lazyPlot]
@@ -128,7 +129,9 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
   const genres = genreSource?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
 
   // Episode progress (bulk query for entire series)
-  const episodeProgressMap = useEpisodeProgressMap(series.tmdb_id);
+  const episodeProgressMap = useEpisodeProgressMap({
+    tmdbId: series.tmdb_id, sourceId: series.source_id, seriesStreamId: series.series_id,
+  });
 
   // Current season episodes
   const currentEpisodes = seasons[selectedSeason] ?? [];

@@ -52,4 +52,5 @@ export interface VodPlayInfo {
   sourceId?: string;      // source_id for the stream
   seasonNum?: number;     // Episode season number
   episodeNum?: number;    // Episode number
+  seriesStreamId?: string; // series_id of the parent series (seriesKey fallback when no tmdb)
 }
