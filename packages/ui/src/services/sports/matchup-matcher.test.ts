@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildDirectory } from './teams-directory';
-import { matchProgramToMatchup } from './matchup-matcher';
+import { matchProgram, matchProgramToMatchup } from './matchup-matcher';
 import type { Team, TeamsData } from './types';
 
 function team(p: Partial<Team> & Pick<Team, 'leagueId' | 'location' | 'nickname' | 'abbrev'>): Team {
@@ -77,5 +77,32 @@ describe('matchProgramToMatchup', () => {
   });
   it('is ambiguous when both sides resolve to the same team', () => {
     expect(matchProgramToMatchup(dir, 'Lakers @ Lakers').status).toBe('ambiguous');
+  });
+});
+
+describe('matchProgram (title + description fallback)', () => {
+  it('uses the title when it resolves', () => {
+    const r = matchProgram(dir, { title: 'Lakers @ Celtics' });
+    expect(r.status).toBe('matched');
+    expect(r.matchup?.leagueId).toBe('nba');
+  });
+  it('falls back to the description when the title is generic', () => {
+    const r = matchProgram(dir, { title: 'NBA Playoffs', description: 'Lakers at Celtics' });
+    expect(r.status).toBe('matched');
+    expect([r.matchup?.away.abbrev, r.matchup?.home.abbrev]).toEqual(['LAL', 'BOS']);
+  });
+  it('does not match a prose description with no matchup shape', () => {
+    const r = matchProgram(dir, {
+      title: 'NBA Playoffs',
+      description: 'The Lakers visit the Celtics tonight',
+    });
+    expect(r.matchup).toBeNull();
+  });
+  it('prefers the title when both resolve', () => {
+    const r = matchProgram(dir, { title: 'Lakers @ Celtics', description: 'Cardinals vs Giants' });
+    expect(r.matchup?.leagueId).toBe('nba');
+  });
+  it('returns no match when neither field has a matchup', () => {
+    expect(matchProgram(dir, { title: 'SportsCenter', description: 'Daily highlights' }).matchup).toBeNull();
   });
 });

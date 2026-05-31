@@ -47,3 +47,26 @@ export function matchProgramToMatchup(
 
   return { status: 'matched', matchup: { leagueId: league, away: teamsA[0], home: teamsB[0] } };
 }
+
+export interface ProgramInput {
+  title?: string;
+  description?: string;
+  channelName?: string;
+}
+
+/**
+ * Resolve a matchup from an EPG program, trying the TITLE first and falling back
+ * to the DESCRIPTION. Some providers use a generic title ("NBA Playoffs") and put
+ * the actual matchup ("Lakers at Jazz") in the description. Both go through the
+ * same conservative gate, so a prose description with no "A vs/at/@ B" shape
+ * simply doesn't resolve (never a wrong match).
+ */
+export function matchProgram(dir: Directory, input: ProgramInput): MatchResult {
+  const { title, description, channelName } = input;
+  const fromTitle = title ? matchProgramToMatchup(dir, title, channelName) : null;
+  if (fromTitle?.status === 'matched') return fromTitle;
+  const fromDesc = description ? matchProgramToMatchup(dir, description, channelName) : null;
+  if (fromDesc?.status === 'matched') return fromDesc;
+  // Neither matched — surface the most informative non-matched status for logging.
+  return fromDesc ?? fromTitle ?? { status: 'no-split', matchup: null };
+}

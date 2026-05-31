@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import type { StoredChannel, StoredProgram } from '../db';
 import { useSportsMatchupEnabled, useDebugLoggingEnabled } from '../stores/uiStore';
 import { getDirectory } from '../services/sports/teams-directory';
-import { matchProgramToMatchup } from '../services/sports/matchup-matcher';
+import { matchProgram } from '../services/sports/matchup-matcher';
 import type { Matchup } from '../services/sports/types';
 import { debugLog } from '../utils/debugLog';
 
@@ -14,21 +14,21 @@ export function useMatchup(
   const enabled = useSportsMatchupEnabled();
   const debugEnabled = useDebugLoggingEnabled();
   const title = currentProgram?.title ?? '';
+  const description = currentProgram?.description ?? '';
   const channelName = channel?.name;
 
   const result = useMemo(
-    () => (enabled && title ? matchProgramToMatchup(getDirectory(), title, channelName) : null),
-    [enabled, title, channelName],
+    () => (enabled ? matchProgram(getDirectory(), { title, description, channelName }) : null),
+    [enabled, title, description, channelName],
   );
 
-  // Log misses (game-like titles that didn't resolve) only when debugging — side
-  // effect lives in an effect, not the memo, so it never double-fires under StrictMode.
+  // Log game-like-but-unresolved programs only when debugging — helps tune the matcher.
   useEffect(() => {
     if (!debugEnabled || !result) return;
     if (result.status === 'unresolved' || result.status === 'ambiguous') {
-      debugLog(`${result.status}: "${title}" (channel: ${channelName ?? '?'})`, 'matchup');
+      debugLog(`${result.status}: title="${title}" desc="${description}" (ch: ${channelName ?? '?'})`, 'matchup');
     }
-  }, [debugEnabled, result, title, channelName]);
+  }, [debugEnabled, result, title, description, channelName]);
 
   return result?.status === 'matched' ? result.matchup : null;
 }
