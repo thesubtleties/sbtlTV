@@ -40,6 +40,7 @@ interface AppSettings {
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
+  sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game (default true)
 }
 
 // Internal storage format (encrypted)
@@ -61,6 +62,7 @@ interface StoredSettings {
   guideOpacity?: number;        // Background opacity for EPG/category/title bar
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD
+  sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game
 }
 
 const store = new Store<StoreSchema>({
@@ -204,6 +206,7 @@ export function getSettings(): AppSettings {
   result.guideOpacity = stored.guideOpacity ?? 0.95;
   result.liveSourceOrder = stored.liveSourceOrder;
   result.vodSourceOrder = stored.vodSourceOrder;
+  result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? true;
   return result;
 }
 
@@ -252,6 +255,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.vodSourceOrder !== undefined) {
     updated.vodSourceOrder = settings.vodSourceOrder;
+  }
+  if (settings.sportsMatchupEnabled !== undefined) {
+    updated.sportsMatchupEnabled = settings.sportsMatchupEnabled;
   }
 
   store.set('settings', updated);
