@@ -77,24 +77,18 @@ export async function updateWatchProgress(opts: {
   });
 }
 
-/** Get "continue watching" items (in progress, not completed) */
-export function useContinueWatching(limit = 20): StoredWatchProgress[] {
-  return useLiveQuery(
-    () => db.watchProgress
-      .orderBy('updated_at')
-      .reverse()
-      .filter(item => !item.completed)
-      .limit(limit)
-      .toArray(),
-    [limit]
-  ) ?? [];
-}
-
-/** Hook to clear progress for an item */
+/** Clear progress: a single id (movie/episode), or an entire series group by identity. */
 export function useClearProgress() {
-  return useCallback(async (id: string) => {
-    await db.watchProgress.delete(id);
+  const clearOne = useCallback(async (id: string) => { await db.watchProgress.delete(id); }, []);
+  // Identity-based; uses the INDEXED field (series_tmdb_id or the v13 series_stream_id) — no full scan.
+  const clearSeries = useCallback(async (id: { tmdbId?: number; seriesStreamId?: string }) => {
+    let keys: string[];
+    if (id.tmdbId != null) keys = await db.watchProgress.where('series_tmdb_id').equals(id.tmdbId).primaryKeys();
+    else if (id.seriesStreamId) keys = await db.watchProgress.where('series_stream_id').equals(id.seriesStreamId).primaryKeys();
+    else return;
+    await db.watchProgress.bulkDelete(keys);
   }, []);
+  return { clearOne, clearSeries };
 }
 
 /** One-time DB lookup for resume position (seconds). Returns 0 if none or completed. */
