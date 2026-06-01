@@ -661,15 +661,19 @@ function App() {
 
   return (
     <div className={`app${showControls ? '' : ' controls-hidden'}`} onMouseMove={handleMouseMove}>
-      {/* Custom title bar for frameless window */}
-      <div className={`title-bar${showControls && !isFullscreen ? ' visible' : ''}`}>
+      {/* Custom title bar for frameless window — stays available in fullscreen (auto-hides on idle) */}
+      <div className={`title-bar${showControls ? ' visible' : ''}`}>
         <Logo className="title-bar-logo" />
         <div className="window-controls">
           <button onClick={handleMinimize} title="Minimize">
             ─
           </button>
-          <button onClick={handleMaximize} title="Maximize">
-            □
+          {/* In fullscreen, maximize is meaningless (and flaky on macOS), so the button exits fullscreen */}
+          <button
+            onClick={isFullscreen ? handleToggleFullscreen : handleMaximize}
+            title={isFullscreen ? 'Exit fullscreen' : 'Maximize'}
+          >
+            {isFullscreen ? '❐' : '□'}
           </button>
           <button onClick={handleClose} className="close" title="Close">
             ✕
