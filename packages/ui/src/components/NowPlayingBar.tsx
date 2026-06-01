@@ -347,15 +347,16 @@ export function NowPlayingBar({
               >
                 <StopIcon />
               </button>
-              <button
-                className="npb-btn"
-                onClick={onToggleFullscreen}
-                disabled={!onToggleFullscreen}
-                title={isFullscreen ? 'Exit fullscreen (f)' : 'Fullscreen (f)'}
-                aria-label="Toggle fullscreen"
-              >
-                {isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
-              </button>
+              {onToggleFullscreen && (
+                <button
+                  className="npb-btn"
+                  onClick={onToggleFullscreen}
+                  title={isFullscreen ? 'Exit fullscreen (f)' : 'Fullscreen (f)'}
+                  aria-label="Toggle fullscreen"
+                >
+                  {isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+                </button>
+              )}
             </div>
 
             {/* Volume controls */}

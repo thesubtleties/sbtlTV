@@ -598,7 +598,7 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't handle shortcuts when typing in inputs
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
         return;
       }
 
@@ -627,7 +627,8 @@ function App() {
           break;
         case 'Escape':
           if (isFullscreenRef.current) {
-            handleToggleFullscreen();   // exit fullscreen first (exit-only)
+            e.stopImmediatePropagation();   // exit fullscreen only — don't also close an open detail/panel
+            handleToggleFullscreen();
             break;
           }
           setActiveView('none');
@@ -651,7 +652,12 @@ function App() {
   const handleMinimize = () => window.electronWindow?.minimize();
   const handleMaximize = () => window.electronWindow?.maximize();
   const handleClose = () => window.electronWindow?.close();
-  const handleToggleFullscreen = () => window.electronWindow?.setFullscreen();
+  const handleToggleFullscreen = () => {
+    // Linux runs mpv in its own window (with its own `f` fullscreen), so toggling the Electron
+    // window here would fullscreen the chrome, not the video — no-op on Linux.
+    if (window.platform?.isLinux) return;
+    window.electronWindow?.setFullscreen();
+  };
 
   return (
     <div className={`app${showControls ? '' : ' controls-hidden'}`} onMouseMove={handleMouseMove}>
@@ -731,7 +737,7 @@ function App() {
         onNextEpisode={handleNextEpisode}
         showNextEpisode={vodInfo?.type === 'series'}
         isFullscreen={isFullscreen}
-        onToggleFullscreen={handleToggleFullscreen}
+        onToggleFullscreen={window.platform?.isLinux ? undefined : handleToggleFullscreen}
       />
 
       {upNext && (
@@ -799,7 +805,7 @@ function App() {
       {/* Resize grip for frameless window — Electron frameless windows lack native resize edges */}
       {(window.platform?.isWindows || window.platform?.isLinux) && (
       <div
-        className={`resize-grip${showControls ? ' visible' : ''}`}
+        className={`resize-grip${showControls && !isFullscreen ? ' visible' : ''}`}
         onMouseDown={(e) => {
           e.preventDefault();
           if (!window.electronWindow) return;

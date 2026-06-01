@@ -122,6 +122,9 @@ contextBridge.exposeInMainWorld('electronWindow', {
     ipcRenderer.on('window-fullscreen-changed', (_event: IpcRendererEvent, data: boolean) => callback(data));
   },
   removeFullscreenListener: () => {
+    // NOTE: channel-global removeAllListeners (matches the mpv/updater pattern). Fine while App is
+    // the only subscriber; if a second component ever listens on this channel, switch to a stored
+    // callback + ipcRenderer.removeListener so this cleanup doesn't clobber the other subscriber.
     ipcRenderer.removeAllListeners('window-fullscreen-changed');
   },
 } satisfies ElectronWindowApi);
