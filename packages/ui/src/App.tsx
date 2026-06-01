@@ -18,6 +18,7 @@ import type { StoredChannel, StoredSeries } from './db';
 import { db } from './db';
 import type { VodPlayInfo } from './types/media';
 import { updateWatchProgress, getResumePosition } from './hooks/useWatchProgress';
+import { mergedEpisodesForSeries } from './hooks/useContinueWatching';
 import { buildNextEpisodePlayInfo } from './services/continue-watching/next-episode.playinfo';
 import { UpNextOverlay } from './components/UpNextOverlay';
 
@@ -135,7 +136,7 @@ function App() {
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   // Channel/category state (persisted)
-  const { categoryId, setCategoryId, loading: categoryLoading } = useSelectedCategory();
+  const { categoryId, setCategoryId } = useSelectedCategory();
 
   // Global sync state (from Settings)
   const channelSyncing = useChannelSyncing();
@@ -153,18 +154,30 @@ function App() {
   const autoplayEnabled = useAutoplayNextEpisode();
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const loadTokenRef = useRef(0);
+  // Resolve the next-episode VodPlayInfo for the currently-playing series episode (null if none).
+  const resolveNextEpisodeInfo = useCallback(async (cur: VodPlayInfo): Promise<VodPlayInfo | null> => {
+    if (cur.type !== 'series' || cur.seasonNum == null || cur.episodeNum == null) {
+      debugLog(`[next-ep] skip: type=${cur.type} S=${cur.seasonNum} E=${cur.episodeNum}`, 'mpv');
+      return null;
+    }
+    // Resolve the EXACT series being watched (seriesStreamId), with a tmdb fallback.
+    let series: StoredSeries | undefined;
+    if (cur.seriesStreamId) series = await db.vodSeries.get(cur.seriesStreamId);
+    if (!series && cur.tmdbId) series = await db.vodSeries.where('tmdb_id').equals(cur.tmdbId).first();
+    if (!series) { debugLog(`[next-ep] no series (streamId=${cur.seriesStreamId} tmdb=${cur.tmdbId})`, 'mpv'); return null; }
+    // Episodes can live under any tmdb-matched series (cross-source / duplicate) — use the same
+    // merged set the Continue Watching card and SeriesDetail use, so "next episode" stays consistent.
+    const episodes = await mergedEpisodesForSeries(series);
+    const info = buildNextEpisodePlayInfo(series, episodes, cur.seasonNum, cur.episodeNum);
+    debugLog(`[next-ep] series=${series.series_id} eps=${episodes.length} from S${cur.seasonNum}E${cur.episodeNum} -> ${info ? `S${info.seasonNum}E${info.episodeNum}` : 'none'}`, 'mpv');
+    return info;
+  }, []);
   const triggerUpNext = useCallback(async (cur: VodPlayInfo) => {
     try {
-      if (cur.seasonNum == null || cur.episodeNum == null) return;
-      let series: StoredSeries | undefined;
-      if (cur.tmdbId) series = await db.vodSeries.where('tmdb_id').equals(cur.tmdbId).first();
-      if (!series && cur.seriesStreamId) series = await db.vodSeries.get(cur.seriesStreamId);
-      if (!series) return;
-      const episodes = await db.vodEpisodes.where('series_id').equals(series.series_id).toArray();
-      const nextInfo = buildNextEpisodePlayInfo(series, episodes, cur.seasonNum, cur.episodeNum);
-      if (nextInfo) setUpNext({ info: nextInfo, secondsLeft: 10 });
+      const info = await resolveNextEpisodeInfo(cur);
+      if (info) setUpNext({ info, secondsLeft: 10 });
     } catch (e) { console.error('Up Next resolution failed', e); }
-  }, []);
+  }, [resolveNextEpisodeInfo]);
   const triggerUpNextRef = useRef(triggerUpNext);
   useEffect(() => { triggerUpNextRef.current = triggerUpNext; }, [triggerUpNext]);
   useEffect(() => { autoplayEnabledRef.current = autoplayEnabled; }, [autoplayEnabled]);
@@ -348,6 +361,7 @@ function App() {
     debugLog('handleStop: mpv.stop() completed');
     setPlaying(false);
     setCurrentChannel(null);
+    setVodInfo(null);
   };
 
   const handleSeek = async (seconds: number) => {
@@ -411,6 +425,8 @@ function App() {
       setVodInfo(updatedInfo);
       vodInfoRef.current = updatedInfo;
       lastProgressSaveRef.current = 0; // Reset throttle for new content
+      setPosition(0);   // reset position UI immediately; mpv status refines it (resume seeks on duration)
+      setDuration(0);
       setPlaying(true);
       // Close VOD pages when playing
       setActiveView('none');
@@ -430,15 +446,12 @@ function App() {
   // Manual "Next Episode" — resolves the successor on click (no-op on the last episode).
   const handleNextEpisode = useCallback(async () => {
     const cur = vodInfoRef.current;
-    if (!cur || cur.type !== 'series' || cur.seasonNum == null || cur.episodeNum == null) return;
-    let series: StoredSeries | undefined;
-    if (cur.tmdbId) series = await db.vodSeries.where('tmdb_id').equals(cur.tmdbId).first();
-    if (!series && cur.seriesStreamId) series = await db.vodSeries.get(cur.seriesStreamId);
-    if (!series) return;
-    const episodes = await db.vodEpisodes.where('series_id').equals(series.series_id).toArray();
-    const nextInfo = buildNextEpisodePlayInfo(series, episodes, cur.seasonNum, cur.episodeNum);
-    if (nextInfo) void handlePlayVod(nextInfo);
-  }, [handlePlayVod]);
+    if (!cur) return;
+    try {
+      const info = await resolveNextEpisodeInfo(cur);
+      if (info) void handlePlayVod(info);
+    } catch (e) { console.error('Next episode failed', e); }
+  }, [resolveNextEpisodeInfo, handlePlayVod]);
 
   // Handle category selection - opens guide if closed
   const handleSelectCategory = (catId: string | null) => {

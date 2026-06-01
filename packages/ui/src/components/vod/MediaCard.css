@@ -236,7 +236,7 @@
   transition: width 0.3s ease;
 }
 
-/* Continue Watching: remove "×" button (top-right, opposite the heart) + resume label */
+/* Continue Watching: remove (trash) button (top-right, opposite the heart) + resume label */
 .media-card__remove {
   position: absolute;
   top: 6px;
@@ -251,23 +251,23 @@
   border: none;
   background: none;
   cursor: pointer;
-  /* Translucent white × on top — a see-through highlight that reads on dark posters. */
+  /* Translucent white icon on top — a see-through highlight that reads on dark posters. */
   color: rgba(255, 255, 255, 0.55);
   opacity: 0;
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.55))
-         drop-shadow(0 0 1px rgba(0, 0, 0, 0.8));
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.45))
+         drop-shadow(0 0 1px rgba(0, 0, 0, 0.65));
   transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1),
               transform 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-/* Dark × base underneath — prominent + slightly thicker so it frames the white (reads on light posters). */
+/* Dark base underneath — frames the white icon so it reads on light posters. */
 .media-card__remove::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M18 6l-12 12'/%3E%3Cpath d='M6 6l12 12'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M18 6l-12 12'/%3E%3Cpath d='M6 6l12 12'/%3E%3C/svg%3E");
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7l16 0'/%3E%3Cpath d='M10 11l0 6'/%3E%3Cpath d='M14 11l0 6'/%3E%3Cpath d='M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12'/%3E%3Cpath d='M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7l16 0'/%3E%3Cpath d='M10 11l0 6'/%3E%3Cpath d='M14 11l0 6'/%3E%3Cpath d='M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12'/%3E%3Cpath d='M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3'/%3E%3C/svg%3E");
   -webkit-mask-size: 22px 22px;
   mask-size: 22px 22px;
   -webkit-mask-position: center;
@@ -293,7 +293,7 @@
 
 .media-card__resume-label {
   position: absolute;
-  bottom: 16px;
+  top: calc(50% + 30px);   /* just under the centered play circle, hover-only */
   left: 50%;
   transform: translateX(-50%);
   z-index: 2;
@@ -302,9 +302,17 @@
   font-weight: 600;
   white-space: nowrap;
   color: #fff;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.55);
   border-radius: 4px;
   backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.media-card:hover .media-card__resume-label,
+.media-card:focus-visible .media-card__resume-label {
+  opacity: 1;
 }
 
 /* Info section - compact and polished */

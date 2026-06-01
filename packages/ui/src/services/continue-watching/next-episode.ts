@@ -15,9 +15,13 @@ export function selectActiveEpisode(group: ProgressRecord[]): ProgressRecord {
 
 /** Next episode strictly after (season, episode) in the real, sorted episode list. */
 export function nextEpisode(episodes: EpisodeRef[], season: number, episode: number): EpisodeRef | null {
-  const sorted = [...episodes].sort((a, b) => a.season_num - b.season_num || a.episode_num - b.episode_num);
+  // Coerce to numbers — Xtream can return episode_num as a string, which breaks `>` (e.g. "10" < "9").
+  const s = Number(season), e = Number(episode);
+  const sorted = episodes
+    .map(ep => ({ season_num: Number(ep.season_num), episode_num: Number(ep.episode_num) }))
+    .sort((a, b) => a.season_num - b.season_num || a.episode_num - b.episode_num);
   for (const ep of sorted) {
-    if (ep.season_num > season || (ep.season_num === season && ep.episode_num > episode)) {
+    if (ep.season_num > s || (ep.season_num === s && ep.episode_num > e)) {
       return { season_num: ep.season_num, episode_num: ep.episode_num };
     }
   }

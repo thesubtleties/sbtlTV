@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildNextEpisodePlayInfo } from './next-episode.playinfo';
+import { buildNextEpisodePlayInfo, buildEpisodePlayInfo } from './next-episode.playinfo';
 import type { StoredSeries, StoredEpisode } from '../../db';
 
 const series = { tmdb_id: 1399, series_id: 'S9', source_id: 'src1', name: 'Show', title: 'Show' } as StoredSeries;
@@ -26,5 +26,17 @@ describe('buildNextEpisodePlayInfo', () => {
   it('falls back to series.name when title is absent', () => {
     const nameless = { ...series, title: undefined } as StoredSeries;
     expect(buildNextEpisodePlayInfo(nameless, episodes, 1, 1)?.title).toBe('Show');
+  });
+});
+
+describe('buildEpisodePlayInfo', () => {
+  it('builds VodPlayInfo for a specific episode (sourceId from series, position handled elsewhere)', () => {
+    expect(buildEpisodePlayInfo(series, episodes, 1, 2)).toMatchObject({
+      url: 'u2', type: 'series', streamId: 'e2', tmdbId: 1399,
+      seriesStreamId: 'S9', sourceId: 'src1', seasonNum: 1, episodeNum: 2,
+    });
+  });
+  it('returns null for a missing episode', () => {
+    expect(buildEpisodePlayInfo(series, episodes, 9, 9)).toBeNull();
   });
 });

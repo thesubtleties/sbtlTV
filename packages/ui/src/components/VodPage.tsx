@@ -337,8 +337,11 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         url: m.direct_url, title: m.title || m.name, year: m.year || m.release_date?.slice(0, 4),
         plot: m.plot, type: 'movie', streamId: m.stream_id, tmdbId: m.tmdb_id, sourceId: m.source_id,
       });
+    } else if (it.playInfo) {
+      // series: play the resume episode directly (like movies) — resumes via getResumePosition
+      handlePlay(it.playInfo);
     } else {
-      // series: open detail (reuses SeriesDetail's resume + episode-play path)
+      // fallback: open detail if we couldn't resolve the resume episode
       setSelectedItem(it.media);
     }
   }, [handlePlay]);

@@ -780,6 +780,7 @@ ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number) =
   if (useNativeMpv && mpvBridge) {
     try {
       await mpvBridge.load(url, '');
+      mpvBridge.play(); // ensure playback — pause can persist across loads after a prior EOF
       debugLog('mpv-load SUCCESS (native)', 'mpv');
       return { success: true };
     } catch (error) {
@@ -797,6 +798,9 @@ ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number) =
   try {
     debugLog('Sending loadfile command to mpv...', 'mpv');
     await sendMpvCommand('loadfile', [url]);
+    // Ensure playback — mpv keeps pause=yes across loadfile after a prior file hit EOF
+    // (e.g. autoplaying the next episode), so loadfile alone would load the new file paused.
+    await sendMpvCommand('set_property', ['pause', false]);
     debugLog('mpv-load SUCCESS', 'mpv');
     return { success: true };
   } catch (error) {

@@ -17,7 +17,7 @@ export interface MediaCardProps {
   onClick?: (item: StoredMovie | StoredSeries) => void;
   size?: 'small' | 'medium' | 'large';
   progress?: number; // 0-100 watch progress, passed from parent
-  onRemove?: () => void;     // when present, render a "×" in the overlay (Continue Watching)
+  onRemove?: () => void;     // when present, render a remove (trash) button in the overlay (Continue Watching)
   resumeLabel?: string;      // e.g. "S2 · E5" badge for continue-watching series cards
 }
 
@@ -142,7 +142,11 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
               aria-label="Remove from Continue Watching"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 6l-12 12" /><path d="M6 6l12 12" />
+                <path d="M4 7l16 0" />
+                <path d="M10 11l0 6" />
+                <path d="M14 11l0 6" />
+                <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
+                <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
               </svg>
             </button>
           )}
