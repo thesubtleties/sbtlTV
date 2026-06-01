@@ -665,9 +665,12 @@ function App() {
       <div className={`title-bar${showControls ? ' visible' : ''}`}>
         <Logo className="title-bar-logo" />
         <div className="window-controls">
-          <button onClick={handleMinimize} title="Minimize">
-            ─
-          </button>
+          {/* macOS can't minimize a window in a native fullscreen space — hide it there */}
+          {!(isFullscreen && window.platform?.isMac) && (
+            <button onClick={handleMinimize} title="Minimize">
+              ─
+            </button>
+          )}
           {/* In fullscreen, maximize is meaningless (and flaky on macOS), so the button exits fullscreen */}
           <button
             onClick={isFullscreen ? handleToggleFullscreen : handleMaximize}
