@@ -242,19 +242,44 @@
   top: 6px;
   right: 6px;
   z-index: 2;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
   padding: 0;
   border: none;
-  border-radius: 50%;
+  background: none;
   cursor: pointer;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.55);
+  /* Translucent white × on top — a see-through highlight that reads on dark posters. */
+  color: rgba(255, 255, 255, 0.55);
   opacity: 0;
-  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.7));
-  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), background 150ms ease;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.55))
+         drop-shadow(0 0 1px rgba(0, 0, 0, 0.8));
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1),
+              transform 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Dark × base underneath — prominent + slightly thicker so it frames the white (reads on light posters). */
+.media-card__remove::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M18 6l-12 12'/%3E%3Cpath d='M6 6l12 12'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M18 6l-12 12'/%3E%3Cpath d='M6 6l12 12'/%3E%3C/svg%3E");
+  -webkit-mask-size: 22px 22px;
+  mask-size: 22px 22px;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  z-index: -1;
+}
+
+.media-card__remove svg {
+  width: 20px;
+  height: 20px;
 }
 
 .media-card:hover .media-card__remove,
@@ -263,17 +288,19 @@
 }
 
 .media-card__remove:hover {
-  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.15);
 }
 
 .media-card__resume-label {
   position: absolute;
-  bottom: 6px;
-  left: 6px;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 2;
   padding: 2px 6px;
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
   color: #fff;
   background: rgba(0, 0, 0, 0.6);
   border-radius: 4px;

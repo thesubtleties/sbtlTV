@@ -20,7 +20,7 @@ export function SeriesTab({ autoplayNextEpisode, onAutoplayNextEpisodeChange, ..
   }
   return (
     <>
-      <label className="genre-checkbox" style={{ maxWidth: '320px' }}>
+      <label className="genre-checkbox" style={{ maxWidth: '320px', marginTop: '16px' }}>
         <input
           type="checkbox"
           checked={autoplayNextEpisode}
