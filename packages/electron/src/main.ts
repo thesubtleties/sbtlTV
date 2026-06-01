@@ -230,6 +230,9 @@ async function createWindow(): Promise<void> {
     mainWindow = null;
     killMpv();
   });
+
+  mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', true));
+  mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', false));
 }
 
 function killMpv(): void {
@@ -763,6 +766,11 @@ ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
   // Use setBounds which seems to work in both directions
   const bounds = mainWindow.getBounds();
   mainWindow.setBounds({ x: bounds.x, y: bounds.y, width: newW, height: newH });
+});
+
+ipcMain.handle('window-set-fullscreen', () => {
+  if (!mainWindow) return;
+  mainWindow.setFullScreen(!mainWindow.isFullScreen());
 });
 
 // IPC Handlers - mpv control

@@ -27,6 +27,8 @@ interface NowPlayingBarProps {
   onMouseLeave?: () => void;
   onNextEpisode?: () => void;
   showNextEpisode?: boolean;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
 // Format seconds to "H:MM:SS" or "M:SS"
@@ -63,6 +65,8 @@ export function NowPlayingBar({
   onMouseLeave,
   onNextEpisode,
   showNextEpisode,
+  isFullscreen,
+  onToggleFullscreen,
 }: NowPlayingBarProps) {
   const canControl = mpvReady && channel !== null;
   const currentProgram = useCurrentProgram(channel?.stream_id ?? null);
@@ -343,6 +347,15 @@ export function NowPlayingBar({
               >
                 <StopIcon />
               </button>
+              <button
+                className="npb-btn"
+                onClick={onToggleFullscreen}
+                disabled={!onToggleFullscreen}
+                title={isFullscreen ? 'Exit fullscreen (f)' : 'Fullscreen (f)'}
+                aria-label="Toggle fullscreen"
+              >
+                {isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+              </button>
             </div>
 
             {/* Volume controls */}
@@ -414,6 +427,22 @@ function StopIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
       <rect x="6" y="6" width="12" height="12" rx="1" />
+    </svg>
+  );
+}
+
+function FullscreenIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm16 0h-2v4h-4v2h6v-6z" />
+    </svg>
+  );
+}
+
+function ExitFullscreenIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M10 4H8v4H4v2h6V4zm6 0h-2v6h6V8h-4V4zM8 14H4v2h4v4h2v-6H8zm8 0h-2v6h2v-4h4v-2h-4z" />
     </svg>
   );
 }

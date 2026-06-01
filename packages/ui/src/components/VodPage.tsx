@@ -176,6 +176,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   // Local selected item state, initialized from store
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(detailItem);
+  const [scrollTopNonce, setScrollTopNonce] = useState(0);
 
   // Sync selected item back to store
   useEffect(() => {
@@ -372,9 +373,13 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {
-    setSelectedCategoryId(id);
     setSelectedItem(null);
-  }, [setSelectedCategoryId]);
+    if (id === selectedCategoryId) {
+      setScrollTopNonce((n) => n + 1);   // re-click active category → scroll grid to top
+    } else {
+      setSelectedCategoryId(id);
+    }
+  }, [selectedCategoryId, setSelectedCategoryId, setSelectedItem]);
 
   // Handle mouse back button and browser back - close detail view
   useEffect(() => {
@@ -447,6 +452,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             categoryIds={null}
             categoryName={`All ${typeLabel}`}
             search={searchQuery || undefined}
+            scrollTopNonce={scrollTopNonce}
             onItemClick={handleItemClick}
           />
         ) : selectedCategoryId && selectedGroup ? (
@@ -456,6 +462,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             categoryIds={selectedCategoryIds}
             categoryName={selectedGroup.name}
             search={searchQuery || undefined}
+            scrollTopNonce={scrollTopNonce}
             onItemClick={handleItemClick}
           />
         ) : (

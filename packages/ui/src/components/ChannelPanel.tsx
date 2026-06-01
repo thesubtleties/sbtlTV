@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Virtuoso } from 'react-virtuoso';
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
 import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
@@ -18,6 +18,7 @@ interface ChannelPanelProps {
   sidebarExpanded: boolean;
   onPlayChannel: (channel: StoredChannel) => void;
   onClose: () => void;
+  scrollTopNonce?: number;
 }
 
 export function ChannelPanel({
@@ -27,6 +28,7 @@ export function ChannelPanel({
   sidebarExpanded,
   onPlayChannel,
   onClose,
+  scrollTopNonce,
 }: ChannelPanelProps) {
   const channelSortOrder = useChannelSortOrder();
   const isFavoritesView = categoryId === '__favorites__';
@@ -39,6 +41,13 @@ export function ChannelPanel({
 
   // Ref for measuring the grid container width
   const gridContainerRef = useRef<HTMLDivElement>(null);
+  // Ref to the channel-list Virtuoso for scroll-to-top on active-category re-click
+  const channelListRef = useRef<VirtuosoHandle>(null);
+
+  // Scroll the channel list to top when the active category is re-clicked (nonce bump)
+  useEffect(() => {
+    channelListRef.current?.scrollToIndex({ index: 0 });
+  }, [scrollTopNonce]);
 
   // Track window width to differentiate window resize vs category toggle
   const lastWindowWidth = useRef(typeof window !== 'undefined' ? window.innerWidth : 0);
@@ -255,6 +264,7 @@ export function ChannelPanel({
       {/* EPG Grid Area */}
       <div className="guide-content">
         <Virtuoso
+          ref={channelListRef}
           data={channels}
           className="guide-channels"
           itemContent={(index, channel) => (

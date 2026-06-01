@@ -65,6 +65,7 @@ export interface VodBrowseProps {
   categoryIds: string[] | null;  // null = all items, array = grouped category IDs
   categoryName: string;
   search?: string;
+  scrollTopNonce?: number;  // bump to force a scroll-to-top (re-click of active category)
   onItemClick: (item: StoredMovie | StoredSeries) => void;
 }
 
@@ -73,6 +74,7 @@ export function VodBrowse({
   categoryIds,
   categoryName,
   search,
+  scrollTopNonce,
   onItemClick,
 }: VodBrowseProps) {
   const virtuosoRef = useRef<VirtuosoGridHandle>(null);
@@ -85,12 +87,12 @@ export function VodBrowse({
   // Stable key for category changes (scroll to top)
   const categoryKey = categoryIds?.join(',') ?? null;
 
-  // Scroll to top when category changes
+  // Scroll to top when category changes OR when the active category is re-clicked (scrollTopNonce bump)
   useEffect(() => {
     if (virtuosoRef.current) {
       virtuosoRef.current.scrollToIndex({ index: 0, align: 'start' });
     }
-  }, [categoryKey]);
+  }, [categoryKey, scrollTopNonce]);
 
   // Get paginated data (using debounced search)
   const moviesData = usePaginatedMovies(type === 'movies' ? categoryIds : null, debouncedSearch);

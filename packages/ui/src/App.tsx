@@ -154,6 +154,9 @@ function App() {
   const autoplayEnabled = useAutoplayNextEpisode();
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const loadTokenRef = useRef(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const isFullscreenRef = useRef(isFullscreen);
+  const [channelScrollNonce, setChannelScrollNonce] = useState(0);
   // Resolve the next-episode VodPlayInfo for the currently-playing series episode (null if none).
   const resolveNextEpisodeInfo = useCallback(async (cur: VodPlayInfo): Promise<VodPlayInfo | null> => {
     if (cur.type !== 'series' || cur.seasonNum == null || cur.episodeNum == null) {
@@ -181,6 +184,7 @@ function App() {
   const triggerUpNextRef = useRef(triggerUpNext);
   useEffect(() => { triggerUpNextRef.current = triggerUpNext; }, [triggerUpNext]);
   useEffect(() => { autoplayEnabledRef.current = autoplayEnabled; }, [autoplayEnabled]);
+  useEffect(() => { isFullscreenRef.current = isFullscreen; }, [isFullscreen]);
 
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
@@ -455,6 +459,10 @@ function App() {
 
   // Handle category selection - opens guide if closed
   const handleSelectCategory = (catId: string | null) => {
+    if (catId === categoryId && activeView === 'guide') {
+      setChannelScrollNonce((n) => n + 1);   // already viewing this category in the open guide → scroll to top
+      return;
+    }
     setCategoryId(catId);
     // Open guide if it's not already open
     if (activeView !== 'guide') {
@@ -599,6 +607,13 @@ function App() {
           e.preventDefault();
           handleTogglePlay();
           break;
+        case 'f':
+          handleToggleFullscreen();
+          break;
+        case 'F11':
+          e.preventDefault();
+          handleToggleFullscreen();
+          break;
         case 'm':
           handleToggleMute();
           break;
@@ -611,6 +626,10 @@ function App() {
           setCategoriesOpen((open) => !open);
           break;
         case 'Escape':
+          if (isFullscreenRef.current) {
+            handleToggleFullscreen();   // exit fullscreen first (exit-only)
+            break;
+          }
           setActiveView('none');
           setCategoriesOpen(false);
           setShowControls(false);
@@ -622,15 +641,22 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Subscribe to OS fullscreen state (source of truth for the button icon + Esc logic)
+  useEffect(() => {
+    window.electronWindow?.onFullscreenChanged?.(setIsFullscreen);
+    return () => window.electronWindow?.removeFullscreenListener?.();
+  }, []);
+
   // Window control handlers
   const handleMinimize = () => window.electronWindow?.minimize();
   const handleMaximize = () => window.electronWindow?.maximize();
   const handleClose = () => window.electronWindow?.close();
+  const handleToggleFullscreen = () => window.electronWindow?.setFullscreen();
 
   return (
     <div className={`app${showControls ? '' : ' controls-hidden'}`} onMouseMove={handleMouseMove}>
       {/* Custom title bar for frameless window */}
-      <div className={`title-bar${showControls ? ' visible' : ''}`}>
+      <div className={`title-bar${showControls && !isFullscreen ? ' visible' : ''}`}>
         <Logo className="title-bar-logo" />
         <div className="window-controls">
           <button onClick={handleMinimize} title="Minimize">
@@ -704,6 +730,8 @@ function App() {
         onMouseLeave={() => { controlsHoveredRef.current = false; }}
         onNextEpisode={handleNextEpisode}
         showNextEpisode={vodInfo?.type === 'series'}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={handleToggleFullscreen}
       />
 
       {upNext && (
@@ -743,6 +771,7 @@ function App() {
         sidebarExpanded={sidebarExpanded}
         onPlayChannel={handlePlayChannel}
         onClose={() => setActiveView('none')}
+        scrollTopNonce={channelScrollNonce}
       />
 
       {/* Settings Panel */}

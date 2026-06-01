@@ -46,6 +46,9 @@ export interface ElectronWindowApi {
   close: () => Promise<void>;
   getSize: () => Promise<[number, number]>;
   setSize: (width: number, height: number) => Promise<void>;
+  setFullscreen: () => Promise<void>;
+  onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => void;
+  removeFullscreenListener: () => void;
 }
 
 export interface StorageResult<T = void> {
@@ -114,6 +117,13 @@ contextBridge.exposeInMainWorld('electronWindow', {
   close: () => ipcRenderer.invoke('window-close'),
   getSize: () => ipcRenderer.invoke('window-get-size'),
   setSize: (width: number, height: number) => ipcRenderer.invoke('window-set-size', width, height),
+  setFullscreen: () => ipcRenderer.invoke('window-set-fullscreen'),
+  onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => {
+    ipcRenderer.on('window-fullscreen-changed', (_event: IpcRendererEvent, data: boolean) => callback(data));
+  },
+  removeFullscreenListener: () => {
+    ipcRenderer.removeAllListeners('window-fullscreen-changed');
+  },
 } satisfies ElectronWindowApi);
 
 // Expose mpv API to the renderer process
