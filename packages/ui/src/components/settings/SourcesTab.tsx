@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Source } from '../../types/electron';
-import { syncAllSources, syncAllVod, markSourceDeleted } from '../../db/sync';
+import { syncAllSources, syncAllVod, markSourceDeleted, unmarkSourceDeleted } from '../../db/sync';
 import { clearSourceData, clearVodData, db } from '../../db';
 import { useSyncStatus } from '../../hooks/useChannels';
 import { useChannelSyncing, useSetChannelSyncing, useVodSyncing, useSetVodSyncing, useUIStore, useUpdateSettings } from '../../stores/uiStore';
@@ -135,6 +135,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
     if (!confirmed) return;
 
     const p = toast.progress(`Removing ${sourceName}…`);
+    const startedAt = Date.now();
     try {
       // Mark source as deleted FIRST - prevents sync from writing results after deletion
       markSourceDeleted(id);
@@ -142,7 +143,8 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       // Clean up all data in IndexedDB before removing source config
       await clearSourceData(id);
       await clearVodData(id);
-      await window.storage.deleteSource(id);
+      const result = await window.storage.deleteSource(id);
+      if (result.error) throw new Error(result.error); // soft IPC error — surface as a failure
 
       // Clean deleted source from priority order lists
       const { liveSourceOrder: lso, vodSourceOrder: vso } = useUIStore.getState().settings;
@@ -158,8 +160,13 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       }
 
       onSourcesChange();
+      // Keep the branded loader visible briefly even when the purge is near-instant.
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < 500) await new Promise((r) => setTimeout(r, 500 - elapsed));
       p.succeed(`Removed ${sourceName}`);
     } catch (err) {
+      // Deletion failed part-way — un-suppress sync for this still-present source.
+      unmarkSourceDeleted(id);
       const msg = err instanceof Error ? err.message : String(err);
       p.fail(`Couldn't remove ${sourceName}`, msg);
     }

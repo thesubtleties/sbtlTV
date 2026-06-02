@@ -1,8 +1,5 @@
 .update-notification {
-  position: fixed;
-  bottom: 97px;
-  right: 24px;
-  z-index: 9999;
+  /* Positioned by the shared .toast-container (bottom-right stack); not fixed itself. */
   background: #1a1a1a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;

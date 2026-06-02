@@ -53,6 +53,11 @@ export function markSourceDeleted(sourceId: string) {
   setTimeout(() => deletedSourceIds.delete(sourceId), 30000);
 }
 
+// Un-suppress a source whose deletion failed part-way (it still exists).
+export function unmarkSourceDeleted(sourceId: string) {
+  deletedSourceIds.delete(sourceId);
+}
+
 function isSourceDeleted(sourceId: string): boolean {
   return deletedSourceIds.has(sourceId);
 }

@@ -60,9 +60,10 @@
 .toast__text span {
   font-size: 12px;
   opacity: 0.8;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3; /* wrap up to 3 lines so error detail stays readable */
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .toast__dismiss {
@@ -110,5 +111,12 @@
   20% {
     transform: scale(1.35);
     opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .sbtl-loader path {
+    animation: none;
   }
 }

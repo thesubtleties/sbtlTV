@@ -56,4 +56,19 @@ describe('toastStore', () => {
     expect(ts).toHaveLength(4);
     expect(ts.map((x) => x.title)).toEqual(['Removing…', 'B', 'C', 'D']); // oldest non-progress ('A') dropped
   });
+
+  it('updateToast on an unknown id is a no-op', () => {
+    const id = useToastStore.getState().addToast({ kind: 'info', title: 'X' });
+    useToastStore.getState().dismissToast(id);
+    useToastStore.getState().updateToast(id, { kind: 'success' }); // stale id — must not throw or re-add
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it('keeps all toasts when every slot is progress (intentional over-cap)', () => {
+    ['P1', 'P2', 'P3', 'P4', 'P5'].forEach((title) =>
+      useToastStore.getState().addToast({ kind: 'progress', title })
+    );
+    expect(useToastStore.getState().toasts).toHaveLength(5);
+    expect(useToastStore.getState().toasts.every((t) => t.kind === 'progress')).toBe(true);
+  });
 });

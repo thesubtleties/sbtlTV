@@ -1,6 +1,6 @@
-import { useToastStore, type Toast } from '../stores/toastStore';
+import { useToastStore } from '../stores/toastStore';
 
-const DURATION = { success: 4000, info: 4000, error: 6000 } as const;
+const DURATION = { success: 4000, info: 4000, error: 8000 } as const;
 
 /**
  * Ergonomic toast helpers. Components call `const toast = useToast()` and fire
@@ -28,7 +28,6 @@ export function useToast() {
           update(id, { kind: 'success', title: t ?? title, message: m, duration: DURATION.success }),
         fail: (t?: string, m?: string) =>
           update(id, { kind: 'error', title: t ?? title, message: m, duration: DURATION.error }),
-        update: (patch: Partial<Omit<Toast, 'id'>>) => update(id, patch),
       };
     },
   };
