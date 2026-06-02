@@ -9,6 +9,8 @@ import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
 import { UpdateNotification } from './components/UpdateNotification';
+import { ToastContainer } from './components/toast/ToastContainer';
+import { useToastStore } from './stores/toastStore';
 import { VideoCanvas } from './components/VideoCanvas';
 import { useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
@@ -586,6 +588,7 @@ function App() {
         const errMsg = err instanceof Error ? err.message : String(err);
         debugLog(`Initial sync failed: ${errMsg}`, 'sync');
         console.error('[App] Initial sync failed:', err);
+        useToastStore.getState().addToast({ kind: 'error', title: 'Sync failed', message: errMsg, duration: 6000 });
       } finally {
         setChannelSyncing(false);
         setVodSyncing(false);
@@ -808,6 +811,9 @@ function App() {
 
       {/* Update notification toast */}
       <UpdateNotification />
+
+      {/* Transient toast stack */}
+      <ToastContainer />
 
       {/* Resize grip for frameless window — Electron frameless windows lack native resize edges */}
       {(window.platform?.isWindows || window.platform?.isLinux) && (

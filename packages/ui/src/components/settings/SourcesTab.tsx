@@ -6,6 +6,7 @@ import { clearSourceData, clearVodData, db } from '../../db';
 import { useSyncStatus } from '../../hooks/useChannels';
 import { useChannelSyncing, useSetChannelSyncing, useVodSyncing, useSetVodSyncing, useUIStore, useUpdateSettings } from '../../stores/uiStore';
 import { parseM3U } from '@sbtltv/local-adapter';
+import { useToast } from '../../hooks/useToast';
 
 interface SourcesTabProps {
   sources: Source[];
@@ -40,6 +41,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<SourceFormData>(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   const [syncError, setSyncError] = useState<string | null>(null);
   const syncStatus = useSyncStatus();
 
@@ -132,28 +134,35 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
     );
     if (!confirmed) return;
 
-    // Mark source as deleted FIRST - prevents sync from writing results after deletion
-    markSourceDeleted(id);
+    const p = toast.progress(`Removing ${sourceName}…`);
+    try {
+      // Mark source as deleted FIRST - prevents sync from writing results after deletion
+      markSourceDeleted(id);
 
-    // Clean up all data in IndexedDB before removing source config
-    await clearSourceData(id);
-    await clearVodData(id);
-    await window.storage.deleteSource(id);
+      // Clean up all data in IndexedDB before removing source config
+      await clearSourceData(id);
+      await clearVodData(id);
+      await window.storage.deleteSource(id);
 
-    // Clean deleted source from priority order lists
-    const { liveSourceOrder: lso, vodSourceOrder: vso } = useUIStore.getState().settings;
-    const cleanedLive = lso?.filter(sid => sid !== id);
-    const cleanedVod = vso?.filter(sid => sid !== id);
-    if (cleanedLive) {
-      updateSettings({ liveSourceOrder: cleanedLive });
-      window.storage?.updateSettings({ liveSourceOrder: cleanedLive });
+      // Clean deleted source from priority order lists
+      const { liveSourceOrder: lso, vodSourceOrder: vso } = useUIStore.getState().settings;
+      const cleanedLive = lso?.filter(sid => sid !== id);
+      const cleanedVod = vso?.filter(sid => sid !== id);
+      if (cleanedLive) {
+        updateSettings({ liveSourceOrder: cleanedLive });
+        window.storage?.updateSettings({ liveSourceOrder: cleanedLive });
+      }
+      if (cleanedVod) {
+        updateSettings({ vodSourceOrder: cleanedVod });
+        window.storage?.updateSettings({ vodSourceOrder: cleanedVod });
+      }
+
+      onSourcesChange();
+      p.succeed(`Removed ${sourceName}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      p.fail(`Couldn't remove ${sourceName}`, msg);
     }
-    if (cleanedVod) {
-      updateSettings({ vodSourceOrder: cleanedVod });
-      window.storage?.updateSettings({ vodSourceOrder: cleanedVod });
-    }
-
-    onSourcesChange();
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -197,6 +206,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
 
     // Append new source to priority order lists (only for new sources, not edits)
     if (!editingId) {
+      toast.success(`Added ${source.name}`);
       const { liveSourceOrder: lso, vodSourceOrder: vso } = useUIStore.getState().settings;
       if (lso && lso.length > 0) {
         const newLive = [...lso, sourceId];
