@@ -231,8 +231,16 @@ async function createWindow(): Promise<void> {
     killMpv();
   });
 
-  mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', true));
-  mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', false));
+  // Drive the renderer's "fullscreen" state (button icon + Esc-to-exit). macOS uses true OS
+  // fullscreen events; Windows/Linux use maximize state (setFullScreen is unreliable on the
+  // transparent window, so "fullscreen" == maximize there).
+  if (process.platform === 'darwin') {
+    mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', true));
+    mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', false));
+  } else {
+    mainWindow.on('maximize', () => mainWindow?.webContents.send('window-fullscreen-changed', true));
+    mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window-fullscreen-changed', false));
+  }
 }
 
 function killMpv(): void {
@@ -770,7 +778,17 @@ ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
 
 ipcMain.handle('window-set-fullscreen', () => {
   if (!mainWindow) return;
-  mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  if (process.platform === 'darwin') {
+    // macOS: opaque window + native mpv texture — true OS fullscreen works.
+    mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  } else {
+    // Windows/Linux: window is transparent (external mpv renders behind) and Electron's
+    // setFullScreen is unreliable on transparent windows — maximize is the working equivalent.
+    // (A "real" taskbar-covering Windows fullscreen would need the transparent/external-mpv
+    // model reworked; deferred.)
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+  }
 });
 
 // IPC Handlers - mpv control
