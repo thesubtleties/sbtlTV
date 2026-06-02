@@ -1,0 +1,114 @@
+.toast-container {
+  position: fixed;
+  /* 97px = NowPlayingBar height — keep in sync with UpdateNotification.css */
+  bottom: 97px;
+  right: 24px;
+  /* z-index 9998 = just under UpdateNotification (9999) so the update chip stays on top */
+  z-index: 9998;
+  display: flex;
+  flex-direction: column-reverse; /* newest toast at the bottom of the stack */
+  gap: 10px;
+  pointer-events: none;
+}
+.toast-container .toast {
+  pointer-events: auto;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 240px;
+  max-width: 360px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #e8e8ea;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
+  animation: toastSlideIn 0.25s ease-out;
+}
+
+.toast__icon {
+  display: flex;
+  flex: 0 0 auto;
+}
+.toast--success .toast__icon {
+  color: #4ade80;
+}
+.toast--error .toast__icon {
+  color: #f87171;
+}
+.toast--info .toast__icon {
+  color: #93c5fd;
+}
+.toast--progress .toast__icon {
+  color: #e8e8ea;
+}
+
+.toast__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.toast__text strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.toast__text span {
+  font-size: 12px;
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast__dismiss {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+  flex: 0 0 auto;
+}
+.toast__dismiss:hover {
+  opacity: 1;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- sbtl sequential-pop loader --- */
+.sbtl-loader path {
+  transform-box: fill-box; /* scale each letter about its own box, not the svg origin */
+  transform-origin: center;
+  animation: sbtl-pop 1.4s ease-in-out infinite;
+}
+/* 4 direct <path> children of SbtlMark's <svg> = the letters s, b, t, l */
+.sbtl-loader path:nth-of-type(1) { animation-delay: 0s; }
+.sbtl-loader path:nth-of-type(2) { animation-delay: 0.15s; }
+.sbtl-loader path:nth-of-type(3) { animation-delay: 0.3s; }
+.sbtl-loader path:nth-of-type(4) { animation-delay: 0.45s; }
+
+@keyframes sbtl-pop {
+  0%, 40%, 100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  20% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+}
