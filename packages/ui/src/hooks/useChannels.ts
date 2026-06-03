@@ -3,6 +3,8 @@ import { db, getLastCategory, setLastCategory } from '../db';
 import type { StoredChannel, StoredCategory, SourceMeta, StoredProgram } from '../db';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useEnabledSourceIds, useLiveSourceOrder, useSourceMap } from './useSourceFiltering';
+import { sortCategoryGroups } from './categorySort';
+import { useCategorySortOrder } from '../stores/uiStore';
 
 // Hook to get all categories across enabled sources
 export function useCategories() {
@@ -280,8 +282,11 @@ export interface GroupedCategory {
     sourceName: string;
     categoryId: string;
     channelCount: number;
+    position: number;        // provider position of this category within its source (Infinity if unknown)
   }[];
   totalCount: number;
+  primaryPriority: number;   // source priority of sources[0] (lower = higher priority)
+  primaryPosition: number;   // position of sources[0]'s category (Infinity if unknown)
 }
 
 // Hook to get categories grouped by name for adaptive display.
@@ -291,6 +296,7 @@ export function useGroupedCategories(): GroupedCategory[] {
   const categoriesWithCounts = useCategoriesWithCounts();
   const liveSourceOrder = useLiveSourceOrder();
   const sourceMap = useSourceMap();
+  const categorySortOrder = useCategorySortOrder();
 
   return useMemo(() => {
     // Group categories by normalized name
@@ -310,6 +316,7 @@ export function useGroupedCategories(): GroupedCategory[] {
         sourceName,
         categoryId: cat.category_id,
         channelCount: cat.channelCount,
+        position: cat.position ?? Number.POSITIVE_INFINITY,
       };
 
       if (existing) {
@@ -320,6 +327,8 @@ export function useGroupedCategories(): GroupedCategory[] {
           name: normalizedName,
           sources: [entry],
           totalCount: cat.channelCount,
+          primaryPriority: 999,
+          primaryPosition: Number.POSITIVE_INFINITY,
         });
       }
     }
@@ -334,11 +343,13 @@ export function useGroupedCategories(): GroupedCategory[] {
           return aIdx - bIdx;
         });
       }
+      // Primary = highest-priority source (sources[0] after the sort above)
+      const primary = group.sources[0];
+      group.primaryPriority = orderIndex.get(primary.sourceId) ?? 999;
+      group.primaryPosition = primary.position;
     }
 
-    // Sort groups alphabetically by name
-    return Array.from(grouped.values()).sort((a, b) =>
-      a.name.localeCompare(b.name)
-    );
-  }, [categoriesWithCounts, liveSourceOrder, sourceMap]);
+    // Sort groups by the active order (alphabetical default, or provider order)
+    return sortCategoryGroups(Array.from(grouped.values()), categorySortOrder);
+  }, [categoriesWithCounts, liveSourceOrder, sourceMap, categorySortOrder]);
 }
