@@ -21,11 +21,12 @@ A desktop IPTV player built with Electron and mpv.
 - **Cross-source Merging** - VOD deduplicates across sources; series gap-fill episodes from other providers
 - **Watchlist & Favorites** - Save movies/series to a watchlist carousel; favorite channels for quick access
 - **Watch Progress** - Resume playback where you left off; progress bars on cards and episodes; works across sources via TMDB matching
+- **Continue Watching** - Resume in-progress movies and episodes from a dedicated row on the Movies and Series homes, with autoplay-next-episode and an end-of-episode "Up Next" prompt
 - **TMDB Integration** - Trending, popular, top-rated, and genre-based browsing; automatic offline metadata matching
 - **Poster Overlays** - Optional rating badges on posters via RPDB
 - **M3U Support** - Import local M3U playlists alongside Xtream sources
-- **EPG from Multiple Sources** - Fetch guide data from your provider or external URLs
-- **Channel Ordering** - Sort channels by provider numbers or alphabetically
+- **EPG from Multiple Sources** - Fetch guide data from your provider or external XMLTV URLs, with multi-strategy channel matching for third-party guides
+- **Channel & Category Ordering** - Sort channels by provider number or alphabetically, and keep categories in your provider's original order (or A-Z)
 - **Offline Storage** - Channels, EPG, and catalog cached locally for fast browsing
 
 ## Installation
