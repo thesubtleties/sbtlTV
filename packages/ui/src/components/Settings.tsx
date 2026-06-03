@@ -52,6 +52,7 @@ export function Settings({ onClose }: SettingsProps) {
 
   // Channel display state
   const [channelSortOrder, setChannelSortOrder] = useState<'alphabetical' | 'number'>('alphabetical');
+  const [categorySortOrder, setCategorySortOrder] = useState<'alphabetical' | 'provider'>('alphabetical');
 
   // Guide appearance state
   const [categoryBarWidth, setCategoryBarWidth] = useState(160);
@@ -130,6 +131,7 @@ export function Settings({ onClose }: SettingsProps) {
 
     // Load channel display settings
     setChannelSortOrder(s.channelSortOrder ?? 'alphabetical');
+    setCategorySortOrder(s.categorySortOrder ?? 'alphabetical');
 
     // Load auto-update setting (default ON)
     setAutoUpdateEnabled(s.autoUpdateEnabled ?? true);
@@ -204,6 +206,8 @@ export function Settings({ onClose }: SettingsProps) {
           <EpgTab
             channelSortOrder={channelSortOrder}
             onChannelSortOrderChange={setChannelSortOrder}
+            categorySortOrder={categorySortOrder}
+            onCategorySortOrderChange={setCategorySortOrder}
             categoryBarWidth={categoryBarWidth}
             guideOpacity={guideOpacity}
             onCategoryBarWidthChange={setCategoryBarWidth}

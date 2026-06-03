@@ -1,8 +1,13 @@
 import { useUpdateSettings } from '../../stores/uiStore';
+import { db } from '../../db';
+import { syncAllSources } from '../../db/sync';
+import { useToast } from '../../hooks/useToast';
 
 interface EpgTabProps {
   channelSortOrder: 'alphabetical' | 'number';
   onChannelSortOrderChange: (order: 'alphabetical' | 'number') => void;
+  categorySortOrder: 'alphabetical' | 'provider';
+  onCategorySortOrderChange: (order: 'alphabetical' | 'provider') => void;
   categoryBarWidth: number;
   guideOpacity: number;
   onCategoryBarWidthChange: (width: number) => void;
@@ -14,6 +19,8 @@ interface EpgTabProps {
 export function EpgTab({
   channelSortOrder,
   onChannelSortOrderChange,
+  categorySortOrder,
+  onCategorySortOrderChange,
   categoryBarWidth,
   guideOpacity,
   onCategoryBarWidthChange,
@@ -22,12 +29,35 @@ export function EpgTab({
   onSportsMatchupChange,
 }: EpgTabProps) {
   const updateSettings = useUpdateSettings();
+  const toast = useToast();
 
   async function handleSortOrderChange(order: 'alphabetical' | 'number') {
     onChannelSortOrderChange(order);
     updateSettings({ channelSortOrder: order });
     if (!window.storage) return;
     await window.storage.updateSettings({ channelSortOrder: order });
+  }
+
+  async function handleCategorySortOrderChange(order: 'alphabetical' | 'provider') {
+    onCategorySortOrderChange(order);
+    updateSettings({ categorySortOrder: order });
+    if (window.storage) {
+      await window.storage.updateSettings({ categorySortOrder: order });
+    }
+
+    // Provider order needs per-category `position`; backfill via resync if absent.
+    if (order === 'provider') {
+      const ready = (await db.categories.where('position').aboveOrEqual(0).count()) > 0;
+      if (!ready) {
+        const t = toast.progress('Preparing provider order…', 'Re-syncing your channels');
+        try {
+          await syncAllSources();
+          t.succeed('Provider order ready');
+        } catch {
+          t.fail('Could not prepare provider order', 'Try syncing from the Sources tab');
+        }
+      }
+    }
   }
 
   async function handleWidthChange(width: number) {
@@ -77,6 +107,23 @@ export function EpgTab({
         <p className="form-hint">
           "Channel Number" uses the order from your provider (Xtream num or M3U tvg-chno).
           Channels without a number will appear at the end, sorted alphabetically.
+        </p>
+
+        <div className="form-group inline">
+          <label>Category Order</label>
+          <select
+            value={categorySortOrder}
+            onChange={(e) => handleCategorySortOrderChange(e.target.value as 'alphabetical' | 'provider')}
+          >
+            <option value="alphabetical">Alphabetical (A-Z)</option>
+            <option value="provider">Provider Order</option>
+          </select>
+        </div>
+
+        <p className="form-hint">
+          "Provider Order" keeps the category arrangement from your source — the
+          folders your provider curated at the top stay on top. With multiple sources,
+          your highest-priority source defines the layout.
         </p>
       </div>
 
