@@ -139,7 +139,7 @@ export function EpgTab({
         </div>
 
         <p className="form-hint">
-          "Provider Order" keeps the category arrangement from your source — the
+          "Provider Order" keeps the category arrangement from your source, so the
           folders your provider curated at the top stay on top. With multiple sources,
           your highest-priority source defines the layout.
         </p>

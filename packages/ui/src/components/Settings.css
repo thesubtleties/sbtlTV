@@ -783,6 +783,12 @@
   margin: 8px 0 0 0;
 }
 
+/* Breathing room when a control directly follows an explanatory hint
+   (e.g. the Category Order control under the Channel Number hint). */
+.epg-tab-scroll .form-hint + .form-group.inline {
+  margin-top: 16px;
+}
+
 .form-hint a {
   color: #00d4ff;
   text-decoration: none;
