@@ -296,6 +296,16 @@ class SbtltvDatabase extends Dexie {
     this.version(13).stores({
       watchProgress: 'id, type, tmdb_id, stream_id, series_tmdb_id, series_stream_id, updated_at, [type+completed]',
     });
+
+    // Index `position` on categories so live categories can be ordered by the
+    // provider's original arrangement (Provider sort). Additive index ONLY — Dexie
+    // builds it in place, existing records preserved (position stays undefined until a
+    // source is next synced). No upgrade callback / no forced resync: backfill for
+    // opt-in users happens via auto-resync-on-enable in the settings UI. The index
+    // powers the readiness check `db.categories.where('position').aboveOrEqual(0)`.
+    this.version(14).stores({
+      categories: 'category_id, source_id, category_name, position',
+    });
   }
 }
 
