@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-06-03
+
+### Added
+- **Continue Watching** - resume in-progress movies and episodes from a row on the VOD home; next-episode autoplay with a manual "Next" control and a setting; remove-from-row action (#65, #66, #67, #68)
+- **Live sports matchup logos** - a conservative EPG-title matcher resolves "Team A at Team B" against a bundled ESPN team directory and shows both teams' logos in the Now Playing bar; settings toggle (default on); falls back to the EPG description, then the channel icon
+- **Fullscreen mode** - f / F11 / player-button toggle with Esc to exit; the title bar stays reachable (its maximize button becomes an exit-fullscreen control). Platform split: true fullscreen on macOS, maximize on Windows/Linux
+- **Scroll-to-top** - re-clicking the active category returns its channel list or VOD grid to the top
+- **Toast notifications** - reusable toast system with a branded loader, wired to remove-source progress, add-source success, and initial-sync failures (#11, #71)
+- **Provider category order** - new "Category Order: Alphabetical | Provider" setting for live TV; Provider mode keeps your source's original category arrangement, with auto-resync to backfill order on enable (#48)
+
 ## [0.7.0] - 2026-04-13
 
 ### Added
