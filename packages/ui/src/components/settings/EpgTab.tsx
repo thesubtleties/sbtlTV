@@ -2,6 +2,7 @@ import { useUpdateSettings } from '../../stores/uiStore';
 import { db } from '../../db';
 import { syncAllSources } from '../../db/sync';
 import { useToast } from '../../hooks/useToast';
+import { debugLog } from '../../utils/debugLog';
 
 interface EpgTabProps {
   channelSortOrder: 'alphabetical' | 'number';
@@ -44,18 +45,35 @@ export function EpgTab({
     if (window.storage) {
       await window.storage.updateSettings({ categorySortOrder: order });
     }
+    if (order !== 'provider') return;
 
     // Provider order needs per-category `position`; backfill via resync if absent.
-    if (order === 'provider') {
+    // syncAllSources() only throws on infra errors — per-source failures come back
+    // in the result map, so inspect it rather than trusting a non-throw as success.
+    let progress: ReturnType<typeof toast.progress> | undefined;
+    try {
       const ready = (await db.categories.where('position').aboveOrEqual(0).count()) > 0;
-      if (!ready) {
-        const t = toast.progress('Preparing provider order…', 'Re-syncing your channels');
-        try {
-          await syncAllSources();
-          t.succeed('Provider order ready');
-        } catch {
-          t.fail('Could not prepare provider order', 'Try syncing from the Sources tab');
-        }
+      if (ready) return;
+
+      progress = toast.progress('Preparing provider order…', 'Re-syncing your channels');
+      const results = await syncAllSources();
+      const failed = [...results.values()].filter((r) => !r.success).length;
+
+      if (results.size === 0) {
+        progress.fail('No channels to sync', 'Add a source in the Sources tab first');
+      } else if (failed === results.size) {
+        progress.fail('Could not prepare provider order', 'Try syncing from the Sources tab');
+      } else if (failed > 0) {
+        progress.succeed('Provider order ready', 'Some sources failed — check the Sources tab');
+      } else {
+        progress.succeed('Provider order ready');
+      }
+    } catch (err) {
+      debugLog(`[category-sort] provider-order resync failed: ${err instanceof Error ? err.message : String(err)}`, 'sync');
+      if (progress) {
+        progress.fail('Could not prepare provider order', 'Try syncing from the Sources tab');
+      } else {
+        toast.error('Could not prepare provider order', 'Try again or restart the app');
       }
     }
   }

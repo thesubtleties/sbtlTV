@@ -3,7 +3,7 @@ import { db, getLastCategory, setLastCategory } from '../db';
 import type { StoredChannel, StoredCategory, SourceMeta, StoredProgram } from '../db';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useEnabledSourceIds, useLiveSourceOrder, useSourceMap } from './useSourceFiltering';
-import { sortCategoryGroups } from './categorySort';
+import { sortCategoryGroups, resolveGroupPrimary } from './categorySort';
 import { useCategorySortOrder } from '../stores/uiStore';
 
 // Hook to get all categories across enabled sources
@@ -333,20 +333,12 @@ export function useGroupedCategories(): GroupedCategory[] {
       }
     }
 
-    // Sort sub-items by live source preference order
+    // Order each group's sub-items by live source priority + resolve its primary
     const orderIndex = new Map(liveSourceOrder.map((id, i) => [id, i]));
     for (const group of grouped.values()) {
-      if (group.sources.length > 1) {
-        group.sources.sort((a, b) => {
-          const aIdx = orderIndex.get(a.sourceId) ?? 999;
-          const bIdx = orderIndex.get(b.sourceId) ?? 999;
-          return aIdx - bIdx;
-        });
-      }
-      // Primary = highest-priority source (sources[0] after the sort above)
-      const primary = group.sources[0];
-      group.primaryPriority = orderIndex.get(primary.sourceId) ?? 999;
-      group.primaryPosition = primary.position;
+      const { primaryPriority, primaryPosition } = resolveGroupPrimary(group.sources, orderIndex);
+      group.primaryPriority = primaryPriority;
+      group.primaryPosition = primaryPosition;
     }
 
     // Sort groups by the active order (alphabetical default, or provider order)

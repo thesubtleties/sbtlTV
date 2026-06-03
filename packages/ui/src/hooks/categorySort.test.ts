@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sortCategoryGroups, type CategorySortable } from './categorySort';
+import { sortCategoryGroups, resolveGroupPrimary, type CategorySortable } from './categorySort';
 
 function g(name: string, primaryPriority: number, primaryPosition: number): CategorySortable {
   return { name, primaryPriority, primaryPosition };
@@ -54,5 +54,43 @@ describe('sortCategoryGroups', () => {
     const input = [g('B', 0, 1), g('A', 0, 0)];
     sortCategoryGroups(input, 'provider');
     expect(input.map((x) => x.name)).toEqual(['B', 'A']);
+  });
+
+  it('returns an empty array in both modes', () => {
+    expect(sortCategoryGroups([], 'alphabetical')).toEqual([]);
+    expect(sortCategoryGroups([], 'provider')).toEqual([]);
+  });
+
+  it('provider mode: same priority and finite position falls back to alpha', () => {
+    const out = sortCategoryGroups(
+      [g('Zebra', 0, 5), g('Apple', 0, 5), g('Mango', 0, 5)],
+      'provider',
+    );
+    expect(out.map((x) => x.name)).toEqual(['Apple', 'Mango', 'Zebra']);
+  });
+});
+
+describe('resolveGroupPrimary', () => {
+  const order = new Map([['s1', 0], ['s2', 1]]);
+
+  it('single source: returns that source priority + position', () => {
+    const sources = [{ sourceId: 's2', position: 4 }];
+    expect(resolveGroupPrimary(sources, order)).toEqual({ primaryPriority: 1, primaryPosition: 4 });
+  });
+
+  it('multi source: sorts sources by priority and reports the top one', () => {
+    const sources = [
+      { sourceId: 's2', position: 0 },
+      { sourceId: 's1', position: 7 },
+    ];
+    const primary = resolveGroupPrimary(sources, order);
+    // sources reordered in place: highest-priority (s1) first
+    expect(sources.map((s) => s.sourceId)).toEqual(['s1', 's2']);
+    expect(primary).toEqual({ primaryPriority: 0, primaryPosition: 7 });
+  });
+
+  it('unknown source (absent from order) gets priority 999', () => {
+    const sources = [{ sourceId: 'ghost', position: 2 }];
+    expect(resolveGroupPrimary(sources, order)).toEqual({ primaryPriority: 999, primaryPosition: 2 });
   });
 });

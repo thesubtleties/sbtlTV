@@ -5,6 +5,30 @@ export interface CategorySortable {
   primaryPosition: number;  // provider position within that source (Infinity if unknown)
 }
 
+const UNKNOWN_SOURCE_PRIORITY = 999;
+
+/**
+ * Order a group's per-source entries by live-source priority (lower index in
+ * `orderIndex` = higher priority; sources absent from the order sink to the end),
+ * then report the resulting primary source's priority + position. Sorts `sources`
+ * in place (the UI renders sub-items in this order) and returns the primary's keys.
+ */
+export function resolveGroupPrimary<T extends { sourceId: string; position: number }>(
+  sources: T[],
+  orderIndex: Map<string, number>,
+): { primaryPriority: number; primaryPosition: number } {
+  sources.sort(
+    (a, b) =>
+      (orderIndex.get(a.sourceId) ?? UNKNOWN_SOURCE_PRIORITY) -
+      (orderIndex.get(b.sourceId) ?? UNKNOWN_SOURCE_PRIORITY),
+  );
+  const primary = sources[0];
+  return {
+    primaryPriority: orderIndex.get(primary.sourceId) ?? UNKNOWN_SOURCE_PRIORITY,
+    primaryPosition: primary.position,
+  };
+}
+
 /**
  * Order category groups for the live strip.
  * - 'alphabetical': by display name (current behavior).
