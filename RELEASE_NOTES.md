@@ -4,7 +4,7 @@ This release is dedicated to [jesmannstl](https://github.com/jesmannstl) of the 
 
 ## Highlights
 
-- **Continue Watching** - pick up movies and episodes where you left off, with next-episode autoplay and a Continue Watching row on the VOD home (#65-#68)
+- **Continue Watching** - pick up movies and episodes where you left off, with autoplay-next-episode plus an end-of-episode "Up Next" prompt, and a Continue Watching row on the Movies and Series homes (#66-#68)
 - **Live sports matchup logos** - team logos appear in the Now Playing bar for recognized games, with a settings toggle (default on)
 - **Fullscreen mode** - f / F11 / player button to enter, Esc to exit, with the title bar still reachable
 - **Provider category order** - keep your provider's original category arrangement instead of forced alphabetical (#48)

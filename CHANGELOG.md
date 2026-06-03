@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [0.8.0] - 2026-06-03
 
 ### Added
-- **Continue Watching** - resume in-progress movies and episodes from a row on the VOD home; next-episode autoplay with a manual "Next" control and a setting; remove-from-row action (#65, #66, #67, #68)
+- **Continue Watching** - resume movies and episodes from a Continue Watching row on the Movies and Series homes; next-episode autoplay with an end-of-episode "Up Next" prompt, a manual Next button in the player, and a setting; watch-progress indicators on episodes; remove-from-row action (#66, #67, #68)
 - **Live sports matchup logos** - a conservative EPG-title matcher resolves "Team A at Team B" against a bundled ESPN team directory and shows both teams' logos in the Now Playing bar; settings toggle (default on); falls back to the EPG description, then the channel icon
 - **Fullscreen mode** - f / F11 / player-button toggle with Esc to exit; the title bar stays reachable (its maximize button becomes an exit-fullscreen control). Platform split: true fullscreen on macOS, maximize on Windows/Linux
 - **Scroll-to-top** - re-clicking the active category returns its channel list or VOD grid to the top
