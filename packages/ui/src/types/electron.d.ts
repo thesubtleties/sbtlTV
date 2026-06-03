@@ -68,6 +68,7 @@ export interface AppSettings {
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
+  categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering (default: alphabetical)
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
   categoryBarWidth?: number;    // Category strip content width in px (default 160)
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)

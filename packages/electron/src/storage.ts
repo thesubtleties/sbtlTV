@@ -35,6 +35,7 @@ interface AppSettings {
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF protection bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering (default: alphabetical)
+  categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering (default: alphabetical)
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
   categoryBarWidth?: number;    // Category strip content width in px (default 160)
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
@@ -58,6 +59,7 @@ interface StoredSettings {
   allowLanSources?: boolean;        // Allow requests to LAN IPs
   debugLoggingEnabled?: boolean;    // Write verbose logs to file
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
+  categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch
   categoryBarWidth?: number;    // Category strip content width in px
   guideOpacity?: number;        // Background opacity for EPG/category/title bar
@@ -203,6 +205,7 @@ export function getSettings(): AppSettings {
   result.allowLanSources = stored.allowLanSources ?? false;
   result.debugLoggingEnabled = stored.debugLoggingEnabled ?? false;
   result.channelSortOrder = stored.channelSortOrder ?? 'alphabetical';
+  result.categorySortOrder = stored.categorySortOrder ?? 'alphabetical';
   result.autoUpdateEnabled = stored.autoUpdateEnabled ?? true;
   result.categoryBarWidth = stored.categoryBarWidth ?? 160;
   result.guideOpacity = stored.guideOpacity ?? 0.95;
@@ -243,6 +246,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.channelSortOrder !== undefined) {
     updated.channelSortOrder = settings.channelSortOrder;
+  }
+  if (settings.categorySortOrder !== undefined) {
+    updated.categorySortOrder = settings.categorySortOrder;
   }
   if (settings.autoUpdateEnabled !== undefined) {
     updated.autoUpdateEnabled = settings.autoUpdateEnabled;

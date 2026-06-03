@@ -94,6 +94,7 @@ interface UIState {
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   channelSortOrder: 'alphabetical',
+  categorySortOrder: 'alphabetical',
   categoryBarWidth: 160,
   guideOpacity: 0.95,
   vodRefreshHours: 24,
@@ -220,6 +221,7 @@ export const useSetCacheClearing = () => useUIStore((s) => s.setCacheClearing);
 
 // Settings selectors (read from settings object, with defaults)
 export const useChannelSortOrder = () => useUIStore((s) => s.settings.channelSortOrder ?? 'alphabetical');
+export const useCategorySortOrder = () => useUIStore((s) => s.settings.categorySortOrder ?? 'alphabetical');
 export const useCategoryBarWidth = () => useUIStore((s) => s.settings.categoryBarWidth ?? 160);
 export const useGuideOpacity = () => useUIStore((s) => s.settings.guideOpacity ?? 0.95);
 export const useTmdbApiKey = () => useUIStore((s) => s.settings.tmdbApiKey ?? null);
