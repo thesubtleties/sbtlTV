@@ -44,6 +44,7 @@ export interface Category {
   category_name: string;
   source_id: string;
   parent_id?: number;     // For hierarchical categories (rare)
+  position?: number;      // Provider arrival index (0-based); captured at sync, used by Provider sort
 }
 
 export interface Channel {

@@ -1,5 +1,6 @@
 import { type Table } from 'dexie';
 import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory, type EpgMapping } from './index';
+import { assignCategoryPositions } from './categoryPosition';
 import { fetchAndParseM3U, XtreamClient, type XmltvProgram, type XmltvChannel } from '@sbtltv/local-adapter';
 import { matchChannelsToEpg } from '../services/epg-matcher';
 import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
@@ -539,7 +540,7 @@ export async function syncSource(source: Source): Promise<SyncResult> {
         await db.channels.bulkPut(channels);
       }
       if (categories.length > 0) {
-        await db.categories.bulkPut(categories);
+        await db.categories.bulkPut(assignCategoryPositions(categories));
       }
 
       // Store sync metadata
