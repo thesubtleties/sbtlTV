@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.1] - 2026-06-08
+
+### Fixed
+- **Windows fullscreen** - f / F11 / the player button now cover the whole screen (taskbar included) and exit cleanly via Esc / f / F11 / the title-bar control. Previously they only maximized the window, leaving the taskbar visible (#76)
+
 ## [0.8.0] - 2026-06-03
 
 ### Added
