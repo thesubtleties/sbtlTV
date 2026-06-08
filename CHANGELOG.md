@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.2] - 2026-06-08
+
+### Fixed
+- **Update notification button** - the "Restart" and "Later" buttons on the in-app update notification are clickable again. They had become unresponsive when the update chip was folded into the toast stack (the container disabled pointer events without re-enabling them on the chip). Updating from Settings was unaffected
+
 ## [0.8.1] - 2026-06-08
 
 ### Fixed

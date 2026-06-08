@@ -1,11 +1,9 @@
-# sbtlTV 0.8.1
+# sbtlTV 0.8.2
 
-A small fix-up release for Windows fullscreen.
+A small fix-up release for the in-app updater.
 
 ## Fixed
 
-- **Windows fullscreen** - pressing f, F11, or the player's fullscreen button now covers the entire screen, taskbar included, instead of only maximizing the window, and exits cleanly with Esc, f, F11, or the title-bar control (#76).
-
-macOS and Linux fullscreen are unchanged.
+- **Update notification button** - the "Restart" and "Later" buttons on the in-app update notification are clickable again. They had become unresponsive after the update chip moved into the toast stack; updating from Settings was unaffected.
 
 See CHANGELOG.md for the full history.
