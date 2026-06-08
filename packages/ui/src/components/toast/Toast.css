@@ -10,7 +10,8 @@
   gap: 10px;
   pointer-events: none;
 }
-.toast-container .toast {
+.toast-container .toast,
+.toast-container .update-notification {
   pointer-events: auto;
 }
 
