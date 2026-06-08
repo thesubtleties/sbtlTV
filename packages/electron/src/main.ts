@@ -46,6 +46,10 @@ let mpvBridge: MpvTextureBridgeType | null = null;
 
 // Track mpv state
 let isShuttingDown = false; // Track if we're intentionally closing
+// Windows fullscreen state — tracked manually because setFullScreen's enter/leave-full-screen
+// events don't fire on the transparent frameless window (and isFullScreen() reads stale there),
+// so we drive the renderer's fullscreen state from this boolean instead.
+let windowsFullscreen = false;
 interface MpvState {
   playing: boolean;
   volume: number;
@@ -232,12 +236,13 @@ async function createWindow(): Promise<void> {
   });
 
   // Drive the renderer's "fullscreen" state (button icon + Esc-to-exit). macOS uses true OS
-  // fullscreen events; Windows/Linux use maximize state (setFullScreen is unreliable on the
-  // transparent window, so "fullscreen" == maximize there).
+  // fullscreen events; Linux uses maximize state. Windows is driven directly from the
+  // window-set-fullscreen handler — setFullScreen DOES cover the screen on the transparent
+  // frameless window, but enter/leave-full-screen never fire there, so events are unreliable.
   if (process.platform === 'darwin') {
     mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', true));
     mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', false));
-  } else {
+  } else if (process.platform === 'linux') {
     mainWindow.on('maximize', () => mainWindow?.webContents.send('window-fullscreen-changed', true));
     mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window-fullscreen-changed', false));
   }
@@ -778,14 +783,19 @@ ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
 
 ipcMain.handle('window-set-fullscreen', () => {
   if (!mainWindow) return;
-  if (process.platform === 'darwin') {
-    // macOS: opaque window + native mpv texture — true OS fullscreen works.
+  if (process.platform === 'win32') {
+    // Windows: transparent frameless window. setFullScreen DOES cover the whole screen
+    // (taskbar included), but enter/leave-full-screen never fire and isFullScreen() reads
+    // stale here — so track the state ourselves and drive the renderer directly. The embedded
+    // --wid mpv child fills the parent's client area, so it follows the window into fullscreen.
+    windowsFullscreen = !windowsFullscreen;
+    mainWindow.setFullScreen(windowsFullscreen);
+    mainWindow.webContents.send('window-fullscreen-changed', windowsFullscreen);
+  } else if (process.platform === 'darwin') {
+    // macOS: opaque window + native mpv texture — true OS fullscreen + enter/leave events work.
     mainWindow.setFullScreen(!mainWindow.isFullScreen());
   } else {
-    // Windows/Linux: window is transparent (external mpv renders behind) and Electron's
-    // setFullScreen is unreliable on transparent windows — maximize is the working equivalent.
-    // (A "real" taskbar-covering Windows fullscreen would need the transparent/external-mpv
-    // model reworked; deferred.)
+    // Linux: separate mpv window; setFullScreen is unreliable, maximize is the working equivalent.
     if (mainWindow.isMaximized()) mainWindow.unmaximize();
     else mainWindow.maximize();
   }
