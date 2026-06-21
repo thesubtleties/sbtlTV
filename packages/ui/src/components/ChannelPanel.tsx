@@ -8,8 +8,9 @@ import { useChannelSortOrder } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import './ChannelPanel.css';
 
-// Width of the channel info column
-const CHANNEL_COLUMN_WIDTH = 280;
+const DEFAULT_CHANNEL_COLUMN_WIDTH = 280;
+const MIN_CHANNEL_COLUMN_WIDTH = 150;
+const MAX_CHANNEL_COLUMN_WIDTH = 450;
 
 interface ChannelPanelProps {
   categoryId: string | null;
@@ -38,6 +39,20 @@ export function ChannelPanel({
   const categories = useCategories();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [availableWidth, setAvailableWidth] = useState(800);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [channelColumnWidth, setChannelColumnWidth] = useState(DEFAULT_CHANNEL_COLUMN_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const channelColumnWidthRef = useRef(DEFAULT_CHANNEL_COLUMN_WIDTH);
+
+  // Keep ref in sync for use inside closures
+  channelColumnWidthRef.current = channelColumnWidth;
+
+  // Filtered channels by search query
+  const displayChannels = useMemo(() => {
+    if (!searchQuery.trim()) return channels;
+    const q = searchQuery.toLowerCase();
+    return channels.filter((ch) => ch.name.toLowerCase().includes(q));
+  }, [channels, searchQuery]);
 
   // Ref for measuring the grid container width
   const gridContainerRef = useRef<HTMLDivElement>(null);
@@ -49,11 +64,15 @@ export function ChannelPanel({
     channelListRef.current?.scrollToIndex({ index: 0 });
   }, [scrollTopNonce]);
 
+  // Scroll to top whenever search changes
+  useEffect(() => {
+    channelListRef.current?.scrollToIndex({ index: 0 });
+  }, [searchQuery]);
+
   // Track window width to differentiate window resize vs category toggle
   const lastWindowWidth = useRef(typeof window !== 'undefined' ? window.innerWidth : 0);
 
   // Measure available width - only recalculate on actual window resize
-  // Category toggles just clip visually (CSS flex handles it)
   useEffect(() => {
     const container = gridContainerRef.current;
     if (!container) return;
@@ -68,32 +87,28 @@ export function ChannelPanel({
       const isWindowResize = currentWindowWidth !== lastWindowWidth.current;
 
       if (isWindowResize) {
-        // Actual window resize - recalculate program positions
         lastWindowWidth.current = currentWindowWidth;
 
         if (rafId === null) {
           rafId = requestAnimationFrame(() => {
-            const width = entry.contentRect.width - CHANNEL_COLUMN_WIDTH;
+            const width = entry.contentRect.width - channelColumnWidthRef.current;
             setAvailableWidth(Math.max(width, 200));
             rafId = null;
           });
         }
       }
-      // Category toggle: skip recalculation, CSS flex handles visual clipping
     });
 
-    // Also listen for actual window resize
     const handleWindowResize = () => {
       const container = gridContainerRef.current;
       if (!container) return;
 
       lastWindowWidth.current = window.innerWidth;
-      const width = container.getBoundingClientRect().width - CHANNEL_COLUMN_WIDTH;
+      const width = container.getBoundingClientRect().width - channelColumnWidthRef.current;
       setAvailableWidth(Math.max(width, 200));
     };
 
-    // Set initial width
-    const initialWidth = container.getBoundingClientRect().width - CHANNEL_COLUMN_WIDTH;
+    const initialWidth = container.getBoundingClientRect().width - channelColumnWidthRef.current;
     setAvailableWidth(Math.max(initialWidth, 200));
 
     observer.observe(container);
@@ -104,6 +119,40 @@ export function ChannelPanel({
       observer.disconnect();
       window.removeEventListener('resize', handleWindowResize);
     };
+  }, []);
+
+  // Recalculate available width when column width changes (drag resize)
+  useEffect(() => {
+    const container = gridContainerRef.current;
+    if (!container) return;
+    const width = container.getBoundingClientRect().width - channelColumnWidth;
+    setAvailableWidth(Math.max(width, 200));
+  }, [channelColumnWidth]);
+
+  // Resize handle drag logic
+  const handleResizeMouseDown = useCallback((e: { preventDefault: () => void; clientX: number }) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = channelColumnWidthRef.current;
+    setIsResizing(true);
+
+    const onMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - startX;
+      const newWidth = Math.max(
+        MIN_CHANNEL_COLUMN_WIDTH,
+        Math.min(MAX_CHANNEL_COLUMN_WIDTH, startWidth + delta)
+      );
+      setChannelColumnWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      setIsResizing(false);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   }, []);
 
   // Time grid state and actions
@@ -120,7 +169,7 @@ export function ChannelPanel({
     goToNow,
   } = useTimeGrid({ availableWidth });
 
-  // Get stream IDs for programs lookup
+  // Get stream IDs for programs lookup (use all channels, not filtered)
   const streamIds = useMemo(() => channels.map((ch) => ch.stream_id), [channels]);
 
   // Fetch programs for the preload window
@@ -137,7 +186,6 @@ export function ChannelPanel({
     if (!visible) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't handle if typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
@@ -171,15 +219,12 @@ export function ChannelPanel({
   // Generate time slots aligned to the grid
   const timeSlots = useMemo(() => {
     const slots: Date[] = [];
-    // Start from the hour at or before windowStart
     const start = new Date(windowStart);
     start.setMinutes(0, 0, 0);
 
-    // Generate slots for each hour in the visible window
     const hoursToShow = Math.ceil(visibleHours) + 1;
     for (let i = 0; i < hoursToShow; i++) {
       const slot = new Date(start.getTime() + i * 60 * 60 * 1000);
-      // Only include if it falls within or slightly before the visible window
       if (slot.getTime() <= windowEnd.getTime()) {
         slots.push(slot);
       }
@@ -200,7 +245,7 @@ export function ChannelPanel({
   return (
     <div
       ref={gridContainerRef}
-      className={`guide-panel ${visible ? 'visible' : 'hidden'} ${categoryStripOpen ? 'with-categories' : ''} ${sidebarExpanded ? 'sidebar-expanded' : ''}`}
+      className={`guide-panel ${visible ? 'visible' : 'hidden'} ${categoryStripOpen ? 'with-categories' : ''} ${sidebarExpanded ? 'sidebar-expanded' : ''} ${isResizing ? 'resizing' : ''}`}
     >
       {/* Top Bar - Time Display & Navigation */}
       <div className="guide-header">
@@ -210,6 +255,38 @@ export function ChannelPanel({
           <span className="guide-channel-count">{channels.length} channels</span>
         </div>
         <div className="guide-header-right">
+          {/* Channel search */}
+          <div className="guide-search-wrapper">
+            <svg className="guide-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              className="guide-search-input"
+              type="text"
+              placeholder="Search channels…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && searchQuery) {
+                  setSearchQuery('');
+                  e.stopPropagation();
+                }
+              }}
+            />
+            {searchQuery && (
+              <button
+                className="guide-search-clear"
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
           {/* Navigation controls */}
           <div className="guide-nav">
             <button className="guide-nav-btn" onClick={goBack} title="Previous hour (←)">
@@ -242,11 +319,10 @@ export function ChannelPanel({
 
       {/* Time Header - Aligned to grid */}
       <div className="guide-time-header">
-        <div className="guide-time-header-spacer" style={{ width: CHANNEL_COLUMN_WIDTH }} />
+        <div className="guide-time-header-spacer" style={{ width: channelColumnWidth }} />
         <div className="guide-time-header-grid">
           {timeSlots.map((slot, i) => {
             const position = getTimeSlotPosition(slot);
-            // Hide if marker would be cut off at left edge or beyond right edge
             if (position < 0 || position > availableWidth) return null;
             return (
               <span
@@ -263,15 +339,24 @@ export function ChannelPanel({
 
       {/* EPG Grid Area */}
       <div className="guide-content">
+        {/* Drag handle for resizing the channel column */}
+        <div
+          className={`guide-resize-handle ${isResizing ? 'active' : ''}`}
+          style={{ left: channelColumnWidth - 2 }}
+          onMouseDown={handleResizeMouseDown}
+          title="Drag to resize channel column"
+        />
+
         <Virtuoso
           ref={channelListRef}
-          data={channels}
+          data={displayChannels}
           className="guide-channels"
           itemContent={(index, channel) => (
             <ChannelRow
               channel={channel}
               index={index}
               sortOrder={channelSortOrder}
+              channelColumnWidth={channelColumnWidth}
               programs={programs.get(channel.stream_id) ?? []}
               windowStart={windowStart}
               windowEnd={windowEnd}
@@ -289,9 +374,18 @@ export function ChannelPanel({
                     <path d="M17 2l-5 5-5-5" />
                   </svg>
                 </div>
-                <h3>No Channels</h3>
-                <p>Sync your sources to load channels</p>
-                <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                {searchQuery ? (
+                  <>
+                    <h3>No results for "{searchQuery}"</h3>
+                    <p>Try a different search term</p>
+                  </>
+                ) : (
+                  <>
+                    <h3>No Channels</h3>
+                    <p>Sync your sources to load channels</p>
+                    <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                  </>
+                )}
               </div>
             ),
           }}
