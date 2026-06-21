@@ -175,6 +175,7 @@
 }
 
 .guide-time-header-spacer {
+  box-sizing: border-box;
   flex-shrink: 0;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -202,11 +203,124 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
+/* Channel search in header */
+.guide-search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.guide-search-icon {
+  position: absolute;
+  left: 8px;
+  color: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.guide-search-input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.8rem;
+  padding: 4px 28px 4px 28px;
+  width: 180px;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.guide-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.guide-search-input:focus {
+  border-color: rgba(0, 212, 255, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.guide-search-clear {
+  position: absolute;
+  right: 6px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  transition: color 0.15s ease;
+}
+
+.guide-search-clear:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 /* Content Area */
 .guide-content {
   flex: 1;
   overflow: hidden;
   display: flex;
+  position: relative;
+}
+
+/* Resize handle between channel column and EPG grid */
+.guide-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  margin-left: -4px;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background 0.15s ease;
+  /* Always-visible red stripe */
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    rgba(220, 60, 60, 0.6) 2px,
+    rgba(220, 60, 60, 0.6) 3px,
+    transparent 3px
+  );
+}
+
+.guide-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 32px;
+  border-radius: 2px;
+  background: rgba(220, 60, 60, 0.8);
+  box-shadow: 0 0 4px rgba(220, 60, 60, 0.5);
+}
+
+.guide-resize-handle:hover,
+.guide-resize-handle.active {
+  background: linear-gradient(
+    to right,
+    transparent 1px,
+    rgba(220, 60, 60, 0.9) 1px,
+    rgba(220, 60, 60, 0.9) 4px,
+    transparent 4px
+  );
+}
+
+.guide-resize-handle:hover::after,
+.guide-resize-handle.active::after {
+  background: rgba(255, 80, 80, 1);
+  box-shadow: 0 0 8px rgba(220, 60, 60, 0.7);
+  height: 48px;
+}
+
+/* Disable text selection while resizing */
+.guide-panel.resizing * {
+  user-select: none;
+  cursor: col-resize !important;
 }
 
 .guide-channels {
@@ -250,6 +364,7 @@
 
 /* Channel Info (left side) */
 .guide-channel-info {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 12px;

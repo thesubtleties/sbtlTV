@@ -3,13 +3,11 @@ import { ProgramBlock, EmptyProgramBlock } from './ProgramBlock';
 import { useIsFavoriteChannel, useToggleFavoriteChannel } from '../hooks/useFavorites';
 import type { StoredChannel, StoredProgram } from '../db';
 
-// Width of the channel info column (must match ChannelPanel)
-const CHANNEL_COLUMN_WIDTH = 280;
-
 interface ChannelRowProps {
   channel: StoredChannel;
   index: number;
   sortOrder: 'alphabetical' | 'number';
+  channelColumnWidth: number;
   programs: StoredProgram[];
   windowStart: Date;
   windowEnd: Date;
@@ -22,6 +20,7 @@ export const ChannelRow = memo(function ChannelRow({
   channel,
   index,
   sortOrder,
+  channelColumnWidth,
   programs,
   windowStart,
   windowEnd,
@@ -45,7 +44,7 @@ export const ChannelRow = memo(function ChannelRow({
       {/* Channel info column */}
       <div
         className="guide-channel-info"
-        style={{ width: CHANNEL_COLUMN_WIDTH, minWidth: CHANNEL_COLUMN_WIDTH }}
+        style={{ width: channelColumnWidth, minWidth: channelColumnWidth }}
         onClick={onPlay}
       >
         <span className="guide-channel-number">{displayNumber}</span>

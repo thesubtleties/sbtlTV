@@ -8,9 +8,9 @@ import { useChannelSortOrder } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import './ChannelPanel.css';
 
-const DEFAULT_CHANNEL_COLUMN_WIDTH = 280;
-const MIN_CHANNEL_COLUMN_WIDTH = 150;
-const MAX_CHANNEL_COLUMN_WIDTH = 450;
+const DEFAULT_CHANNEL_COLUMN_WIDTH = 320;
+const MIN_CHANNEL_COLUMN_WIDTH = 200;
+const MAX_CHANNEL_COLUMN_WIDTH = 500;
 
 interface ChannelPanelProps {
   categoryId: string | null;
@@ -342,7 +342,7 @@ export function ChannelPanel({
         {/* Drag handle for resizing the channel column */}
         <div
           className={`guide-resize-handle ${isResizing ? 'active' : ''}`}
-          style={{ left: channelColumnWidth - 2 }}
+          style={{ left: channelColumnWidth }}
           onMouseDown={handleResizeMouseDown}
           title="Drag to resize channel column"
         />
