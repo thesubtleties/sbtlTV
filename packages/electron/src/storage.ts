@@ -38,6 +38,7 @@ interface AppSettings {
   categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering (default: alphabetical)
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
   categoryBarWidth?: number;    // Category strip content width in px (default 160)
+  channelColumnWidth?: number;  // Guide channel-info column width in px (default 300)
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
@@ -62,6 +63,7 @@ interface StoredSettings {
   categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch
   categoryBarWidth?: number;    // Category strip content width in px
+  channelColumnWidth?: number;  // Guide channel-info column width in px
   guideOpacity?: number;        // Background opacity for EPG/category/title bar
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD
@@ -208,6 +210,7 @@ export function getSettings(): AppSettings {
   result.categorySortOrder = stored.categorySortOrder ?? 'alphabetical';
   result.autoUpdateEnabled = stored.autoUpdateEnabled ?? true;
   result.categoryBarWidth = stored.categoryBarWidth ?? 160;
+  result.channelColumnWidth = stored.channelColumnWidth ?? 300;
   result.guideOpacity = stored.guideOpacity ?? 0.95;
   result.liveSourceOrder = stored.liveSourceOrder;
   result.vodSourceOrder = stored.vodSourceOrder;
@@ -255,6 +258,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.categoryBarWidth !== undefined) {
     updated.categoryBarWidth = settings.categoryBarWidth;
+  }
+  if (settings.channelColumnWidth !== undefined) {
+    updated.channelColumnWidth = settings.channelColumnWidth;
   }
   if (settings.guideOpacity !== undefined) {
     updated.guideOpacity = settings.guideOpacity;
