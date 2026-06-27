@@ -64,6 +64,12 @@ export function ChannelPanel({
     channelListRef.current?.scrollToIndex({ index: 0 });
   }, [searchQuery]);
 
+  // Clear the search when switching categories - the search is scoped to the current category,
+  // so a leftover query would filter the new category against the wrong term.
+  useEffect(() => {
+    setSearchQuery('');
+  }, [categoryId]);
+
   // Track window width to differentiate window resize vs category toggle
   const lastWindowWidth = useRef(typeof window !== 'undefined' ? window.innerWidth : 0);
 
@@ -317,6 +323,7 @@ export function ChannelPanel({
         <Virtuoso
           ref={channelListRef}
           data={displayChannels}
+          computeItemKey={(_, channel) => channel.stream_id}
           className="guide-channels"
           itemContent={(index, channel) => (
             <ChannelRow
