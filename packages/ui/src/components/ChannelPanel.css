@@ -395,3 +395,58 @@
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.3);
 }
+
+/* Channel search (in guide header) */
+.guide-search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.guide-search-icon {
+  position: absolute;
+  left: 8px;
+  color: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.guide-search-input {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.8rem;
+  padding: 4px 28px;
+  width: 180px;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.guide-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.guide-search-input:focus {
+  border-color: rgba(0, 212, 255, 0.4);
+  background: rgba(0, 212, 255, 0.15);
+}
+
+.guide-search-clear {
+  position: absolute;
+  right: 6px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  transition: color 0.15s ease;
+}
+
+.guide-search-clear:hover {
+  color: rgba(255, 255, 255, 0.8);
+}

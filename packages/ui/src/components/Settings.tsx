@@ -56,6 +56,7 @@ export function Settings({ onClose }: SettingsProps) {
 
   // Guide appearance state
   const [categoryBarWidth, setCategoryBarWidth] = useState(160);
+  const [channelColumnWidth, setChannelColumnWidth] = useState(300);
   const [guideOpacity, setGuideOpacity] = useState(0.95);
 
   // Sports matchup state
@@ -138,6 +139,7 @@ export function Settings({ onClose }: SettingsProps) {
 
     // Load guide appearance settings
     setCategoryBarWidth(s.categoryBarWidth ?? 160);
+    setChannelColumnWidth(s.channelColumnWidth ?? 300);
     setGuideOpacity(s.guideOpacity ?? 0.95);
 
     // Load sports matchup setting (default ON)
@@ -209,8 +211,10 @@ export function Settings({ onClose }: SettingsProps) {
             categorySortOrder={categorySortOrder}
             onCategorySortOrderChange={setCategorySortOrder}
             categoryBarWidth={categoryBarWidth}
+            channelColumnWidth={channelColumnWidth}
             guideOpacity={guideOpacity}
             onCategoryBarWidthChange={setCategoryBarWidth}
+            onChannelColumnWidthChange={setChannelColumnWidth}
             onGuideOpacityChange={setGuideOpacity}
             sportsMatchupEnabled={sportsMatchupEnabled}
             onSportsMatchupChange={setSportsMatchupEnabled}
