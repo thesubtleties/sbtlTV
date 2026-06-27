@@ -1,9 +1,13 @@
-# sbtlTV 0.8.2
+# sbtlTV 0.9.0
 
-A small fix-up release for the in-app updater.
+## Added
+
+- **Channel search** - filter the channel list by name right from the guide header, per category. Contributed by [Herbrax](https://github.com/Herbrax) (#82).
+- **Resizable channel column** - a new Channel Column Width control under Settings > Guide Appearance lets you size the channel-info column to taste; it yields on very narrow windows so the program grid stays usable.
+- **Channel-name tooltip** - hover a long, truncated channel name to see the full name.
 
 ## Fixed
 
-- **Update notification button** - the "Restart" and "Later" buttons on the in-app update notification are clickable again. They had become unresponsive after the update chip moved into the toast stack; updating from Settings was unaffected.
+- **VOD home hover** - hovering a cover on the Movies and Series home no longer clips the top of the artwork as it zooms.
 
 See CHANGELOG.md for the full history.

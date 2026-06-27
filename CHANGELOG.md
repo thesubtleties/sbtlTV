@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.0] - 2026-06-27
+
+### Added
+- **Channel search** - filter the channel list by name from a search box in the guide header, per category. Contributed by @Herbrax (#82)
+- **Resizable channel column** - a Channel Column Width control under Settings > Guide Appearance sizes the channel-info column to taste; it yields on very narrow windows so the program grid stays usable
+- **Channel-name tooltip** - hover a long, truncated channel name to see it in full
+
+### Fixed
+- **VOD home hover** - hovering a cover on the Movies and Series home no longer clips the top of the artwork as it zooms
+
 ## [0.8.2] - 2026-06-08
 
 ### Fixed

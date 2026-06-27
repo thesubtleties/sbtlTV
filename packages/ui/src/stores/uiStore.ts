@@ -96,6 +96,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   channelSortOrder: 'alphabetical',
   categorySortOrder: 'alphabetical',
   categoryBarWidth: 160,
+  channelColumnWidth: 300,
   guideOpacity: 0.95,
   vodRefreshHours: 24,
   epgRefreshHours: 6,
@@ -164,9 +165,13 @@ export const useUIStore = create<UIState>((set) => ({
   hydrateSettings: (data) => set({ settings: { ...DEFAULT_SETTINGS, ...data }, settingsLoaded: true }),
   updateSettings: (partial) => set((state) => {
     const merged = { ...state.settings, ...partial };
-    // Clamp categoryBarWidth (120-400) and guideOpacity (0.5-1.0)
+    // Clamp categoryBarWidth (120-400), channelColumnWidth (220-520), and guideOpacity (0.5-1.0)
     if (partial.categoryBarWidth !== undefined) {
       merged.categoryBarWidth = Math.max(120, Math.min(400, merged.categoryBarWidth ?? 160));
+    }
+    if (partial.channelColumnWidth !== undefined) {
+      const val = merged.channelColumnWidth ?? 300;
+      merged.channelColumnWidth = Number.isNaN(val) ? 300 : Math.max(220, Math.min(520, val));
     }
     if (partial.guideOpacity !== undefined) {
       const val = merged.guideOpacity ?? 0.95;
@@ -223,6 +228,7 @@ export const useSetCacheClearing = () => useUIStore((s) => s.setCacheClearing);
 export const useChannelSortOrder = () => useUIStore((s) => s.settings.channelSortOrder ?? 'alphabetical');
 export const useCategorySortOrder = () => useUIStore((s) => s.settings.categorySortOrder ?? 'alphabetical');
 export const useCategoryBarWidth = () => useUIStore((s) => s.settings.categoryBarWidth ?? 160);
+export const useChannelColumnWidth = () => useUIStore((s) => s.settings.channelColumnWidth ?? 300);
 export const useGuideOpacity = () => useUIStore((s) => s.settings.guideOpacity ?? 0.95);
 export const useTmdbApiKey = () => useUIStore((s) => s.settings.tmdbApiKey ?? null);
 export const usePosterDbApiKey = () => useUIStore((s) => s.settings.posterDbApiKey ?? null);

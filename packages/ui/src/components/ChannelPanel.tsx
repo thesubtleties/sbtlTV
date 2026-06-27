@@ -1,15 +1,13 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
 import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { ChannelRow } from './ChannelRow';
-import { useChannelSortOrder } from '../stores/uiStore';
+import { useChannelSortOrder, useChannelColumnWidth } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
+import { filterChannelsByName } from '../utils/channelFilter';
 import './ChannelPanel.css';
-
-// Width of the channel info column
-const CHANNEL_COLUMN_WIDTH = 280;
 
 interface ChannelPanelProps {
   categoryId: string | null;
@@ -38,6 +36,18 @@ export function ChannelPanel({
   const categories = useCategories();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [availableWidth, setAvailableWidth] = useState(800);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Channels filtered by the in-guide search box; the FULL list still drives EPG/program lookups.
+  const displayChannels = useMemo(() => filterChannelsByName(channels, searchQuery), [channels, searchQuery]);
+
+  // Channel column width is a persisted setting; the EFFECTIVE width yields a bit on narrow
+  // windows so the EPG grid never drops below 200px. The ref lets the mount-once ResizeObserver
+  // / resize listener read the live setting value instead of a stale closure.
+  const channelColumnWidth = useChannelColumnWidth();
+  const channelColumnWidthRef = useRef(channelColumnWidth);
+  channelColumnWidthRef.current = channelColumnWidth;
+  const [effectiveColumnWidth, setEffectiveColumnWidth] = useState(channelColumnWidth);
 
   // Ref for measuring the grid container width
   const gridContainerRef = useRef<HTMLDivElement>(null);
@@ -49,32 +59,48 @@ export function ChannelPanel({
     channelListRef.current?.scrollToIndex({ index: 0 });
   }, [scrollTopNonce]);
 
+  // Scroll the channel list to top whenever the search query changes.
+  useEffect(() => {
+    channelListRef.current?.scrollToIndex({ index: 0 });
+  }, [searchQuery]);
+
+  // Clear the search when switching categories - the search is scoped to the current category,
+  // so a leftover query would filter the new category against the wrong term. useLayoutEffect so
+  // the clear lands before paint (no one-frame flash of the new category filtered by the old query).
+  useLayoutEffect(() => {
+    setSearchQuery('');
+  }, [categoryId]);
+
   // Track window width to differentiate window resize vs category toggle
   const lastWindowWidth = useRef(typeof window !== 'undefined' ? window.innerWidth : 0);
 
-  // Measure available width - only recalculate on actual window resize
-  // Category toggles just clip visually (CSS flex handles it)
+  // Recompute the effective column width + remaining grid width from the live container size.
+  // effective = min(setting, container - 200) so a narrow window lets the column yield rather
+  // than starving the EPG; availableWidth = container - effective (floored at 200).
+  const measureWidths = useCallback(() => {
+    const container = gridContainerRef.current;
+    if (!container) return;
+    const containerWidth = container.getBoundingClientRect().width;
+    const effective = Math.min(channelColumnWidthRef.current, Math.max(0, containerWidth - 200));
+    setEffectiveColumnWidth(effective);
+    setAvailableWidth(Math.max(containerWidth - effective, 200));
+  }, []);
+
+  // Measure on actual window resize only (category toggles just clip visually - CSS flex handles it).
   useEffect(() => {
     const container = gridContainerRef.current;
     if (!container) return;
 
     let rafId: number | null = null;
 
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-
+    const observer = new ResizeObserver(() => {
       const currentWindowWidth = window.innerWidth;
       const isWindowResize = currentWindowWidth !== lastWindowWidth.current;
-
       if (isWindowResize) {
-        // Actual window resize - recalculate program positions
         lastWindowWidth.current = currentWindowWidth;
-
         if (rafId === null) {
           rafId = requestAnimationFrame(() => {
-            const width = entry.contentRect.width - CHANNEL_COLUMN_WIDTH;
-            setAvailableWidth(Math.max(width, 200));
+            measureWidths();
             rafId = null;
           });
         }
@@ -82,19 +108,12 @@ export function ChannelPanel({
       // Category toggle: skip recalculation, CSS flex handles visual clipping
     });
 
-    // Also listen for actual window resize
     const handleWindowResize = () => {
-      const container = gridContainerRef.current;
-      if (!container) return;
-
       lastWindowWidth.current = window.innerWidth;
-      const width = container.getBoundingClientRect().width - CHANNEL_COLUMN_WIDTH;
-      setAvailableWidth(Math.max(width, 200));
+      measureWidths();
     };
 
-    // Set initial width
-    const initialWidth = container.getBoundingClientRect().width - CHANNEL_COLUMN_WIDTH;
-    setAvailableWidth(Math.max(initialWidth, 200));
+    measureWidths(); // initial
 
     observer.observe(container);
     window.addEventListener('resize', handleWindowResize);
@@ -104,7 +123,12 @@ export function ChannelPanel({
       observer.disconnect();
       window.removeEventListener('resize', handleWindowResize);
     };
-  }, []);
+  }, [measureWidths]);
+
+  // Recompute when the channel column width setting (slider) changes.
+  useEffect(() => {
+    measureWidths();
+  }, [channelColumnWidth, measureWidths]);
 
   // Time grid state and actions
   const {
@@ -207,9 +231,43 @@ export function ChannelPanel({
         <div className="guide-header-left">
           <span className="guide-current-time">{formatTime(currentTime)}</span>
           <span className="guide-category">{categoryName}</span>
-          <span className="guide-channel-count">{channels.length} channels</span>
+          <span className="guide-channel-count">
+            {searchQuery.trim() ? `${displayChannels.length} of ${channels.length}` : `${channels.length} channels`}
+          </span>
         </div>
         <div className="guide-header-right">
+          {/* Channel search */}
+          <div className="guide-search-wrapper">
+            <svg className="guide-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              className="guide-search-input"
+              type="text"
+              placeholder="Search channels…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && searchQuery) {
+                  setSearchQuery('');
+                  e.stopPropagation();
+                }
+              }}
+            />
+            {searchQuery && (
+              <button
+                className="guide-search-clear"
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
           {/* Navigation controls */}
           <div className="guide-nav">
             <button className="guide-nav-btn" onClick={goBack} title="Previous hour (←)">
@@ -242,7 +300,7 @@ export function ChannelPanel({
 
       {/* Time Header - Aligned to grid */}
       <div className="guide-time-header">
-        <div className="guide-time-header-spacer" style={{ width: CHANNEL_COLUMN_WIDTH }} />
+        <div className="guide-time-header-spacer" style={{ width: effectiveColumnWidth }} />
         <div className="guide-time-header-grid">
           {timeSlots.map((slot, i) => {
             const position = getTimeSlotPosition(slot);
@@ -265,13 +323,15 @@ export function ChannelPanel({
       <div className="guide-content">
         <Virtuoso
           ref={channelListRef}
-          data={channels}
+          data={displayChannels}
+          computeItemKey={(_, channel) => channel.stream_id}
           className="guide-channels"
           itemContent={(index, channel) => (
             <ChannelRow
               channel={channel}
               index={index}
               sortOrder={channelSortOrder}
+              channelColumnWidth={effectiveColumnWidth}
               programs={programs.get(channel.stream_id) ?? []}
               windowStart={windowStart}
               windowEnd={windowEnd}
@@ -289,9 +349,18 @@ export function ChannelPanel({
                     <path d="M17 2l-5 5-5-5" />
                   </svg>
                 </div>
-                <h3>No Channels</h3>
-                <p>Sync your sources to load channels</p>
-                <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                {searchQuery.trim() ? (
+                  <>
+                    <h3>No results for "{searchQuery}"</h3>
+                    <p>Try a different search term</p>
+                  </>
+                ) : (
+                  <>
+                    <h3>No Channels</h3>
+                    <p>Sync your sources to load channels</p>
+                    <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                  </>
+                )}
               </div>
             ),
           }}

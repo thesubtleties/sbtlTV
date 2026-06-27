@@ -10,8 +10,10 @@ interface EpgTabProps {
   categorySortOrder: 'alphabetical' | 'provider';
   onCategorySortOrderChange: (order: 'alphabetical' | 'provider') => void;
   categoryBarWidth: number;
+  channelColumnWidth: number;
   guideOpacity: number;
   onCategoryBarWidthChange: (width: number) => void;
+  onChannelColumnWidthChange: (width: number) => void;
   onGuideOpacityChange: (opacity: number) => void;
   sportsMatchupEnabled: boolean;
   onSportsMatchupChange: (enabled: boolean) => void;
@@ -23,8 +25,10 @@ export function EpgTab({
   categorySortOrder,
   onCategorySortOrderChange,
   categoryBarWidth,
+  channelColumnWidth,
   guideOpacity,
   onCategoryBarWidthChange,
+  onChannelColumnWidthChange,
   onGuideOpacityChange,
   sportsMatchupEnabled,
   onSportsMatchupChange,
@@ -83,6 +87,13 @@ export function EpgTab({
     updateSettings({ categoryBarWidth: width });
     if (!window.storage) return;
     await window.storage.updateSettings({ categoryBarWidth: width });
+  }
+
+  async function handleChannelWidthChange(width: number) {
+    onChannelColumnWidthChange(width);
+    updateSettings({ channelColumnWidth: width });
+    if (!window.storage) return;
+    await window.storage.updateSettings({ channelColumnWidth: width });
   }
 
   async function handleOpacityChange(pct: number) {
@@ -151,7 +162,7 @@ export function EpgTab({
         </div>
 
         <p className="section-description">
-          Adjust the category sidebar width and background opacity of the guide overlay.
+          Adjust the category sidebar width, channel column width, and background opacity of the guide overlay.
         </p>
 
         <div className="form-group">
@@ -165,6 +176,24 @@ export function EpgTab({
             value={categoryBarWidth}
             onChange={(e) => handleWidthChange(Number(e.target.value))}
             aria-label="Category sidebar width"
+          />
+          <div className="slider-labels">
+            <span>Narrow</span>
+            <span>Wide</span>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>Channel Column Width</label>
+          <input
+            type="range"
+            className="settings-slider"
+            min={220}
+            max={520}
+            step={10}
+            value={channelColumnWidth}
+            onChange={(e) => handleChannelWidthChange(Number(e.target.value))}
+            aria-label="Channel column width"
           />
           <div className="slider-labels">
             <span>Narrow</span>

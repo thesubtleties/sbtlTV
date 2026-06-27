@@ -87,7 +87,10 @@
 .carousel__track {
   display: flex;
   gap: 12px;
-  padding: 4px 48px 12px;
+  /* Top-weighted padding gives the hover scale(1.05) headroom so it isn't clipped by the
+     carousel's fixed height + overflow:hidden. Net vertical padding unchanged (16px) so the
+     row height and Virtuoso fixedItemHeight stay constant. */
+  padding: 12px 48px 4px;
 }
 
 /* Scroll fade indicators */
@@ -155,7 +158,7 @@
   }
 
   .carousel__track {
-    padding: 4px 24px 12px;
+    padding: 12px 24px 4px;
     gap: 10px;
   }
 
