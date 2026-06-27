@@ -443,10 +443,28 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 2px;
+  border-radius: 4px;
   transition: color 0.15s ease;
 }
 
 .guide-search-clear:hover {
   color: rgba(255, 255, 255, 0.8);
+}
+
+/* Very narrow windows: drop the search box onto its own full-width line below the nav/close,
+   so a slim horizontal layout doesn't crowd or overflow the guide header. */
+@media (max-width: 860px) {
+  .guide-header-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .guide-search-wrapper {
+    order: 1; /* push the search after (below) the nav + close buttons */
+    flex-basis: 100%;
+    margin-top: 8px;
+  }
+  .guide-search-input {
+    width: 100%;
+    box-sizing: border-box;
+  }
 }

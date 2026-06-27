@@ -19,4 +19,9 @@ describe('filterChannelsByName', () => {
   it('returns an empty array when nothing matches', () => {
     expect(filterChannelsByName(channels, 'xyz')).toEqual([]);
   });
+
+  it('does not crash on a channel with a null/undefined name', () => {
+    const withBad = [{ name: null } as unknown as StoredChannel, ch('BBC One')];
+    expect(filterChannelsByName(withBad, 'bbc').map((c) => c.name)).toEqual(['BBC One']);
+  });
 });

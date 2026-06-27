@@ -9,5 +9,7 @@ import type { StoredChannel } from '../db';
 export function filterChannelsByName(channels: StoredChannel[], query: string): StoredChannel[] {
   const q = query.trim().toLowerCase();
   if (!q) return channels;
-  return channels.filter((ch) => ch.name.toLowerCase().includes(q));
+  // Guard the name: a channel with a null/undefined name from bad provider data must not crash
+  // the whole panel (this runs inside a useMemo in ChannelPanel).
+  return channels.filter((ch) => (ch.name ?? '').toLowerCase().includes(q));
 }

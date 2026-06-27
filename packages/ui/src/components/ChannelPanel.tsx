@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
 import { useFavoriteChannels } from '../hooks/useFavorites';
@@ -65,8 +65,9 @@ export function ChannelPanel({
   }, [searchQuery]);
 
   // Clear the search when switching categories - the search is scoped to the current category,
-  // so a leftover query would filter the new category against the wrong term.
-  useEffect(() => {
+  // so a leftover query would filter the new category against the wrong term. useLayoutEffect so
+  // the clear lands before paint (no one-frame flash of the new category filtered by the old query).
+  useLayoutEffect(() => {
     setSearchQuery('');
   }, [categoryId]);
 
