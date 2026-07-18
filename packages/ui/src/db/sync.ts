@@ -3,6 +3,7 @@ import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram,
 import { assignCategoryPositions } from './categoryPosition';
 import { fetchAndParseM3U, XtreamClient, type XmltvProgram, type XmltvChannel } from '@sbtltv/local-adapter';
 import { matchChannelsToEpg } from '../services/epg-matcher';
+import { buildChannelMap } from '../services/epg-channel-map';
 import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
 import { getEnrichedMovieExports, getEnrichedTvExports, findBestMatch, extractMatchParams } from '../services/tmdb-exports';
 import { useUIStore } from '../stores/uiStore';
@@ -242,25 +243,6 @@ async function fetchXmltvFromUrls(epgUrlStr: string, providerChannels?: Channel[
   return { programs, channels };
 }
 
-// Build a channelMap (xmltv_channel_id → stream_id) using EPG mappings + exact fallback
-function buildChannelMap(channels: Channel[], mappings: EpgMapping[]): Map<string, string> {
-  const channelMap = new Map<string, string>();
-
-  // Mappings take priority (fuzzy-matched channels)
-  for (const m of mappings) {
-    channelMap.set(m.xmltv_channel_id, m.stream_id);
-  }
-
-  // Also include exact epg_channel_id matches as fallback (provider's own EPG case)
-  for (const ch of channels) {
-    if (ch.epg_channel_id && !channelMap.has(ch.epg_channel_id)) {
-      channelMap.set(ch.epg_channel_id, ch.stream_id);
-    }
-  }
-
-  return channelMap;
-}
-
 // Sync EPG from XMLTV URL(s) for M3U sources
 async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[]): Promise<EpgSyncResult> {
   debugLog(`Starting M3U EPG sync`, 'epg');
@@ -282,6 +264,9 @@ async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[
       }
       const strategyStr = [...byStrategy.entries()].map(([s, n]) => `${s}=${n}`).join(', ');
       debugLog(`EPG matching: ${mappings.length}/${channels.length} channels matched (${strategyStr})`, 'epg');
+      // Mapping IDs are stream-specific. Remove records written by older
+      // versions so duplicate/blank provider EPG IDs cannot leave stale rows.
+      await db.epgMappings.where('[source_id+epg_source]').equals([source.id, epgUrl]).delete();
       await db.epgMappings.bulkPut(mappings);
     }
 
@@ -296,17 +281,19 @@ async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[
 
     for (let i = 0; i < xmltvPrograms.length; i++) {
       const prog = xmltvPrograms[i];
-      const streamId = channelMap.get(prog.channel_id);
-      if (streamId) {
-        storedPrograms.push({
-          id: `${source.id}-${streamId}-${prog.start.getTime()}`,
-          stream_id: streamId,
-          title: prog.title,
-          description: prog.description,
-          start: prog.start,
-          end: prog.stop,
-          source_id: source.id,
-        });
+      const streamIds = channelMap.get(prog.channel_id);
+      if (streamIds?.size) {
+        for (const streamId of streamIds) {
+          storedPrograms.push({
+            id: `${source.id}-${streamId}-${prog.start.getTime()}`,
+            stream_id: streamId,
+            title: prog.title,
+            description: prog.description,
+            start: prog.start,
+            end: prog.stop,
+            source_id: source.id,
+          });
+        }
       } else {
         unmatchedChannels.add(prog.channel_id);
       }
@@ -315,7 +302,7 @@ async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[
       }
     }
 
-    debugLog(`Matched ${storedPrograms.length}/${xmltvPrograms.length} programs (${unmatchedChannels.size} unmatched EPG channels)`, 'epg');
+    debugLog(`Stored ${storedPrograms.length} program records from ${xmltvPrograms.length} XMLTV programmes (${unmatchedChannels.size} unmatched EPG channels)`, 'epg');
 
     // SAFETY: Only clear old data if we have new data to replace it
     if (storedPrograms.length === 0) {
@@ -380,6 +367,7 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<Ep
       }
       const strategyStr = [...byStrategy.entries()].map(([s, n]) => `${s}=${n}`).join(', ');
       debugLog(`EPG matching: ${mappings.length}/${channels.length} channels matched (${strategyStr})`, 'epg');
+      await db.epgMappings.where('[source_id+epg_source]').equals([source.id, epgSource]).delete();
       await db.epgMappings.bulkPut(mappings);
     }
 
@@ -392,23 +380,25 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<Ep
     const unmatchedChannels = new Set<string>();
 
     for (const prog of xmltvPrograms) {
-      const streamId = channelMap.get(prog.channel_id);
-      if (streamId) {
-        storedPrograms.push({
-          id: `${source.id}-${streamId}-${prog.start.getTime()}`,
-          stream_id: streamId,
-          title: prog.title,
-          description: prog.description,
-          start: prog.start,
-          end: prog.stop,
-          source_id: source.id,
-        });
+      const streamIds = channelMap.get(prog.channel_id);
+      if (streamIds?.size) {
+        for (const streamId of streamIds) {
+          storedPrograms.push({
+            id: `${source.id}-${streamId}-${prog.start.getTime()}`,
+            stream_id: streamId,
+            title: prog.title,
+            description: prog.description,
+            start: prog.start,
+            end: prog.stop,
+            source_id: source.id,
+          });
+        }
       } else {
         unmatchedChannels.add(prog.channel_id);
       }
     }
 
-    debugLog(`Matched ${storedPrograms.length}/${xmltvPrograms.length} programs (${unmatchedChannels.size} unmatched EPG channels)`, 'epg');
+    debugLog(`Stored ${storedPrograms.length} program records from ${xmltvPrograms.length} XMLTV programmes (${unmatchedChannels.size} unmatched EPG channels)`, 'epg');
 
     // SAFETY: Only clear old data if we have new data to replace it
     if (storedPrograms.length === 0) {
