@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.1] - 2026-07-23
+
+### Fixed
+- **EPG for duplicate channel variants** - when a provider lists the same channel several times (HD, FHD, HEVC, backup), every variant now shows its guide data instead of only one of them. Reported and prototyped by @JiggsNephron (#87, #88)
+
 ## [0.9.0] - 2026-06-27
 
 ### Added
