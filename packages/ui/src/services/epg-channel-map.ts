@@ -24,7 +24,8 @@ export function buildChannelMap(
     streamIds.add(streamId);
   };
 
-  // Matcher results take priority, but do not overwrite sibling variants.
+  // Add matcher results first; the exact-id fallback below adds to the same set
+  // via Set.add (never replacing), so a stream can be reached through either path.
   for (const mapping of mappings) {
     addStream(mapping.xmltv_channel_id, mapping.stream_id);
   }
@@ -68,7 +69,7 @@ export interface FanOutSummary {
   multiStreamChannels: number;  // XMLTV channels feeding more than one stream
   maxFanOut: number;            // widest single fan-out
   maxFanOutChannelId: string | null;
-  totalStreamLinks: number;     // stored records per XMLTV programme set
+  totalStreamLinks: number;     // sum of fan-out widths across all XMLTV channels (storage multiplier)
 }
 
 /**

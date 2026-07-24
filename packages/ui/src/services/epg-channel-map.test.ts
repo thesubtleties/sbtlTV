@@ -48,11 +48,10 @@ describe('buildChannelMap', () => {
     ];
     const mappings = channels.map((item) => mapping(item.stream_id, 'sports.example'));
 
-    expect([...buildChannelMap(channels, mappings).get('sports.example')!]).toEqual([
-      'sports-hd',
-      'sports-fhd',
-      'sports-hevc',
-    ]);
+    // Set equality, not array order: the contract is "every variant is present".
+    expect(buildChannelMap(channels, mappings).get('sports.example')).toEqual(
+      new Set(['sports-hd', 'sports-fhd', 'sports-hevc']),
+    );
   });
 
   it('fans out duplicate provider IDs through the exact fallback', () => {
@@ -61,10 +60,9 @@ describe('buildChannelMap', () => {
       channel('news-backup', 'news.example'),
     ];
 
-    expect([...buildChannelMap(channels, []).get('news.example')!]).toEqual([
-      'news-hd',
-      'news-backup',
-    ]);
+    expect(buildChannelMap(channels, []).get('news.example')).toEqual(
+      new Set(['news-hd', 'news-backup']),
+    );
   });
 
   it('does not duplicate a stream present in both matching and fallback paths', () => {
@@ -86,12 +84,18 @@ describe('expandProgramToStreams', () => {
 
     const records = expandProgramToStreams(program('sports.example', 1_700_000_000_000), streams, 'source');
 
-    expect(records.map((record) => record.stream_id)).toEqual(['sports-hd', 'sports-fhd', 'sports-hevc']);
-    expect(records.map((record) => record.id)).toEqual([
-      'source-sports-hd-1700000000000',
-      'source-sports-fhd-1700000000000',
-      'source-sports-hevc-1700000000000',
-    ]);
+    // One record per stream, matched by content rather than order.
+    expect(records).toHaveLength(3);
+    expect(new Set(records.map((record) => record.stream_id))).toEqual(
+      new Set(['sports-hd', 'sports-fhd', 'sports-hevc']),
+    );
+    expect(new Set(records.map((record) => record.id))).toEqual(
+      new Set([
+        'source-sports-hd-1700000000000',
+        'source-sports-fhd-1700000000000',
+        'source-sports-hevc-1700000000000',
+      ]),
+    );
   });
 
   it('carries programme metadata across and maps stop to end', () => {

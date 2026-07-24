@@ -278,12 +278,10 @@ async function syncEpgFromUrl(source: Source, epgUrl: string, channels: Channel[
       }
       const strategyStr = [...byStrategy.entries()].map(([s, n]) => `${s}=${n}`).join(', ');
       debugLog(`EPG matching: ${mappings.length}/${channels.length} channels matched (${strategyStr})`, 'epg');
-      // Mapping IDs are keyed on stream_id. Replace the whole set atomically so
-      // rows written by the older epg_channel_id format cannot linger.
-      await db.transaction('rw', db.epgMappings, async () => {
-        await db.epgMappings.where('[source_id+epg_source]').equals([source.id, epgUrl]).delete();
-        await db.epgMappings.bulkPut(mappings);
-      });
+      // clearSourceData (syncSource) / the explicit clear in rematchEpg already
+      // wiped every epgMappings row for this source before we got here, so a plain
+      // put is enough - no stale rows from the older epg_channel_id id format survive.
+      await db.epgMappings.bulkPut(mappings);
     }
 
     // Build channel map from mappings + exact fallback
@@ -374,12 +372,10 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<Ep
       }
       const strategyStr = [...byStrategy.entries()].map(([s, n]) => `${s}=${n}`).join(', ');
       debugLog(`EPG matching: ${mappings.length}/${channels.length} channels matched (${strategyStr})`, 'epg');
-      // Mapping IDs are keyed on stream_id. Replace the whole set atomically so
-      // rows written by the older epg_channel_id format cannot linger.
-      await db.transaction('rw', db.epgMappings, async () => {
-        await db.epgMappings.where('[source_id+epg_source]').equals([source.id, epgSource]).delete();
-        await db.epgMappings.bulkPut(mappings);
-      });
+      // clearSourceData (syncSource) / the explicit clear in rematchEpg already
+      // wiped every epgMappings row for this source before we got here, so a plain
+      // put is enough - no stale rows from the older epg_channel_id id format survive.
+      await db.epgMappings.bulkPut(mappings);
     }
 
     // Build channel map from mappings + exact fallback
