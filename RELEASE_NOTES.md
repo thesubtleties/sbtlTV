@@ -1,13 +1,7 @@
-# sbtlTV 0.9.0
-
-## Added
-
-- **Channel search** - filter the channel list by name right from the guide header, per category. Contributed by [Herbrax](https://github.com/Herbrax) (#82).
-- **Resizable channel column** - a new Channel Column Width control under Settings > Guide Appearance lets you size the channel-info column to taste; it yields on very narrow windows so the program grid stays usable.
-- **Channel-name tooltip** - hover a long, truncated channel name to see the full name.
+# sbtlTV 0.9.1
 
 ## Fixed
 
-- **VOD home hover** - hovering a cover on the Movies and Series home no longer clips the top of the artwork as it zooms.
+- **EPG for duplicate channel variants** - when a provider lists the same channel several times (HD, FHD, HEVC, backup), every variant now shows its guide data instead of only one of them. Applies on the next EPG refresh; if your EPG refresh is set to Manual only, use Sync Now to pick it up. Reported and prototyped by [JiggsNephron](https://github.com/JiggsNephron) (#87, #88).
 
 See CHANGELOG.md for the full history.
