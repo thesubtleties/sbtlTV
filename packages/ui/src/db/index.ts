@@ -105,7 +105,7 @@ export type MatchStrategy =
 
 // EPG channel mapping (external EPG → provider channels)
 export interface EpgMapping {
-  id: string;                  // `${source_id}::${epg_source}::${epg_channel_id}`
+  id: string;                  // `${source_id}::${epg_source}::${stream_id}`
   source_id: string;
   epg_channel_id: string;      // Provider's epg_channel_id
   xmltv_channel_id: string;    // Matched XMLTV channel ID

@@ -115,7 +115,9 @@ export function matchChannelsToEpg(
     if (matched.has(ch.stream_id)) return;
     matched.add(ch.stream_id);
     mappings.push({
-      id: `${sourceId}::${epgSource}::${ch.epg_channel_id}`,
+      // stream_id makes the primary key unique when channel variants share an
+      // epg_channel_id (or when the provider leaves that ID blank).
+      id: `${sourceId}::${epgSource}::${ch.stream_id}`,
       source_id: sourceId,
       epg_channel_id: ch.epg_channel_id,
       xmltv_channel_id: xmltvId,
