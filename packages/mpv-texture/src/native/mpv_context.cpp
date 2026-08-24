@@ -3,6 +3,7 @@
  */
 
 #include "mpv_context.h"
+#include "mpv_api.h"
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -193,6 +194,12 @@ bool MpvContext::create(const MpvConfig& config) {
 
     m_config = config;
 
+    std::string mpvLoadError;
+    if (!mpvApi().load(mpvLoadError)) {
+        if (m_errorCallback) m_errorCallback("Failed to load libmpv: " + mpvLoadError);
+        return false;
+    }
+
 #ifdef _WIN32
     // Create Windows GL context first (required for WGL extensions)
     if (!createWindowsGLContext()) {
@@ -224,8 +231,10 @@ bool MpvContext::create(const MpvConfig& config) {
     m_glContext = static_cast<void*>(g_linuxEglContext.get());
 #endif
 
+    if (config.debugLogging) std::cout << "[MpvContext] Creating libmpv handle" << std::endl;
+
     // Create mpv handle
-    m_mpv = mpv_create();
+    m_mpv = mpvApi().create();
     if (!m_mpv) {
         if (m_errorCallback) {
             m_errorCallback("Failed to create mpv context");
@@ -234,30 +243,47 @@ bool MpvContext::create(const MpvConfig& config) {
     }
 
     // Set options before initialization
-    mpv_set_option_string(m_mpv, "vo", config.vo.c_str());
-    mpv_set_option_string(m_mpv, "hwdec", config.hwdec.c_str());
-    mpv_set_option_string(m_mpv, "keep-open", "yes");
-    mpv_set_option_string(m_mpv, "idle", "yes");
-    mpv_set_option_string(m_mpv, "terminal", "no");
-    mpv_set_option_string(m_mpv, "msg-level", "all=v");
+    mpvApi().setOptionString(m_mpv, "vo", config.vo.c_str());
+    mpvApi().setOptionString(m_mpv, "hwdec", config.hwdec.c_str());
+    mpvApi().setOptionString(m_mpv, "keep-open", "yes");
+    mpvApi().setOptionString(m_mpv, "idle", "yes");
+    mpvApi().setOptionString(m_mpv, "terminal", "no");
+    mpvApi().setOptionString(m_mpv, "osc", "no");
+    mpvApi().setOptionString(m_mpv, "load-scripts", "no");
+    mpvApi().setOptionString(m_mpv, "load-console", "no");
+    mpvApi().setOptionString(m_mpv, "load-context-menu", "no");
+    mpvApi().setOptionString(m_mpv, "load-commands", "no");
+    mpvApi().setOptionString(m_mpv, "load-positioning", "no");
+    mpvApi().setOptionString(m_mpv, "load-select", "no");
+    mpvApi().setOptionString(m_mpv, "load-stats-overlay", "no");
+    mpvApi().setOptionString(m_mpv, "input-default-bindings", "no");
+    mpvApi().setOptionString(m_mpv, "msg-level", "all=v");
+#ifdef __linux__
+    // The PipeWire client library cannot safely cross Electron's FFmpeg
+    // isolation boundary. PulseAudio remains available through PipeWire's
+    // compatibility server on current Linux desktops.
+    mpvApi().setOptionString(m_mpv, "ao", "pulse,alsa");
+#endif
 
     // Initialize mpv
-    if (mpv_initialize(m_mpv) < 0) {
+    if (config.debugLogging) std::cout << "[MpvContext] Initializing libmpv" << std::endl;
+    if (mpvApi().initialize(m_mpv) < 0) {
         if (m_errorCallback) {
             m_errorCallback("Failed to initialize mpv");
         }
-        mpv_destroy(m_mpv);
+        mpvApi().destroy(m_mpv);
         m_mpv = nullptr;
         return false;
     }
 
     // Create texture sharing
+    if (config.debugLogging) std::cout << "[MpvContext] Initializing texture adapter" << std::endl;
     m_textureShare = createTextureShare();
     if (!m_textureShare) {
         if (m_errorCallback) {
             m_errorCallback("Failed to create texture share");
         }
-        mpv_terminate_destroy(m_mpv);
+        mpvApi().terminateDestroy(m_mpv);
         m_mpv = nullptr;
         return false;
     }
@@ -270,12 +296,13 @@ bool MpvContext::create(const MpvConfig& config) {
         }
         delete m_textureShare;
         m_textureShare = nullptr;
-        mpv_terminate_destroy(m_mpv);
+        mpvApi().terminateDestroy(m_mpv);
         m_mpv = nullptr;
         return false;
     }
 
     // Create shared texture
+    if (config.debugLogging) std::cout << "[MpvContext] Allocating shared textures" << std::endl;
     if (!m_textureShare->createTexture(config.width, config.height)) {
         if (m_errorCallback) {
             m_errorCallback("Failed to create shared texture");
@@ -283,12 +310,13 @@ bool MpvContext::create(const MpvConfig& config) {
         m_textureShare->destroy();
         delete m_textureShare;
         m_textureShare = nullptr;
-        mpv_terminate_destroy(m_mpv);
+        mpvApi().terminateDestroy(m_mpv);
         m_mpv = nullptr;
         return false;
     }
 
     // Create render context
+    if (config.debugLogging) std::cout << "[MpvContext] Creating libmpv render context" << std::endl;
     mpv_opengl_init_params gl_init_params{
         .get_proc_address = getProcAddress,
         .get_proc_address_ctx = this,
@@ -302,32 +330,32 @@ bool MpvContext::create(const MpvConfig& config) {
         {MPV_RENDER_PARAM_INVALID, nullptr}
     };
 
-    if (mpv_render_context_create(&m_renderCtx, m_mpv, params) < 0) {
+    if (mpvApi().renderContextCreate(&m_renderCtx, m_mpv, params) < 0) {
         if (m_errorCallback) {
             m_errorCallback("Failed to create mpv render context");
         }
         m_textureShare->destroy();
         delete m_textureShare;
         m_textureShare = nullptr;
-        mpv_terminate_destroy(m_mpv);
+        mpvApi().terminateDestroy(m_mpv);
         m_mpv = nullptr;
         return false;
     }
 
     // Set up render update callback
-    mpv_render_context_set_update_callback(m_renderCtx, renderUpdateCallback, this);
+    mpvApi().renderContextSetUpdateCallback(m_renderCtx, renderUpdateCallback, this);
 
     // Set up wakeup callback for event handling
-    mpv_set_wakeup_callback(m_mpv, wakeupCallback, this);
+    mpvApi().setWakeupCallback(m_mpv, wakeupCallback, this);
 
     // Observe properties
-    mpv_observe_property(m_mpv, 1, "pause", MPV_FORMAT_FLAG);
-    mpv_observe_property(m_mpv, 2, "volume", MPV_FORMAT_DOUBLE);
-    mpv_observe_property(m_mpv, 3, "mute", MPV_FORMAT_FLAG);
-    mpv_observe_property(m_mpv, 4, "time-pos", MPV_FORMAT_DOUBLE);
-    mpv_observe_property(m_mpv, 5, "duration", MPV_FORMAT_DOUBLE);
-    mpv_observe_property(m_mpv, 6, "width", MPV_FORMAT_INT64);
-    mpv_observe_property(m_mpv, 7, "height", MPV_FORMAT_INT64);
+    mpvApi().observeProperty(m_mpv, 1, "pause", MPV_FORMAT_FLAG);
+    mpvApi().observeProperty(m_mpv, 2, "volume", MPV_FORMAT_DOUBLE);
+    mpvApi().observeProperty(m_mpv, 3, "mute", MPV_FORMAT_FLAG);
+    mpvApi().observeProperty(m_mpv, 4, "time-pos", MPV_FORMAT_DOUBLE);
+    mpvApi().observeProperty(m_mpv, 5, "duration", MPV_FORMAT_DOUBLE);
+    mpvApi().observeProperty(m_mpv, 6, "width", MPV_FORMAT_INT64);
+    mpvApi().observeProperty(m_mpv, 7, "height", MPV_FORMAT_INT64);
 
     // Start threads
     m_running = true;
@@ -357,7 +385,7 @@ void MpvContext::destroy() {
 
     // Stop mpv first to unblock event loop
     if (m_mpv) {
-        mpv_wakeup(m_mpv);
+        mpvApi().wakeup(m_mpv);
     }
 
     if (m_eventThread.joinable()) {
@@ -375,12 +403,12 @@ void MpvContext::destroy() {
 #endif
 
     if (m_renderCtx) {
-        mpv_render_context_free(m_renderCtx);
+        mpvApi().renderContextFree(m_renderCtx);
         m_renderCtx = nullptr;
     }
 
     if (m_mpv) {
-        mpv_terminate_destroy(m_mpv);
+        mpvApi().terminateDestroy(m_mpv);
         m_mpv = nullptr;
     }
 
@@ -410,48 +438,48 @@ bool MpvContext::load(const std::string& url, const std::string& options) {
 
     if (!options.empty()) {
         const char* cmd[] = {"loadfile", url.c_str(), "replace", options.c_str(), nullptr};
-        int result = mpv_command(m_mpv, cmd);
+        int result = mpvApi().command(m_mpv, cmd);
         return result >= 0;
     }
     const char* cmd[] = {"loadfile", url.c_str(), nullptr};
-    int result = mpv_command(m_mpv, cmd);
+    int result = mpvApi().command(m_mpv, cmd);
     return result >= 0;
 }
 
 void MpvContext::play() {
     if (!m_mpv) return;
     int flag = 0;
-    mpv_set_property(m_mpv, "pause", MPV_FORMAT_FLAG, &flag);
+    mpvApi().setProperty(m_mpv, "pause", MPV_FORMAT_FLAG, &flag);
 }
 
 void MpvContext::pause() {
     if (!m_mpv) return;
     int flag = 1;
-    mpv_set_property(m_mpv, "pause", MPV_FORMAT_FLAG, &flag);
+    mpvApi().setProperty(m_mpv, "pause", MPV_FORMAT_FLAG, &flag);
 }
 
 void MpvContext::stop() {
     if (!m_mpv) return;
     const char* cmd[] = {"stop", nullptr};
-    mpv_command(m_mpv, cmd);
+    mpvApi().command(m_mpv, cmd);
 }
 
 void MpvContext::seek(double position) {
     if (!m_mpv) return;
     std::string pos_str = std::to_string(position);
     const char* cmd[] = {"seek", pos_str.c_str(), "absolute", nullptr};
-    mpv_command(m_mpv, cmd);
+    mpvApi().command(m_mpv, cmd);
 }
 
 void MpvContext::setVolume(double volume) {
     if (!m_mpv) return;
-    mpv_set_property(m_mpv, "volume", MPV_FORMAT_DOUBLE, &volume);
+    mpvApi().setProperty(m_mpv, "volume", MPV_FORMAT_DOUBLE, &volume);
 }
 
 void MpvContext::toggleMute() {
     if (!m_mpv) return;
     const char* cmd[] = {"cycle", "mute", nullptr};
-    mpv_command(m_mpv, cmd);
+    mpvApi().command(m_mpv, cmd);
 }
 
 void MpvContext::setFrameCallback(FrameCallback callback) {
@@ -480,7 +508,7 @@ MpvStatus MpvContext::getStatus() const {
 
 void MpvContext::eventLoop() {
     while (m_running) {
-        mpv_event* event = mpv_wait_event(m_mpv, 0.1);
+        mpv_event* event = mpvApi().waitEvent(m_mpv, 0.1);
         if (event->event_id == MPV_EVENT_NONE) {
             continue;
         }
@@ -501,7 +529,7 @@ void MpvContext::handleEvent(mpv_event* event) {
             if (end_file->reason == MPV_END_FILE_REASON_ERROR) {
                 std::lock_guard<std::mutex> lock(m_callbackMutex);
                 if (m_errorCallback) {
-                    m_errorCallback("Playback error: " + std::string(mpv_error_string(end_file->error)));
+                    m_errorCallback("Playback error: " + std::string(mpvApi().errorString(end_file->error)));
                 }
             }
             break;
@@ -649,7 +677,7 @@ void MpvContext::renderLoop() {
         }
 
         // Check if we can render
-        uint64_t flags = mpv_render_context_update(m_renderCtx);
+        uint64_t flags = mpvApi().renderContextUpdate(m_renderCtx);
         if (!(flags & MPV_RENDER_UPDATE_FRAME)) {
             continue;
         }
@@ -679,14 +707,14 @@ void MpvContext::renderLoop() {
             {MPV_RENDER_PARAM_INVALID, nullptr}
         };
 
-        int result = mpv_render_context_render(m_renderCtx, params);
+        int result = mpvApi().renderContextRender(m_renderCtx, params);
         if (result < 0) {
             m_textureShare->abandonRenderTarget();
             continue;
         }
 
         // Report swap
-        mpv_render_context_report_swap(m_renderCtx);
+        mpvApi().renderContextReportSwap(m_renderCtx);
 
         // Flush GL commands to ensure rendering is complete before export.
         // macOS: glFlush is sufficient for GPU-to-GPU IOSurface sharing.

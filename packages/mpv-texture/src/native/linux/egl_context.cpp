@@ -113,11 +113,19 @@ LinuxEglContext::~LinuxEglContext() {
 }
 
 bool LinuxEglContext::initializeDevice(const std::string& render_node) {
+    const auto fail = [this, &render_node](const char* stage) {
+        if (m_debugLogging) {
+            std::cerr << "[LinuxEGL] " << render_node << " failed at " << stage
+                      << " EGL error=0x" << std::hex << eglGetError() << std::dec << std::endl;
+        }
+        return false;
+    };
+
     m_drmFd = open(render_node.c_str(), O_RDWR | O_CLOEXEC);
-    if (m_drmFd < 0) return false;
+    if (m_drmFd < 0) return fail("open");
 
     m_gbmDevice = gbm_create_device(m_drmFd);
-    if (!m_gbmDevice) return false;
+    if (!m_gbmDevice) return fail("gbm_create_device");
 
     auto get_platform_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
         eglGetProcAddress("eglGetPlatformDisplayEXT")
@@ -127,15 +135,17 @@ bool LinuxEglContext::initializeDevice(const std::string& render_node) {
     } else {
         m_display = eglGetDisplay(reinterpret_cast<EGLNativeDisplayType>(m_gbmDevice));
     }
-    if (m_display == EGL_NO_DISPLAY) return false;
+    if (m_display == EGL_NO_DISPLAY) return fail("eglGetPlatformDisplay");
 
     EGLint major = 0;
     EGLint minor = 0;
-    if (!eglInitialize(m_display, &major, &minor)) return false;
-    if (!eglBindAPI(EGL_OPENGL_API)) return false;
+    if (!eglInitialize(m_display, &major, &minor)) return fail("eglInitialize");
+    if (!eglBindAPI(EGL_OPENGL_API)) return fail("eglBindAPI");
+    const char* extensions = eglQueryString(m_display, EGL_EXTENSIONS);
+    const bool supports_surfaceless = hasExtension(extensions, "EGL_KHR_surfaceless_context");
 
     const EGLint config_attributes[] = {
-        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+        EGL_SURFACE_TYPE, supports_surfaceless ? 0 : EGL_PBUFFER_BIT,
         EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
         EGL_RED_SIZE, 8,
         EGL_GREEN_SIZE, 8,
@@ -146,7 +156,7 @@ bool LinuxEglContext::initializeDevice(const std::string& render_node) {
     EGLConfig config = nullptr;
     EGLint config_count = 0;
     if (!eglChooseConfig(m_display, config_attributes, &config, 1, &config_count) || config_count == 0) {
-        return false;
+        return fail("eglChooseConfig");
     }
 
     const EGLint context_attributes[] = {
@@ -159,20 +169,19 @@ bool LinuxEglContext::initializeDevice(const std::string& render_node) {
     if (m_context == EGL_NO_CONTEXT) {
         m_context = eglCreateContext(m_display, config, EGL_NO_CONTEXT, nullptr);
     }
-    if (m_context == EGL_NO_CONTEXT) return false;
+    if (m_context == EGL_NO_CONTEXT) return fail("eglCreateContext");
 
-    const char* extensions = eglQueryString(m_display, EGL_EXTENSIONS);
-    if (!hasExtension(extensions, "EGL_KHR_surfaceless_context")) {
+    if (!supports_surfaceless) {
         const EGLint pbuffer_attributes[] = {
             EGL_WIDTH, 1,
             EGL_HEIGHT, 1,
             EGL_NONE
         };
         m_surface = eglCreatePbufferSurface(m_display, config, pbuffer_attributes);
-        if (m_surface == EGL_NO_SURFACE) return false;
+        if (m_surface == EGL_NO_SURFACE) return fail("eglCreatePbufferSurface");
     }
 
-    if (!makeCurrent()) return false;
+    if (!makeCurrent()) return fail("eglMakeCurrent");
     m_renderNode = render_node;
 
     if (m_debugLogging) {

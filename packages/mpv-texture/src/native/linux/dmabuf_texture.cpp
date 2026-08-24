@@ -81,6 +81,30 @@ public:
         m_imageTargetTexture = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
             m_context->getProcAddress("glEGLImageTargetTexture2DOES")
         );
+        const auto query_modifiers = reinterpret_cast<PFNEGLQUERYDMABUFMODIFIERSEXTPROC>(
+            m_context->getProcAddress("eglQueryDmaBufModifiersEXT")
+        );
+        if (query_modifiers) {
+            EGLint modifier_count = 0;
+            if (query_modifiers(
+                m_context->display(), DRM_FORMAT_ARGB8888, 0, nullptr, nullptr, &modifier_count
+            ) && modifier_count > 0) {
+                std::vector<EGLuint64KHR> modifiers(modifier_count);
+                std::vector<EGLBoolean> external_only(modifier_count);
+                if (query_modifiers(
+                    m_context->display(),
+                    DRM_FORMAT_ARGB8888,
+                    modifier_count,
+                    modifiers.data(),
+                    external_only.data(),
+                    &modifier_count
+                )) {
+                    for (EGLint index = 0; index < modifier_count; index++) {
+                        if (!external_only[index]) m_renderModifiers.push_back(modifiers[index]);
+                    }
+                }
+            }
+        }
         return m_createImage && m_destroyImage && m_imageTargetTexture;
     }
 
@@ -199,13 +223,27 @@ private:
     }
 
     bool createSlot(DmaBufSlot& slot, uint32_t width, uint32_t height) {
-        slot.bo = gbm_bo_create(
+        constexpr uint64_t linear_modifier = DRM_FORMAT_MOD_LINEAR;
+        slot.bo = gbm_bo_create_with_modifiers2(
             m_context->gbmDevice(),
             width,
             height,
             GBM_FORMAT_ARGB8888,
+            &linear_modifier,
+            1,
             GBM_BO_USE_RENDERING
         );
+        if (!slot.bo && !m_renderModifiers.empty()) {
+            slot.bo = gbm_bo_create_with_modifiers2(
+                m_context->gbmDevice(),
+                width,
+                height,
+                GBM_FORMAT_ARGB8888,
+                m_renderModifiers.data(),
+                static_cast<unsigned int>(m_renderModifiers.size()),
+                GBM_BO_USE_RENDERING
+            );
+        }
         if (!slot.bo) {
             std::cerr << "[LinuxDmaBuf] GBM buffer allocation failed" << std::endl;
             return false;
@@ -369,6 +407,7 @@ private:
     PFNEGLCREATEIMAGEKHRPROC m_createImage = nullptr;
     PFNEGLDESTROYIMAGEKHRPROC m_destroyImage = nullptr;
     PFNGLEGLIMAGETARGETTEXTURE2DOESPROC m_imageTargetTexture = nullptr;
+    std::vector<uint64_t> m_renderModifiers;
     std::unique_ptr<DmaBufPool> m_activePool;
     std::vector<std::unique_ptr<DmaBufPool>> m_retiredPools;
     DmaBufSlot* m_writingSlot = nullptr;

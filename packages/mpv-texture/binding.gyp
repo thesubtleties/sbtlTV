@@ -14,6 +14,7 @@
         ["OS=='mac'", {
           "sources": [
             "src/native/addon.cpp",
+            "src/native/mpv_api.cpp",
             "src/native/mpv_context.cpp",
             "src/native/macos/iosurface_texture.mm"
           ],
@@ -48,6 +49,7 @@
         ["OS=='linux'", {
           "sources": [
             "src/native/addon.cpp",
+            "src/native/mpv_api.cpp",
             "src/native/mpv_context.cpp",
             "src/native/linux/egl_context.cpp",
             "src/native/linux/dmabuf_texture.cpp"
@@ -59,7 +61,7 @@
             "-std=c++17"
           ],
           "libraries": [
-            "<!@(pkg-config --libs mpv egl gbm libdrm gl)",
+            "<!@(pkg-config --libs egl gbm libdrm gl)",
             "-ldl"
           ]
         }],
