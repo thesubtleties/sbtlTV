@@ -98,25 +98,25 @@ Napi::Value Create(const Napi::CallbackInfo& info) {
     if (info.Length() > 0 && info[0].IsObject()) {
         auto configObj = info[0].As<Napi::Object>();
 
-        if (configObj.Has("width")) {
+        if (configObj.Has("width") && configObj.Get("width").IsNumber()) {
             config.width = configObj.Get("width").As<Napi::Number>().Uint32Value();
         }
-        if (configObj.Has("height")) {
+        if (configObj.Has("height") && configObj.Get("height").IsNumber()) {
             config.height = configObj.Get("height").As<Napi::Number>().Uint32Value();
         }
-        if (configObj.Has("hwdec")) {
+        if (configObj.Has("hwdec") && configObj.Get("hwdec").IsString()) {
             config.hwdec = configObj.Get("hwdec").As<Napi::String>().Utf8Value();
         }
-        if (configObj.Has("gpuVendorId")) {
+        if (configObj.Has("gpuVendorId") && configObj.Get("gpuVendorId").IsNumber()) {
             config.gpuVendorId = configObj.Get("gpuVendorId").As<Napi::Number>().Uint32Value();
         }
-        if (configObj.Has("gpuDeviceId")) {
+        if (configObj.Has("gpuDeviceId") && configObj.Get("gpuDeviceId").IsNumber()) {
             config.gpuDeviceId = configObj.Get("gpuDeviceId").As<Napi::Number>().Uint32Value();
         }
-        if (configObj.Has("debugLogging")) {
+        if (configObj.Has("debugLogging") && configObj.Get("debugLogging").IsBoolean()) {
             config.debugLogging = configObj.Get("debugLogging").As<Napi::Boolean>().Value();
         }
-        if (configObj.Has("finishBeforeExport")) {
+        if (configObj.Has("finishBeforeExport") && configObj.Get("finishBeforeExport").IsBoolean()) {
             config.finishBeforeExport = configObj.Get("finishBeforeExport").As<Napi::Boolean>().Value();
         }
     }

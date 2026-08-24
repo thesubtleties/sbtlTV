@@ -73,15 +73,16 @@ export class MpvTextureBridge {
       this.initialized = true;
       console.log('[MpvTextureBridge] Initialized successfully');
 
-      // Log frame stats every 2 seconds
-      this.statsInterval = setInterval(() => {
-        if (this.stats.received > 0) {
-          const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
-          const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
-          console.log(`[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}ms`);
-          this.stats = { received: 0, dropped: 0, sent: 0, errors: 0, importMs: 0, sendMs: 0, sendCount: 0 };
-        }
-      }, 2000);
+      if (config?.debugLogging) {
+        this.statsInterval = setInterval(() => {
+          if (this.stats.received > 0) {
+            const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
+            const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
+            console.log(`[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}ms`);
+            this.stats = { received: 0, dropped: 0, sent: 0, errors: 0, importMs: 0, sendMs: 0, sendCount: 0 };
+          }
+        }, 2000);
+      }
 
       return true;
     } catch (error) {

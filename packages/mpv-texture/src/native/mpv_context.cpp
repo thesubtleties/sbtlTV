@@ -653,7 +653,9 @@ void MpvContext::renderLoop() {
         }
         return;
     }
-    std::cout << "[MpvContext] EGL context made current in render thread" << std::endl;
+    if (m_config.debugLogging) {
+        std::cout << "[MpvContext] EGL context made current in render thread" << std::endl;
+    }
 #endif
 
     while (m_running) {
@@ -670,7 +672,9 @@ void MpvContext::renderLoop() {
             uint32_t newWidth = m_pendingWidth.load();
             uint32_t newHeight = m_pendingHeight.load();
             if (newWidth > 0 && newHeight > 0) {
-                std::cout << "[MpvContext] Resizing texture to " << newWidth << "x" << newHeight << std::endl;
+                if (m_config.debugLogging) {
+                    std::cout << "[MpvContext] Resizing texture to " << newWidth << "x" << newHeight << std::endl;
+                }
                 m_textureShare->resizeTexture(newWidth, newHeight);
             }
             m_needsResize = false;
@@ -685,7 +689,7 @@ void MpvContext::renderLoop() {
         RenderTarget target;
         if (!m_textureShare->acquireRenderTarget(target)) {
             static int lockFailCount = 0;
-            if (lockFailCount < 5) {
+            if (m_config.debugLogging && lockFailCount < 5) {
                 std::cout << "[MpvContext] No free texture slot; dropping frame" << std::endl;
                 lockFailCount++;
             }
@@ -724,7 +728,7 @@ void MpvContext::renderLoop() {
         TextureInfo info = m_textureShare->exportRenderTarget();
         if (info.is_valid) {
             static int frameCount = 0;
-            if (frameCount < 10) {
+            if (m_config.debugLogging && frameCount < 10) {
                 std::cout << "[MpvContext] Frame " << frameCount << " exported: "
                           << info.width << "x" << info.height << std::endl;
             }

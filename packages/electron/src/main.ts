@@ -945,7 +945,7 @@ ipcMain.handle('window-set-fullscreen', () => {
     // macOS: opaque window + native mpv texture — true OS fullscreen + enter/leave events work.
     mainWindow.setFullScreen(!mainWindow.isFullScreen());
   } else {
-    // Linux: separate mpv window; setFullScreen is unreliable, maximize is the working equivalent.
+    // Linux: maximize is the working fullscreen equivalent for the frameless Electron window.
     if (mainWindow.isMaximized()) mainWindow.unmaximize();
     else mainWindow.maximize();
   }

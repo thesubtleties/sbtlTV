@@ -217,8 +217,10 @@ private:
             }
         }
 
-        std::cout << "[LinuxDmaBuf] Created " << buffer_count << " buffers "
-                  << width << "x" << height << " on " << m_context->renderNode() << std::endl;
+        if (m_context->debugLogging()) {
+            std::cout << "[LinuxDmaBuf] Created " << buffer_count << " buffers "
+                      << width << "x" << height << " on " << m_context->renderNode() << std::endl;
+        }
         return pool;
     }
 
