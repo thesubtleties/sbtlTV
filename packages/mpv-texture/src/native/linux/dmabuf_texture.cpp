@@ -21,7 +21,7 @@ namespace mpv_texture {
 
 namespace {
 
-constexpr size_t buffer_count = 3;
+constexpr size_t buffer_count = 4;
 
 enum class SlotState {
     Free,
