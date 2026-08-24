@@ -241,6 +241,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       gl.uniform1i(flipXLocation, flipX ? 1 : 0);
       gl.bindVertexArray(vao);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.flush();
     } catch (e) {
       drawErrorCount.current++;
       const count = drawErrorCount.current;
