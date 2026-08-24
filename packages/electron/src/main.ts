@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
 import electronUpdater from 'electron-updater';
+import { selectChromiumGpuIdentity } from './gpu-selection.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -226,28 +227,38 @@ function discardStaleCompatibilityHandoff(): void {
   try { fs.unlinkSync(compatibilityHandoffPath()); } catch { /* No stale handoff. */ }
 }
 
-function parseGpuId(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value;
-  if (typeof value !== 'string') return undefined;
-  const parsed = Number.parseInt(value, value.startsWith('0x') ? 16 : 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+async function getHighPerformanceWebGlRenderer(): Promise<unknown> {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  try {
+    return await mainWindow.webContents.executeJavaScript(`(() => {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl2', { powerPreference: 'high-performance' });
+      if (!gl) return null;
+      const debugRenderer = gl.getExtension('WEBGL_debug_renderer_info');
+      if (!debugRenderer) return null;
+      const result = {
+        vendor: gl.getParameter(debugRenderer.UNMASKED_VENDOR_WEBGL),
+        renderer: gl.getParameter(debugRenderer.UNMASKED_RENDERER_WEBGL),
+      };
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+      return result;
+    })()`);
+  } catch (error) {
+    debugLog(`Could not read high-performance WebGL renderer: ${error instanceof Error ? error.message : error}`, 'mpv');
+    return null;
+  }
 }
 
 async function getChromiumGpuIdentity(): Promise<{ vendorId?: number; deviceId?: number }> {
   try {
+    const webGlRenderer = await getHighPerformanceWebGlRenderer();
     const info: unknown = await app.getGPUInfo('basic');
-    if (!info || typeof info !== 'object') return {};
-    const devices = (info as Record<string, unknown>).gpuDevice;
-    if (!Array.isArray(devices)) return {};
-
-    const active = devices.find((device) => device && typeof device === 'object' && (device as Record<string, unknown>).active === true)
-      ?? devices[0];
-    if (!active || typeof active !== 'object') return {};
-    const gpu = active as Record<string, unknown>;
-    return {
-      vendorId: parseGpuId(gpu.vendorId),
-      deviceId: parseGpuId(gpu.deviceId),
-    };
+    const devices = info && typeof info === 'object'
+      ? (info as Record<string, unknown>).gpuDevice
+      : undefined;
+    const gpu = selectChromiumGpuIdentity(devices, webGlRenderer);
+    debugLog(`GPU selection source=${gpu.source}`, 'mpv');
+    return gpu;
   } catch (error) {
     debugLog(`Could not read Chromium GPU identity: ${error instanceof Error ? error.message : error}`, 'mpv');
     return {};

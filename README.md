@@ -33,10 +33,10 @@ A desktop IPTV player built with Electron and mpv.
 
 Download the latest release from the [Releases](../../releases) page:
 
-| Platform | Notes |
-|----------|-------|
-| Windows | mpv included |
-| Linux | Requires mpv installed separately |
+| Platform              | Notes                                                                      |
+| --------------------- | -------------------------------------------------------------------------- |
+| Windows               | mpv included                                                               |
+| Linux                 | Requires mpv installed separately                                          |
 | macOS (Apple Silicon) | Video renders natively in-window; mpv via Homebrew recommended as fallback |
 
 ### Windows Users
@@ -115,11 +115,12 @@ pnpm dist:linux
 Movie and series metadata comes from [The Movie Database](https://www.themoviedb.org/). Basic matching works automatically.
 
 For genre browsing and suggested/popular lists, add a TMDB Access Token:
+
 1. Create an account at [themoviedb.org](https://www.themoviedb.org/signup)
 2. Get an API Read Access Token from [API settings](https://www.themoviedb.org/settings/api)
 3. Add it in Settings → TMDB
 
-*This product uses the TMDB API but is not endorsed or certified by TMDB.*
+_This product uses the TMDB API but is not endorsed or certified by TMDB._
 
 ### Poster Overlays (RPDB)
 
