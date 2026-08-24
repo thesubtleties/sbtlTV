@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron/renderer';
 import type { Source } from '@sbtltv/core';
 
 // Types for the exposed APIs
@@ -240,11 +240,10 @@ export interface SharedTextureApi {
   isAvailable: boolean;
 }
 
-// Check if sharedTexture API is available AND we're on a platform that uses native mpv.
-// Windows uses external mpv via --wid (renders behind the window), so the VideoCanvas
-// must not activate there — it would cover the external mpv output with a black canvas.
+// Check if sharedTexture is available on platforms that use native mpv. Windows
+// continues to render external mpv behind the BrowserWindow via --wid.
 let sharedTextureAvailable = false;
-if (process.platform === 'darwin') {
+if (process.platform === 'darwin' || process.platform === 'linux') {
   try {
     const { sharedTexture } = require('electron');
     sharedTextureAvailable = !!sharedTexture?.setSharedTextureReceiver;
