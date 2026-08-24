@@ -713,6 +713,10 @@ async function initNativeMpv(): Promise<boolean> {
       void handleNativePipelineFailure(error);
     });
 
+    bridge.onDiagnostics((message) => {
+      debugLog(message, 'mpv-texture');
+    });
+
     console.log('[mpv] Native mpv-texture bridge initialized');
     debugLog('Native mpv-texture bridge initialized', 'mpv');
     sendToRenderer('mpv-ready', true);

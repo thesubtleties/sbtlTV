@@ -56,6 +56,32 @@ interface WebGLState {
   flipXLocation: WebGLUniformLocation;
 }
 
+interface FrameCadenceStats {
+  startedAt: number;
+  lastFrameAt: number;
+  lastFrameIndex: number;
+  frames: number;
+  outOfOrder: number;
+  indexGaps: number;
+  intervals: number[];
+  drawMs: number;
+  maxDrawMs: number;
+}
+
+function createFrameCadenceStats(): FrameCadenceStats {
+  return {
+    startedAt: 0,
+    lastFrameAt: 0,
+    lastFrameIndex: -1,
+    frames: 0,
+    outOfOrder: 0,
+    indexGaps: 0,
+    intervals: [],
+    drawMs: 0,
+    maxDrawMs: 0,
+  };
+}
+
 function createShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
   const shader = gl.createShader(type);
   if (!shader) return null;
@@ -170,9 +196,10 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
   const glStateRef = useRef<WebGLState | null>(null);
   const drawErrorCount = useRef(0);
   const contextLostRef = useRef(false);
+  const cadenceRef = useRef<FrameCadenceStats>(createFrameCadenceStats());
 
   // Handle frame - render immediately
-  const handleFrame = useCallback((videoFrame: VideoFrame, _index: number) => {
+  const handleFrame = useCallback((videoFrame: VideoFrame, index: number) => {
     const canvas = canvasRef.current;
     const glState = glStateRef.current;
 
@@ -184,6 +211,17 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     const { gl, program, texture, vao, flipYLocation, flipXLocation } = glState;
     const width = videoFrame.codedWidth;
     const height = videoFrame.codedHeight;
+    const frameAt = performance.now();
+    const cadence = cadenceRef.current;
+    if (cadence.startedAt === 0) cadence.startedAt = frameAt;
+    if (cadence.lastFrameAt > 0) cadence.intervals.push(frameAt - cadence.lastFrameAt);
+    if (cadence.lastFrameIndex >= 0) {
+      if (index <= cadence.lastFrameIndex) cadence.outOfOrder++;
+      else cadence.indexGaps += Math.max(0, index - cadence.lastFrameIndex - 1);
+    }
+    cadence.lastFrameAt = frameAt;
+    cadence.lastFrameIndex = index;
+    cadence.frames++;
 
     // Resize canvas if needed
     if (canvas.width !== width || canvas.height !== height) {
@@ -194,6 +232,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     }
 
     // Draw
+    const drawStartedAt = performance.now();
     try {
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame);
@@ -214,6 +253,26 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
           window.debug?.logFromRenderer(`[VideoCanvas] Draw error (${count} total): ${e}`);
         }
       }
+    }
+    const drawMs = performance.now() - drawStartedAt;
+    cadence.drawMs += drawMs;
+    cadence.maxDrawMs = Math.max(cadence.maxDrawMs, drawMs);
+
+    if (frameAt - cadence.startedAt >= 2000) {
+      const intervals = [...cadence.intervals].sort((left, right) => left - right);
+      const percentile = (value: number) => intervals[Math.min(intervals.length - 1, Math.floor(intervals.length * value))] ?? 0;
+      const avgDraw = cadence.frames > 0 ? cadence.drawMs / cadence.frames : 0;
+      void window.debug?.logFromRenderer(
+        `[VideoCanvas] cadence frames:${cadence.frames} gaps:${cadence.indexGaps} reverse:${cadence.outOfOrder} ` +
+        `interval p50/p95/max:${percentile(0.5).toFixed(1)}/${percentile(0.95).toFixed(1)}/${percentile(1).toFixed(1)}ms ` +
+        `draw avg/max:${avgDraw.toFixed(1)}/${cadence.maxDrawMs.toFixed(1)}ms`
+      );
+      cadenceRef.current = {
+        ...createFrameCadenceStats(),
+        startedAt: frameAt,
+        lastFrameAt: frameAt,
+        lastFrameIndex: index,
+      };
     }
 
     videoFrame.close();

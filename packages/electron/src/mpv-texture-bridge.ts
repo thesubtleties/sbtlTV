@@ -22,11 +22,24 @@ export class MpvTextureBridge {
   private statusCallback?: (status: MpvStatus) => void;
   private errorCallback?: (error: string) => void;
   private pipelineFailureCallback?: (error: string) => void;
+  private diagnosticsCallback?: (message: string) => void;
   private consecutiveErrors = 0;
   private pipelineFailureReported = false;
 
   // Diagnostics
-  private stats = { received: 0, dropped: 0, sent: 0, errors: 0, importMs: 0, sendMs: 0, sendCount: 0 };
+  private stats = {
+    received: 0,
+    dropped: 0,
+    sent: 0,
+    errors: 0,
+    importMs: 0,
+    sendMs: 0,
+    maxSendMs: 0,
+    releaseMs: 0,
+    maxReleaseMs: 0,
+    sendCount: 0,
+    releaseCount: 0,
+  };
   private statsInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
@@ -73,16 +86,28 @@ export class MpvTextureBridge {
       this.initialized = true;
       console.log('[MpvTextureBridge] Initialized successfully');
 
-      if (config?.debugLogging) {
-        this.statsInterval = setInterval(() => {
-          if (this.stats.received > 0) {
-            const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
-            const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
-            console.log(`[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}ms`);
-            this.stats = { received: 0, dropped: 0, sent: 0, errors: 0, importMs: 0, sendMs: 0, sendCount: 0 };
-          }
-        }, 2000);
-      }
+      this.statsInterval = setInterval(() => {
+        if (this.stats.received === 0) return;
+        const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
+        const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
+        const avgRelease = this.stats.releaseCount > 0 ? (this.stats.releaseMs / this.stats.releaseCount).toFixed(1) : '?';
+        const message = `[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}/${this.stats.maxSendMs.toFixed(1)}ms release:${avgRelease}/${this.stats.maxReleaseMs.toFixed(1)}ms`;
+        console.log(message);
+        this.diagnosticsCallback?.(message);
+        this.stats = {
+          received: 0,
+          dropped: 0,
+          sent: 0,
+          errors: 0,
+          importMs: 0,
+          sendMs: 0,
+          maxSendMs: 0,
+          releaseMs: 0,
+          maxReleaseMs: 0,
+          sendCount: 0,
+          releaseCount: 0,
+        };
+      }, 2000);
 
       return true;
     } catch (error) {
@@ -134,6 +159,7 @@ export class MpvTextureBridge {
     try {
       if (!this.window || this.window.isDestroyed()) return;
       const frameOwner = this.mpv;
+      const frameStartedAt = performance.now();
       let sharedTextureHandle: SharedTextureHandle;
       if (textureInfo.kind === 'ioSurface') {
         const ioSurfaceBuffer = Buffer.alloc(8);
@@ -158,6 +184,10 @@ export class MpvTextureBridge {
         },
         ...(textureInfo.kind === 'nativePixmap' ? {
           allReferencesReleased: () => {
+            const releaseMs = performance.now() - frameStartedAt;
+            this.stats.releaseMs += releaseMs;
+            this.stats.maxReleaseMs = Math.max(this.stats.maxReleaseMs, releaseMs);
+            this.stats.releaseCount++;
             if (frameOwner?.isInitialized) frameOwner.releaseFrame(textureInfo.bufferId);
           },
         } : {}),
@@ -177,6 +207,7 @@ export class MpvTextureBridge {
       const t2 = performance.now();
       this.stats.importMs += t1 - t0;
       this.stats.sendMs += t2 - t1;
+      this.stats.maxSendMs = Math.max(this.stats.maxSendMs, t2 - t1);
       this.stats.sendCount++;
       this.stats.sent++;
       this.consecutiveErrors = 0;
@@ -278,6 +309,10 @@ export class MpvTextureBridge {
 
   onPipelineFailure(callback: (error: string) => void): void {
     this.pipelineFailureCallback = callback;
+  }
+
+  onDiagnostics(callback: (message: string) => void): void {
+    this.diagnosticsCallback = callback;
   }
 
   /**
