@@ -39,6 +39,12 @@ jobs:
           node-version: 20
           cache: 'pnpm'
 
+      - name: Install native build dependencies (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev libegl1-mesa-dev libgbm-dev libdrm-dev libgl-dev pkg-config
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
@@ -64,8 +70,8 @@ jobs:
       - name: Build all packages
         run: pnpm build
 
-      - name: Build native addon (macOS only)
-        if: matrix.platform == 'mac'
+      - name: Build native addon
+        if: matrix.platform == 'mac' || matrix.platform == 'linux'
         run: |
           cd packages/mpv-texture
           npm run build:native

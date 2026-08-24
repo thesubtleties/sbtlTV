@@ -98,6 +98,27 @@ linux:
   icon: assets/512x512.png
   category: AudioVideo
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
+  extraResources:
+    - from: ../mpv-texture/build/Release/mpv_texture.node
+      to: mpv/mpv_texture.node
+
+deb:
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - mpv
+    - libmpv2
+    - libegl1
+    - libgbm1
+    - libdrm2
+    - libgl1
 
 appImage:
   license: ../../LICENSE
