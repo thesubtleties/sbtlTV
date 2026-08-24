@@ -693,6 +693,15 @@ void MpvContext::renderLoop() {
                 std::cout << "[MpvContext] No free texture slot; dropping frame" << std::endl;
                 lockFailCount++;
             }
+
+            int skip_rendering = 1;
+            mpv_render_param skip_params[] = {
+                {MPV_RENDER_PARAM_SKIP_RENDERING, &skip_rendering},
+                {MPV_RENDER_PARAM_INVALID, nullptr}
+            };
+            if (mpvApi().renderContextRender(m_renderCtx, skip_params) >= 0) {
+                mpvApi().renderContextReportSwap(m_renderCtx);
+            }
             continue;
         }
 

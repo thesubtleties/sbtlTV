@@ -8,6 +8,16 @@
 import { BrowserWindow, sharedTexture, SharedTextureHandle } from 'electron';
 import type { MpvTexture, MpvStatus, TextureInfo, MpvConfig } from '@sbtltv/mpv-texture';
 
+interface QueuedFrame {
+  textureInfo: TextureInfo;
+  generation: number;
+}
+
+interface SharedTextureFrameMetadata {
+  generation: number;
+  index: number;
+}
+
 /**
  * MpvTextureBridge - Integrates mpv-texture with Electron's sharedTexture API
  */
@@ -18,7 +28,11 @@ export class MpvTextureBridge {
   private initialized = false;
   private activeSends = 0;
   private readonly maxConcurrentSends = 2;
-  private pendingFrame: TextureInfo | null = null;
+  private pendingFrame: QueuedFrame | null = null;
+  private frameGeneration = 0;
+  private outstandingTextureReferences = 0;
+  private destroyRequested = false;
+  private destroyFinalized = false;
   private statusCallback?: (status: MpvStatus) => void;
   private errorCallback?: (error: string) => void;
   private pipelineFailureCallback?: (error: string) => void;
@@ -123,29 +137,34 @@ export class MpvTextureBridge {
    * while both transfer slots are busy.
    */
   private handleFrame(textureInfo: TextureInfo): void {
-    if (!this.window || !this.mpv) {
+    if (this.destroyRequested || !this.window || !this.mpv) {
       this.releaseFrame(textureInfo);
       return;
     }
 
     this.stats.received++;
+    const frame = { textureInfo, generation: this.frameGeneration } satisfies QueuedFrame;
 
     if (this.activeSends >= this.maxConcurrentSends) {
       if (this.pendingFrame) {
         this.stats.dropped++;
-        this.releaseFrame(this.pendingFrame);
+        this.releaseFrame(this.pendingFrame.textureInfo);
       }
-      this.pendingFrame = textureInfo;
+      this.pendingFrame = frame;
       return;
     }
 
-    this.startSend(textureInfo);
+    this.startSend(frame);
   }
 
-  private startSend(textureInfo: TextureInfo): void {
+  private startSend(frame: QueuedFrame): void {
     this.activeSends++;
-    void this.sendFrame(textureInfo).finally(() => {
+    void this.sendFrame(frame).finally(() => {
       this.activeSends--;
+      if (this.destroyRequested) {
+        this.tryFinalizeDestroy();
+        return;
+      }
       if (!this.pendingFrame || this.activeSends >= this.maxConcurrentSends) return;
       const nextFrame = this.pendingFrame;
       this.pendingFrame = null;
@@ -153,13 +172,15 @@ export class MpvTextureBridge {
     });
   }
 
-  private async sendFrame(textureInfo: TextureInfo): Promise<void> {
+  private async sendFrame({ textureInfo, generation }: QueuedFrame): Promise<void> {
     let imported: ReturnType<typeof sharedTexture.importSharedTexture> | null = null;
     let releaseManagedByElectron = false;
     try {
-      if (!this.window || this.window.isDestroyed()) return;
+      const targetWindow = this.window;
+      if (this.destroyRequested || !targetWindow || targetWindow.isDestroyed()) return;
       const frameOwner = this.mpv;
       const frameStartedAt = performance.now();
+      let referencesReleased = false;
       let sharedTextureHandle: SharedTextureHandle;
       if (textureInfo.kind === 'ioSurface') {
         const ioSurfaceBuffer = Buffer.alloc(8);
@@ -182,26 +203,35 @@ export class MpvTextureBridge {
           visibleRect: { x: 0, y: 0, width: textureInfo.width, height: textureInfo.height },
           pixelFormat: textureInfo.format === 'nv12' ? 'rgba' : textureInfo.format,
         },
-        ...(textureInfo.kind === 'nativePixmap' ? {
-          allReferencesReleased: () => {
-            const releaseMs = performance.now() - frameStartedAt;
-            this.stats.releaseMs += releaseMs;
-            this.stats.maxReleaseMs = Math.max(this.stats.maxReleaseMs, releaseMs);
-            this.stats.releaseCount++;
-            if (frameOwner?.isInitialized) frameOwner.releaseFrame(textureInfo.bufferId);
-          },
-        } : {}),
+        allReferencesReleased: () => {
+          if (referencesReleased) return;
+          referencesReleased = true;
+          const releaseMs = performance.now() - frameStartedAt;
+          this.stats.releaseMs += releaseMs;
+          this.stats.maxReleaseMs = Math.max(this.stats.maxReleaseMs, releaseMs);
+          this.stats.releaseCount++;
+          if (textureInfo.kind === 'nativePixmap' && frameOwner?.isInitialized) {
+            frameOwner.releaseFrame(textureInfo.bufferId);
+          }
+          this.outstandingTextureReferences--;
+          this.tryFinalizeDestroy();
+        },
       });
+      this.outstandingTextureReferences++;
       releaseManagedByElectron = textureInfo.kind === 'nativePixmap';
 
       const t1 = performance.now();
 
+      const metadata = {
+        generation,
+        index: this.frameIndex++,
+      } satisfies SharedTextureFrameMetadata;
       await sharedTexture.sendSharedTexture(
         {
-          frame: this.window.webContents.mainFrame,
+          frame: targetWindow.webContents.mainFrame,
           importedSharedTexture: imported,
         },
-        this.frameIndex++
+        metadata
       );
 
       const t2 = performance.now();
@@ -235,11 +265,12 @@ export class MpvTextureBridge {
     if (!this.mpv || !this.initialized) {
       throw new Error('Bridge not initialized');
     }
-    // Clear stale frame in renderer and discard any queued frame
+    this.frameGeneration++;
+    // Clear stale frame in renderer and discard any queued frame.
     if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send('video-clear');
+      this.window.webContents.send('video-clear', this.frameGeneration);
     }
-    if (this.pendingFrame) this.releaseFrame(this.pendingFrame);
+    if (this.pendingFrame) this.releaseFrame(this.pendingFrame.textureInfo);
     this.pendingFrame = null;
     return this.mpv.load(url, options);
   }
@@ -326,20 +357,34 @@ export class MpvTextureBridge {
    * Destroy and clean up
    */
   destroy(): void {
+    if (this.destroyFinalized) return;
+    if (this.destroyRequested) {
+      this.tryFinalizeDestroy();
+      return;
+    }
+    this.destroyRequested = true;
+    this.initialized = false;
     if (this.statsInterval) {
       clearInterval(this.statsInterval);
       this.statsInterval = null;
     }
     if (this.pendingFrame) {
-      this.releaseFrame(this.pendingFrame);
+      this.releaseFrame(this.pendingFrame.textureInfo);
       this.pendingFrame = null;
     }
-    if (this.mpv) {
-      this.mpv.destroy();
-      this.mpv = null;
-    }
+    if (this.mpv?.isInitialized) this.mpv.stop();
     this.window = null;
-    this.initialized = false;
+    this.tryFinalizeDestroy();
+  }
+
+  private tryFinalizeDestroy(): void {
+    if (this.destroyFinalized || !this.destroyRequested || this.activeSends > 0 || this.outstandingTextureReferences > 0) {
+      return;
+    }
+    this.destroyFinalized = true;
+    const mpv = this.mpv;
+    this.mpv = null;
+    if (mpv) mpv.destroy();
     console.log('[MpvTextureBridge] Destroyed');
   }
 

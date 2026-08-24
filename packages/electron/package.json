@@ -14,7 +14,7 @@
     "build": "tsc",
     "dev": "electron . --dev",
     "start": "electron .",
-    "test": "tsc && node --test dist/gpu-selection.test.js",
+    "test": "tsc && node --test dist/gpu-selection.test.js dist/preload-shared-texture.test.js",
     "typecheck": "tsc --noEmit",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",

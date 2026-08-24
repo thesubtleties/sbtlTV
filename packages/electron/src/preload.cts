@@ -257,9 +257,48 @@ if (process.platform === 'darwin' || process.platform === 'linux') {
 let frameCallback: ((videoFrame: VideoFrame, index: number) => void) | null = null;
 let clearCallback: (() => void) | null = null;
 
+interface SharedTextureFrameMetadata {
+  generation: number;
+  index: number;
+}
+
+function isSharedTextureFrameMetadata(value: unknown): value is SharedTextureFrameMetadata {
+  if (!value || typeof value !== 'object') return false;
+  const metadata = value as Record<string, unknown>;
+  return typeof metadata.generation === 'number' && Number.isSafeInteger(metadata.generation) && metadata.generation >= 0 &&
+    typeof metadata.index === 'number' && Number.isSafeInteger(metadata.index) && metadata.index >= 0;
+}
+
+class SharedTextureFrameOrder {
+  private generation = 0;
+  private lastFrameIndex = -1;
+
+  shouldClear(generation: unknown): boolean {
+    if (!Number.isSafeInteger(generation) || Number(generation) < 0 || Number(generation) <= this.generation) {
+      return false;
+    }
+    this.generation = Number(generation);
+    this.lastFrameIndex = -1;
+    return true;
+  }
+
+  acceptFrame(metadata: SharedTextureFrameMetadata): boolean {
+    if (metadata.generation < this.generation) return false;
+    if (metadata.generation > this.generation) {
+      this.generation = metadata.generation;
+      this.lastFrameIndex = -1;
+    }
+    if (metadata.index <= this.lastFrameIndex) return false;
+    this.lastFrameIndex = metadata.index;
+    return true;
+  }
+}
+
+const sharedTextureFrameOrder = new SharedTextureFrameOrder();
+
 // Listen for clear signal from main process (content switch)
-ipcRenderer.on('video-clear', () => {
-  clearCallback?.();
+ipcRenderer.on('video-clear', (_event, generation: unknown) => {
+  if (sharedTextureFrameOrder.shouldClear(generation)) clearCallback?.();
 });
 
 // Set up frame receiver if available
@@ -267,14 +306,18 @@ if (sharedTextureAvailable) {
   try {
     const { sharedTexture } = require('electron');
     sharedTexture.setSharedTextureReceiver(async (data: { importedSharedTexture: { getVideoFrame: () => VideoFrame; release: () => void } }, ...args: unknown[]) => {
-      const index = typeof args[0] === 'number' ? args[0] : 0;
       const imported = data.importedSharedTexture;
       try {
+        const metadata = args[0];
+        if (!isSharedTextureFrameMetadata(metadata) || !sharedTextureFrameOrder.acceptFrame(metadata)) {
+          imported?.release();
+          return;
+        }
         if (frameCallback && imported) {
           const videoFrame = imported.getVideoFrame();
           // Don't close videoFrame here - VideoCanvas manages frame lifecycle via rAF
           // It will close the previous frame when a new one arrives
-          frameCallback(videoFrame, index);
+          frameCallback(videoFrame, metadata.index);
           imported.release();
         } else if (imported) {
           imported.release();
