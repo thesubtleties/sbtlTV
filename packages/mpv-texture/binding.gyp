@@ -43,11 +43,29 @@
           ]
         }],
 
-        # ── Non-macOS: build a no-op stub (see src/native/stub.cpp for details) ──
-        # Windows uses external mpv via --wid flag, Linux uses separate window.
-        # The stub lets node-gyp and @electron/rebuild succeed without requiring
-        # mpv dev libraries on platforms that don't use the native addon.
-        ["OS!='mac'", {
+        # Linux: libmpv Render API -> EGL/GBM DMA-BUF -> Electron NativePixmap.
+        # Use system headers and libraries so the libmpv ABI matches the host.
+        ["OS=='linux'", {
+          "sources": [
+            "src/native/addon.cpp",
+            "src/native/mpv_context.cpp",
+            "src/native/linux/egl_context.cpp",
+            "src/native/linux/dmabuf_texture.cpp"
+          ],
+          "cflags": [
+            "<!@(pkg-config --cflags mpv egl gbm libdrm gl)"
+          ],
+          "cflags_cc": [
+            "-std=c++17"
+          ],
+          "libraries": [
+            "<!@(pkg-config --libs mpv egl gbm libdrm gl)",
+            "-ldl"
+          ]
+        }],
+
+        # Windows continues to use external mpv via --wid.
+        ["OS=='win'", {
           "sources": [
             "src/native/stub.cpp"
           ]

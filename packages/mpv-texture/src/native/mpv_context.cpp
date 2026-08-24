@@ -5,6 +5,7 @@
 #include "mpv_context.h"
 #include <cstring>
 #include <iostream>
+#include <memory>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -19,8 +20,8 @@ typedef PROC(WINAPI* PFNWGLGETPROCADDRESSPROC)(LPCSTR);
 #include <OpenGL/OpenGL.h>
 #include <dlfcn.h>
 #else
+#include "linux/egl_context.h"
 #include <GL/gl.h>
-#include <GL/glx.h>
 #endif
 
 namespace mpv_texture {
@@ -124,6 +125,10 @@ static void destroyWindowsGLContext() {
 }
 #endif
 
+#ifdef __linux__
+static std::unique_ptr<LinuxEglContext> g_linuxEglContext;
+#endif
+
 #ifdef __APPLE__
 static CGLContextObj g_cglContext = nullptr;
 static CGLPixelFormatObj g_cglPixelFormat = nullptr;
@@ -206,6 +211,17 @@ bool MpvContext::create(const MpvConfig& config) {
         return false;
     }
     m_glContext = static_cast<void*>(g_cglContext);
+#elif defined(__linux__)
+    g_linuxEglContext = LinuxEglContext::create(
+        config.gpuVendorId,
+        config.gpuDeviceId,
+        config.debugLogging
+    );
+    if (!g_linuxEglContext) {
+        if (m_errorCallback) m_errorCallback("Failed to create Linux EGL context");
+        return false;
+    }
+    m_glContext = static_cast<void*>(g_linuxEglContext.get());
 #endif
 
     // Create mpv handle
@@ -324,6 +340,8 @@ bool MpvContext::create(const MpvConfig& config) {
 #elif defined(__APPLE__)
     // Release CGL context from main thread so render thread can use it
     CGLSetCurrentContext(nullptr);
+#elif defined(__linux__)
+    g_linuxEglContext->clearCurrent();
 #endif
 
     m_renderThread = std::thread(&MpvContext::renderLoop, this);
@@ -333,10 +351,6 @@ bool MpvContext::create(const MpvConfig& config) {
 }
 
 void MpvContext::destroy() {
-    if (!m_initialized) {
-        return;
-    }
-
     m_running = false;
     m_needsRender = true;
     m_renderCV.notify_one();
@@ -353,6 +367,12 @@ void MpvContext::destroy() {
     if (m_renderThread.joinable()) {
         m_renderThread.join();
     }
+
+#ifdef __linux__
+    // mpv render and texture teardown make GL calls. Reacquire the context on
+    // this thread after the render thread exits.
+    if (g_linuxEglContext) g_linuxEglContext->makeCurrent();
+#endif
 
     if (m_renderCtx) {
         mpv_render_context_free(m_renderCtx);
@@ -375,6 +395,10 @@ void MpvContext::destroy() {
     m_glContext = nullptr;
 #elif defined(__APPLE__)
     destroyMacOSGLContext();
+    m_glContext = nullptr;
+#elif defined(__linux__)
+    if (g_linuxEglContext) g_linuxEglContext->clearCurrent();
+    g_linuxEglContext.reset();
     m_glContext = nullptr;
 #endif
 
@@ -445,12 +469,8 @@ void MpvContext::setErrorCallback(ErrorCallback callback) {
     m_errorCallback = std::move(callback);
 }
 
-void MpvContext::releaseFrame() {
-    std::lock_guard<std::mutex> lock(m_frameMutex);
-    if (m_frameInUse) {
-        m_textureShare->releaseTexture();
-        m_frameInUse = false;
-    }
+void MpvContext::releaseFrame(uint32_t buffer_id) {
+    if (m_textureShare) m_textureShare->releaseTexture(buffer_id);
 }
 
 MpvStatus MpvContext::getStatus() const {
@@ -596,6 +616,16 @@ void MpvContext::renderLoop() {
         }
         std::cout << "[MpvContext] CGL context made current in render thread" << std::endl;
     }
+#elif defined(__linux__)
+    if (!g_linuxEglContext || !g_linuxEglContext->makeCurrent()) {
+        std::cerr << "[MpvContext] Failed to make EGL context current in render thread" << std::endl;
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        if (m_errorCallback) {
+            m_errorCallback("Render thread failed: could not make EGL context current");
+        }
+        return;
+    }
+    std::cout << "[MpvContext] EGL context made current in render thread" << std::endl;
 #endif
 
     while (m_running) {
@@ -624,34 +654,21 @@ void MpvContext::renderLoop() {
             continue;
         }
 
-        // No m_frameInUse check needed — triple buffering eliminates contention.
-        // macOS: IOSurface uses glFlush for GPU-to-GPU sync.
-        // Windows (future): keyed mutex / AcquireSync will handle sync instead.
-
-        // Lock texture for rendering
-        if (!m_textureShare->lockTexture()) {
+        RenderTarget target;
+        if (!m_textureShare->acquireRenderTarget(target)) {
             static int lockFailCount = 0;
             if (lockFailCount < 5) {
-                std::cout << "[MpvContext] Failed to lock texture" << std::endl;
+                std::cout << "[MpvContext] No free texture slot; dropping frame" << std::endl;
                 lockFailCount++;
             }
             continue;
         }
 
-        // Get FBO and dimensions
-        int fbo = m_textureShare->getGLFBO();
-        int width, height;
-        {
-            std::lock_guard<std::mutex> lock(m_statusMutex);
-            width = m_status.width > 0 ? m_status.width : m_config.width;
-            height = m_status.height > 0 ? m_status.height : m_config.height;
-        }
-
         // Render
         mpv_opengl_fbo fbo_params{
-            .fbo = fbo,
-            .w = width,
-            .h = height,
+            .fbo = static_cast<int>(target.fbo),
+            .w = static_cast<int>(target.width),
+            .h = static_cast<int>(target.height),
             .internal_format = 0  // Use default
         };
 
@@ -664,7 +681,7 @@ void MpvContext::renderLoop() {
 
         int result = mpv_render_context_render(m_renderCtx, params);
         if (result < 0) {
-            m_textureShare->releaseTexture();
+            m_textureShare->abandonRenderTarget();
             continue;
         }
 
@@ -673,10 +690,10 @@ void MpvContext::renderLoop() {
 
         // Flush GL commands to ensure rendering is complete before export.
         // macOS: glFlush is sufficient for GPU-to-GPU IOSurface sharing.
-        glFlush();
+        if (m_config.finishBeforeExport) glFinish();
+        else glFlush();
 
-        // Unlock and export texture
-        TextureInfo info = m_textureShare->unlockAndExport();
+        TextureInfo info = m_textureShare->exportRenderTarget();
         if (info.is_valid) {
             static int frameCount = 0;
             if (frameCount < 10) {
@@ -684,10 +701,6 @@ void MpvContext::renderLoop() {
                           << info.width << "x" << info.height << std::endl;
             }
             frameCount++;
-
-            std::lock_guard<std::mutex> lock(m_frameMutex);
-            m_currentFrame = info;
-            m_frameInUse = true;
 
             // Notify callback
             std::lock_guard<std::mutex> cbLock(m_callbackMutex);
@@ -720,7 +733,7 @@ void* MpvContext::getProcAddress(void* ctx, const char* name) {
 #elif defined(__APPLE__)
     return dlsym(RTLD_DEFAULT, name);
 #else
-    return reinterpret_cast<void*>(glXGetProcAddressARB(reinterpret_cast<const GLubyte*>(name)));
+    return g_linuxEglContext ? g_linuxEglContext->getProcAddress(name) : nullptr;
 #endif
 }
 
