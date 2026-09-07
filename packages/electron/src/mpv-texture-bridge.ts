@@ -38,7 +38,19 @@ export class MpvTextureBridge {
   private pipelineFailureCallback?: (error: string) => void;
   private diagnosticsCallback?: (message: string) => void;
   private consecutiveErrors = 0;
+  private rendererConsecutiveErrors = 0;
   private pipelineFailureReported = false;
+  private lastInitError: string | null = null;
+
+  // Frame-starvation watchdog. Catches a producer that stopped delivering
+  // frames (dead render thread, exhausted buffer pool) while mpv still reports
+  // video playing with time advancing. Send-side failures are counted by
+  // consecutiveErrors; renderer-side ones by rendererConsecutiveErrors.
+  private lastStatus: MpvStatus | null = null;
+  private watchdogPosition = 0;
+  private starvedTicks = 0;
+  private readonly starvedTicksBeforeFailure = 3;
+  private readonly statsIntervalMs = 2000;
 
   // Diagnostics
   private stats = {
@@ -74,6 +86,7 @@ export class MpvTextureBridge {
       const mpvModule = await import('@sbtltv/mpv-texture');
       this.mpv = mpvModule.mpvTexture;
     } catch (error) {
+      this.lastInitError = `Failed to load mpv-texture addon: ${error instanceof Error ? error.message : error}`;
       console.warn('[MpvTextureBridge] Failed to load mpv-texture addon:', error);
       return false;
     }
@@ -89,6 +102,7 @@ export class MpvTextureBridge {
 
       // Set up status callback
       this.mpv.onStatus((status) => {
+        this.lastStatus = status;
         this.statusCallback?.(status);
       });
 
@@ -101,6 +115,7 @@ export class MpvTextureBridge {
       console.log('[MpvTextureBridge] Initialized successfully');
 
       this.statsInterval = setInterval(() => {
+        this.checkFrameStarvation();
         if (this.stats.received === 0) return;
         const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
         const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
@@ -121,10 +136,11 @@ export class MpvTextureBridge {
           sendCount: 0,
           releaseCount: 0,
         };
-      }, 2000);
+      }, this.statsIntervalMs);
 
       return true;
     } catch (error) {
+      this.lastInitError = error instanceof Error ? error.message : String(error);
       console.error('[MpvTextureBridge] Failed to initialize:', error);
       return false;
     }
@@ -248,9 +264,8 @@ export class MpvTextureBridge {
       if (this.consecutiveErrors === 1 || this.consecutiveErrors === 5) {
         console.error(`[MpvTextureBridge] Frame error (${this.consecutiveErrors} consecutive):`, error);
       }
-      if (this.consecutiveErrors >= 5 && !this.pipelineFailureReported) {
-        this.pipelineFailureReported = true;
-        this.pipelineFailureCallback?.(`Shared texture pipeline failed after ${this.consecutiveErrors} consecutive frame errors`);
+      if (this.consecutiveErrors >= 5) {
+        this.reportPipelineFailure(`Shared texture pipeline failed after ${this.consecutiveErrors} consecutive frame errors`);
       }
     } finally {
       if (!releaseManagedByElectron) this.releaseFrame(textureInfo);
@@ -272,6 +287,11 @@ export class MpvTextureBridge {
     }
     if (this.pendingFrame) this.releaseFrame(this.pendingFrame.textureInfo);
     this.pendingFrame = null;
+    // A new stream is a fresh chance for the pipeline; re-arm failure detection.
+    this.consecutiveErrors = 0;
+    this.rendererConsecutiveErrors = 0;
+    this.pipelineFailureReported = false;
+    this.starvedTicks = 0;
     return this.mpv.load(url, options);
   }
 
@@ -344,6 +364,52 @@ export class MpvTextureBridge {
 
   onDiagnostics(callback: (message: string) => void): void {
     this.diagnosticsCallback = callback;
+  }
+
+  /** Why initialize() returned false, for the fallback dialog and debug log. */
+  get initError(): string | null {
+    return this.lastInitError;
+  }
+
+  /** The renderer could not import or draw a frame (forwarded from preload). */
+  reportRendererFrameError(message: string): void {
+    this.rendererConsecutiveErrors++;
+    const count = this.rendererConsecutiveErrors;
+    if (count === 1 || count === 5) {
+      console.error(`[MpvTextureBridge] Renderer frame error (${count} consecutive): ${message}`);
+    }
+    if (count >= 5) {
+      this.reportPipelineFailure(`Renderer failed to display ${count} consecutive frames: ${message}`);
+    }
+  }
+
+  reportRendererFrameOk(): void {
+    this.rendererConsecutiveErrors = 0;
+  }
+
+  private reportPipelineFailure(message: string): void {
+    if (this.pipelineFailureReported) return;
+    this.pipelineFailureReported = true;
+    this.pipelineFailureCallback?.(message);
+  }
+
+  private checkFrameStarvation(): void {
+    const status = this.lastStatus;
+    const position = status?.position ?? 0;
+    const advanced = position - this.watchdogPosition;
+    this.watchdogPosition = position;
+    const videoPlaying = !!status && status.playing && status.width > 0;
+    // Audio-only streams have no frames to deliver and a stalled network stream
+    // stops advancing; neither is a pipeline fault.
+    if (!videoPlaying || advanced < 1 || this.stats.received > 0) {
+      this.starvedTicks = 0;
+      return;
+    }
+    this.starvedTicks++;
+    if (this.starvedTicks >= this.starvedTicksBeforeFailure) {
+      const seconds = (this.starvedTicks * this.statsIntervalMs) / 1000;
+      this.reportPipelineFailure(`Native renderer delivered no frames for ${seconds}s while video was playing`);
+    }
   }
 
   /**

@@ -237,11 +237,14 @@ export interface SharedTextureApi {
   removeFrameListener: () => void;
   onClear: (callback: () => void) => void;
   removeClearListener: () => void;
+  /** Report whether the renderer could draw the latest frame; errors escalate in main. */
+  reportDrawResult: (ok: boolean, message?: string) => void;
   isAvailable: boolean;
 }
 
-// Check if sharedTexture is available on platforms that use native mpv. Windows
-// continues to render external mpv behind the BrowserWindow via --wid.
+// Static platform gate: darwin/linux CAN receive sharedTexture frames. Whether
+// native mpv actually initialized this launch is reported by 'mpv-get-mode'.
+// Windows continues to render external mpv behind the BrowserWindow via --wid.
 let sharedTextureAvailable = false;
 if (process.platform === 'darwin' || process.platform === 'linux') {
   try {
@@ -256,6 +259,20 @@ if (process.platform === 'darwin' || process.platform === 'linux') {
 // Frame callback storage
 let frameCallback: ((videoFrame: VideoFrame, index: number) => void) | null = null;
 let clearCallback: (() => void) | null = null;
+
+// Renderer-side frame failures (import or draw) are otherwise invisible to the
+// main process. Every failure is forwarded; recovery is sent once per episode.
+let rendererFrameFailed = false;
+function reportFrameOutcome(ok: boolean, message?: string): void {
+  if (ok) {
+    if (!rendererFrameFailed) return;
+    rendererFrameFailed = false;
+    ipcRenderer.send('shared-texture-frame-ok');
+    return;
+  }
+  rendererFrameFailed = true;
+  ipcRenderer.send('shared-texture-frame-error', message ?? 'unknown error');
+}
 
 interface SharedTextureFrameMetadata {
   generation: number;
@@ -324,6 +341,7 @@ if (sharedTextureAvailable) {
         }
       } catch (error) {
         console.error('[preload] sharedTexture error:', error);
+        reportFrameOutcome(false, error instanceof Error ? error.message : String(error));
         try { imported?.release(); } catch { /* ignore */ }
       }
     });
@@ -345,6 +363,9 @@ contextBridge.exposeInMainWorld('sharedTexture', {
   },
   removeClearListener: () => {
     clearCallback = null;
+  },
+  reportDrawResult: (ok: boolean, message?: string) => {
+    reportFrameOutcome(ok === true, typeof message === 'string' ? message : undefined);
   },
   isAvailable: sharedTextureAvailable,
 } satisfies SharedTextureApi);

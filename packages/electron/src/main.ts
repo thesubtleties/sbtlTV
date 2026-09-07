@@ -16,11 +16,14 @@ type MpvTextureBridgeType = import('./mpv-texture-bridge.js').MpvTextureBridge;
 const MPV_COMPATIBILITY_ARG = '--mpv-compatibility-mode';
 const compatibilityModeRequested = process.platform === 'linux' && process.argv.includes(MPV_COMPATIBILITY_ARG);
 let MpvTextureBridgeClass: (new () => MpvTextureBridgeType) | null = null;
+// Why the native path is unavailable this launch, shown in the Linux fallback dialog.
+let nativeInitError: string | null = null;
 if (process.platform === 'darwin' || (process.platform === 'linux' && !compatibilityModeRequested)) {
   try {
     const mod = await import('./mpv-texture-bridge.js');
     MpvTextureBridgeClass = mod.MpvTextureBridge;
   } catch (error) {
+    nativeInitError = `Failed to load mpv-texture-bridge: ${error instanceof Error ? error.message : error}`;
     console.warn('[mpv] Failed to load mpv-texture-bridge:', error);
   }
 }
@@ -668,8 +671,9 @@ async function initNativeMpv(): Promise<boolean> {
     });
 
     if (!success) {
-      console.warn('[mpv] Native bridge initialize returned false');
-      debugLog('Native bridge initialize returned false', 'mpv');
+      nativeInitError = bridge.initError ?? 'initialize returned false';
+      console.warn('[mpv] Native bridge unavailable:', nativeInitError);
+      debugLog(`Native bridge unavailable: ${nativeInitError}`, 'mpv');
       bridge.destroy();
       return false;
     }
@@ -725,6 +729,7 @@ async function initNativeMpv(): Promise<boolean> {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.warn('[mpv] Native bridge failed:', message);
     debugLog(`Native bridge failed: ${message}`, 'mpv');
+    nativeInitError = message;
     // Clean up partially-initialized bridge to avoid leaking GL contexts/threads
     bridge?.destroy();
     return false;
@@ -732,25 +737,33 @@ async function initNativeMpv(): Promise<boolean> {
 }
 
 async function handleNativePipelineFailure(error: string): Promise<void> {
-  if (process.platform !== 'linux' || pipelineFailurePromptOpen || !mainWindow) return;
+  debugLog(`Native pipeline failure: ${error}`, 'mpv');
+  if (process.platform !== 'linux') {
+    // No compatibility relaunch on macOS; surface it like any other playback error.
+    sendToRenderer('mpv-error', error);
+    return;
+  }
+  if (pipelineFailurePromptOpen || !mainWindow) return;
   pipelineFailurePromptOpen = true;
   const failurePosition = mpvState.position > 0 ? mpvState.position : currentMedia?.startPosition ?? 0;
-  mpvBridge?.stop();
-  debugLog(error, 'mpv');
 
   try {
+    mpvBridge?.stop();
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'error',
       title: 'Native video playback failed',
       message: 'The native Linux video pipeline stopped working.',
-      detail: 'Restart sbtlTV in floating-window compatibility mode for this launch?',
+      detail: `${error}\n\nRestart sbtlTV in floating-window compatibility mode for this launch?`,
       buttons: ['Restart in Compatibility Mode', 'Cancel'],
       defaultId: 0,
       cancelId: 1,
       noLink: true,
     });
 
-    if (result.response !== 0) return;
+    if (result.response !== 0) {
+      sendToRenderer('mpv-error', 'Native video pipeline failed. Select a channel to retry, or restart in compatibility mode.');
+      return;
+    }
 
     if (currentMedia) {
       saveCompatibilityHandoff({
@@ -762,18 +775,20 @@ async function handleNativePipelineFailure(error: string): Promise<void> {
     const relaunchArgs = process.argv.slice(1).filter((argument) => argument !== MPV_COMPATIBILITY_ARG);
     app.relaunch({ args: [...relaunchArgs, MPV_COMPATIBILITY_ARG] });
     app.exit(0);
+  } catch (handlerError) {
+    debugLog(`Pipeline failure handling error: ${handlerError instanceof Error ? handlerError.message : handlerError}`, 'mpv');
   } finally {
     pipelineFailurePromptOpen = false;
   }
 }
 
-async function confirmCompatibilityFallback(): Promise<boolean> {
+async function confirmCompatibilityFallback(reason: string | null): Promise<boolean> {
   if (process.platform !== 'linux' || !mainWindow) return true;
   const result = await dialog.showMessageBox(mainWindow, {
     type: 'warning',
     title: 'Native video playback unavailable',
     message: 'sbtlTV could not start the native Linux video pipeline.',
-    detail: 'Use floating-window compatibility mode for this launch?',
+    detail: `${reason ? `${reason}\n\n` : ''}Use floating-window compatibility mode for this launch?`,
     buttons: ['Use Compatibility Mode', 'Quit'],
     defaultId: 0,
     cancelId: 1,
@@ -1244,6 +1259,16 @@ ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
   return { success: true };
 });
 
+// Renderer-side shared-texture failures (import or draw) feed the same
+// pipeline escalation as main-side send errors.
+ipcMain.on('shared-texture-frame-error', (_event, message: unknown) => {
+  mpvBridge?.reportRendererFrameError(typeof message === 'string' ? message : 'unknown error');
+});
+
+ipcMain.on('shared-texture-frame-ok', () => {
+  mpvBridge?.reportRendererFrameOk();
+});
+
 ipcMain.handle('debug-open-log-folder', async () => {
   const { shell } = await import('electron');
   const logPath = getDebugLogPath();
@@ -1637,7 +1662,7 @@ app.whenReady().then(async () => {
       console.log('[mpv] Using native mpv-texture bridge');
     } else {
       console.log('[mpv] Native bridge unavailable');
-      if (!await confirmCompatibilityFallback()) {
+      if (!await confirmCompatibilityFallback(nativeInitError)) {
         app.quit();
         return;
       }

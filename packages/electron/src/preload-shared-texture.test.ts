@@ -30,6 +30,7 @@ function loadSandboxedPreload(): {
 
   const ipcRenderer = {
     invoke: async () => undefined,
+    send: () => undefined,
     on: (channel: string, listener: (...args: unknown[]) => void) => listeners.set(channel, listener),
     removeAllListeners: () => undefined,
   };
