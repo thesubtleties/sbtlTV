@@ -16,6 +16,8 @@ files:
   - dist/**/*
   - assets/**/*
   - "!**/*.ts"
+  - "!**/*.test.js"
+  - "!**/*.test.js.map"
   - "!**/tsconfig.json"
   - "!**/deps/**"
 
@@ -114,7 +116,8 @@ deb:
     - libuuid1
     - libsecret-1-0
     - mpv
-    - libmpv2
+    # Ubuntu 22.04 ships libmpv1; the addon dlopens libmpv.so.2 then .so.1.
+    - libmpv2 | libmpv1
     - libegl1
     - libgbm1
     - libdrm2

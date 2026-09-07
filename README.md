@@ -33,10 +33,10 @@ A desktop IPTV player built with Electron and mpv.
 
 Download the latest release from the [Releases](../../releases) page:
 
-| Platform              | Notes                                                                      |
-| --------------------- | -------------------------------------------------------------------------- |
-| Windows               | mpv included                                                               |
-| Linux                 | Requires mpv installed separately                                          |
+| Platform | Notes |
+|----------|-------|
+| Windows | mpv included |
+| Linux | Video renders natively in-window; libmpv required (mpv binary used as fallback) |
 | macOS (Apple Silicon) | Video renders natively in-window; mpv via Homebrew recommended as fallback |
 
 ### Windows Users
@@ -57,7 +57,7 @@ macOS builds are code-signed and notarized — the app should open without Gatek
 
 ### Linux Users
 
-mpv must be installed separately:
+Video renders natively inside the app window using the system libmpv. Install mpv with your package manager (it provides libmpv); the `mpv` binary is also used by the floating-window compatibility mode if the native pipeline is unavailable:
 
 ```bash
 # Ubuntu/Debian
@@ -115,12 +115,11 @@ pnpm dist:linux
 Movie and series metadata comes from [The Movie Database](https://www.themoviedb.org/). Basic matching works automatically.
 
 For genre browsing and suggested/popular lists, add a TMDB Access Token:
-
 1. Create an account at [themoviedb.org](https://www.themoviedb.org/signup)
 2. Get an API Read Access Token from [API settings](https://www.themoviedb.org/settings/api)
 3. Add it in Settings → TMDB
 
-_This product uses the TMDB API but is not endorsed or certified by TMDB._
+*This product uses the TMDB API but is not endorsed or certified by TMDB.*
 
 ### Poster Overlays (RPDB)
 
