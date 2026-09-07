@@ -124,9 +124,14 @@ Napi::Value Create(const Napi::CallbackInfo& info) {
     g_context = new MpvContext();
 
     if (!g_context->create(config)) {
+        // The error callback cannot be registered before create() succeeds, so
+        // the failure reason only exists on the context. Surface it here.
+        const std::string reason = g_context->lastError();
         delete g_context;
         g_context = nullptr;
-        Napi::Error::New(env, "Failed to create mpv context").ThrowAsJavaScriptException();
+        Napi::Error::New(env, reason.empty() ? "Failed to create mpv context"
+                                             : "Failed to create mpv context: " + reason)
+            .ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
@@ -384,7 +389,7 @@ Napi::Value OnError(const Napi::CallbackInfo& info) {
     return env.Undefined();
 }
 
-// Release current frame
+// Release an exported buffer slot back to the producer (Linux DMA-BUF pool)
 Napi::Value ReleaseFrame(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     if (info.Length() < 1 || !info[0].IsNumber()) {

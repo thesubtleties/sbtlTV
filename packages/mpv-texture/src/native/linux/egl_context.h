@@ -14,10 +14,13 @@ namespace mpv_texture {
 
 class LinuxEglContext {
 public:
+    // On failure returns nullptr and, when error_out is given, a short reason
+    // suitable for surfacing to the user.
     static std::unique_ptr<LinuxEglContext> create(
         uint32_t preferred_vendor_id,
         uint32_t preferred_device_id,
-        bool debug_logging
+        bool debug_logging,
+        std::string* error_out = nullptr
     );
 
     ~LinuxEglContext();
@@ -43,6 +46,7 @@ private:
     EGLContext m_context = EGL_NO_CONTEXT;
     EGLSurface m_surface = EGL_NO_SURFACE;
     std::string m_renderNode;
+    std::string m_lastFailure;
     bool m_debugLogging = false;
 };
 

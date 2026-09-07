@@ -188,6 +188,13 @@ type TextureInfo =
       width: number;
       height: number;
       format: 'bgra';
+    }
+  | {
+      kind: 'ntHandle'; // Windows DXGI reference code; not built or used by the app
+      handle: bigint;
+      width: number;
+      height: number;
+      format: 'rgba' | 'nv12' | 'bgra';
     };
 ```
 

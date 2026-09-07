@@ -347,7 +347,7 @@ export class MpvTexture {
    * Release an exported native buffer
    *
    * Must be called after Electron has finished using the texture
-   * (in the allReferenceReleased callback of importSharedTexture).
+   * (in the allReferencesReleased callback of importSharedTexture).
    */
   releaseFrame(bufferId: number): void {
     if (this._initialized) {

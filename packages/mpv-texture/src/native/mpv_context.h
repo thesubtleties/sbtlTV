@@ -57,6 +57,10 @@ public:
     void destroy();
     bool isInitialized() const { return m_initialized; }
 
+    // Reason the most recent create() failed. Errors raised before the JS
+    // error callback is registered (everything inside create()) land here.
+    std::string lastError() const;
+
     // Playback control
     bool load(const std::string& url, const std::string& options = "");
     void play();
@@ -86,6 +90,9 @@ private:
     // Render thread
     void renderLoop();
     void onRenderUpdate();
+
+    // Record a failure and forward it to the error callback if one is set.
+    void reportError(const std::string& message);
 
     // Static callback for mpv
     static void* getProcAddress(void* ctx, const char* name);
@@ -127,6 +134,9 @@ private:
     StatusCallback m_statusCallback;
     ErrorCallback m_errorCallback;
     std::mutex m_callbackMutex;
+
+    std::string m_lastError;
+    mutable std::mutex m_lastErrorMutex;
 
     // Config
     MpvConfig m_config;

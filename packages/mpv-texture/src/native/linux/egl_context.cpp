@@ -3,6 +3,7 @@
 #include "egl_context.h"
 
 #include <EGL/eglext.h>
+#include <cstdio>
 #include <GL/gl.h>
 #include <fcntl.h>
 #include <gbm.h>
@@ -85,7 +86,8 @@ bool hasExtension(const char* extensions, const char* extension) {
 std::unique_ptr<LinuxEglContext> LinuxEglContext::create(
     uint32_t preferred_vendor_id,
     uint32_t preferred_device_id,
-    bool debug_logging
+    bool debug_logging,
+    std::string* error_out
 ) {
     auto context = std::unique_ptr<LinuxEglContext>(new LinuxEglContext());
     context->m_debugLogging = debug_logging;
@@ -105,6 +107,11 @@ std::unique_ptr<LinuxEglContext> LinuxEglContext::create(
     }
 
     std::cerr << "[LinuxEGL] No usable DRM render node found" << std::endl;
+    if (error_out) {
+        *error_out = candidates.empty()
+            ? "no DRM render nodes found"
+            : "no usable DRM render node (last attempt: " + context->m_lastFailure + ")";
+    }
     return nullptr;
 }
 
@@ -114,10 +121,10 @@ LinuxEglContext::~LinuxEglContext() {
 
 bool LinuxEglContext::initializeDevice(const std::string& render_node) {
     const auto fail = [this, &render_node](const char* stage) {
-        if (m_debugLogging) {
-            std::cerr << "[LinuxEGL] " << render_node << " failed at " << stage
-                      << " EGL error=0x" << std::hex << eglGetError() << std::dec << std::endl;
-        }
+        char egl_error[32];
+        std::snprintf(egl_error, sizeof(egl_error), "0x%x", static_cast<unsigned>(eglGetError()));
+        m_lastFailure = render_node + " failed at " + stage + " EGL error=" + egl_error;
+        if (m_debugLogging) std::cerr << "[LinuxEGL] " << m_lastFailure << std::endl;
         return false;
     };
 
