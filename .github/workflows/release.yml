@@ -15,7 +15,10 @@ jobs:
             platform: win
           - os: macos-latest
             platform: mac
-          - os: ubuntu-latest
+          # Oldest supported LTS on purpose: the native addon inherits this
+          # runner's glibc floor. ubuntu-latest (24.04) produced a .node that
+          # would not load on Ubuntu 22.04-era distros (GLIBC_2.36/2.38).
+          - os: ubuntu-22.04
             platform: linux
 
     runs-on: ${{ matrix.os }}
