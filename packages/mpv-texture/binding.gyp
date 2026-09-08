@@ -63,6 +63,13 @@
           "libraries": [
             "<!@(pkg-config --libs egl gbm libdrm gl)",
             "-ldl"
+          ],
+          # CI compiles on ubuntu-latest, whose libstdc++ is newer than what
+          # Ubuntu 22.04-era distros ship. Link the C++ runtime statically so
+          # the addon loads there instead of failing on a GLIBCXX_3.4.3x symbol.
+          "ldflags": [
+            "-static-libstdc++",
+            "-static-libgcc"
           ]
         }],
 
