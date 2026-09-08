@@ -34,6 +34,9 @@ paths.push(
 );
 
 let loadedPath = '';
+// Keep the loader's own error (e.g. a missing GLIBCXX symbol on an older
+// distro) so the failure reason survives to the fallback dialog.
+const loadErrors: string[] = [];
 for (const p of paths) {
   if (existsSync(p)) {
     try {
@@ -41,6 +44,8 @@ for (const p of paths) {
       loadedPath = p;
       break;
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      loadErrors.push(`${p}: ${message}`);
       console.warn(`[mpv-texture] Failed to load from ${p}:`, e);
     }
   }
@@ -49,7 +54,9 @@ for (const p of paths) {
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
 // Non-null assertion needed: TS can't infer that addon is assigned inside the for loop above
 if (!addon!) {
-  throw new Error(`[mpv-texture] Native addon not found. Searched:\n${paths.join('\n')}`);
+  throw new Error(loadErrors.length > 0
+    ? `[mpv-texture] Native addon failed to load: ${loadErrors.join('; ')}`
+    : `[mpv-texture] Native addon not found. Searched:\n${paths.join('\n')}`);
 }
 
 console.log(`[mpv-texture] Loaded native addon from: ${loadedPath}`);
