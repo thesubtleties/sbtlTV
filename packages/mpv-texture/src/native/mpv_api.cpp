@@ -7,6 +7,8 @@
 
 #include "mpv_api.h"
 
+#include <iostream>
+
 namespace mpv_texture {
 
 MpvApi& mpvApi() {
@@ -20,22 +22,30 @@ bool MpvApi::load(std::string& error) {
 #ifdef __linux__
     // These libraries exchange allocated memory across their own DSOs. Resolve
     // them normally before deep-binding libmpv so each uses one allocator.
-    static void* pipewire = dlopen("libpipewire-0.3.so.0", RTLD_NOW | RTLD_GLOBAL);
-    static void* libass = dlopen("libass.so.9", RTLD_NOW | RTLD_GLOBAL);
-    static void* pulse = dlopen("libpulse.so.0", RTLD_NOW | RTLD_GLOBAL);
-    (void)pipewire;
-    (void)libass;
-    (void)pulse;
+    // If one cannot be found here, libmpv loads its own copy inside the
+    // deep-bound scope and playback dies with free(): invalid size, so say so.
+    static const char* preload_names[] = {"libpipewire-0.3.so.0", "libass.so.9", "libpulse.so.0"};
+    for (const char* preload_name : preload_names) {
+        if (!dlopen(preload_name, RTLD_NOW | RTLD_GLOBAL)) {
+            const char* reason = dlerror();
+            std::cerr << "[mpv-texture] warning: could not pre-load " << preload_name
+                      << " (" << (reason ? reason : "unknown") << "); "
+                      << "libmpv may crash if it loads a private copy" << std::endl;
+        }
+    }
 
     void* library = nullptr;
     const char* library_names[] = {"libmpv.so.2", "libmpv.so.1", "libmpv.so"};
+    std::string attempts;
     for (const char* library_name : library_names) {
         library = dlopen(library_name, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
         if (library) break;
+        const char* reason = dlerror();
+        if (!attempts.empty()) attempts += "; ";
+        attempts += std::string(library_name) + ": " + (reason ? reason : "unknown error");
     }
     if (!library) {
-        const char* loader_error = dlerror();
-        error = loader_error ? loader_error : "system libmpv not found";
+        error = "system libmpv not found (" + attempts + ")";
         return false;
     }
 
