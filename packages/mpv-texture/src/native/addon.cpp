@@ -27,9 +27,38 @@ static Napi::ThreadSafeFunction g_errorCallback;
 // Convert TextureInfo to JS object
 Napi::Object TextureInfoToJS(Napi::Env env, const TextureInfo& info) {
     auto obj = Napi::Object::New(env);
-    obj.Set("handle", Napi::BigInt::New(env, info.handle));
     obj.Set("width", Napi::Number::New(env, info.width));
     obj.Set("height", Napi::Number::New(env, info.height));
+
+    if (info.handle_type == TextureHandleType::NativePixmap) {
+        obj.Set("kind", Napi::String::New(env, "nativePixmap"));
+        obj.Set("bufferId", Napi::Number::New(env, info.buffer_id));
+
+        auto nativePixmap = Napi::Object::New(env);
+        auto planes = Napi::Array::New(env, info.planes.size());
+        for (size_t index = 0; index < info.planes.size(); index++) {
+            const auto& source = info.planes[index];
+            auto plane = Napi::Object::New(env);
+            plane.Set("fd", Napi::Number::New(env, source.fd));
+            plane.Set("stride", Napi::Number::New(env, source.stride));
+            plane.Set("offset", Napi::Number::New(env, source.offset));
+            plane.Set("size", Napi::Number::New(env, static_cast<double>(source.size)));
+            planes.Set(index, plane);
+        }
+        nativePixmap.Set("planes", planes);
+        nativePixmap.Set("modifier", Napi::String::New(env, info.modifier));
+        nativePixmap.Set(
+            "supportsZeroCopyWebGpuImport",
+            Napi::Boolean::New(env, info.supports_zero_copy_webgpu_import)
+        );
+        obj.Set("nativePixmap", nativePixmap);
+    } else {
+        obj.Set(
+            "kind",
+            Napi::String::New(env, info.handle_type == TextureHandleType::NTHandle ? "ntHandle" : "ioSurface")
+        );
+        obj.Set("handle", Napi::BigInt::New(env, info.handle));
+    }
 
     const char* formatStr = "rgba";
     switch (info.format) {
@@ -69,23 +98,40 @@ Napi::Value Create(const Napi::CallbackInfo& info) {
     if (info.Length() > 0 && info[0].IsObject()) {
         auto configObj = info[0].As<Napi::Object>();
 
-        if (configObj.Has("width")) {
+        if (configObj.Has("width") && configObj.Get("width").IsNumber()) {
             config.width = configObj.Get("width").As<Napi::Number>().Uint32Value();
         }
-        if (configObj.Has("height")) {
+        if (configObj.Has("height") && configObj.Get("height").IsNumber()) {
             config.height = configObj.Get("height").As<Napi::Number>().Uint32Value();
         }
-        if (configObj.Has("hwdec")) {
+        if (configObj.Has("hwdec") && configObj.Get("hwdec").IsString()) {
             config.hwdec = configObj.Get("hwdec").As<Napi::String>().Utf8Value();
+        }
+        if (configObj.Has("gpuVendorId") && configObj.Get("gpuVendorId").IsNumber()) {
+            config.gpuVendorId = configObj.Get("gpuVendorId").As<Napi::Number>().Uint32Value();
+        }
+        if (configObj.Has("gpuDeviceId") && configObj.Get("gpuDeviceId").IsNumber()) {
+            config.gpuDeviceId = configObj.Get("gpuDeviceId").As<Napi::Number>().Uint32Value();
+        }
+        if (configObj.Has("debugLogging") && configObj.Get("debugLogging").IsBoolean()) {
+            config.debugLogging = configObj.Get("debugLogging").As<Napi::Boolean>().Value();
+        }
+        if (configObj.Has("finishBeforeExport") && configObj.Get("finishBeforeExport").IsBoolean()) {
+            config.finishBeforeExport = configObj.Get("finishBeforeExport").As<Napi::Boolean>().Value();
         }
     }
 
     g_context = new MpvContext();
 
     if (!g_context->create(config)) {
+        // The error callback cannot be registered before create() succeeds, so
+        // the failure reason only exists on the context. Surface it here.
+        const std::string reason = g_context->lastError();
         delete g_context;
         g_context = nullptr;
-        Napi::Error::New(env, "Failed to create mpv context").ThrowAsJavaScriptException();
+        Napi::Error::New(env, reason.empty() ? "Failed to create mpv context"
+                                             : "Failed to create mpv context: " + reason)
+            .ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
@@ -343,10 +389,14 @@ Napi::Value OnError(const Napi::CallbackInfo& info) {
     return env.Undefined();
 }
 
-// Release current frame
+// Release an exported buffer slot back to the producer (Linux DMA-BUF pool)
 Napi::Value ReleaseFrame(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (g_context) g_context->releaseFrame();
+    if (info.Length() < 1 || !info[0].IsNumber()) {
+        Napi::TypeError::New(env, "bufferId number required").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    if (g_context) g_context->releaseFrame(info[0].As<Napi::Number>().Uint32Value());
     return env.Undefined();
 }
 

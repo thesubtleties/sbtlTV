@@ -41,6 +41,10 @@ struct MpvConfig {
     uint32_t height = 1080;
     std::string hwdec = "auto";  // Hardware decoding: auto, d3d11va, videotoolbox, etc.
     std::string vo = "libmpv";   // Video output
+    uint32_t gpuVendorId = 0;
+    uint32_t gpuDeviceId = 0;
+    bool debugLogging = false;
+    bool finishBeforeExport = false;
 };
 
 class MpvContext {
@@ -52,6 +56,10 @@ public:
     bool create(const MpvConfig& config);
     void destroy();
     bool isInitialized() const { return m_initialized; }
+
+    // Reason the most recent create() failed. Errors raised before the JS
+    // error callback is registered (everything inside create()) land here.
+    std::string lastError() const;
 
     // Playback control
     bool load(const std::string& url, const std::string& options = "");
@@ -68,7 +76,7 @@ public:
     void setErrorCallback(ErrorCallback callback);
 
     // Frame management
-    void releaseFrame();
+    void releaseFrame(uint32_t buffer_id);
 
     // Get current status
     MpvStatus getStatus() const;
@@ -82,6 +90,9 @@ private:
     // Render thread
     void renderLoop();
     void onRenderUpdate();
+
+    // Record a failure and forward it to the error callback if one is set.
+    void reportError(const std::string& message);
 
     // Static callback for mpv
     static void* getProcAddress(void* ctx, const char* name);
@@ -111,11 +122,6 @@ private:
     std::atomic<uint32_t> m_pendingWidth{0};
     std::atomic<uint32_t> m_pendingHeight{0};
 
-    // Frame synchronization
-    std::mutex m_frameMutex;
-    std::atomic<bool> m_frameInUse{false};
-    TextureInfo m_currentFrame{};
-
     // Current state
     MpvStatus m_status{};
     mutable std::mutex m_statusMutex;
@@ -128,6 +134,9 @@ private:
     StatusCallback m_statusCallback;
     ErrorCallback m_errorCallback;
     std::mutex m_callbackMutex;
+
+    std::string m_lastError;
+    mutable std::mutex m_lastErrorMutex;
 
     // Config
     MpvConfig m_config;

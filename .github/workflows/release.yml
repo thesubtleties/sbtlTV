@@ -15,7 +15,10 @@ jobs:
             platform: win
           - os: macos-latest
             platform: mac
-          - os: ubuntu-latest
+          # Oldest supported LTS on purpose: the native addon inherits this
+          # runner's glibc floor. ubuntu-latest (24.04) produced a .node that
+          # would not load on Ubuntu 22.04-era distros (GLIBC_2.36/2.38).
+          - os: ubuntu-22.04
             platform: linux
 
     runs-on: ${{ matrix.os }}
@@ -32,6 +35,12 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
+
+      - name: Install native build dependencies (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev libegl1-mesa-dev libgbm-dev libdrm-dev libgl-dev pkg-config
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -58,8 +67,8 @@ jobs:
       - name: Build all packages
         run: pnpm build
 
-      - name: Build native addon (macOS only)
-        if: matrix.platform == 'mac'
+      - name: Build native addon
+        if: matrix.platform == 'mac' || matrix.platform == 'linux'
         run: |
           cd packages/mpv-texture
           npm run build:native

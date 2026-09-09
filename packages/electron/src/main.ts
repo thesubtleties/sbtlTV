@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
 import * as net from 'net';
@@ -7,24 +7,30 @@ import { fileURLToPath } from 'url';
 import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
 import electronUpdater from 'electron-updater';
+import { selectChromiumGpuIdentity } from './gpu-selection.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
 // which may not be available on all platforms
 type MpvTextureBridgeType = import('./mpv-texture-bridge.js').MpvTextureBridge;
+const MPV_COMPATIBILITY_ARG = '--mpv-compatibility-mode';
+const compatibilityModeRequested = process.platform === 'linux' && process.argv.includes(MPV_COMPATIBILITY_ARG);
 let MpvTextureBridgeClass: (new () => MpvTextureBridgeType) | null = null;
-if (process.platform === 'darwin') {
+// Why the native path is unavailable this launch, shown in the Linux fallback dialog.
+let nativeInitError: string | null = null;
+if (process.platform === 'darwin' || (process.platform === 'linux' && !compatibilityModeRequested)) {
   try {
     const mod = await import('./mpv-texture-bridge.js');
     MpvTextureBridgeClass = mod.MpvTextureBridge;
   } catch (error) {
+    nativeInitError = `Failed to load mpv-texture-bridge: ${error instanceof Error ? error.message : error}`;
     console.warn('[mpv] Failed to load mpv-texture-bridge:', error);
   }
 }
 
-// On macOS, default to native mpv-texture addon (IOSurface shared texture).
+// macOS and Linux default to the native mpv-texture addon.
 // Falls back to external mpv process if the bridge fails to load or initialize.
-const USE_NATIVE_MPV = process.platform === 'darwin';
+const USE_NATIVE_MPV = process.platform === 'darwin' || (process.platform === 'linux' && !compatibilityModeRequested);
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -73,6 +79,13 @@ const mpvState: MpvState = {
 // Generation counter prevents stale seeks on rapid re-load.
 let pendingResume: { position: number; generation: number } | null = null;
 let loadGeneration = 0;
+let currentMedia: { url: string; startPosition: number } | null = null;
+let pipelineFailurePromptOpen = false;
+
+interface CompatibilityHandoff {
+  url: string;
+  position: number;
+}
 
 // Prevent screen sleep during playback
 let sleepBlockerId: number | null = null;
@@ -167,6 +180,91 @@ function debugLog(message: string, category = 'app'): void {
     debugLogStream.write(line);
   } catch {
     // Silently fail - logging should never crash the app
+  }
+}
+
+function compatibilityHandoffPath(): string {
+  return path.join(app.getPath('sessionData'), 'mpv-compatibility-handoff.bin');
+}
+
+function saveCompatibilityHandoff(handoff: CompatibilityHandoff): boolean {
+  if (!safeStorage.isEncryptionAvailable()) {
+    debugLog('Skipping playback handoff because safeStorage is unavailable', 'mpv');
+    return false;
+  }
+
+  try {
+    const handoffPath = compatibilityHandoffPath();
+    fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
+    const encrypted = safeStorage.encryptString(JSON.stringify(handoff));
+    fs.writeFileSync(handoffPath, encrypted, { mode: 0o600 });
+    fs.chmodSync(handoffPath, 0o600);
+    return true;
+  } catch (error) {
+    debugLog(`Could not save encrypted compatibility handoff: ${error instanceof Error ? error.message : error}`, 'mpv');
+    return false;
+  }
+}
+
+function consumeCompatibilityHandoff(): CompatibilityHandoff | null {
+  const handoffPath = compatibilityHandoffPath();
+  if (!fs.existsSync(handoffPath)) return null;
+
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    const decrypted = safeStorage.decryptString(fs.readFileSync(handoffPath));
+    const value: unknown = JSON.parse(decrypted);
+    if (!value || typeof value !== 'object') return null;
+    const candidate = value as Record<string, unknown>;
+    if (typeof candidate.url !== 'string' || typeof candidate.position !== 'number') return null;
+    return { url: candidate.url, position: Math.max(0, candidate.position) };
+  } catch (error) {
+    debugLog(`Could not consume compatibility handoff: ${error instanceof Error ? error.message : error}`, 'mpv');
+    return null;
+  } finally {
+    try { fs.unlinkSync(handoffPath); } catch { /* Already removed or inaccessible. */ }
+  }
+}
+
+function discardStaleCompatibilityHandoff(): void {
+  try { fs.unlinkSync(compatibilityHandoffPath()); } catch { /* No stale handoff. */ }
+}
+
+async function getHighPerformanceWebGlRenderer(): Promise<unknown> {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  try {
+    return await mainWindow.webContents.executeJavaScript(`(() => {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl2', { powerPreference: 'high-performance' });
+      if (!gl) return null;
+      const debugRenderer = gl.getExtension('WEBGL_debug_renderer_info');
+      if (!debugRenderer) return null;
+      const result = {
+        vendor: gl.getParameter(debugRenderer.UNMASKED_VENDOR_WEBGL),
+        renderer: gl.getParameter(debugRenderer.UNMASKED_RENDERER_WEBGL),
+      };
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+      return result;
+    })()`);
+  } catch (error) {
+    debugLog(`Could not read high-performance WebGL renderer: ${error instanceof Error ? error.message : error}`, 'mpv');
+    return null;
+  }
+}
+
+async function getChromiumGpuIdentity(): Promise<{ vendorId?: number; deviceId?: number }> {
+  try {
+    const webGlRenderer = await getHighPerformanceWebGlRenderer();
+    const info: unknown = await app.getGPUInfo('basic');
+    const devices = info && typeof info === 'object'
+      ? (info as Record<string, unknown>).gpuDevice
+      : undefined;
+    const gpu = selectChromiumGpuIdentity(devices, webGlRenderer);
+    debugLog(`GPU selection source=${gpu.source}`, 'mpv');
+    return gpu;
+  } catch (error) {
+    debugLog(`Could not read Chromium GPU identity: ${error instanceof Error ? error.message : error}`, 'mpv');
+    return {};
   }
 }
 
@@ -556,14 +654,26 @@ async function initNativeMpv(): Promise<boolean> {
 
   let bridge: MpvTextureBridgeType | null = null;
   try {
+    const gpu = process.platform === 'linux' ? await getChromiumGpuIdentity() : {};
+    if (gpu.vendorId !== undefined) {
+      debugLog(
+        `Chromium GPU vendor=0x${gpu.vendorId.toString(16)} device=${gpu.deviceId !== undefined ? `0x${gpu.deviceId.toString(16)}` : 'unknown'}`,
+        'mpv'
+      );
+    }
     bridge = new MpvTextureBridgeClass();
     const success = await bridge.initialize(mainWindow, {
       hwdec: 'auto',
+      gpuVendorId: gpu.vendorId,
+      gpuDeviceId: gpu.deviceId,
+      debugLogging: debugLoggingEnabled,
+      finishBeforeExport: process.env.SBTLTV_MPV_GL_FINISH === '1',
     });
 
     if (!success) {
-      console.warn('[mpv] Native bridge initialize returned false');
-      debugLog('Native bridge initialize returned false', 'mpv');
+      nativeInitError = bridge.initError ?? 'initialize returned false';
+      console.warn('[mpv] Native bridge unavailable:', nativeInitError);
+      debugLog(`Native bridge unavailable: ${nativeInitError}`, 'mpv');
       bridge.destroy();
       return false;
     }
@@ -603,6 +713,14 @@ async function initNativeMpv(): Promise<boolean> {
       sendToRenderer('mpv-error', error);
     });
 
+    bridge.onPipelineFailure((error) => {
+      void handleNativePipelineFailure(error);
+    });
+
+    bridge.onDiagnostics((message) => {
+      debugLog(message, 'mpv-texture');
+    });
+
     console.log('[mpv] Native mpv-texture bridge initialized');
     debugLog('Native mpv-texture bridge initialized', 'mpv');
     sendToRenderer('mpv-ready', true);
@@ -611,10 +729,72 @@ async function initNativeMpv(): Promise<boolean> {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.warn('[mpv] Native bridge failed:', message);
     debugLog(`Native bridge failed: ${message}`, 'mpv');
+    nativeInitError = message;
     // Clean up partially-initialized bridge to avoid leaking GL contexts/threads
     bridge?.destroy();
     return false;
   }
+}
+
+async function handleNativePipelineFailure(error: string): Promise<void> {
+  debugLog(`Native pipeline failure: ${error}`, 'mpv');
+  if (process.platform !== 'linux') {
+    // No compatibility relaunch on macOS; surface it like any other playback error.
+    sendToRenderer('mpv-error', error);
+    return;
+  }
+  if (pipelineFailurePromptOpen || !mainWindow) return;
+  pipelineFailurePromptOpen = true;
+  const failurePosition = mpvState.position > 0 ? mpvState.position : currentMedia?.startPosition ?? 0;
+
+  try {
+    mpvBridge?.stop();
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'Native video playback failed',
+      message: 'The native Linux video pipeline stopped working.',
+      detail: `${error}\n\nRestart sbtlTV in floating-window compatibility mode for this launch?`,
+      buttons: ['Restart in Compatibility Mode', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+
+    if (result.response !== 0) {
+      sendToRenderer('mpv-error', 'Native video pipeline failed. Select a channel to retry, or restart in compatibility mode.');
+      return;
+    }
+
+    if (currentMedia) {
+      saveCompatibilityHandoff({
+        url: currentMedia.url,
+        position: failurePosition,
+      });
+    }
+
+    const relaunchArgs = process.argv.slice(1).filter((argument) => argument !== MPV_COMPATIBILITY_ARG);
+    app.relaunch({ args: [...relaunchArgs, MPV_COMPATIBILITY_ARG] });
+    app.exit(0);
+  } catch (handlerError) {
+    debugLog(`Pipeline failure handling error: ${handlerError instanceof Error ? handlerError.message : handlerError}`, 'mpv');
+  } finally {
+    pipelineFailurePromptOpen = false;
+  }
+}
+
+async function confirmCompatibilityFallback(reason: string | null): Promise<boolean> {
+  if (process.platform !== 'linux' || !mainWindow) return true;
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'Native video playback unavailable',
+    message: 'sbtlTV could not start the native Linux video pipeline.',
+    detail: `${reason ? `${reason}\n\n` : ''}Use floating-window compatibility mode for this launch?`,
+    buttons: ['Use Compatibility Mode', 'Quit'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  return result.response === 0;
 }
 
 async function connectToMpvSocket(): Promise<void> {
@@ -795,16 +975,16 @@ ipcMain.handle('window-set-fullscreen', () => {
     // macOS: opaque window + native mpv texture — true OS fullscreen + enter/leave events work.
     mainWindow.setFullScreen(!mainWindow.isFullScreen());
   } else {
-    // Linux: separate mpv window; setFullScreen is unreliable, maximize is the working equivalent.
+    // Linux: maximize is the working fullscreen equivalent for the frameless Electron window.
     if (mainWindow.isMaximized()) mainWindow.unmaximize();
     else mainWindow.maximize();
   }
 });
 
-// IPC Handlers - mpv control
-ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number) => {
+async function loadMedia(url: string, startPosition?: number): Promise<{ success?: boolean; error?: string }> {
   const resumeAt = startPosition && startPosition > 0 ? Math.floor(startPosition) : 0;
-  debugLog(`mpv-load called with URL: ${url}${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
+  currentMedia = { url, startPosition: resumeAt };
+  debugLog(`mpv-load called${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
 
   // Set pending resume — will seek when duration property arrives (file loaded).
   // Generation counter ensures stale seeks from previous loads are discarded.
@@ -844,6 +1024,11 @@ ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number) =
     debugLog(`mpv-load FAILED: ${errMsg}`, 'mpv');
     return { error: errMsg };
   }
+}
+
+// IPC Handlers - mpv control
+ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number) => {
+  return loadMedia(url, startPosition);
 });
 
 ipcMain.handle('mpv-play', async () => {
@@ -968,6 +1153,7 @@ ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
 ipcMain.handle('mpv-stop', async () => {
   debugLog('mpv-stop called', 'mpv');
   pendingResume = null;
+  currentMedia = null;
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.stop();
@@ -1071,6 +1257,16 @@ ipcMain.handle('debug-get-log-path', async () => {
 ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
   debugLog(message, 'renderer');
   return { success: true };
+});
+
+// Renderer-side shared-texture failures (import or draw) feed the same
+// pipeline escalation as main-side send errors.
+ipcMain.on('shared-texture-frame-error', (_event, message: unknown) => {
+  mpvBridge?.reportRendererFrameError(typeof message === 'string' ? message : 'unknown error');
+});
+
+ipcMain.on('shared-texture-frame-ok', () => {
+  mpvBridge?.reportRendererFrameOk();
 });
 
 ipcMain.handle('debug-open-log-folder', async () => {
@@ -1450,17 +1646,26 @@ app.whenReady().then(async () => {
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
   initDebugLogging(settings.debugLoggingEnabled ?? false);
+  let compatibilityHandoff: CompatibilityHandoff | null = null;
+  if (compatibilityModeRequested) compatibilityHandoff = consumeCompatibilityHandoff();
+  else discardStaleCompatibilityHandoff();
 
   await createWindow();
 
-  // Try native mpv-texture if on macOS and bridge loaded
-  if (USE_NATIVE_MPV && MpvTextureBridgeClass) {
-    console.log('[mpv] Attempting native mpv-texture initialization...');
-    const nativeSuccess = await initNativeMpv();
+  if (USE_NATIVE_MPV) {
+    let nativeSuccess = false;
+    if (MpvTextureBridgeClass) {
+      console.log('[mpv] Attempting native mpv-texture initialization...');
+      nativeSuccess = await initNativeMpv();
+    }
     if (nativeSuccess) {
       console.log('[mpv] Using native mpv-texture bridge');
     } else {
-      console.log('[mpv] Native bridge failed, falling back to external mpv');
+      console.log('[mpv] Native bridge unavailable');
+      if (!await confirmCompatibilityFallback(nativeInitError)) {
+        app.quit();
+        return;
+      }
       const mpvAvailable = await checkMpvAvailable();
       if (!mpvAvailable) {
         app.quit();
@@ -1469,13 +1674,18 @@ app.whenReady().then(async () => {
       await initMpv();
     }
   } else {
-    // Non-macOS or addon not loaded: use external mpv
+    // Windows and explicitly requested Linux compatibility launches use external mpv.
     const mpvAvailable = await checkMpvAvailable();
     if (!mpvAvailable) {
       app.quit();
       return;
     }
     await initMpv();
+  }
+
+  if (compatibilityHandoff) {
+    const result = await loadMedia(compatibilityHandoff.url, compatibilityHandoff.position);
+    if (result.error) sendToRenderer('mpv-error', 'Could not restore playback after compatibility restart.');
   }
 
   // Auto-updater (packaged builds with native update support:

@@ -36,7 +36,7 @@ Download the latest release from the [Releases](../../releases) page:
 | Platform | Notes |
 |----------|-------|
 | Windows | mpv included |
-| Linux | Requires mpv installed separately |
+| Linux | Video renders natively in-window; libmpv required (mpv binary used as fallback) |
 | macOS (Apple Silicon) | Video renders natively in-window; mpv via Homebrew recommended as fallback |
 
 ### Windows Users
@@ -57,7 +57,7 @@ macOS builds are code-signed and notarized — the app should open without Gatek
 
 ### Linux Users
 
-mpv must be installed separately:
+Video renders natively inside the app window using the system libmpv. Install mpv with your package manager (it provides libmpv); the `mpv` binary is also used by the floating-window compatibility mode if the native pipeline is unavailable:
 
 ```bash
 # Ubuntu/Debian

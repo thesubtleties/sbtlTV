@@ -3,8 +3,10 @@
  */
 
 #include "mpv_context.h"
+#include "mpv_api.h"
 #include <cstring>
 #include <iostream>
+#include <memory>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -19,8 +21,8 @@ typedef PROC(WINAPI* PFNWGLGETPROCADDRESSPROC)(LPCSTR);
 #include <OpenGL/OpenGL.h>
 #include <dlfcn.h>
 #else
+#include "linux/egl_context.h"
 #include <GL/gl.h>
-#include <GL/glx.h>
 #endif
 
 namespace mpv_texture {
@@ -124,6 +126,10 @@ static void destroyWindowsGLContext() {
 }
 #endif
 
+#ifdef __linux__
+static std::unique_ptr<LinuxEglContext> g_linuxEglContext;
+#endif
+
 #ifdef __APPLE__
 static CGLContextObj g_cglContext = nullptr;
 static CGLPixelFormatObj g_cglPixelFormat = nullptr;
@@ -181,6 +187,20 @@ static void destroyMacOSGLContext() {
 }
 #endif
 
+void MpvContext::reportError(const std::string& message) {
+    {
+        std::lock_guard<std::mutex> lock(m_lastErrorMutex);
+        m_lastError = message;
+    }
+    std::lock_guard<std::mutex> lock(m_callbackMutex);
+    if (m_errorCallback) m_errorCallback(message);
+}
+
+std::string MpvContext::lastError() const {
+    std::lock_guard<std::mutex> lock(m_lastErrorMutex);
+    return m_lastError;
+}
+
 bool MpvContext::create(const MpvConfig& config) {
     if (m_initialized) {
         return true;
@@ -188,60 +208,89 @@ bool MpvContext::create(const MpvConfig& config) {
 
     m_config = config;
 
+    std::string mpvLoadError;
+    if (!mpvApi().load(mpvLoadError)) {
+        reportError("Failed to load libmpv: " + mpvLoadError);
+        return false;
+    }
+
 #ifdef _WIN32
     // Create Windows GL context first (required for WGL extensions)
     if (!createWindowsGLContext()) {
-        if (m_errorCallback) {
-            m_errorCallback("Failed to create Windows GL context");
-        }
+        reportError("Failed to create Windows GL context");
         return false;
     }
     m_glContext = static_cast<void*>(g_hglrc);
 #elif defined(__APPLE__)
     // Create macOS CGL context for IOSurface sharing
     if (!createMacOSGLContext()) {
-        if (m_errorCallback) {
-            m_errorCallback("Failed to create macOS GL context");
-        }
+        reportError("Failed to create macOS GL context");
         return false;
     }
     m_glContext = static_cast<void*>(g_cglContext);
+#elif defined(__linux__)
+    std::string eglError;
+    g_linuxEglContext = LinuxEglContext::create(
+        config.gpuVendorId,
+        config.gpuDeviceId,
+        config.debugLogging,
+        &eglError
+    );
+    if (!g_linuxEglContext) {
+        reportError("Failed to create Linux EGL context: " + eglError);
+        return false;
+    }
+    m_glContext = static_cast<void*>(g_linuxEglContext.get());
 #endif
 
+    if (config.debugLogging) std::cout << "[MpvContext] Creating libmpv handle" << std::endl;
+
     // Create mpv handle
-    m_mpv = mpv_create();
+    m_mpv = mpvApi().create();
     if (!m_mpv) {
-        if (m_errorCallback) {
-            m_errorCallback("Failed to create mpv context");
-        }
+        reportError("Failed to create mpv context");
         return false;
     }
 
     // Set options before initialization
-    mpv_set_option_string(m_mpv, "vo", config.vo.c_str());
-    mpv_set_option_string(m_mpv, "hwdec", config.hwdec.c_str());
-    mpv_set_option_string(m_mpv, "keep-open", "yes");
-    mpv_set_option_string(m_mpv, "idle", "yes");
-    mpv_set_option_string(m_mpv, "terminal", "no");
-    mpv_set_option_string(m_mpv, "msg-level", "all=v");
+    mpvApi().setOptionString(m_mpv, "vo", config.vo.c_str());
+    mpvApi().setOptionString(m_mpv, "hwdec", config.hwdec.c_str());
+    mpvApi().setOptionString(m_mpv, "keep-open", "yes");
+    mpvApi().setOptionString(m_mpv, "idle", "yes");
+    mpvApi().setOptionString(m_mpv, "terminal", "no");
+    mpvApi().setOptionString(m_mpv, "osc", "no");
+    mpvApi().setOptionString(m_mpv, "load-scripts", "no");
+    mpvApi().setOptionString(m_mpv, "load-console", "no");
+    mpvApi().setOptionString(m_mpv, "load-context-menu", "no");
+    mpvApi().setOptionString(m_mpv, "load-commands", "no");
+    mpvApi().setOptionString(m_mpv, "load-positioning", "no");
+    mpvApi().setOptionString(m_mpv, "load-select", "no");
+    mpvApi().setOptionString(m_mpv, "load-stats-overlay", "no");
+    mpvApi().setOptionString(m_mpv, "input-default-bindings", "no");
+    mpvApi().setOptionString(m_mpv, "msg-level", "all=v");
+#ifdef __linux__
+    // The PipeWire client library cannot safely cross Electron's FFmpeg
+    // isolation boundary. PulseAudio remains available through PipeWire's
+    // compatibility server on current Linux desktops.
+    mpvApi().setOptionString(m_mpv, "ao", "pulse,alsa");
+#endif
 
     // Initialize mpv
-    if (mpv_initialize(m_mpv) < 0) {
-        if (m_errorCallback) {
-            m_errorCallback("Failed to initialize mpv");
-        }
-        mpv_destroy(m_mpv);
+    if (config.debugLogging) std::cout << "[MpvContext] Initializing libmpv" << std::endl;
+    const int initResult = mpvApi().initialize(m_mpv);
+    if (initResult < 0) {
+        reportError(std::string("Failed to initialize mpv: ") + mpvApi().errorString(initResult));
+        mpvApi().destroy(m_mpv);
         m_mpv = nullptr;
         return false;
     }
 
     // Create texture sharing
+    if (config.debugLogging) std::cout << "[MpvContext] Initializing texture adapter" << std::endl;
     m_textureShare = createTextureShare();
     if (!m_textureShare) {
-        if (m_errorCallback) {
-            m_errorCallback("Failed to create texture share");
-        }
-        mpv_terminate_destroy(m_mpv);
+        reportError("Failed to create texture share");
+        mpvApi().terminateDestroy(m_mpv);
         m_mpv = nullptr;
         return false;
     }
@@ -249,30 +298,28 @@ bool MpvContext::create(const MpvConfig& config) {
     // Initialize texture sharing with current GL context
     // Note: The GL context must be created and made current before calling this
     if (!m_textureShare->initialize(m_glContext)) {
-        if (m_errorCallback) {
-            m_errorCallback("Failed to initialize texture sharing");
-        }
+        reportError("Failed to initialize texture sharing");
         delete m_textureShare;
         m_textureShare = nullptr;
-        mpv_terminate_destroy(m_mpv);
+        mpvApi().terminateDestroy(m_mpv);
         m_mpv = nullptr;
         return false;
     }
 
     // Create shared texture
+    if (config.debugLogging) std::cout << "[MpvContext] Allocating shared textures" << std::endl;
     if (!m_textureShare->createTexture(config.width, config.height)) {
-        if (m_errorCallback) {
-            m_errorCallback("Failed to create shared texture");
-        }
+        reportError("Failed to create shared texture");
         m_textureShare->destroy();
         delete m_textureShare;
         m_textureShare = nullptr;
-        mpv_terminate_destroy(m_mpv);
+        mpvApi().terminateDestroy(m_mpv);
         m_mpv = nullptr;
         return false;
     }
 
     // Create render context
+    if (config.debugLogging) std::cout << "[MpvContext] Creating libmpv render context" << std::endl;
     mpv_opengl_init_params gl_init_params{
         .get_proc_address = getProcAddress,
         .get_proc_address_ctx = this,
@@ -286,32 +333,30 @@ bool MpvContext::create(const MpvConfig& config) {
         {MPV_RENDER_PARAM_INVALID, nullptr}
     };
 
-    if (mpv_render_context_create(&m_renderCtx, m_mpv, params) < 0) {
-        if (m_errorCallback) {
-            m_errorCallback("Failed to create mpv render context");
-        }
+    if (mpvApi().renderContextCreate(&m_renderCtx, m_mpv, params) < 0) {
+        reportError("Failed to create mpv render context");
         m_textureShare->destroy();
         delete m_textureShare;
         m_textureShare = nullptr;
-        mpv_terminate_destroy(m_mpv);
+        mpvApi().terminateDestroy(m_mpv);
         m_mpv = nullptr;
         return false;
     }
 
     // Set up render update callback
-    mpv_render_context_set_update_callback(m_renderCtx, renderUpdateCallback, this);
+    mpvApi().renderContextSetUpdateCallback(m_renderCtx, renderUpdateCallback, this);
 
     // Set up wakeup callback for event handling
-    mpv_set_wakeup_callback(m_mpv, wakeupCallback, this);
+    mpvApi().setWakeupCallback(m_mpv, wakeupCallback, this);
 
     // Observe properties
-    mpv_observe_property(m_mpv, 1, "pause", MPV_FORMAT_FLAG);
-    mpv_observe_property(m_mpv, 2, "volume", MPV_FORMAT_DOUBLE);
-    mpv_observe_property(m_mpv, 3, "mute", MPV_FORMAT_FLAG);
-    mpv_observe_property(m_mpv, 4, "time-pos", MPV_FORMAT_DOUBLE);
-    mpv_observe_property(m_mpv, 5, "duration", MPV_FORMAT_DOUBLE);
-    mpv_observe_property(m_mpv, 6, "width", MPV_FORMAT_INT64);
-    mpv_observe_property(m_mpv, 7, "height", MPV_FORMAT_INT64);
+    mpvApi().observeProperty(m_mpv, 1, "pause", MPV_FORMAT_FLAG);
+    mpvApi().observeProperty(m_mpv, 2, "volume", MPV_FORMAT_DOUBLE);
+    mpvApi().observeProperty(m_mpv, 3, "mute", MPV_FORMAT_FLAG);
+    mpvApi().observeProperty(m_mpv, 4, "time-pos", MPV_FORMAT_DOUBLE);
+    mpvApi().observeProperty(m_mpv, 5, "duration", MPV_FORMAT_DOUBLE);
+    mpvApi().observeProperty(m_mpv, 6, "width", MPV_FORMAT_INT64);
+    mpvApi().observeProperty(m_mpv, 7, "height", MPV_FORMAT_INT64);
 
     // Start threads
     m_running = true;
@@ -324,6 +369,8 @@ bool MpvContext::create(const MpvConfig& config) {
 #elif defined(__APPLE__)
     // Release CGL context from main thread so render thread can use it
     CGLSetCurrentContext(nullptr);
+#elif defined(__linux__)
+    g_linuxEglContext->clearCurrent();
 #endif
 
     m_renderThread = std::thread(&MpvContext::renderLoop, this);
@@ -333,17 +380,18 @@ bool MpvContext::create(const MpvConfig& config) {
 }
 
 void MpvContext::destroy() {
-    if (!m_initialized) {
-        return;
+    // Flip the flags under m_renderMutex so the render thread cannot check the
+    // wait predicate, miss this notify, and block forever in join() below.
+    {
+        std::lock_guard<std::mutex> lock(m_renderMutex);
+        m_running = false;
+        m_needsRender = true;
     }
-
-    m_running = false;
-    m_needsRender = true;
     m_renderCV.notify_one();
 
     // Stop mpv first to unblock event loop
     if (m_mpv) {
-        mpv_wakeup(m_mpv);
+        mpvApi().wakeup(m_mpv);
     }
 
     if (m_eventThread.joinable()) {
@@ -354,13 +402,22 @@ void MpvContext::destroy() {
         m_renderThread.join();
     }
 
+#ifdef __linux__
+    // mpv render and texture teardown make GL calls. Reacquire the context on
+    // this thread after the render thread exits and releases it.
+    if (g_linuxEglContext && !g_linuxEglContext->makeCurrent()) {
+        std::cerr << "[MpvContext] Could not make EGL context current for teardown; "
+                  << "GL resources may leak" << std::endl;
+    }
+#endif
+
     if (m_renderCtx) {
-        mpv_render_context_free(m_renderCtx);
+        mpvApi().renderContextFree(m_renderCtx);
         m_renderCtx = nullptr;
     }
 
     if (m_mpv) {
-        mpv_terminate_destroy(m_mpv);
+        mpvApi().terminateDestroy(m_mpv);
         m_mpv = nullptr;
     }
 
@@ -376,6 +433,10 @@ void MpvContext::destroy() {
 #elif defined(__APPLE__)
     destroyMacOSGLContext();
     m_glContext = nullptr;
+#elif defined(__linux__)
+    if (g_linuxEglContext) g_linuxEglContext->clearCurrent();
+    g_linuxEglContext.reset();
+    m_glContext = nullptr;
 #endif
 
     m_initialized = false;
@@ -386,48 +447,48 @@ bool MpvContext::load(const std::string& url, const std::string& options) {
 
     if (!options.empty()) {
         const char* cmd[] = {"loadfile", url.c_str(), "replace", options.c_str(), nullptr};
-        int result = mpv_command(m_mpv, cmd);
+        int result = mpvApi().command(m_mpv, cmd);
         return result >= 0;
     }
     const char* cmd[] = {"loadfile", url.c_str(), nullptr};
-    int result = mpv_command(m_mpv, cmd);
+    int result = mpvApi().command(m_mpv, cmd);
     return result >= 0;
 }
 
 void MpvContext::play() {
     if (!m_mpv) return;
     int flag = 0;
-    mpv_set_property(m_mpv, "pause", MPV_FORMAT_FLAG, &flag);
+    mpvApi().setProperty(m_mpv, "pause", MPV_FORMAT_FLAG, &flag);
 }
 
 void MpvContext::pause() {
     if (!m_mpv) return;
     int flag = 1;
-    mpv_set_property(m_mpv, "pause", MPV_FORMAT_FLAG, &flag);
+    mpvApi().setProperty(m_mpv, "pause", MPV_FORMAT_FLAG, &flag);
 }
 
 void MpvContext::stop() {
     if (!m_mpv) return;
     const char* cmd[] = {"stop", nullptr};
-    mpv_command(m_mpv, cmd);
+    mpvApi().command(m_mpv, cmd);
 }
 
 void MpvContext::seek(double position) {
     if (!m_mpv) return;
     std::string pos_str = std::to_string(position);
     const char* cmd[] = {"seek", pos_str.c_str(), "absolute", nullptr};
-    mpv_command(m_mpv, cmd);
+    mpvApi().command(m_mpv, cmd);
 }
 
 void MpvContext::setVolume(double volume) {
     if (!m_mpv) return;
-    mpv_set_property(m_mpv, "volume", MPV_FORMAT_DOUBLE, &volume);
+    mpvApi().setProperty(m_mpv, "volume", MPV_FORMAT_DOUBLE, &volume);
 }
 
 void MpvContext::toggleMute() {
     if (!m_mpv) return;
     const char* cmd[] = {"cycle", "mute", nullptr};
-    mpv_command(m_mpv, cmd);
+    mpvApi().command(m_mpv, cmd);
 }
 
 void MpvContext::setFrameCallback(FrameCallback callback) {
@@ -445,12 +506,8 @@ void MpvContext::setErrorCallback(ErrorCallback callback) {
     m_errorCallback = std::move(callback);
 }
 
-void MpvContext::releaseFrame() {
-    std::lock_guard<std::mutex> lock(m_frameMutex);
-    if (m_frameInUse) {
-        m_textureShare->releaseTexture();
-        m_frameInUse = false;
-    }
+void MpvContext::releaseFrame(uint32_t buffer_id) {
+    if (m_textureShare) m_textureShare->releaseTexture(buffer_id);
 }
 
 MpvStatus MpvContext::getStatus() const {
@@ -460,7 +517,7 @@ MpvStatus MpvContext::getStatus() const {
 
 void MpvContext::eventLoop() {
     while (m_running) {
-        mpv_event* event = mpv_wait_event(m_mpv, 0.1);
+        mpv_event* event = mpvApi().waitEvent(m_mpv, 0.1);
         if (event->event_id == MPV_EVENT_NONE) {
             continue;
         }
@@ -481,7 +538,7 @@ void MpvContext::handleEvent(mpv_event* event) {
             if (end_file->reason == MPV_END_FILE_REASON_ERROR) {
                 std::lock_guard<std::mutex> lock(m_callbackMutex);
                 if (m_errorCallback) {
-                    m_errorCallback("Playback error: " + std::string(mpv_error_string(end_file->error)));
+                    m_errorCallback("Playback error: " + std::string(mpvApi().errorString(end_file->error)));
                 }
             }
             break;
@@ -596,6 +653,18 @@ void MpvContext::renderLoop() {
         }
         std::cout << "[MpvContext] CGL context made current in render thread" << std::endl;
     }
+#elif defined(__linux__)
+    if (!g_linuxEglContext || !g_linuxEglContext->makeCurrent()) {
+        std::cerr << "[MpvContext] Failed to make EGL context current in render thread" << std::endl;
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        if (m_errorCallback) {
+            m_errorCallback("Render thread failed: could not make EGL context current");
+        }
+        return;
+    }
+    if (m_config.debugLogging) {
+        std::cout << "[MpvContext] EGL context made current in render thread" << std::endl;
+    }
 #endif
 
     while (m_running) {
@@ -612,46 +681,44 @@ void MpvContext::renderLoop() {
             uint32_t newWidth = m_pendingWidth.load();
             uint32_t newHeight = m_pendingHeight.load();
             if (newWidth > 0 && newHeight > 0) {
-                std::cout << "[MpvContext] Resizing texture to " << newWidth << "x" << newHeight << std::endl;
+                if (m_config.debugLogging) {
+                    std::cout << "[MpvContext] Resizing texture to " << newWidth << "x" << newHeight << std::endl;
+                }
                 m_textureShare->resizeTexture(newWidth, newHeight);
             }
             m_needsResize = false;
         }
 
         // Check if we can render
-        uint64_t flags = mpv_render_context_update(m_renderCtx);
+        uint64_t flags = mpvApi().renderContextUpdate(m_renderCtx);
         if (!(flags & MPV_RENDER_UPDATE_FRAME)) {
             continue;
         }
 
-        // No m_frameInUse check needed — triple buffering eliminates contention.
-        // macOS: IOSurface uses glFlush for GPU-to-GPU sync.
-        // Windows (future): keyed mutex / AcquireSync will handle sync instead.
-
-        // Lock texture for rendering
-        if (!m_textureShare->lockTexture()) {
+        RenderTarget target;
+        if (!m_textureShare->acquireRenderTarget(target)) {
             static int lockFailCount = 0;
-            if (lockFailCount < 5) {
-                std::cout << "[MpvContext] Failed to lock texture" << std::endl;
+            if (m_config.debugLogging && lockFailCount < 5) {
+                std::cout << "[MpvContext] No free texture slot; dropping frame" << std::endl;
                 lockFailCount++;
+            }
+
+            int skip_rendering = 1;
+            mpv_render_param skip_params[] = {
+                {MPV_RENDER_PARAM_SKIP_RENDERING, &skip_rendering},
+                {MPV_RENDER_PARAM_INVALID, nullptr}
+            };
+            if (mpvApi().renderContextRender(m_renderCtx, skip_params) >= 0) {
+                mpvApi().renderContextReportSwap(m_renderCtx);
             }
             continue;
         }
 
-        // Get FBO and dimensions
-        int fbo = m_textureShare->getGLFBO();
-        int width, height;
-        {
-            std::lock_guard<std::mutex> lock(m_statusMutex);
-            width = m_status.width > 0 ? m_status.width : m_config.width;
-            height = m_status.height > 0 ? m_status.height : m_config.height;
-        }
-
         // Render
         mpv_opengl_fbo fbo_params{
-            .fbo = fbo,
-            .w = width,
-            .h = height,
+            .fbo = static_cast<int>(target.fbo),
+            .w = static_cast<int>(target.width),
+            .h = static_cast<int>(target.height),
             .internal_format = 0  // Use default
         };
 
@@ -662,32 +729,28 @@ void MpvContext::renderLoop() {
             {MPV_RENDER_PARAM_INVALID, nullptr}
         };
 
-        int result = mpv_render_context_render(m_renderCtx, params);
+        int result = mpvApi().renderContextRender(m_renderCtx, params);
         if (result < 0) {
-            m_textureShare->releaseTexture();
+            m_textureShare->abandonRenderTarget();
             continue;
         }
 
         // Report swap
-        mpv_render_context_report_swap(m_renderCtx);
+        mpvApi().renderContextReportSwap(m_renderCtx);
 
         // Flush GL commands to ensure rendering is complete before export.
         // macOS: glFlush is sufficient for GPU-to-GPU IOSurface sharing.
-        glFlush();
+        if (m_config.finishBeforeExport) glFinish();
+        else glFlush();
 
-        // Unlock and export texture
-        TextureInfo info = m_textureShare->unlockAndExport();
+        TextureInfo info = m_textureShare->exportRenderTarget();
         if (info.is_valid) {
             static int frameCount = 0;
-            if (frameCount < 10) {
+            if (m_config.debugLogging && frameCount < 10) {
                 std::cout << "[MpvContext] Frame " << frameCount << " exported: "
                           << info.width << "x" << info.height << std::endl;
             }
             frameCount++;
-
-            std::lock_guard<std::mutex> lock(m_frameMutex);
-            m_currentFrame = info;
-            m_frameInUse = true;
 
             // Notify callback
             std::lock_guard<std::mutex> cbLock(m_callbackMutex);
@@ -696,6 +759,13 @@ void MpvContext::renderLoop() {
             }
         }
     }
+
+#ifdef __linux__
+    // Unbind the context from this thread so destroy() can bind it on the
+    // caller's thread. A context left current on an exited thread can make
+    // eglMakeCurrent fail with EGL_BAD_ACCESS on some drivers.
+    if (g_linuxEglContext) g_linuxEglContext->clearCurrent();
+#endif
 }
 
 void MpvContext::onRenderUpdate() {
@@ -720,7 +790,7 @@ void* MpvContext::getProcAddress(void* ctx, const char* name) {
 #elif defined(__APPLE__)
     return dlsym(RTLD_DEFAULT, name);
 #else
-    return reinterpret_cast<void*>(glXGetProcAddressARB(reinterpret_cast<const GLubyte*>(name)));
+    return g_linuxEglContext ? g_linuxEglContext->getProcAddress(name) : nullptr;
 #endif
 }
 

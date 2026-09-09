@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron/renderer';
 import type { Source } from '@sbtltv/core';
 
 // Types for the exposed APIs
@@ -237,14 +237,16 @@ export interface SharedTextureApi {
   removeFrameListener: () => void;
   onClear: (callback: () => void) => void;
   removeClearListener: () => void;
+  /** Report whether the renderer could draw the latest frame; errors escalate in main. */
+  reportDrawResult: (ok: boolean, message?: string) => void;
   isAvailable: boolean;
 }
 
-// Check if sharedTexture API is available AND we're on a platform that uses native mpv.
-// Windows uses external mpv via --wid (renders behind the window), so the VideoCanvas
-// must not activate there — it would cover the external mpv output with a black canvas.
+// Static platform gate: darwin/linux CAN receive sharedTexture frames. Whether
+// native mpv actually initialized this launch is reported by 'mpv-get-mode'.
+// Windows continues to render external mpv behind the BrowserWindow via --wid.
 let sharedTextureAvailable = false;
-if (process.platform === 'darwin') {
+if (process.platform === 'darwin' || process.platform === 'linux') {
   try {
     const { sharedTexture } = require('electron');
     sharedTextureAvailable = !!sharedTexture?.setSharedTextureReceiver;
@@ -258,9 +260,62 @@ if (process.platform === 'darwin') {
 let frameCallback: ((videoFrame: VideoFrame, index: number) => void) | null = null;
 let clearCallback: (() => void) | null = null;
 
+// Renderer-side frame failures (import or draw) are otherwise invisible to the
+// main process. Every failure is forwarded; recovery is sent once per episode.
+let rendererFrameFailed = false;
+function reportFrameOutcome(ok: boolean, message?: string): void {
+  if (ok) {
+    if (!rendererFrameFailed) return;
+    rendererFrameFailed = false;
+    ipcRenderer.send('shared-texture-frame-ok');
+    return;
+  }
+  rendererFrameFailed = true;
+  ipcRenderer.send('shared-texture-frame-error', message ?? 'unknown error');
+}
+
+interface SharedTextureFrameMetadata {
+  generation: number;
+  index: number;
+}
+
+function isSharedTextureFrameMetadata(value: unknown): value is SharedTextureFrameMetadata {
+  if (!value || typeof value !== 'object') return false;
+  const metadata = value as Record<string, unknown>;
+  return typeof metadata.generation === 'number' && Number.isSafeInteger(metadata.generation) && metadata.generation >= 0 &&
+    typeof metadata.index === 'number' && Number.isSafeInteger(metadata.index) && metadata.index >= 0;
+}
+
+class SharedTextureFrameOrder {
+  private generation = 0;
+  private lastFrameIndex = -1;
+
+  shouldClear(generation: unknown): boolean {
+    if (!Number.isSafeInteger(generation) || Number(generation) < 0 || Number(generation) <= this.generation) {
+      return false;
+    }
+    this.generation = Number(generation);
+    this.lastFrameIndex = -1;
+    return true;
+  }
+
+  acceptFrame(metadata: SharedTextureFrameMetadata): boolean {
+    if (metadata.generation < this.generation) return false;
+    if (metadata.generation > this.generation) {
+      this.generation = metadata.generation;
+      this.lastFrameIndex = -1;
+    }
+    if (metadata.index <= this.lastFrameIndex) return false;
+    this.lastFrameIndex = metadata.index;
+    return true;
+  }
+}
+
+const sharedTextureFrameOrder = new SharedTextureFrameOrder();
+
 // Listen for clear signal from main process (content switch)
-ipcRenderer.on('video-clear', () => {
-  clearCallback?.();
+ipcRenderer.on('video-clear', (_event, generation: unknown) => {
+  if (sharedTextureFrameOrder.shouldClear(generation)) clearCallback?.();
 });
 
 // Set up frame receiver if available
@@ -268,20 +323,25 @@ if (sharedTextureAvailable) {
   try {
     const { sharedTexture } = require('electron');
     sharedTexture.setSharedTextureReceiver(async (data: { importedSharedTexture: { getVideoFrame: () => VideoFrame; release: () => void } }, ...args: unknown[]) => {
-      const index = typeof args[0] === 'number' ? args[0] : 0;
       const imported = data.importedSharedTexture;
       try {
+        const metadata = args[0];
+        if (!isSharedTextureFrameMetadata(metadata) || !sharedTextureFrameOrder.acceptFrame(metadata)) {
+          imported?.release();
+          return;
+        }
         if (frameCallback && imported) {
           const videoFrame = imported.getVideoFrame();
           // Don't close videoFrame here - VideoCanvas manages frame lifecycle via rAF
           // It will close the previous frame when a new one arrives
-          frameCallback(videoFrame, index);
+          frameCallback(videoFrame, metadata.index);
           imported.release();
         } else if (imported) {
           imported.release();
         }
       } catch (error) {
         console.error('[preload] sharedTexture error:', error);
+        reportFrameOutcome(false, error instanceof Error ? error.message : String(error));
         try { imported?.release(); } catch { /* ignore */ }
       }
     });
@@ -303,6 +363,9 @@ contextBridge.exposeInMainWorld('sharedTexture', {
   },
   removeClearListener: () => {
     clearCallback = null;
+  },
+  reportDrawResult: (ok: boolean, message?: string) => {
+    reportFrameOutcome(ok === true, typeof message === 'string' ? message : undefined);
   },
   isAvailable: sharedTextureAvailable,
 } satisfies SharedTextureApi);
