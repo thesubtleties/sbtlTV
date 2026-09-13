@@ -143,6 +143,11 @@ function initDebugLogging(enabled: boolean): void {
     const rotationSucceeded = rotateLogIfNeeded();
     // Open log file in append mode
     debugLogStream = fs.createWriteStream(logPath, { flags: 'a' });
+    // A locked or unwritable log file must not crash the app: drop file logging.
+    debugLogStream.on('error', (error) => {
+      console.warn('[debug] Log file stream error, disabling file logging:', error.message);
+      debugLogStream = null;
+    });
     debugLog('='.repeat(60));
     debugLog(`Debug logging started - sbtlTV v${app.getVersion()}`);
     if (!rotationSucceeded) {
@@ -1323,28 +1328,38 @@ async function downloadToTempFile(url: string): Promise<string> {
 
   // Stream response body to file
   const fileStream = createWriteStream(tmpPath);
+  // Listen for errors before the first write. A write stream error with no
+  // listener (disk full, or destroy() while writes are still in flight after a
+  // network failure) is an uncaught exception that takes the main process down.
+  let streamError: Error | null = null;
+  fileStream.on('error', (error) => { streamError = error; });
+  const waitForDrain = () => new Promise<void>((resolve) => {
+    const done = () => { fileStream.off('drain', done); fileStream.off('error', done); resolve(); };
+    fileStream.once('drain', done);
+    fileStream.once('error', done);
+  });
   // Convert Web ReadableStream to Node stream
   const reader = response.body.getReader();
   let totalBytes = 0;
   try {
     while (true) {
+      if (streamError) throw streamError;
       const { done, value } = await reader.read();
       if (done) break;
       totalBytes += value.byteLength;
       if (totalBytes > MAX_DOWNLOAD_BYTES) {
-        fileStream.destroy();
-        try { (await import('fs')).unlinkSync(tmpPath); } catch {}
         throw new Error(`EPG download exceeds ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB limit`);
       }
-      fileStream.write(Buffer.from(value));
+      if (!fileStream.write(Buffer.from(value))) await waitForDrain();
     }
-    fileStream.end();
     await new Promise<void>((resolve, reject) => {
-      fileStream.on('finish', resolve);
-      fileStream.on('error', reject);
+      fileStream.once('error', reject);
+      fileStream.end(() => resolve());
     });
+    if (streamError) throw streamError;
   } catch (err) {
     fileStream.destroy();
+    await reader.cancel().catch(() => {});
     try { (await import('fs')).unlinkSync(tmpPath); } catch {}
     throw err;
   }
