@@ -209,15 +209,7 @@ public:
         return createTexture(width, height);
     }
 
-    uint32_t getGLTexture() const override {
-        return m_slots[m_writeIndex].glTexture;
-    }
-
-    uint32_t getGLFBO() const override {
-        return m_slots[m_writeIndex].glFBO;
-    }
-
-    bool lockTexture() override {
+    bool acquireRenderTarget(RenderTarget& target) override {
         auto& slot = m_slots[m_writeIndex];
         if (!slot.wglDxObject) {
             std::cerr << "[DXGI] lockTexture: No DX object" << std::endl;
@@ -236,10 +228,13 @@ public:
         }
 
         m_locked = true;
+        target.fbo = slot.glFBO;
+        target.width = m_width;
+        target.height = m_height;
         return true;
     }
 
-    TextureInfo unlockAndExport() override {
+    TextureInfo exportRenderTarget() override {
         TextureInfo info = {};
 
         if (!m_locked) {
@@ -257,6 +252,7 @@ public:
         m_locked = false;
 
         // Export this slot's handle
+        info.handle_type = TextureHandleType::NTHandle;
         info.handle = reinterpret_cast<uint64_t>(slot.sharedHandle);
         info.width = m_width;
         info.height = m_height;
@@ -269,7 +265,15 @@ public:
         return info;
     }
 
-    void releaseTexture() override {
+    void abandonRenderTarget() override {
+        if (!m_locked) return;
+        auto& slot = m_slots[m_writeIndex];
+        HANDLE objects[] = { slot.wglDxObject };
+        m_wglDXUnlockObjectsNV(m_wglDxDevice, 1, objects);
+        m_locked = false;
+    }
+
+    void releaseTexture(uint32_t) override {
         // No-op with triple buffering - mpv always has a free slot to write to
     }
 

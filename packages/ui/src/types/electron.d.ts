@@ -171,6 +171,10 @@ export interface SharedTextureApi {
   onClear: (callback: () => void) => void;
   /** Remove the clear callback */
   removeClearListener: () => void;
+  /** Report whether the renderer could draw the latest frame; errors escalate in main */
+  reportDrawResult: (ok: boolean, message?: string) => void;
+  /** Report a renderer failure that requires native playback recovery. */
+  reportPipelineFailure: (message: string) => void;
   /** Whether sharedTexture API is available (native mpv mode) */
   isAvailable: boolean;
 }

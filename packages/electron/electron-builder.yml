@@ -16,6 +16,8 @@ files:
   - dist/**/*
   - assets/**/*
   - "!**/*.ts"
+  - "!**/*.test.js"
+  - "!**/*.test.js.map"
   - "!**/tsconfig.json"
   - "!**/deps/**"
 
@@ -26,6 +28,7 @@ asarUnpack:
   - "**/*.node"
   - "**/*.dylib"
   - "**/*.dll"
+  - "**/mpv_runtime*.so"
 
 extraResources:
   # Bundle the UI dist folder
@@ -71,6 +74,7 @@ mac:
   icon: assets/sbtltv-logo-white.png
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   category: public.app-category.entertainment
+  minimumSystemVersion: '13.0'
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: entitlements.mac.plist
@@ -98,6 +102,32 @@ linux:
   icon: assets/512x512.png
   category: AudioVideo
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
+  extraResources:
+    - from: ../mpv-texture/build/Release/mpv_texture.node
+      to: mpv/mpv_texture.node
+    - from: ../mpv-texture/build/Release/mpv_runtime_2.so
+      to: mpv/mpv_runtime_2.so
+    - from: ../mpv-texture/build/Release/mpv_runtime_1.so
+      to: mpv/mpv_runtime_1.so
+
+deb:
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - mpv
+    # Ubuntu 22.04 ships libmpv1; the addon dlopens libmpv.so.2 then .so.1.
+    - libmpv2 | libmpv1
+    - libegl1
+    - libgbm1
+    - libdrm2
+    - libgl1
 
 appImage:
   license: ../../LICENSE

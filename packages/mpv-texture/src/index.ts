@@ -34,6 +34,9 @@ paths.push(
 );
 
 let loadedPath = '';
+// Keep the loader's own error (e.g. a missing GLIBCXX symbol on an older
+// distro) so the failure reason survives to the fallback dialog.
+const loadErrors: string[] = [];
 for (const p of paths) {
   if (existsSync(p)) {
     try {
@@ -41,6 +44,8 @@ for (const p of paths) {
       loadedPath = p;
       break;
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      loadErrors.push(`${p}: ${message}`);
       console.warn(`[mpv-texture] Failed to load from ${p}:`, e);
     }
   }
@@ -49,7 +54,9 @@ for (const p of paths) {
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
 // Non-null assertion needed: TS can't infer that addon is assigned inside the for loop above
 if (!addon!) {
-  throw new Error(`[mpv-texture] Native addon not found. Searched:\n${paths.join('\n')}`);
+  throw new Error(loadErrors.length > 0
+    ? `[mpv-texture] Native addon failed to load: ${loadErrors.join('; ')}`
+    : `[mpv-texture] Native addon not found. Searched:\n${paths.join('\n')}`);
 }
 
 console.log(`[mpv-texture] Loaded native addon from: ${loadedPath}`);
@@ -59,19 +66,40 @@ console.log(`[mpv-texture] Loaded native addon from: ${loadedPath}`);
  */
 export type TextureFormat = 'rgba' | 'nv12' | 'bgra';
 
-/**
- * Information about an exported texture frame
- */
-export interface TextureInfo {
-  /** Platform-specific handle (HANDLE on Windows, IOSurfaceRef pointer on macOS) */
-  handle: bigint;
-  /** Texture width in pixels */
+interface TextureInfoBase {
   width: number;
-  /** Texture height in pixels */
   height: number;
-  /** Pixel format */
   format: TextureFormat;
 }
+
+export interface IOSurfaceTextureInfo extends TextureInfoBase {
+  kind: 'ioSurface';
+  handle: bigint;
+}
+
+export interface NTHandleTextureInfo extends TextureInfoBase {
+  kind: 'ntHandle';
+  handle: bigint;
+}
+
+export interface NativePixmapPlane {
+  fd: number;
+  stride: number;
+  offset: number;
+  size: number;
+}
+
+export interface NativePixmapTextureInfo extends TextureInfoBase {
+  kind: 'nativePixmap';
+  bufferId: number;
+  nativePixmap: {
+    planes: NativePixmapPlane[];
+    modifier: string;
+    supportsZeroCopyWebGpuImport: false;
+  };
+}
+
+export type TextureInfo = IOSurfaceTextureInfo | NTHandleTextureInfo | NativePixmapTextureInfo;
 
 /**
  * Playback status information
@@ -103,6 +131,14 @@ export interface MpvConfig {
   height?: number;
   /** Hardware decoding mode: 'auto', 'd3d11va', 'videotoolbox', etc. (default: 'auto') */
   hwdec?: string;
+  /** Chromium's active GPU PCI vendor ID */
+  gpuVendorId?: number;
+  /** Chromium's active GPU PCI device ID */
+  gpuDeviceId?: number;
+  /** Emit native GPU selection and DMA-BUF diagnostics */
+  debugLogging?: boolean;
+  /** Block for GPU completion before exporting each frame (diagnostic only) */
+  finishBeforeExport?: boolean;
 }
 
 /**
@@ -122,7 +158,7 @@ interface NativeAddon {
   onFrame(callback: (info: TextureInfo) => void): void;
   onStatus(callback: (status: MpvStatus) => void): void;
   onError(callback: (error: string) => void): void;
-  releaseFrame(): void;
+  releaseFrame(bufferId: number): void;
   isInitialized(): boolean;
 }
 
@@ -150,10 +186,14 @@ export type ErrorCallback = (error: string) => void;
  * mpv.create({ width: 1920, height: 1080, hwdec: 'auto' });
  *
  * mpv.onFrame((textureInfo) => {
- *   // Import texture via Electron's sharedTexture API
+ *   if (textureInfo.kind !== 'nativePixmap') return;
  *   const imported = sharedTexture.importSharedTexture({
- *     textureInfo,
- *     allReferenceReleased: () => mpv.releaseFrame()
+ *     textureInfo: {
+ *       handle: { nativePixmap: textureInfo.nativePixmap },
+ *       codedSize: { width: textureInfo.width, height: textureInfo.height },
+ *       pixelFormat: textureInfo.format,
+ *     },
+ *     allReferencesReleased: () => mpv.releaseFrame(textureInfo.bufferId)
  *   });
  *   sharedTexture.sendToRenderer(window.webContents, imported, frameIdx++);
  * });
@@ -311,14 +351,14 @@ export class MpvTexture {
   }
 
   /**
-   * Release the current frame
+   * Release an exported native buffer
    *
    * Must be called after Electron has finished using the texture
-   * (in the allReferenceReleased callback of importSharedTexture).
+   * (in the allReferencesReleased callback of importSharedTexture).
    */
-  releaseFrame(): void {
+  releaseFrame(bufferId: number): void {
     if (this._initialized) {
-      addon.releaseFrame();
+      addon.releaseFrame(bufferId);
     }
   }
 
