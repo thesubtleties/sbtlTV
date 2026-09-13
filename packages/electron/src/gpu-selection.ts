@@ -1,0 +1,77 @@
+export interface GpuIdentity {
+  vendorId?: number;
+  deviceId?: number;
+  source: 'webgl' | 'active' | 'first' | 'none';
+}
+
+interface NormalizedGpuDevice {
+  active: boolean;
+  vendorId?: number;
+  deviceId?: number;
+}
+
+function parseGpuId(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value;
+  if (typeof value !== 'string') return undefined;
+  const parsed = Number.parseInt(value, value.startsWith('0x') ? 16 : 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function normalizeDevices(value: unknown): NormalizedGpuDevice[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((device) => {
+    if (!device || typeof device !== 'object') return [];
+    const record = device as Record<string, unknown>;
+    return [{
+      active: record.active === true,
+      vendorId: parseGpuId(record.vendorId),
+      deviceId: parseGpuId(record.deviceId),
+    }];
+  });
+}
+
+function inferWebGlVendorId(value: unknown): number | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const renderer = value as Record<string, unknown>;
+  const description = [renderer.vendor, renderer.renderer]
+    .filter((part): part is string => typeof part === 'string')
+    .join(' ')
+    .toLowerCase();
+
+  if (description.includes('nvidia')) return 0x10de;
+  if (description.includes('amd') || description.includes('ati') || description.includes('advanced micro devices')) {
+    return 0x1002;
+  }
+  if (description.includes('intel')) return 0x8086;
+  return undefined;
+}
+
+export function selectChromiumGpuIdentity(devicesValue: unknown, webGlRenderer: unknown): GpuIdentity {
+  const devices = normalizeDevices(devicesValue);
+  const webGlVendorId = inferWebGlVendorId(webGlRenderer);
+  if (webGlVendorId !== undefined) {
+    const renderer = webGlRenderer && typeof webGlRenderer === 'object'
+      ? (webGlRenderer as Record<string, unknown>).renderer
+      : undefined;
+    // ANGLE includes a hexadecimal PCI device ID on supported backends.
+    const deviceIdMatch = typeof renderer === 'string' && renderer.startsWith('ANGLE')
+      ? renderer.match(/\(0x([0-9a-f]{1,8})\)/i)
+      : null;
+    const deviceId = deviceIdMatch ? Number.parseInt(deviceIdMatch[1], 16) : undefined;
+    const matches = devices.filter(device => device.vendorId === webGlVendorId &&
+      (deviceId === undefined || device.deviceId === deviceId));
+    if (matches.length !== 1) {
+      throw new Error("Cannot uniquely identify Chromium's WebGL GPU; native playback requires a matching device");
+    }
+    return { vendorId: matches[0].vendorId, deviceId: matches[0].deviceId, source: 'webgl' };
+  }
+
+  const selected = devices.find((device) => device.active) ?? devices[0];
+
+  if (!selected) return { source: 'none' };
+  return {
+    vendorId: selected.vendorId,
+    deviceId: selected.deviceId,
+    source: selected.active ? 'active' : 'first',
+  };
+}

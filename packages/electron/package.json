@@ -1,6 +1,6 @@
 {
   "name": "@sbtltv/electron",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Desktop IPTV player with mpv",
   "homepage": "https://github.com/thesubtleties/sbtlTV",
   "author": {
@@ -14,6 +14,8 @@
     "build": "tsc",
     "dev": "electron . --dev",
     "start": "electron .",
+    "test": "tsc && node --experimental-vm-modules --test dist/gpu-selection.test.js dist/preload-shared-texture.test.js dist/mpv-texture-bridge.test.js",
+    "test:playback": "electron tests/native-playback.cjs",
     "typecheck": "tsc --noEmit",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
@@ -30,7 +32,7 @@
     "@sbtltv/mpv-texture": "workspace:*"
   },
   "devDependencies": {
-    "electron": "^40.0.0",
+    "electron": "^44.3.0",
     "electron-builder": "^26.4.0",
     "typescript": "^5.3.0"
   }

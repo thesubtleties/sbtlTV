@@ -11,8 +11,8 @@ Native N-API addon for GPU-accelerated video playback using libmpv with zero-cop
 └─────────────────┘     └──────────────────┘     └─────────────────┘
          │                       │                        │
          ▼                       ▼                        ▼
-    GPU Texture  ───▶  DXGI Handle (Win)  ───▶  VideoFrame  ───▶  WebGPU
-                       IOSurface (Mac)
+    GPU Texture  ───▶  IOSurface (Mac)   ───▶  VideoFrame  ───▶  WebGL
+                       DMA-BUF (Linux)
 ```
 
 ## Prerequisites
@@ -27,13 +27,19 @@ Native N-API addon for GPU-accelerated video playback using libmpv with zero-cop
 - libmpv development files in `deps/mpv/macos/`
 - Node.js 18+
 
+### Linux
+- libmpv, EGL, GBM, libdrm, and OpenGL development packages
+- patchelf (used to build runtime variants for libmpv ABI 1 and 2)
+- A DRM render node supported by the active graphics driver
+- Node.js 18+
+
 ## Building
 
 ```bash
 # Install dependencies
 npm install
 
-# Build native addon and TypeScript
+# Build TypeScript (install already builds the native addon)
 npm run build
 
 # Or build native only
@@ -158,18 +164,39 @@ Set callback for status changes.
 #### `onError(callback: ErrorCallback): void`
 Set callback for errors.
 
-#### `releaseFrame(): void`
-Release the current frame (call when Electron is done with texture).
+#### `releaseFrame(bufferId: number): void`
+Release the exact Linux DMA-BUF slot after Electron calls `allReferencesReleased`.
 
 ### TextureInfo
 
 ```typescript
-interface TextureInfo {
-  handle: bigint;           // Platform-specific handle
-  width: number;            // Texture width
-  height: number;           // Texture height
-  format: 'rgba' | 'nv12' | 'bgra';
-}
+type TextureInfo =
+  | {
+      kind: 'ioSurface';
+      handle: bigint;
+      width: number;
+      height: number;
+      format: 'rgba' | 'nv12' | 'bgra';
+    }
+  | {
+      kind: 'nativePixmap';
+      bufferId: number;
+      nativePixmap: {
+        planes: Array<{ fd: number; stride: number; offset: number; size: number }>;
+        modifier: string;
+        supportsZeroCopyWebGpuImport: false;
+      };
+      width: number;
+      height: number;
+      format: 'bgra';
+    }
+  | {
+      kind: 'ntHandle'; // Windows DXGI reference code; not built or used by the app
+      handle: bigint;
+      width: number;
+      height: number;
+      format: 'rgba' | 'nv12' | 'bgra';
+    };
 ```
 
 ### MpvStatus
@@ -189,10 +216,15 @@ interface MpvStatus {
 ## Platform Notes
 
 ### Windows
-Uses WGL_NV_DX_interop for OpenGL/D3D11 interop. Requires NVIDIA or AMD GPU with driver support.
+The app currently uses external mpv through `--wid`; the DXGI implementation remains reference code.
 
 ### macOS
 Uses IOSurface for texture sharing. Works with Metal/OpenGL.
+
+### Linux
+Uses EGL and GBM to render libmpv into DMA-BUF-backed textures imported through Electron NativePixmap handles. Runtime libmpv is supplied by the host system.
+
+Keep `mpv_runtime_1.so` and `mpv_runtime_2.so` beside `mpv_texture.node` when packaging. The loader selects the available host libmpv ABI. These libraries isolate libmpv's dependencies from Electron while forwarding allocation to Electron's allocator, including allocations made during subtitle rendering. No `LD_PRELOAD` wrapper is required.
 
 ## Bundling libmpv
 

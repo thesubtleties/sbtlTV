@@ -2,11 +2,21 @@
  * Bridge between mpv-texture native addon and Electron's sharedTexture API
  *
  * This module handles the integration of libmpv's GPU texture output
- * with Electron 40's sharedTexture API for zero-copy video rendering.
+ * with Electron's sharedTexture API for zero-copy video rendering.
  */
 
 import { BrowserWindow, sharedTexture, SharedTextureHandle } from 'electron';
 import type { MpvTexture, MpvStatus, TextureInfo, MpvConfig } from '@sbtltv/mpv-texture';
+
+interface QueuedFrame {
+  textureInfo: TextureInfo;
+  generation: number;
+}
+
+interface SharedTextureFrameMetadata {
+  generation: number;
+  index: number;
+}
 
 /**
  * MpvTextureBridge - Integrates mpv-texture with Electron's sharedTexture API
@@ -16,14 +26,56 @@ export class MpvTextureBridge {
   private window: BrowserWindow | null = null;
   private frameIndex = 0;
   private initialized = false;
-  private sending = false;
-  private pendingFrame: TextureInfo | null = null;
+  private activeSends = 0;
+  private readonly maxConcurrentSends = 2;
+  private pendingFrame: QueuedFrame | null = null;
+  private frameGeneration = 0;
+  private outstandingTextureReferences = 0;
+  private destroyRequested = false;
+  private destroyFinalized = false;
+  private rendererDisposed = false;
+  private retainedTransfers = new Set<ReturnType<typeof sharedTexture.importSharedTexture>>();
+  private destruction: Promise<void> | null = null;
+  private resolveDestruction?: () => void;
+  private rejectDestruction?: (error: unknown) => void;
   private statusCallback?: (status: MpvStatus) => void;
   private errorCallback?: (error: string) => void;
+  private pipelineFailureCallback?: (error: string) => void;
+  private diagnosticsCallback?: (message: string) => void;
   private consecutiveErrors = 0;
+  // A timed-out transfer usually means the renderer's main thread is busy (a
+  // large library sync, for example) and it recovers on its own. Escalate only
+  // when transfers keep timing out back to back for this long.
+  private firstConsecutiveErrorAt = 0;
+  private readonly transferTimeoutFailureMs = 3000;
+  private rendererConsecutiveErrors = 0;
+  private pipelineFailureReported = false;
+  private lastInitError: string | null = null;
+
+  // Frame-starvation watchdog. Catches a producer that stopped delivering
+  // frames (dead render thread, exhausted buffer pool) while mpv still reports
+  // video playing with time advancing. Send-side failures are counted by
+  // consecutiveErrors; renderer-side ones by rendererConsecutiveErrors.
+  private lastStatus: MpvStatus | null = null;
+  private watchdogPosition = 0;
+  private starvedTicks = 0;
+  private readonly starvedTicksBeforeFailure = 3;
+  private readonly statsIntervalMs = 2000;
 
   // Diagnostics
-  private stats = { received: 0, dropped: 0, sent: 0, errors: 0, importMs: 0, sendMs: 0, sendCount: 0 };
+  private stats = {
+    received: 0,
+    dropped: 0,
+    sent: 0,
+    errors: 0,
+    importMs: 0,
+    sendMs: 0,
+    maxSendMs: 0,
+    releaseMs: 0,
+    maxReleaseMs: 0,
+    sendCount: 0,
+    releaseCount: 0,
+  };
   private statsInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
@@ -37,6 +89,10 @@ export class MpvTextureBridge {
     config?: MpvConfig
   ): Promise<boolean> {
     this.window = window;
+    window.webContents.once('destroyed', () => {
+      this.rendererDisposed = true;
+      this.releaseRetainedTransfers();
+    });
 
     try {
       // Dynamic import of the native addon
@@ -44,6 +100,7 @@ export class MpvTextureBridge {
       const mpvModule = await import('@sbtltv/mpv-texture');
       this.mpv = mpvModule.mpvTexture;
     } catch (error) {
+      this.lastInitError = `Failed to load mpv-texture addon: ${error instanceof Error ? error.message : error}`;
       console.warn('[MpvTextureBridge] Failed to load mpv-texture addon:', error);
       return false;
     }
@@ -59,6 +116,7 @@ export class MpvTextureBridge {
 
       // Set up status callback
       this.mpv.onStatus((status) => {
+        this.lastStatus = status;
         this.statusCallback?.(status);
       });
 
@@ -70,18 +128,33 @@ export class MpvTextureBridge {
       this.initialized = true;
       console.log('[MpvTextureBridge] Initialized successfully');
 
-      // Log frame stats every 2 seconds
       this.statsInterval = setInterval(() => {
-        if (this.stats.received > 0) {
-          const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
-          const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
-          console.log(`[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}ms`);
-          this.stats = { received: 0, dropped: 0, sent: 0, errors: 0, importMs: 0, sendMs: 0, sendCount: 0 };
-        }
-      }, 2000);
+        this.checkFrameStarvation();
+        if (this.stats.received === 0) return;
+        const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
+        const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
+        const avgRelease = this.stats.releaseCount > 0 ? (this.stats.releaseMs / this.stats.releaseCount).toFixed(1) : '?';
+        const message = `[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}/${this.stats.maxSendMs.toFixed(1)}ms release:${avgRelease}/${this.stats.maxReleaseMs.toFixed(1)}ms`;
+        console.log(message);
+        this.diagnosticsCallback?.(message);
+        this.stats = {
+          received: 0,
+          dropped: 0,
+          sent: 0,
+          errors: 0,
+          importMs: 0,
+          sendMs: 0,
+          maxSendMs: 0,
+          releaseMs: 0,
+          maxReleaseMs: 0,
+          sendCount: 0,
+          releaseCount: 0,
+        };
+      }, this.statsIntervalMs);
 
       return true;
     } catch (error) {
+      this.lastInitError = error instanceof Error ? error.message : String(error);
       console.error('[MpvTextureBridge] Failed to initialize:', error);
       return false;
     }
@@ -90,109 +163,165 @@ export class MpvTextureBridge {
   /**
    * Handle a new frame from mpv
    *
-   * Stores the latest frame and kicks off the send loop. If a send is already
-   * in progress, the frame is stored and will be picked up when the current
-   * send completes — always sending the most recent frame available.
+   * Keeps up to two transfers in flight. A single newest frame is retained
+   * while both transfer slots are busy.
    */
   private handleFrame(textureInfo: TextureInfo): void {
-    if (!this.window || !this.mpv) return;
+    if (this.destroyRequested || this.pipelineFailureReported || !this.window || !this.mpv) {
+      this.releaseFrame(textureInfo);
+      return;
+    }
 
     this.stats.received++;
+    const frame = { textureInfo, generation: this.frameGeneration } satisfies QueuedFrame;
 
-    if (this.sending) {
-      // Store latest, overwriting any previously pending frame
-      this.stats.dropped++;
+    if (this.activeSends >= this.maxConcurrentSends) {
+      if (this.pendingFrame) {
+        this.stats.dropped++;
+        this.releaseFrame(this.pendingFrame.textureInfo);
+      }
+      this.pendingFrame = frame;
+      return;
     }
-    this.pendingFrame = textureInfo;
 
-    if (!this.sending) {
-      this.sendLoop();
-    }
+    this.startSend(frame);
   }
 
-  /**
-   * Send loop - keeps sending the latest pending frame until none remain.
-   * Only one instance runs at a time (guarded by this.sending).
-   */
-  private async sendLoop(): Promise<void> {
-    if (!this.window) return;
-    this.sending = true;
-
-    while (this.pendingFrame) {
-      const textureInfo = this.pendingFrame;
-      this.pendingFrame = null;
-
-      let imported: ReturnType<typeof sharedTexture.importSharedTexture> | null = null;
-      try {
-        // Convert handle to platform format
-        let sharedTextureHandle: SharedTextureHandle;
-        if (process.platform === 'darwin') {
-          // handle contains the raw IOSurfaceRef pointer (8 bytes on arm64)
-          const ioSurfaceBuffer = Buffer.alloc(8);
-          ioSurfaceBuffer.writeBigUInt64LE(textureInfo.handle);
-          sharedTextureHandle = { ioSurface: ioSurfaceBuffer };
-        } else {
-          const handleBuffer = Buffer.alloc(8);
-          handleBuffer.writeBigUInt64LE(textureInfo.handle);
-          sharedTextureHandle = { ntHandle: handleBuffer };
-        }
-
-        const t0 = performance.now();
-
-        imported = sharedTexture.importSharedTexture({
-          textureInfo: {
-            handle: sharedTextureHandle,
-            codedSize: { width: textureInfo.width, height: textureInfo.height },
-            visibleRect: { x: 0, y: 0, width: textureInfo.width, height: textureInfo.height },
-            pixelFormat: textureInfo.format === 'nv12' ? 'rgba' : textureInfo.format,
-          },
-        });
-
-        const t1 = performance.now();
-
-        await sharedTexture.sendSharedTexture(
-          {
-            frame: this.window!.webContents.mainFrame,
-            importedSharedTexture: imported,
-          },
-          this.frameIndex++
-        );
-
-        const t2 = performance.now();
-        this.stats.importMs += t1 - t0;
-        this.stats.sendMs += t2 - t1;
-        this.stats.sendCount++;
-        this.stats.sent++;
-        this.consecutiveErrors = 0;
-      } catch (error) {
-        this.stats.errors++;
-        this.consecutiveErrors++;
-        if (this.consecutiveErrors === 1 || this.consecutiveErrors === 5) {
-          console.error(`[MpvTextureBridge] Frame error (${this.consecutiveErrors} consecutive):`, error);
-        }
-        if (this.consecutiveErrors === 5) {
-          this.errorCallback?.(`Shared texture pipeline failing: ${this.consecutiveErrors} consecutive frame errors`);
-        }
-      } finally {
-        imported?.release();
+  private startSend(frame: QueuedFrame): void {
+    this.activeSends++;
+    void this.sendFrame(frame).finally(() => {
+      this.activeSends--;
+      if (this.destroyRequested || this.pipelineFailureReported) {
+        this.tryFinalizeDestroy();
+        return;
       }
-    }
+      if (!this.pendingFrame || this.activeSends >= this.maxConcurrentSends) return;
+      const nextFrame = this.pendingFrame;
+      this.pendingFrame = null;
+      this.startSend(nextFrame);
+    });
+  }
 
-    this.sending = false;
+  private async sendFrame({ textureInfo, generation }: QueuedFrame): Promise<void> {
+    let imported: ReturnType<typeof sharedTexture.importSharedTexture> | null = null;
+    let releaseManagedByElectron = false;
+    let transferStarted = false;
+    try {
+      const targetWindow = this.window;
+      if (this.destroyRequested || this.pipelineFailureReported || !targetWindow || targetWindow.isDestroyed()) return;
+      const frameOwner = this.mpv;
+      const frameStartedAt = performance.now();
+      let referencesReleased = false;
+      let sharedTextureHandle: SharedTextureHandle;
+      if (textureInfo.kind === 'ioSurface') {
+        const ioSurfaceBuffer = Buffer.alloc(8);
+        ioSurfaceBuffer.writeBigUInt64LE(textureInfo.handle);
+        sharedTextureHandle = { ioSurface: ioSurfaceBuffer };
+      } else if (textureInfo.kind === 'ntHandle') {
+        const handleBuffer = Buffer.alloc(8);
+        handleBuffer.writeBigUInt64LE(textureInfo.handle);
+        sharedTextureHandle = { ntHandle: handleBuffer };
+      } else {
+        sharedTextureHandle = { nativePixmap: textureInfo.nativePixmap };
+      }
+
+      const t0 = performance.now();
+
+      imported = sharedTexture.importSharedTexture({
+        textureInfo: {
+          handle: sharedTextureHandle,
+          codedSize: { width: textureInfo.width, height: textureInfo.height },
+          visibleRect: { x: 0, y: 0, width: textureInfo.width, height: textureInfo.height },
+          pixelFormat: textureInfo.format === 'nv12' ? 'rgba' : textureInfo.format,
+        },
+        allReferencesReleased: () => {
+          if (referencesReleased) return;
+          referencesReleased = true;
+          const releaseMs = performance.now() - frameStartedAt;
+          this.stats.releaseMs += releaseMs;
+          this.stats.maxReleaseMs = Math.max(this.stats.maxReleaseMs, releaseMs);
+          this.stats.releaseCount++;
+          if (textureInfo.kind === 'nativePixmap' && frameOwner?.isInitialized) {
+            frameOwner.releaseFrame(textureInfo.bufferId);
+          }
+          this.outstandingTextureReferences--;
+          this.tryFinalizeDestroy();
+        },
+      });
+      this.outstandingTextureReferences++;
+      releaseManagedByElectron = textureInfo.kind === 'nativePixmap';
+
+      const t1 = performance.now();
+
+      const metadata = {
+        generation,
+        index: this.frameIndex++,
+      } satisfies SharedTextureFrameMetadata;
+      transferStarted = true;
+      await sharedTexture.sendSharedTexture(
+        {
+          frame: targetWindow.webContents.mainFrame,
+          importedSharedTexture: imported,
+        },
+        metadata
+      );
+
+      const t2 = performance.now();
+      this.stats.importMs += t1 - t0;
+      this.stats.sendMs += t2 - t1;
+      this.stats.maxSendMs = Math.max(this.stats.maxSendMs, t2 - t1);
+      this.stats.sendCount++;
+      this.stats.sent++;
+      this.consecutiveErrors = 0;
+    } catch (error) {
+      this.stats.errors++;
+      this.consecutiveErrors++;
+      const now = performance.now();
+      if (this.consecutiveErrors === 1) this.firstConsecutiveErrorAt = now;
+      if (this.consecutiveErrors === 1 || this.consecutiveErrors === 5) {
+        console.error(`[MpvTextureBridge] Frame error (${this.consecutiveErrors} consecutive):`, error);
+      }
+      if (transferStarted && imported) {
+        // A rejected send does not cancel Electron's queued renderer import.
+        // Keep the main reference until that renderer can no longer import it.
+        this.retainedTransfers.add(imported);
+        imported = null;
+        if (this.rendererDisposed) this.releaseRetainedTransfers();
+        const failingForMs = now - this.firstConsecutiveErrorAt;
+        if (this.consecutiveErrors >= 3 && failingForMs >= this.transferTimeoutFailureMs) {
+          this.reportPipelineFailure(`Shared texture transfers timed out for ${Math.round(failingForMs / 1000)}s; the renderer must be reset before retrying`);
+        }
+      } else if (this.consecutiveErrors >= 5) {
+        this.reportPipelineFailure(`Shared texture pipeline failed after ${this.consecutiveErrors} consecutive frame errors`);
+      }
+    } finally {
+      if (!releaseManagedByElectron) this.releaseFrame(textureInfo);
+      imported?.release();
+    }
   }
 
   /**
    * Load a media URL
    */
   async load(url: string, options?: string): Promise<void> {
+    if (this.destroyRequested || this.pipelineFailureReported) {
+      throw new Error('Native playback must be reset before loading another stream');
+    }
     if (!this.mpv || !this.initialized) {
       throw new Error('Bridge not initialized');
     }
-    // Clear stale frame in renderer and discard any queued frame
+    this.frameGeneration++;
+    // Clear stale frame in renderer and discard any queued frame.
     if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send('video-clear');
+      this.window.webContents.send('video-clear', this.frameGeneration);
     }
+    if (this.pendingFrame) this.releaseFrame(this.pendingFrame.textureInfo);
     this.pendingFrame = null;
+    // A new stream is a fresh chance for the pipeline; re-arm failure detection.
+    this.consecutiveErrors = 0;
+    this.rendererConsecutiveErrors = 0;
+    this.pipelineFailureReported = false;
+    this.starvedTicks = 0;
     return this.mpv.load(url, options);
   }
 
@@ -200,6 +329,7 @@ export class MpvTextureBridge {
    * Start playback
    */
   play(): void {
+    if (this.destroyRequested || this.pipelineFailureReported) return;
     this.mpv?.play();
   }
 
@@ -259,27 +389,122 @@ export class MpvTextureBridge {
     this.errorCallback = callback;
   }
 
+  onPipelineFailure(callback: (error: string) => void): void {
+    this.pipelineFailureCallback = callback;
+  }
+
+  onDiagnostics(callback: (message: string) => void): void {
+    this.diagnosticsCallback = callback;
+  }
+
+  /** Why initialize() returned false, for the fallback dialog and debug log. */
+  get initError(): string | null {
+    return this.lastInitError;
+  }
+
+  /** The renderer could not import or draw a frame (forwarded from preload). */
+  reportRendererFrameError(message: string): void {
+    this.rendererConsecutiveErrors++;
+    const count = this.rendererConsecutiveErrors;
+    if (count === 1 || count === 5) {
+      console.error(`[MpvTextureBridge] Renderer frame error (${count} consecutive): ${message}`);
+    }
+    if (count >= 5) {
+      this.reportPipelineFailure(`Renderer failed to display ${count} consecutive frames: ${message}`);
+    }
+  }
+
+  reportRendererFrameOk(): void {
+    this.rendererConsecutiveErrors = 0;
+  }
+
+  reportPipelineFailure(message: string): void {
+    if (this.pipelineFailureReported) return;
+    this.pipelineFailureReported = true;
+    if (this.pendingFrame) this.releaseFrame(this.pendingFrame.textureInfo);
+    this.pendingFrame = null;
+    this.mpv?.stop();
+    this.pipelineFailureCallback?.(message);
+  }
+
+  private checkFrameStarvation(): void {
+    const status = this.lastStatus;
+    const position = status?.position ?? 0;
+    const advanced = position - this.watchdogPosition;
+    this.watchdogPosition = position;
+    const videoPlaying = !!status && status.playing && status.width > 0;
+    // Audio-only streams have no frames to deliver and a stalled network stream
+    // stops advancing; neither is a pipeline fault.
+    if (!videoPlaying || advanced < 1 || this.stats.received > 0) {
+      this.starvedTicks = 0;
+      return;
+    }
+    this.starvedTicks++;
+    if (this.starvedTicks >= this.starvedTicksBeforeFailure) {
+      const seconds = (this.starvedTicks * this.statsIntervalMs) / 1000;
+      this.reportPipelineFailure(`Native renderer delivered no frames for ${seconds}s while video was playing`);
+    }
+  }
+
   /**
    * Check if initialized
    */
   isInitialized(): boolean {
-    return this.initialized && (this.mpv?.isInitialized ?? false);
+    return this.initialized && !this.pipelineFailureReported && (this.mpv?.isInitialized ?? false);
   }
 
   /**
    * Destroy and clean up
    */
-  destroy(): void {
+  destroy(): Promise<void> {
+    if (this.destruction) return this.destruction;
+    this.destruction = new Promise<void>((resolve, reject) => {
+      this.resolveDestruction = resolve;
+      this.rejectDestruction = reject;
+    });
+    this.destroyRequested = true;
+    this.initialized = false;
     if (this.statsInterval) {
       clearInterval(this.statsInterval);
       this.statsInterval = null;
     }
-    if (this.mpv) {
-      this.mpv.destroy();
-      this.mpv = null;
+    if (this.pendingFrame) {
+      this.releaseFrame(this.pendingFrame.textureInfo);
+      this.pendingFrame = null;
     }
+    if (this.mpv?.isInitialized) this.mpv.stop();
     this.window = null;
-    this.initialized = false;
-    console.log('[MpvTextureBridge] Destroyed');
+    this.tryFinalizeDestroy();
+    return this.destruction;
+  }
+
+  private releaseRetainedTransfers(): void {
+    for (const imported of this.retainedTransfers) {
+      this.retainedTransfers.delete(imported);
+      imported.release();
+    }
+    this.tryFinalizeDestroy();
+  }
+
+  private tryFinalizeDestroy(): void {
+    if (this.destroyFinalized || !this.destroyRequested || this.activeSends > 0 || this.outstandingTextureReferences > 0) {
+      return;
+    }
+    this.destroyFinalized = true;
+    const mpv = this.mpv;
+    this.mpv = null;
+    try {
+      if (mpv) mpv.destroy();
+      this.resolveDestruction?.();
+      console.log('[MpvTextureBridge] Destroyed');
+    } catch (error) {
+      this.rejectDestruction?.(error);
+    }
+  }
+
+  private releaseFrame(textureInfo: TextureInfo): void {
+    if (textureInfo.kind === 'nativePixmap') {
+      this.mpv?.releaseFrame(textureInfo.bufferId);
+    }
   }
 }

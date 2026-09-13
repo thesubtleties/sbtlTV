@@ -77,22 +77,17 @@ public:
         return createTexture(width, height);
     }
 
-    uint32_t getGLTexture() const override {
-        return m_slots[m_writeIndex].glTexture;
-    }
-
-    uint32_t getGLFBO() const override {
-        return m_slots[m_writeIndex].glFBO;
-    }
-
-    bool lockTexture() override {
+    bool acquireRenderTarget(RenderTarget& target) override {
         if (!m_slots[m_writeIndex].ioSurface) return false;
         // No IOSurfaceLock needed — GPU-to-GPU sharing uses glFlush for sync
         m_locked = true;
+        target.fbo = m_slots[m_writeIndex].glFBO;
+        target.width = m_width;
+        target.height = m_height;
         return true;
     }
 
-    TextureInfo unlockAndExport() override {
+    TextureInfo exportRenderTarget() override {
         TextureInfo info = {};
 
         if (!m_locked) {
@@ -105,6 +100,7 @@ public:
 
         // Pass IOSurfaceRef as raw pointer — Electron's importSharedTexture expects
         // the ioSurface Buffer to contain the IOSurfaceRef pointer, not the IOSurfaceID.
+        info.handle_type = TextureHandleType::IOSurface;
         info.handle = reinterpret_cast<uint64_t>(slot.ioSurface);
         info.width = m_width;
         info.height = m_height;
@@ -117,7 +113,11 @@ public:
         return info;
     }
 
-    void releaseTexture() override {
+    void abandonRenderTarget() override {
+        m_locked = false;
+    }
+
+    void releaseTexture(uint32_t) override {
         // No-op with triple buffering - mpv always has a free slot to write to
     }
 
@@ -144,7 +144,9 @@ private:
         int32_t w = static_cast<int32_t>(width);
         int32_t h = static_cast<int32_t>(height);
         int32_t bytesPerElement = 4;
-        int32_t bytesPerRow = width * bytesPerElement;
+        // IOSurface requires the row pitch to satisfy its alignment property;
+        // width * 4 is not aligned for widths like 1918.
+        int32_t bytesPerRow = static_cast<int32_t>(IOSurfaceAlignProperty(kIOSurfaceBytesPerRow, width * bytesPerElement));
         int32_t pixelFormat = 'BGRA'; // kCVPixelFormatType_32BGRA
 
         CFNumberRef widthNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &w);

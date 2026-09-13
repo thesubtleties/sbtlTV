@@ -52,8 +52,35 @@ interface WebGLState {
   program: WebGLProgram;
   texture: WebGLTexture;
   vao: WebGLVertexArrayObject;
+  vbo: WebGLBuffer;
   flipYLocation: WebGLUniformLocation;
   flipXLocation: WebGLUniformLocation;
+}
+
+interface FrameCadenceStats {
+  startedAt: number;
+  lastFrameAt: number;
+  lastFrameIndex: number;
+  frames: number;
+  outOfOrder: number;
+  indexGaps: number;
+  intervals: number[];
+  drawMs: number;
+  maxDrawMs: number;
+}
+
+function createFrameCadenceStats(): FrameCadenceStats {
+  return {
+    startedAt: 0,
+    lastFrameAt: 0,
+    lastFrameIndex: -1,
+    frames: 0,
+    outOfOrder: 0,
+    indexGaps: 0,
+    intervals: [],
+    drawMs: 0,
+    maxDrawMs: 0,
+  };
 }
 
 function createShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
@@ -102,21 +129,26 @@ function initWebGL(canvas: HTMLCanvasElement): WebGLState | null {
   // Create shaders
   const vertexShader = createShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
   const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
-  if (!vertexShader || !fragmentShader) return null;
+  if (!vertexShader || !fragmentShader) {
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
+    return null;
+  }
 
   // Create program
   const program = createProgram(gl, vertexShader, fragmentShader);
-  if (!program) return null;
 
   // Clean up shaders (attached to program, no longer needed)
   gl.deleteShader(vertexShader);
   gl.deleteShader(fragmentShader);
+  if (!program) return null;
 
   // Get uniform locations
   const flipYLocation = gl.getUniformLocation(program, 'u_flipY');
   const flipXLocation = gl.getUniformLocation(program, 'u_flipX');
   if (!flipYLocation || !flipXLocation) {
     console.error('[VideoCanvas] Could not get uniform locations');
+    gl.deleteProgram(program);
     return null;
   }
 
@@ -132,10 +164,18 @@ function initWebGL(canvas: HTMLCanvasElement): WebGLState | null {
 
   // Create VAO and VBO
   const vao = gl.createVertexArray();
-  if (!vao) return null;
+  if (!vao) {
+    gl.deleteProgram(program);
+    return null;
+  }
   gl.bindVertexArray(vao);
 
   const vbo = gl.createBuffer();
+  if (!vbo) {
+    gl.deleteVertexArray(vao);
+    gl.deleteProgram(program);
+    return null;
+  }
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
   gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
@@ -151,7 +191,12 @@ function initWebGL(canvas: HTMLCanvasElement): WebGLState | null {
 
   // Create texture
   const texture = gl.createTexture();
-  if (!texture) return null;
+  if (!texture) {
+    gl.deleteBuffer(vbo);
+    gl.deleteVertexArray(vao);
+    gl.deleteProgram(program);
+    return null;
+  }
   gl.bindTexture(gl.TEXTURE_2D, texture);
 
   // Set texture parameters for video
@@ -162,7 +207,7 @@ function initWebGL(canvas: HTMLCanvasElement): WebGLState | null {
 
   console.log('[VideoCanvas] WebGL2 initialized');
 
-  return { gl, program, texture, vao, flipYLocation, flipXLocation };
+  return { gl, program, texture, vao, vbo, flipYLocation, flipXLocation };
 }
 
 export function VideoCanvas({ visible, className, flipY = false, flipX = false }: VideoCanvasProps) {
@@ -170,31 +215,88 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
   const glStateRef = useRef<WebGLState | null>(null);
   const drawErrorCount = useRef(0);
   const contextLostRef = useRef(false);
+  const cadenceRef = useRef<FrameCadenceStats>(createFrameCadenceStats());
+  const activeRef = useRef(visible);
+  const hasVideoFrameRef = useRef(false);
+  const initializationFailureRef = useRef<string | null>(null);
+  const pipelineFailureReportedRef = useRef(false);
+  const restorationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelRestorationTimer = useCallback(() => {
+    if (restorationTimerRef.current !== null) clearTimeout(restorationTimerRef.current);
+    restorationTimerRef.current = null;
+  }, []);
+
+  const reportPipelineFailure = useCallback((message: string) => {
+    if (pipelineFailureReportedRef.current) return;
+    pipelineFailureReportedRef.current = true;
+    window.sharedTexture?.reportPipelineFailure(message);
+  }, []);
+
+  const checkRendererHealth = useCallback(() => {
+    if (!activeRef.current || !hasVideoFrameRef.current || pipelineFailureReportedRef.current) return;
+    if (initializationFailureRef.current) {
+      reportPipelineFailure(initializationFailureRef.current);
+      return;
+    }
+    if (contextLostRef.current && restorationTimerRef.current === null) {
+      restorationTimerRef.current = setTimeout(() => {
+        restorationTimerRef.current = null;
+        if (activeRef.current && hasVideoFrameRef.current && contextLostRef.current) {
+          reportPipelineFailure('WebGL context did not recover within 6 seconds');
+        }
+      }, 6000);
+    }
+  }, [reportPipelineFailure]);
+
+  useEffect(() => {
+    activeRef.current = visible;
+    if (!visible) cancelRestorationTimer();
+    else checkRendererHealth();
+  }, [visible, cancelRestorationTimer, checkRendererHealth]);
 
   // Handle frame - render immediately
-  const handleFrame = useCallback((videoFrame: VideoFrame, _index: number) => {
+  const handleFrame = useCallback((videoFrame: VideoFrame, index: number) => {
     const canvas = canvasRef.current;
     const glState = glStateRef.current;
 
-    if (!canvas || !glState || videoFrame.codedWidth <= 0 || contextLostRef.current) {
+    if (!canvas || videoFrame.codedWidth <= 0 || videoFrame.codedHeight <= 0) {
       videoFrame.close();
+      return;
+    }
+    hasVideoFrameRef.current = true;
+    if (!glState || contextLostRef.current) {
+      try { checkRendererHealth(); } finally { videoFrame.close(); }
       return;
     }
 
     const { gl, program, texture, vao, flipYLocation, flipXLocation } = glState;
     const width = videoFrame.codedWidth;
     const height = videoFrame.codedHeight;
-
-    // Resize canvas if needed
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-      gl.viewport(0, 0, width, height);
-      console.log(`[VideoCanvas] Resized to ${width}x${height}`);
+    const frameAt = performance.now();
+    const cadence = cadenceRef.current;
+    if (cadence.startedAt === 0) cadence.startedAt = frameAt;
+    if (cadence.lastFrameAt > 0) cadence.intervals.push(frameAt - cadence.lastFrameAt);
+    if (cadence.lastFrameIndex >= 0) {
+      if (index <= cadence.lastFrameIndex) cadence.outOfOrder++;
+      else cadence.indexGaps += Math.max(0, index - cadence.lastFrameIndex - 1);
     }
+    cadence.lastFrameAt = frameAt;
+    cadence.lastFrameIndex = index;
+    cadence.frames++;
 
-    // Draw
+    // Draw. The frame is closed in finally so a throw anywhere here cannot
+    // leak a VideoFrame (and, on Linux, the DMA-BUF slot behind it).
+    const drawStartedAt = performance.now();
+    let drawError: string | null = null;
     try {
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        gl.viewport(0, 0, width, height);
+        console.log(`[VideoCanvas] Resized to ${width}x${height}`);
+      }
+
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame);
       gl.useProgram(program);
@@ -202,29 +304,60 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       gl.uniform1i(flipXLocation, flipX ? 1 : 0);
       gl.bindVertexArray(vao);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.flush();
     } catch (e) {
       drawErrorCount.current++;
       const count = drawErrorCount.current;
+      drawError = gl.isContextLost() ? 'WebGL context lost' : `Draw error: ${e}`;
       if (count === 1 || count === 10 || count === 100) {
-        if (gl.isContextLost()) {
-          console.error('[VideoCanvas] WebGL context lost');
-          window.debug?.logFromRenderer('[VideoCanvas] WebGL context lost');
-        } else {
-          console.error(`[VideoCanvas] Draw error (${count} total):`, e);
-          window.debug?.logFromRenderer(`[VideoCanvas] Draw error (${count} total): ${e}`);
-        }
+        console.error(`[VideoCanvas] ${drawError} (${count} total)`);
+        window.debug?.logFromRenderer(`[VideoCanvas] ${drawError} (${count} total)`).catch(() => {});
       }
+    } finally {
+      videoFrame.close();
     }
+    // Preload also tracks import failures, so it must see successful draws.
+    window.sharedTexture?.reportDrawResult(drawError === null, drawError ?? undefined);
+    if (drawError === null) drawErrorCount.current = 0;
+    const drawMs = performance.now() - drawStartedAt;
+    cadence.drawMs += drawMs;
+    cadence.maxDrawMs = Math.max(cadence.maxDrawMs, drawMs);
 
-    videoFrame.close();
-  }, [flipY, flipX]);
+    if (frameAt - cadence.startedAt >= 2000) {
+      const intervals = [...cadence.intervals].sort((left, right) => left - right);
+      const percentile = (value: number) => intervals[Math.min(intervals.length - 1, Math.floor(intervals.length * value))] ?? 0;
+      const avgDraw = cadence.frames > 0 ? cadence.drawMs / cadence.frames : 0;
+      window.debug?.logFromRenderer(
+        `[VideoCanvas] cadence frames:${cadence.frames} gaps:${cadence.indexGaps} reverse:${cadence.outOfOrder} ` +
+        `interval p50/p95/max:${percentile(0.5).toFixed(1)}/${percentile(0.95).toFixed(1)}/${percentile(1).toFixed(1)}ms ` +
+        `draw avg/max:${avgDraw.toFixed(1)}/${cadence.maxDrawMs.toFixed(1)}ms`
+      ).catch(() => {});
+      cadenceRef.current = {
+        ...createFrameCadenceStats(),
+        startedAt: frameAt,
+        lastFrameAt: frameAt,
+        lastFrameIndex: index,
+      };
+    }
+  }, [flipY, flipX, checkRendererHealth]);
 
 
   // Initialize WebGL on mount
   useEffect(() => {
     const canvas = canvasRef.current;
+    const initialize = () => {
+      if (!canvas) return;
+      try {
+        glStateRef.current = initWebGL(canvas);
+        initializationFailureRef.current = glStateRef.current ? null : 'WebGL2 initialization failed';
+      } catch (error) {
+        glStateRef.current = null;
+        initializationFailureRef.current = `WebGL2 initialization failed: ${String(error)}`;
+      }
+      checkRendererHealth();
+    };
     if (canvas && !glStateRef.current) {
-      glStateRef.current = initWebGL(canvas);
+      initialize();
     }
 
     // Handle GPU reset / sleep-wake context loss
@@ -234,41 +367,36 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       window.debug?.logFromRenderer('[VideoCanvas] WebGL context lost');
       glStateRef.current = null;
       contextLostRef.current = true;
+      checkRendererHealth();
     };
 
     const handleContextRestored = () => {
       console.log('[VideoCanvas] WebGL context restored, reinitializing');
       window.debug?.logFromRenderer('[VideoCanvas] WebGL context restored');
-      if (canvas) {
-        const newState = initWebGL(canvas);
-        if (newState) {
-          glStateRef.current = newState;
-          contextLostRef.current = false;
-          drawErrorCount.current = 0;
-        } else {
-          console.error('[VideoCanvas] Failed to reinitialize WebGL after context restore');
-          window.debug?.logFromRenderer('[VideoCanvas] Failed to reinitialize WebGL after context restore');
-        }
-      }
+      cancelRestorationTimer();
+      contextLostRef.current = false;
+      initialize();
     };
 
     canvas?.addEventListener('webglcontextlost', handleContextLost);
     canvas?.addEventListener('webglcontextrestored', handleContextRestored);
 
     return () => {
+      cancelRestorationTimer();
       canvas?.removeEventListener('webglcontextlost', handleContextLost);
       canvas?.removeEventListener('webglcontextrestored', handleContextRestored);
       // Cleanup WebGL resources
       const glState = glStateRef.current;
       if (glState) {
-        const { gl, program, texture, vao } = glState;
+        const { gl, program, texture, vao, vbo } = glState;
         gl.deleteTexture(texture);
         gl.deleteVertexArray(vao);
+        gl.deleteBuffer(vbo);
         gl.deleteProgram(program);
         glStateRef.current = null;
       }
     };
-  }, []);
+  }, [cancelRestorationTimer, checkRendererHealth]);
 
   // Set up sharedTexture receiver
   useEffect(() => {
@@ -291,6 +419,8 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     if (!window.sharedTexture?.isAvailable) return;
 
     window.sharedTexture.onClear(() => {
+      hasVideoFrameRef.current = false;
+      cancelRestorationTimer();
       const glState = glStateRef.current;
       if (glState && !contextLostRef.current) {
         const { gl } = glState;
@@ -302,7 +432,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     return () => {
       window.sharedTexture?.removeClearListener();
     };
-  }, []);
+  }, [cancelRestorationTimer]);
 
   // Don't render if sharedTexture not available
   if (!window.sharedTexture?.isAvailable) {
