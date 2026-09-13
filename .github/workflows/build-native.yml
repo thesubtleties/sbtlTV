@@ -33,13 +33,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: 'pnpm'
@@ -98,7 +98,7 @@ jobs:
       # Upload full app artifacts
       - name: Upload app (Windows)
         if: matrix.platform == 'win'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbtlTV-win-native
           path: release/*.exe
@@ -106,7 +106,7 @@ jobs:
 
       - name: Upload app (macOS)
         if: matrix.platform == 'mac'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbtlTV-mac-native
           path: release/*.dmg
@@ -115,7 +115,7 @@ jobs:
       # Also upload just the native addon for debugging
       - name: Upload native addon (Windows)
         if: matrix.platform == 'win'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mpv-texture-win
           path: |
@@ -124,7 +124,7 @@ jobs:
 
       - name: Upload native addon (macOS)
         if: matrix.platform == 'mac'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mpv-texture-mac
           path: |
