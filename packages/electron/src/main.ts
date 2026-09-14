@@ -1485,6 +1485,45 @@ function isBlockedUrl(url: string): boolean {
 // Fetch proxy - bypasses CORS by making requests from main process
 // Used for IPTV provider API calls (user-configured URLs)
 // Blocks internal network access unless allowLanSources is enabled in settings
+const MAX_PROXY_RESPONSE_BYTES = 512 * 1024 * 1024;
+
+// Electron's request API yields a plain Node stream. net.fetch's Web-stream
+// adapter has silently truncated large responses: a 20 MB movie list stopped
+// at 16.5 MB on Windows with no error, while the same machine pulled a 312 MB
+// EPG through this path intact. Every proxied request goes through here.
+async function requestBody(
+  url: string,
+  options?: { method?: string; headers?: Record<string, string>; body?: string }
+): Promise<{ ok: boolean; status: number; statusText: string; body: Buffer }> {
+  const response = await new Promise<Electron.IncomingMessage>((resolve, reject) => {
+    const request = electronNet.request({ url, method: options?.method || 'GET' });
+    for (const [name, value] of Object.entries(options?.headers ?? {})) request.setHeader(name, value);
+    request.on('response', resolve);
+    request.on('error', reject);
+    if (options?.body !== undefined) request.write(options.body);
+    request.end();
+  });
+  // Electron's IncomingMessage is a Node Readable at runtime; its typings don't say so.
+  const stream = response as unknown as import('stream').Readable;
+  const chunks: Buffer[] = [];
+  let total = 0;
+  await new Promise<void>((resolve, reject) => {
+    stream.on('data', (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > MAX_PROXY_RESPONSE_BYTES) {
+        stream.destroy(new Error(`Response exceeds ${MAX_PROXY_RESPONSE_BYTES / 1024 / 1024}MB limit`));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    stream.on('end', resolve);
+    stream.on('error', reject);
+    stream.on('aborted', () => reject(new Error('Response aborted')));
+  });
+  const status = response.statusCode;
+  return { ok: status >= 200 && status < 300, status, statusText: response.statusMessage, body: Buffer.concat(chunks) };
+}
+
 ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => {
   try {
     // Check SSRF protection (unless LAN sources are allowed)
@@ -1496,19 +1535,14 @@ ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: s
       };
     }
 
-    const response = await electronNet.fetch(url, {
-      method: options?.method || 'GET',
-      headers: options?.headers,
-      body: options?.body,
-    });
-    const text = await response.text();
+    const response = await requestBody(url, options);
     return {
       success: true,
       data: {
         ok: response.ok,
         status: response.status,
         statusText: response.statusText,
-        text,
+        text: response.body.toString('utf8'),
       },
     };
   } catch (error) {
@@ -1527,18 +1561,16 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
     return { success: false, error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > System > Security if you trust this source.' };
   }
   try {
-    const response = await electronNet.fetch(url);
+    const response = await requestBody(url);
     if (!response.ok) {
       return {
         success: false,
         error: `HTTP ${response.status}: ${response.statusText}`,
       };
     }
-    const buffer = await response.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
     return {
       success: true,
-      data: base64,
+      data: response.body.toString('base64'),
     };
   } catch (error) {
     return {
