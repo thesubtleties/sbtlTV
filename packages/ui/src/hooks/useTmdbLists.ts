@@ -13,6 +13,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+
+const MAX_LIST_RETRIES = 3;
+const LIST_RETRY_BASE_MS = 5000;
 import { useEnabledSourceIds } from './useSourceFiltering';
 import { db, type StoredMovie, type StoredSeries } from '../db';
 import {
@@ -158,17 +161,29 @@ function useMovieList(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // A failed list fetch (a busy main process mid-sync, a network blip) used to
+  // leave the home showing "No content available" until the page remounted.
+  // Retry a few times with backoff instead.
+  const [retryAttempt, setRetryAttempt] = useState(0);
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
 
     fetchFn(accessToken)
-      .then((results) => setTmdbMovies(results))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .then((results) => { if (!cancelled) setTmdbMovies(results); })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message);
+        if (retryAttempt < MAX_LIST_RETRIES) {
+          setTimeout(() => { if (!cancelled) setRetryAttempt((n) => n + 1); }, LIST_RETRY_BASE_MS * 2 ** retryAttempt);
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   // fetchFn intentionally omitted — callers pass inline arrows, so including
   // it would cause an infinite re-fetch loop on every render.
-  }, [accessToken]);
+  }, [accessToken, retryAttempt]);
 
   const tmdbIds = useMemo(() => tmdbMovies.map((m) => m.id), [tmdbMovies]);
   const localMovies = useMoviesByTmdbIds(tmdbIds);
@@ -198,17 +213,29 @@ function useSeriesList(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // A failed list fetch (a busy main process mid-sync, a network blip) used to
+  // leave the home showing "No content available" until the page remounted.
+  // Retry a few times with backoff instead.
+  const [retryAttempt, setRetryAttempt] = useState(0);
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
 
     fetchFn(accessToken)
-      .then((results) => setTmdbSeries(results))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .then((results) => { if (!cancelled) setTmdbSeries(results); })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message);
+        if (retryAttempt < MAX_LIST_RETRIES) {
+          setTimeout(() => { if (!cancelled) setRetryAttempt((n) => n + 1); }, LIST_RETRY_BASE_MS * 2 ** retryAttempt);
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   // fetchFn intentionally omitted — callers pass inline arrows, so including
   // it would cause an infinite re-fetch loop on every render.
-  }, [accessToken]);
+  }, [accessToken, retryAttempt]);
 
   const tmdbIds = useMemo(() => tmdbSeries.map((s) => s.id), [tmdbSeries]);
   const localSeries = useSeriesByTmdbIds(tmdbIds);
