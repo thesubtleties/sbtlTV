@@ -455,10 +455,6 @@ export async function isVodStale(sourceId: string, refreshHours: number = DEFAUL
 export async function syncSource(source: Source): Promise<SyncResult> {
   debugLog(`Starting sync for source: ${source.name} (${source.type})`, 'sync');
   try {
-    // Clear existing data for this source first
-    debugLog(`Clearing existing data for source: ${source.id}`, 'sync');
-    await clearSourceData(source.id);
-
     let channels: Channel[] = [];
     let categories: Category[] = [];
     let epgUrl: string | undefined;
@@ -520,6 +516,11 @@ export async function syncSource(source: Source): Promise<SyncResult> {
       debugLog(`Source ${source.id} was deleted during sync, skipping write`, 'sync');
       return { success: false, channelCount: 0, categoryCount: 0, programCount: 0, error: 'Source deleted' };
     }
+
+    // Replace this source's data only now that the fetch succeeded: a failure
+    // above leaves the previous guide intact instead of an empty one.
+    debugLog(`Clearing existing data for source: ${source.id}`, 'sync');
+    await clearSourceData(source.id);
 
     // Store channels and categories in Dexie
     debugLog(`Storing ${channels.length} channels and ${categories.length} categories in DB...`, 'sync');
