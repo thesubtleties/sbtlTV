@@ -187,6 +187,13 @@ function initDebugLogging(enabled: boolean): void {
     });
     debugLog('='.repeat(60));
     debugLog(`Debug logging started - sbtlTV v${app.getVersion()}`);
+    // CI writes dist/build-info.json so a log can be tied to an exact commit.
+    try {
+      const info = JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')) as { sha?: string; run?: string; ref?: string };
+      debugLog(`Build: ${info.sha ?? '?'} (${info.ref ?? '?'}, run ${info.run ?? '?'})`);
+    } catch {
+      debugLog('Build: local');
+    }
     if (!rotationSucceeded) {
       debugLog('Warning: Log rotation failed, continuing with existing file', 'system');
     }
