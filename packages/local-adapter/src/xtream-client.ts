@@ -77,14 +77,28 @@ export class XtreamClient {
   private async fetchJson<T>(url: string): Promise<T> {
     // Use Electron's fetch proxy if available (bypasses CORS)
     if (typeof window !== 'undefined' && window.fetchProxy) {
-      const result = await window.fetchProxy.fetch(url);
-      if (!result.success || !result.data) {
-        throw new Error(result.error || 'Fetch failed');
+      // Some panels answer a burst of list requests with an empty 200. Retry
+      // that once, and make any parse failure say what actually came back.
+      for (let attempt = 1; ; attempt++) {
+        const result = await window.fetchProxy.fetch(url);
+        if (!result.success || !result.data) {
+          throw new Error(result.error || 'Fetch failed');
+        }
+        if (!result.data.ok) {
+          throw new Error(`Xtream API error: ${result.data.status} ${result.data.statusText}`);
+        }
+        const body = result.data.text ?? '';
+        if (body.length === 0 && attempt === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+        try {
+          return JSON.parse(body);
+        } catch (error) {
+          const head = body.length > 0 ? `, starts with ${JSON.stringify(body.slice(0, 120))}` : '';
+          throw new Error(`Xtream API returned unparseable JSON (HTTP ${result.data.status}, ${body.length} bytes${head}): ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
-      if (!result.data.ok) {
-        throw new Error(`Xtream API error: ${result.data.status} ${result.data.statusText}`);
-      }
-      return JSON.parse(result.data.text);
     }
 
     // Fallback to regular fetch (works in Node.js or when CORS is not an issue)
