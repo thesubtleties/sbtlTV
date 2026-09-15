@@ -1503,7 +1503,12 @@ async function requestBody(
   options?: { method?: string; headers?: Record<string, string>; body?: string }
 ): Promise<{ ok: boolean; status: number; statusText: string; body: Buffer }> {
   const response = await new Promise<Electron.IncomingMessage>((resolve, reject) => {
-    const request = electronNet.request({ url, method: options?.method || 'GET' });
+    // Never serve API responses from Chromium's HTTP cache. A provider marked
+    // its movie list cacheable for a week and framed it by connection close;
+    // a transfer cut off mid-body was cached as complete and replayed on
+    // every sync for days. The app keeps its own database; the HTTP cache
+    // has nothing to add.
+    const request = electronNet.request({ url, method: options?.method || 'GET', cache: 'no-store' });
     for (const [name, value] of Object.entries(options?.headers ?? {})) request.setHeader(name, value);
     request.on('response', resolve);
     request.on('error', reject);
@@ -1664,7 +1669,7 @@ async function downloadToTempFile(url: string): Promise<string> {
   // in a Web-stream adapter that can throw from inside Node when the reader is
   // cancelled mid-download; pipeline() has no such path.
   const response = await new Promise<Electron.IncomingMessage>((resolve, reject) => {
-    const request = electronNet.request({ url, method: 'GET' });
+    const request = electronNet.request({ url, method: 'GET', cache: 'no-store' });
     // Ask for the bytes as stored. With gzip accepted, Chromium transparently
     // inflates a .gz that the server also marks content-encoding: gzip and hands
     // us the raw multi-GB XML instead of the archive.
