@@ -1543,6 +1543,9 @@ ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: s
     }
 
     const response = await requestBody(url, options);
+    // Byte count as received from the network stack, before IPC: lets a
+    // truncated body be attributed to the network or to the transfer.
+    debugLog(`fetch-proxy ${response.status} ${response.body.length}B ${url.split('?')[0]}`, 'net');
     return {
       success: true,
       data: {
