@@ -1,5 +1,5 @@
 import { memo, useCallback } from 'react';
-import { ProgramBlock, EmptyProgramBlock } from './ProgramBlock';
+import { ProgramBlock, EmptyProgramBlock, LoadingProgramBlocks } from './ProgramBlock';
 import { useIsFavoriteChannel, useToggleFavoriteChannel } from '../hooks/useFavorites';
 import type { StoredChannel, StoredProgram } from '../db';
 
@@ -8,7 +8,8 @@ interface ChannelRowProps {
   index: number;
   sortOrder: 'alphabetical' | 'number';
   channelColumnWidth: number;
-  programs: StoredProgram[];
+  // undefined while this row's programs have not been read yet; [] when the channel has no EPG
+  programs: StoredProgram[] | undefined;
   windowStart: Date;
   windowEnd: Date;
   pixelsPerHour: number;
@@ -83,7 +84,9 @@ export const ChannelRow = memo(function ChannelRow({
 
       {/* Program grid */}
       <div className="guide-program-grid">
-        {programs.length > 0 ? (
+        {programs === undefined ? (
+          <LoadingProgramBlocks pixelsPerHour={pixelsPerHour} visibleHours={visibleHours} />
+        ) : programs.length > 0 ? (
           programs.map((program) => (
             <ProgramBlock
               key={program.id}

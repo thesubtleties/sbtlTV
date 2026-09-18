@@ -3,6 +3,13 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
 import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
+import {
+  padRowRange,
+  rowRangeCovers,
+  GUIDE_ROW_PAD,
+  GUIDE_RANGE_SETTLE_MS,
+  type RowRange,
+} from '../hooks/guideRowRange';
 import { ChannelRow } from './ChannelRow';
 import { useChannelSortOrder, useChannelColumnWidth } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
@@ -38,7 +45,8 @@ export function ChannelPanel({
   const [availableWidth, setAvailableWidth] = useState(800);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Channels filtered by the in-guide search box; the FULL list still drives EPG/program lookups.
+  // Channels filtered by the in-guide search box. This is the list Virtuoso renders, so
+  // the program query below is sliced from it by row index.
   const displayChannels = useMemo(() => filterChannelsByName(channels, searchQuery), [channels, searchQuery]);
 
   // Channel column width is a persisted setting; the EFFECTIVE width yields a bit on narrow
@@ -144,11 +152,45 @@ export function ChannelPanel({
     goToNow,
   } = useTimeGrid({ availableWidth });
 
-  // Get stream IDs for programs lookup
-  const streamIds = useMemo(() => channels.map((ch) => ch.stream_id), [channels]);
+  // Programs are read only for the rows Virtuoso is rendering, padded by
+  // GUIDE_ROW_PAD on each side. The rendered range is debounced so a scrollbar
+  // drag across thousands of rows issues one query for where it settles, and a
+  // settled range that is still inside the loaded range issues none at all.
+  const [renderedRange, setRenderedRange] = useState<RowRange | null>(null);
+  const [loadedRange, setLoadedRange] = useState<RowRange | null>(null);
+  const loadedRangeRef = useRef<RowRange | null>(null);
+  const rowCount = displayChannels.length;
 
-  // Fetch programs for the preload window
-  const programs = useProgramsInRange(streamIds, loadStart, loadEnd);
+  const handleRangeChange = useCallback((range: { startIndex: number; endIndex: number }) => {
+    setRenderedRange({ start: range.startIndex, end: range.endIndex });
+  }, []);
+
+  useEffect(() => {
+    if (!renderedRange) return;
+    const commit = () => {
+      setLoadedRange((prev) => {
+        if (rowRangeCovers(prev, renderedRange)) return prev;
+        const next = padRowRange(renderedRange, rowCount, GUIDE_ROW_PAD);
+        loadedRangeRef.current = next;
+        return next;
+      });
+    };
+    // First read for a list happens straight away; only scroll-driven changes wait to settle.
+    if (!loadedRangeRef.current) {
+      commit();
+      return;
+    }
+    const timer = setTimeout(commit, GUIDE_RANGE_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [renderedRange, rowCount]);
+
+  const loadedStreamIds = useMemo(() => {
+    if (!loadedRange) return [];
+    return displayChannels.slice(loadedRange.start, loadedRange.end + 1).map((ch) => ch.stream_id);
+  }, [displayChannels, loadedRange]);
+
+  // Fetch programs for the loaded rows over the preload window
+  const programs = useProgramsInRange(loadedStreamIds, loadStart, loadEnd);
 
   // Update current time every minute
   useEffect(() => {
@@ -324,6 +366,7 @@ export function ChannelPanel({
         <Virtuoso
           ref={channelListRef}
           data={displayChannels}
+          rangeChanged={handleRangeChange}
           computeItemKey={(_, channel) => channel.stream_id}
           className="guide-channels"
           itemContent={(index, channel) => (
@@ -332,7 +375,7 @@ export function ChannelPanel({
               index={index}
               sortOrder={channelSortOrder}
               channelColumnWidth={effectiveColumnWidth}
-              programs={programs.get(channel.stream_id) ?? []}
+              programs={programs.get(channel.stream_id)}
               windowStart={windowStart}
               windowEnd={windowEnd}
               pixelsPerHour={pixelsPerHour}
