@@ -61,7 +61,7 @@
 }
 
 /* Morph: a placeholder takes its program's title, then carries it into the
-   program's real position. Timings match programLane.ts. */
+   program's real position. Timings match programLaneModel.ts. */
 .program-block.morph {
   background: rgba(255, 255, 255, 0.05);
   opacity: 0.4;

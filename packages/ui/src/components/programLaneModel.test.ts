@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { loadingBlocks, planMorph, resolveKind, QUICK_RESOLVE_MS } from './programLane';
+import { loadingBlocks, planMorph, resolveKind, QUICK_RESOLVE_MS } from './programLaneModel';
 
 describe('loadingBlocks', () => {
   it('tiles the lane width with blocks that differ from row to row', () => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import type { StoredProgram } from '../db';
 import { ProgramBlock, EmptyProgramBlock, getProgramStyle, isProgramCurrent } from './ProgramBlock';
-import { loadingBlocks, planMorph, resolveKind, MORPH_LEAD_MS, MORPH_TOTAL_MS } from './programLane';
+import { loadingBlocks, planMorph, resolveKind, MORPH_LEAD_MS, MORPH_TOTAL_MS } from './programLaneModel';
 
 interface ProgramLaneProps {
   // undefined while the row's programs have not been read; [] when the channel has no EPG
