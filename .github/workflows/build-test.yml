@@ -76,6 +76,12 @@ jobs:
       - name: Build all packages
         run: pnpm build
 
+      - name: Record build identity
+        shell: bash
+        run: |
+          printf '{"sha":"%s","run":"%s","ref":"%s"}\n' "${GITHUB_SHA:0:7}" "$GITHUB_RUN_ID" "$GITHUB_REF_NAME" > packages/electron/dist/build-info.json
+          cat packages/electron/dist/build-info.json
+
       - name: Run unit tests
         run: |
           pnpm --filter @sbtltv/ui test
