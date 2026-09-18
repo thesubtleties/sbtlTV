@@ -94,6 +94,11 @@
   animation: program-title-in 1400ms ease-out forwards;
 }
 
+/* A show that already ended gets its title only as its block lands */
+.program-block.morph .program-block-title.late {
+  animation-duration: 480ms;
+}
+
 @keyframes program-title-in {
   to { opacity: 1; }
 }

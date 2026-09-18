@@ -19,6 +19,10 @@ type Phase =
   | { kind: 'morph'; programs: StoredProgram[]; moving: boolean }
   | { kind: 'ready'; entering: boolean };
 
+function programEndMs(program: StoredProgram): number {
+  return program.end instanceof Date ? program.end.getTime() : new Date(program.end).getTime();
+}
+
 function reducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
 }
@@ -102,13 +106,20 @@ export const ProgramLane = memo(function ProgramLane({
     const visible = phase.programs
       .map((program) => ({ program, style: getProgramStyle(program, windowStart, windowEnd, pixelsPerHour) }))
       .filter((entry) => entry.style.visible)
-      .map((entry) => ({ key: entry.program.id, left: entry.style.left, width: entry.style.width, program: entry.program }));
-    const plan = planMorph(placeholders.length, visible);
+      .map((entry) => ({
+        key: entry.program.id,
+        left: entry.style.left,
+        width: entry.style.width,
+        onAir: isProgramCurrent(entry.program, now),
+        ended: programEndMs(entry.program) <= now.getTime(),
+        program: entry.program,
+      }));
+    const plan = planMorph(placeholders, visible);
     return (
       <>
-        {plan.become.map(({ placeholder, program }) => {
+        {plan.become.map(({ placeholder, program, titled }) => {
           const from = placeholders[placeholder];
-          const current = phase.moving && isProgramCurrent(program.program, now);
+          const current = phase.moving && program.onAir;
           return (
             <div
               key={`m${placeholder}`}
@@ -119,7 +130,9 @@ export const ProgramLane = memo(function ProgramLane({
                   : { left: `${from.left}px`, width: `${Math.max(from.width - 2, 20)}px` }
               }
             >
-              <span className="program-block-title">{program.program.title}</span>
+              {(titled || phase.moving) && (
+                <span className={`program-block-title${titled ? '' : ' late'}`}>{program.program.title}</span>
+              )}
             </div>
           );
         })}

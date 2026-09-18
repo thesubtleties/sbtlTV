@@ -55,22 +55,51 @@ export interface MorphTarget {
   key: string;
   left: number;
   width: number;
+  onAir: boolean;
+  ended: boolean; // finished before now; it only shows a title once its block has landed
 }
 
 export interface MorphPlan<T extends MorphTarget> {
-  become: { placeholder: number; program: T }[];
+  become: { placeholder: number; program: T; titled: boolean }[];
   spare: number[];
   extra: T[];
 }
 
-// Placeholders take programs in order. Placeholders left over fade away;
-// programs left over fade in once the morph has landed.
-export function planMorph<T extends MorphTarget>(placeholderCount: number, programs: T[]): MorphPlan<T> {
-  const become: { placeholder: number; program: T }[] = [];
-  const spare: number[] = [];
-  for (let i = 0; i < placeholderCount; i++) {
-    if (i < programs.length) become.push({ placeholder: i, program: programs[i] });
-    else spare.push(i);
+function overlap(a: { left: number; width: number }, b: { left: number; width: number }): number {
+  return Math.max(0, Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left));
+}
+
+// Each program takes the free placeholder it overlaps most, the on-air program
+// choosing first so "now" lands where the eye already is. A program that
+// overlaps no free placeholder fades in once the others have landed.
+// Placeholders nothing claimed fade away. Programs that already ended keep
+// their title until they land, so a finished show never announces itself and
+// then gets covered by the on-air block.
+export function planMorph<T extends MorphTarget>(
+  placeholders: { left: number; width: number }[],
+  programs: T[]
+): MorphPlan<T> {
+  const free = new Set(placeholders.map((_, i) => i));
+  const become: { placeholder: number; program: T; titled: boolean }[] = [];
+  const extra: T[] = [];
+  const ordered = [...programs].sort((a, b) => Number(b.onAir) - Number(a.onAir));
+  for (const program of ordered) {
+    let best = -1;
+    let bestOverlap = 0;
+    for (const i of free) {
+      const o = overlap(placeholders[i], program);
+      if (o > bestOverlap) {
+        best = i;
+        bestOverlap = o;
+      }
+    }
+    if (best === -1) {
+      extra.push(program);
+      continue;
+    }
+    free.delete(best);
+    become.push({ placeholder: best, program, titled: !program.ended });
   }
-  return { become, spare, extra: programs.slice(placeholderCount) };
+  become.sort((a, b) => a.placeholder - b.placeholder);
+  return { become, spare: [...free].sort((a, b) => a - b), extra };
 }
