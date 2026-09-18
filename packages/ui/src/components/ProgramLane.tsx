@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import type { StoredProgram } from '../db';
+import { useGuideMorphEnabled } from '../stores/uiStore';
 import { ProgramBlock, EmptyProgramBlock, getProgramStyle, isProgramCurrent } from './ProgramBlock';
 import { loadingBlocks, planMorph, resolveKind, MORPH_LEAD_MS, MORPH_TOTAL_MS } from './programLaneModel';
 
@@ -46,6 +47,11 @@ export const ProgramLane = memo(function ProgramLane({
   );
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
+  // Read through a ref so flipping the setting does not restart the effect;
+  // it applies to the next row that resolves.
+  const morphEnabled = useGuideMorphEnabled();
+  const morphEnabledRef = useRef(morphEnabled);
+  morphEnabledRef.current = morphEnabled;
 
   const laneWidth = pixelsPerHour * visibleHours;
   const placeholders = useMemo(() => loadingBlocks(rowIndex, laneWidth), [rowIndex, laneWidth]);
@@ -66,7 +72,7 @@ export const ProgramLane = memo(function ProgramLane({
       setPhase({ kind: 'ready', entering: false });
       return;
     }
-    if (programs.length === 0 || reducedMotion() || resolveKind(current.since, Date.now()) === 'quick') {
+    if (programs.length === 0 || reducedMotion() || !morphEnabledRef.current || resolveKind(current.since, Date.now()) === 'quick') {
       setPhase({ kind: 'ready', entering: programs.length > 0 && !reducedMotion() });
       return;
     }
