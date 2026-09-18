@@ -1,5 +1,5 @@
 import { memo, useCallback } from 'react';
-import { ProgramBlock, EmptyProgramBlock, LoadingProgramBlocks } from './ProgramBlock';
+import { ProgramLane } from './ProgramLane';
 import { useIsFavoriteChannel, useToggleFavoriteChannel } from '../hooks/useFavorites';
 import type { StoredChannel, StoredProgram } from '../db';
 
@@ -84,22 +84,15 @@ export const ChannelRow = memo(function ChannelRow({
 
       {/* Program grid */}
       <div className="guide-program-grid">
-        {programs === undefined ? (
-          <LoadingProgramBlocks pixelsPerHour={pixelsPerHour} visibleHours={visibleHours} />
-        ) : programs.length > 0 ? (
-          programs.map((program) => (
-            <ProgramBlock
-              key={program.id}
-              program={program}
-              windowStart={windowStart}
-              windowEnd={windowEnd}
-              pixelsPerHour={pixelsPerHour}
-              onClick={onPlay}
-            />
-          ))
-        ) : (
-          <EmptyProgramBlock pixelsPerHour={pixelsPerHour} visibleHours={visibleHours} />
-        )}
+        <ProgramLane
+          programs={programs}
+          rowIndex={index}
+          windowStart={windowStart}
+          windowEnd={windowEnd}
+          pixelsPerHour={pixelsPerHour}
+          visibleHours={visibleHours}
+          onPlay={onPlay}
+        />
       </div>
     </div>
   );

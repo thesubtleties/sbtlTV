@@ -8,6 +8,9 @@ interface ProgramBlockProps {
   windowEnd: Date;
   pixelsPerHour: number;
   onClick?: () => void;
+  className?: string;
+  // Delay for an entrance animation carried by className (see ProgramLane)
+  enterDelayMs?: number;
 }
 
 interface ProgramStyle {
@@ -19,7 +22,7 @@ interface ProgramStyle {
 // Gap between program blocks in pixels
 const PROGRAM_GAP = 2;
 
-function getProgramStyle(
+export function getProgramStyle(
   program: StoredProgram,
   windowStart: Date,
   windowEnd: Date,
@@ -55,12 +58,20 @@ function getProgramStyle(
   };
 }
 
+export function isProgramCurrent(program: StoredProgram, now: Date): boolean {
+  const progStartMs = program.start instanceof Date ? program.start.getTime() : new Date(program.start).getTime();
+  const progEndMs = program.end instanceof Date ? program.end.getTime() : new Date(program.end).getTime();
+  return progStartMs <= now.getTime() && progEndMs > now.getTime();
+}
+
 export const ProgramBlock = memo(function ProgramBlock({
   program,
   windowStart,
   windowEnd,
   pixelsPerHour,
   onClick,
+  className,
+  enterDelayMs,
 }: ProgramBlockProps) {
   const style = useMemo(
     () => getProgramStyle(program, windowStart, windowEnd, pixelsPerHour),
@@ -68,10 +79,7 @@ export const ProgramBlock = memo(function ProgramBlock({
   );
 
   // Check if this program contains "now"
-  const now = new Date();
-  const progStartMs = program.start instanceof Date ? program.start.getTime() : new Date(program.start).getTime();
-  const progEndMs = program.end instanceof Date ? program.end.getTime() : new Date(program.end).getTime();
-  const isCurrent = progStartMs <= now.getTime() && progEndMs > now.getTime();
+  const isCurrent = isProgramCurrent(program, new Date());
 
   // Format time for tooltip
   const formatTime = (date: Date | string) => {
@@ -88,10 +96,11 @@ export const ProgramBlock = memo(function ProgramBlock({
 
   return (
     <div
-      className={`program-block ${isCurrent ? 'current' : ''}`}
+      className={`program-block ${isCurrent ? 'current' : ''}${className ? ` ${className}` : ''}`}
       style={{
         left: `${style.left}px`,
         width: `${style.width}px`,
+        ...(enterDelayMs !== undefined ? { animationDelay: `${enterDelayMs}ms` } : {}),
       }}
       onClick={onClick}
       title={`${program.title}\n${formatTime(program.start)} - ${formatTime(program.end)}${program.description ? `\n\n${program.description}` : ''}`}
@@ -101,34 +110,6 @@ export const ProgramBlock = memo(function ProgramBlock({
         <span className="program-block-desc">{program.description}</span>
       )}
     </div>
-  );
-});
-
-// Placeholder blocks for a row whose programs have not been read yet. Widths
-// are fractions of the visible window so the row reads as a schedule rather
-// than a bar. The breathing is in ProgramBlock.css, which staggers exactly
-// this many blocks by nth-child; keep the two in step.
-const LOADING_BLOCK_FRACTIONS = [0.22, 0.34, 0.18, 0.26];
-
-export const LoadingProgramBlocks = memo(function LoadingProgramBlocks({ pixelsPerHour, visibleHours }: { pixelsPerHour: number; visibleHours: number }) {
-  const totalWidth = pixelsPerHour * visibleHours;
-  let left = 0;
-  return (
-    <>
-      {LOADING_BLOCK_FRACTIONS.map((fraction, i) => {
-        const width = totalWidth * fraction;
-        const block = (
-          <div
-            key={i}
-            className="program-block loading"
-            aria-hidden="true"
-            style={{ left, width: Math.max(width - PROGRAM_GAP, 20) }}
-          />
-        );
-        left += width;
-        return block;
-      })}
-    </>
   );
 });
 

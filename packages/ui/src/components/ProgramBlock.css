@@ -43,30 +43,81 @@
   font-style: italic;
 }
 
-/* Loading state: the row's programs have not been read yet. Breathes on the
-   sbtl loader's rhythm (1.4s cycle, 0.15s stagger per block), opacity only,
-   between the empty block's 2% white and 5%. No colour, no sweep. */
+/* Loading: the row's programs have not been read yet. Blocks hold still at 2%
+   white (5% background at 0.4 opacity, matching the empty block); only the
+   left edge, which every real block carries, wakes and fades. Each block runs
+   on its own period and phase (set inline by ProgramLane). */
 .program-block.loading {
   background: rgba(255, 255, 255, 0.05);
+  opacity: 0.4;
   border-left-color: transparent;
   cursor: default;
-  opacity: 0.4;
-  animation: program-block-breathe 1.4s ease-in-out infinite;
+  animation: program-edge-wake var(--dur, 1900ms) ease-in-out var(--phase, 0ms) infinite;
 }
 
-/* One delay per entry in LOADING_BLOCK_FRACTIONS (ProgramBlock.tsx). */
-.program-block.loading:nth-child(2) { animation-delay: 0.15s; }
-.program-block.loading:nth-child(3) { animation-delay: 0.3s; }
-.program-block.loading:nth-child(4) { animation-delay: 0.45s; }
+@keyframes program-edge-wake {
+  0%, 45%, 100% { border-left-color: transparent; }
+  20% { border-left-color: rgba(255, 255, 255, 0.22); }
+}
 
-@keyframes program-block-breathe {
-  0%, 40%, 100% { opacity: 0.4; }
-  20% { opacity: 1; }
+/* Morph: a placeholder takes its program's title, then carries it into the
+   program's real position. Timings match programLane.ts. */
+.program-block.morph {
+  background: rgba(255, 255, 255, 0.05);
+  opacity: 0.4;
+  border-left-color: transparent;
+  cursor: default;
+  transition:
+    left 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 320ms ease,
+    background-color 480ms ease,
+    border-left-color 480ms ease;
+}
+
+.program-block.morph.become {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.program-block.morph.current {
+  background: rgba(0, 212, 255, 0.08);
+  border-left-color: #00d4ff;
+}
+
+.program-block.morph.spare {
+  opacity: 0;
+}
+
+.program-block.morph .program-block-title {
+  opacity: 0;
+  animation: program-title-in 1400ms ease-out forwards;
+}
+
+@keyframes program-title-in {
+  to { opacity: 1; }
+}
+
+/* Entrance for blocks that arrive without a noticeable wait */
+.program-block.program-block-in {
+  animation: program-block-in 320ms ease-out both;
+}
+
+@keyframes program-block-in {
+  from { opacity: 0; background-color: rgba(255, 255, 255, 0.02); }
+  to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .program-block.loading {
+  .program-block.loading,
+  .program-block.morph,
+  .program-block.program-block-in {
     animation: none;
+    transition: none;
+  }
+  .program-block.morph .program-block-title {
+    animation: none;
+    opacity: 1;
   }
 }
 
