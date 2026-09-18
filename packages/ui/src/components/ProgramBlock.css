@@ -54,6 +54,7 @@
   animation: program-block-breathe 1.4s ease-in-out infinite;
 }
 
+/* One delay per entry in LOADING_BLOCK_FRACTIONS (ProgramBlock.tsx). */
 .program-block.loading:nth-child(2) { animation-delay: 0.15s; }
 .program-block.loading:nth-child(3) { animation-delay: 0.3s; }
 .program-block.loading:nth-child(4) { animation-delay: 0.45s; }

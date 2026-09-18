@@ -3,13 +3,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
 import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
-import {
-  padRowRange,
-  rowRangeCovers,
-  GUIDE_ROW_PAD,
-  GUIDE_RANGE_SETTLE_MS,
-  type RowRange,
-} from '../hooks/guideRowRange';
+import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
 import { useChannelSortOrder, useChannelColumnWidth } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
@@ -152,44 +146,8 @@ export function ChannelPanel({
     goToNow,
   } = useTimeGrid({ availableWidth });
 
-  // Programs are read only for the rows Virtuoso is rendering, padded by
-  // GUIDE_ROW_PAD on each side. The rendered range is debounced so a scrollbar
-  // drag across thousands of rows issues one query for where it settles, and a
-  // settled range that is still inside the loaded range issues none at all.
-  const [renderedRange, setRenderedRange] = useState<RowRange | null>(null);
-  const [loadedRange, setLoadedRange] = useState<RowRange | null>(null);
-  const loadedRangeRef = useRef<RowRange | null>(null);
-  const rowCount = displayChannels.length;
-
-  const handleRangeChange = useCallback((range: { startIndex: number; endIndex: number }) => {
-    setRenderedRange({ start: range.startIndex, end: range.endIndex });
-  }, []);
-
-  useEffect(() => {
-    if (!renderedRange) return;
-    const commit = () => {
-      setLoadedRange((prev) => {
-        if (rowRangeCovers(prev, renderedRange)) return prev;
-        const next = padRowRange(renderedRange, rowCount, GUIDE_ROW_PAD);
-        loadedRangeRef.current = next;
-        return next;
-      });
-    };
-    // First read for a list happens straight away; only scroll-driven changes wait to settle.
-    if (!loadedRangeRef.current) {
-      commit();
-      return;
-    }
-    const timer = setTimeout(commit, GUIDE_RANGE_SETTLE_MS);
-    return () => clearTimeout(timer);
-  }, [renderedRange, rowCount]);
-
-  const loadedStreamIds = useMemo(() => {
-    if (!loadedRange) return [];
-    return displayChannels.slice(loadedRange.start, loadedRange.end + 1).map((ch) => ch.stream_id);
-  }, [displayChannels, loadedRange]);
-
-  // Fetch programs for the loaded rows over the preload window
+  // Programs are read only for the rows Virtuoso is rendering (see useGuideRowRange).
+  const { handleRangeChange, loadedStreamIds } = useGuideRowRange(displayChannels);
   const programs = useProgramsInRange(loadedStreamIds, loadStart, loadEnd);
 
   // Update current time every minute

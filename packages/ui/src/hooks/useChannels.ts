@@ -176,9 +176,8 @@ export function useCategoriesWithCounts(): CategoryWithCount[] {
 // Programs are indexed on [stream_id+start]. Reading a channel's whole week
 // and filtering in JS was fine at 65k rows and slow at 500k; bound the start
 // time instead. A program that began before the window but is still running
-// is caught by looking back MAX_PROGRAM_MS. Six hours covers marathons and
-// overnight blocks; anything longer is treated as not on the guide yet.
-const MAX_PROGRAM_MS = 6 * 60 * 60 * 1000;
+// is caught by looking back MAX_PROGRAM_MS.
+const MAX_PROGRAM_MS = 24 * 60 * 60 * 1000;
 
 async function programsStartingBetween(streamIds: string[], lower: Date, upper: Date): Promise<StoredProgram[]> {
   if (streamIds.length === 0 || upper < lower) return [];

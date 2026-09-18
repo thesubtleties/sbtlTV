@@ -10,6 +10,15 @@ describe('padRowRange', () => {
     expect(padRowRange({ start: 5, end: 20 }, 40, 30)).toEqual({ start: 0, end: 39 });
   });
 
+  it('clamps a stale range that starts past the end of a shorter list', () => {
+    // Scrolled 900 rows deep, then the list is replaced by a 10-row category.
+    expect(padRowRange({ start: 900, end: 920 }, 10, 30)).toEqual({ start: 0, end: 9 });
+  });
+
+  it('never returns a range whose start is after its end', () => {
+    expect(padRowRange({ start: 200, end: 220 }, 100, 5)).toEqual({ start: 94, end: 99 });
+  });
+
   it('returns null for an empty list', () => {
     expect(padRowRange({ start: 0, end: 0 }, 0, 30)).toBeNull();
   });

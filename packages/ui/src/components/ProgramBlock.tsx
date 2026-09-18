@@ -104,10 +104,10 @@ export const ProgramBlock = memo(function ProgramBlock({
   );
 });
 
-// Empty state for channels with no EPG data
 // Placeholder blocks for a row whose programs have not been read yet. Widths
 // are fractions of the visible window so the row reads as a schedule rather
-// than a bar; the breathing is in ProgramBlock.css.
+// than a bar. The breathing is in ProgramBlock.css, which staggers exactly
+// this many blocks by nth-child; keep the two in step.
 const LOADING_BLOCK_FRACTIONS = [0.22, 0.34, 0.18, 0.26];
 
 export const LoadingProgramBlocks = memo(function LoadingProgramBlocks({ pixelsPerHour, visibleHours }: { pixelsPerHour: number; visibleHours: number }) {
@@ -132,6 +132,7 @@ export const LoadingProgramBlocks = memo(function LoadingProgramBlocks({ pixelsP
   );
 });
 
+// Empty state for channels with no EPG data
 export const EmptyProgramBlock = memo(function EmptyProgramBlock({ pixelsPerHour, visibleHours }: { pixelsPerHour: number; visibleHours: number }) {
   const width = pixelsPerHour * visibleHours;
 
