@@ -256,8 +256,15 @@ export function EpgTab({
           </p>
         </div>
 
-        <div className="form-group">
-          <label className="genre-checkbox">
+      </div>
+
+      <div className="settings-section">
+        <div className="section-header">
+          <h3>Loading</h3>
+        </div>
+
+        <div className="tmdb-form" style={{ marginTop: '1rem' }}>
+          <label className="genre-checkbox" style={{ maxWidth: '320px' }}>
             <input
               type="checkbox"
               checked={guideMorphEnabled}
