@@ -3,6 +3,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
 import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
+import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
 import { useChannelSortOrder, useChannelColumnWidth } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
@@ -38,7 +39,8 @@ export function ChannelPanel({
   const [availableWidth, setAvailableWidth] = useState(800);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Channels filtered by the in-guide search box; the FULL list still drives EPG/program lookups.
+  // Channels filtered by the in-guide search box. This is the list Virtuoso renders, so
+  // the program query below is sliced from it by row index.
   const displayChannels = useMemo(() => filterChannelsByName(channels, searchQuery), [channels, searchQuery]);
 
   // Channel column width is a persisted setting; the EFFECTIVE width yields a bit on narrow
@@ -144,11 +146,9 @@ export function ChannelPanel({
     goToNow,
   } = useTimeGrid({ availableWidth });
 
-  // Get stream IDs for programs lookup
-  const streamIds = useMemo(() => channels.map((ch) => ch.stream_id), [channels]);
-
-  // Fetch programs for the preload window
-  const programs = useProgramsInRange(streamIds, loadStart, loadEnd);
+  // Programs are read only for the rows Virtuoso is rendering (see useGuideRowRange).
+  const { handleRangeChange, loadedStreamIds } = useGuideRowRange(displayChannels);
+  const programs = useProgramsInRange(loadedStreamIds, loadStart, loadEnd);
 
   // Update current time every minute
   useEffect(() => {
@@ -324,6 +324,7 @@ export function ChannelPanel({
         <Virtuoso
           ref={channelListRef}
           data={displayChannels}
+          rangeChanged={handleRangeChange}
           computeItemKey={(_, channel) => channel.stream_id}
           className="guide-channels"
           itemContent={(index, channel) => (
@@ -332,12 +333,12 @@ export function ChannelPanel({
               index={index}
               sortOrder={channelSortOrder}
               channelColumnWidth={effectiveColumnWidth}
-              programs={programs.get(channel.stream_id) ?? []}
+              programs={programs.get(channel.stream_id)}
               windowStart={windowStart}
               windowEnd={windowEnd}
               pixelsPerHour={pixelsPerHour}
               visibleHours={visibleHours}
-              onPlay={() => onPlayChannel(channel)}
+              onPlay={onPlayChannel}
             />
           )}
           components={{

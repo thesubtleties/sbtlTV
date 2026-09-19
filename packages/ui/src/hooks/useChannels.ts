@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getLastCategory, setLastCategory } from '../db';
 import type { StoredChannel, StoredCategory, SourceMeta, StoredProgram } from '../db';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useEnabledSourceIds, useLiveSourceOrder, useSourceMap } from './useSourceFiltering';
 import { sortCategoryGroups, resolveGroupPrimary } from './categorySort';
 import { useCategorySortOrder } from '../stores/uiStore';
@@ -214,12 +214,17 @@ export function useCurrentProgram(streamId: string | null): StoredProgram | null
   return program ?? null;
 }
 
-// Hook to get all programs for channels within a time range (for EPG grid)
+// Hook to get all programs for channels within a time range (for EPG grid).
+// The map only holds entries for the requested stream IDs, so a missing entry
+// means "not read yet" and an empty array means "no EPG for this channel".
+// While a new set of IDs or a new window is being read, the previous map is
+// returned so rows already on screen keep their programs instead of flashing.
 export function useProgramsInRange(
   streamIds: string[],
   windowStart: Date,
   windowEnd: Date
 ): Map<string, StoredProgram[]> {
+  const lastPrograms = useRef<Map<string, StoredProgram[]>>(new Map());
   const programs = useLiveQuery(
     async () => {
       if (streamIds.length === 0) return new Map<string, StoredProgram[]>();
@@ -247,7 +252,8 @@ export function useProgramsInRange(
     [streamIds.join(','), windowStart.getTime(), windowEnd.getTime()]
   );
 
-  return programs ?? new Map();
+  if (programs) lastPrograms.current = programs;
+  return lastPrograms.current;
 }
 
 // Hook to get the current program for a list of channel IDs (queries local DB - EPG is synced upfront)

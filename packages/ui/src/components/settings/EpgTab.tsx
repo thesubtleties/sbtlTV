@@ -17,6 +17,8 @@ interface EpgTabProps {
   onGuideOpacityChange: (opacity: number) => void;
   sportsMatchupEnabled: boolean;
   onSportsMatchupChange: (enabled: boolean) => void;
+  guideMorphEnabled: boolean;
+  onGuideMorphChange: (enabled: boolean) => void;
 }
 
 export function EpgTab({
@@ -32,6 +34,8 @@ export function EpgTab({
   onGuideOpacityChange,
   sportsMatchupEnabled,
   onSportsMatchupChange,
+  guideMorphEnabled,
+  onGuideMorphChange,
 }: EpgTabProps) {
   const updateSettings = useUpdateSettings();
   const toast = useToast();
@@ -109,6 +113,13 @@ export function EpgTab({
     updateSettings({ sportsMatchupEnabled: enabled });
     if (!window.storage) return;
     await window.storage.updateSettings({ sportsMatchupEnabled: enabled });
+  }
+
+  async function handleGuideMorphChange(enabled: boolean) {
+    onGuideMorphChange(enabled);
+    updateSettings({ guideMorphEnabled: enabled });
+    if (!window.storage) return;
+    await window.storage.updateSettings({ guideMorphEnabled: enabled });
   }
 
   return (
@@ -242,6 +253,28 @@ export function EpgTab({
           <p className="form-hint" style={{ marginTop: '0.5rem' }}>
             Matched from the program guide for NFL, NBA, MLB, NHL, and college football/basketball.
             Shows nothing when a game can't be confidently identified.
+          </p>
+        </div>
+
+      </div>
+
+      <div className="settings-section">
+        <div className="section-header">
+          <h3>Loading</h3>
+        </div>
+
+        <div className="tmdb-form" style={{ marginTop: '1rem' }}>
+          <label className="genre-checkbox" style={{ maxWidth: '320px' }}>
+            <input
+              type="checkbox"
+              checked={guideMorphEnabled}
+              onChange={(e) => handleGuideMorphChange(e.target.checked)}
+            />
+            <span className="genre-name">Animate programs into place</span>
+          </label>
+          <p className="form-hint" style={{ marginTop: '0.5rem' }}>
+            When guide rows take a moment to load, their titles fade in and slide into position.
+            Off, they simply fade in.
           </p>
         </div>
       </div>
