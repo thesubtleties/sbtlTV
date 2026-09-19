@@ -1,6 +1,7 @@
 // Pure helpers for the guide's program lane: the placeholders a row shows
-// before its programs are read, and how those placeholders hand off to the
-// real blocks. Timings are the ones chosen on the shimmer studies page.
+// before its programs are read, how the lane decides what to do when they
+// arrive, and how placeholders hand off to the real blocks. Timings were
+// tuned by eye on a prototype; these constants are the source of truth.
 
 // Placeholder widths as fractions of the lane, chosen by row so the columns
 // of identical blanks are gone. Each pattern sums to 1.
@@ -19,8 +20,9 @@ const EDGE_PERIODS_MS = [1900, 2700, 1500, 2300];
 export const QUICK_RESOLVE_MS = 120;
 
 // Title fades in over TITLE_FADE_MS; the block starts carrying it after
-// MORPH_LEAD_MS and takes MORPH_MS to land. The lane hands over to the real
-// blocks once both have finished.
+// MORPH_LEAD_MS and takes MORPH_MS to land. A show that already ended starts
+// its title fade at MORPH_LEAD_MS instead (see planMorph). The lane hands
+// over to the real blocks once both have finished.
 export const TITLE_FADE_MS = 1400;
 export const MORPH_LEAD_MS = 700;
 export const MORPH_MS = 480;
@@ -56,7 +58,7 @@ export interface MorphTarget {
   left: number;
   width: number;
   onAir: boolean;
-  ended: boolean; // finished before now; it only shows a title once its block has landed
+  ended: boolean; // finished before now; its title only starts fading in as its block begins to land
 }
 
 export interface MorphPlan<T extends MorphTarget> {
@@ -72,9 +74,9 @@ function overlap(a: { left: number; width: number }, b: { left: number; width: n
 // Each program takes the free placeholder it overlaps most, the on-air program
 // choosing first so "now" lands where the eye already is. A program that
 // overlaps no free placeholder fades in once the others have landed.
-// Placeholders nothing claimed fade away. Programs that already ended keep
-// their title until they land, so a finished show never announces itself and
-// then gets covered by the on-air block.
+// Placeholders nothing claimed fade away. Programs that already ended do not
+// show a title until they begin to land, so a finished show never announces
+// itself and then gets covered by the on-air block.
 export function planMorph<T extends MorphTarget>(
   placeholders: { left: number; width: number }[],
   programs: T[]
@@ -102,4 +104,28 @@ export function planMorph<T extends MorphTarget>(
   }
   become.sort((a, b) => a.placeholder - b.placeholder);
   return { become, spare: [...free].sort((a, b) => a - b), extra };
+}
+
+// What the lane should do when its programs prop changes. Kept pure so the
+// transitions are testable; ProgramLane owns the timers and the DOM.
+export interface LaneInput {
+  phase: 'loading' | 'morph' | 'ready';
+  loadingSinceMs: number;   // meaningful when phase is 'loading'
+  hadPrograms: boolean;     // the previous programs prop was a non-empty array
+  programs: 'unread' | 'empty' | 'some';
+  nowMs: number;
+  reducedMotion: boolean;
+  morphEnabled: boolean;
+}
+
+export type LaneDecision = 'stay' | 'load' | 'ready' | 'fade-in' | 'morph';
+
+export function decideLane(input: LaneInput): LaneDecision {
+  if (input.programs === 'unread') return input.phase === 'loading' ? 'stay' : 'load';
+  if (input.programs === 'empty') return input.phase === 'ready' ? 'stay' : 'ready';
+  if (input.reducedMotion) return input.phase === 'ready' ? 'stay' : 'ready';
+  if (input.phase === 'ready') return input.hadPrograms ? 'stay' : 'fade-in';
+  if (input.phase === 'morph') return 'fade-in';
+  if (!input.morphEnabled || resolveKind(input.loadingSinceMs, input.nowMs) === 'quick') return 'fade-in';
+  return 'morph';
 }

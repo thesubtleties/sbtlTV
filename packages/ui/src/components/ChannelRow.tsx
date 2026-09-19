@@ -14,7 +14,7 @@ interface ChannelRowProps {
   windowEnd: Date;
   pixelsPerHour: number;
   visibleHours: number;
-  onPlay: () => void;
+  onPlay: (channel: StoredChannel) => void;
 }
 
 export const ChannelRow = memo(function ChannelRow({
@@ -29,6 +29,8 @@ export const ChannelRow = memo(function ChannelRow({
   visibleHours,
   onPlay,
 }: ChannelRowProps) {
+  // Bound here rather than in ChannelPanel so the memo above sees a stable prop.
+  const handlePlay = useCallback(() => onPlay(channel), [onPlay, channel]);
   const isFavorite = useIsFavoriteChannel(channel.stream_id);
   const toggleFavorite = useToggleFavoriteChannel();
   const handleToggleFavorite = useCallback((e: React.MouseEvent) => {
@@ -46,7 +48,7 @@ export const ChannelRow = memo(function ChannelRow({
       <div
         className="guide-channel-info"
         style={{ width: channelColumnWidth, minWidth: channelColumnWidth }}
-        onClick={onPlay}
+        onClick={handlePlay}
       >
         <span className="guide-channel-number">{displayNumber}</span>
         <div className="guide-channel-logo">
@@ -91,7 +93,7 @@ export const ChannelRow = memo(function ChannelRow({
           windowEnd={windowEnd}
           pixelsPerHour={pixelsPerHour}
           visibleHours={visibleHours}
-          onPlay={onPlay}
+          onPlay={handlePlay}
         />
       </div>
     </div>

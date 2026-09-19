@@ -61,7 +61,8 @@
 }
 
 /* Morph: a placeholder takes its program's title, then carries it into the
-   program's real position. Timings match programLaneModel.ts. */
+   program's real position. The 480ms values match MORPH_MS in
+   programLaneModel.ts; the opacity fade is CSS-only. */
 .program-block.morph {
   background: rgba(255, 255, 255, 0.05);
   opacity: 0.4;
@@ -103,7 +104,8 @@
   to { opacity: 1; }
 }
 
-/* Entrance for blocks that arrive without a noticeable wait */
+/* Fade-straight-in entrance: rows that resolve without a noticeable wait,
+   and any program in a morphing row that had no placeholder to carry it. */
 .program-block.program-block-in {
   animation: program-block-in 320ms ease-out both;
 }

@@ -338,7 +338,7 @@ export function ChannelPanel({
               windowEnd={windowEnd}
               pixelsPerHour={pixelsPerHour}
               visibleHours={visibleHours}
-              onPlay={() => onPlayChannel(channel)}
+              onPlay={onPlayChannel}
             />
           )}
           components={{

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { loadingBlocks, planMorph, resolveKind, QUICK_RESOLVE_MS } from './programLaneModel';
+import { loadingBlocks, planMorph, resolveKind, decideLane, QUICK_RESOLVE_MS, type LaneInput } from './programLaneModel';
 
 describe('loadingBlocks', () => {
   it('tiles the lane width with blocks that differ from row to row', () => {
@@ -80,5 +80,94 @@ describe('planMorph', () => {
     expect(plan.become.map((b) => [b.placeholder, b.program.key])).toEqual([[0, 'b'], [1, 'c'], [3, 'f']]);
     expect(plan.extra.map((p) => p.key)).toEqual(['a', 'd', 'e']);
     expect(plan.spare).toEqual([2]);
+  });
+});
+
+describe('planMorph edge cases', () => {
+  const placeholders = [
+    { left: 0, width: 200 },
+    { left: 200, width: 200 },
+  ];
+
+  it('breaks an overlap tie toward the earlier placeholder', () => {
+    const program = { key: 'p', left: 100, width: 200, onAir: true, ended: false };
+    expect(planMorph(placeholders, [program]).become[0].placeholder).toBe(0);
+  });
+
+  it('sends a zero-width program to extra rather than letting it claim a placeholder', () => {
+    const program = { key: 'p', left: 50, width: 0, onAir: false, ended: true };
+    const plan = planMorph(placeholders, [program]);
+    expect(plan.become).toEqual([]);
+    expect(plan.extra).toEqual([program]);
+  });
+
+  it('treats a program that only touches a placeholder edge as not overlapping it', () => {
+    const program = { key: 'p', left: 200, width: 100, onAir: true, ended: false };
+    expect(planMorph(placeholders, [program]).become[0].placeholder).toBe(1);
+  });
+
+  it('marks every placeholder spare when there are no programs', () => {
+    expect(planMorph(placeholders, [])).toEqual({ become: [], spare: [0, 1], extra: [] });
+  });
+
+  it('marks every program extra when there are no placeholders', () => {
+    const program = { key: 'p', left: 0, width: 100, onAir: true, ended: false };
+    expect(planMorph([], [program])).toEqual({ become: [], spare: [], extra: [program] });
+  });
+});
+
+describe('decideLane', () => {
+  const base: LaneInput = {
+    phase: 'loading',
+    loadingSinceMs: 0,
+    hadPrograms: false,
+    programs: 'some',
+    nowMs: 5000,
+    reducedMotion: false,
+    morphEnabled: true,
+  };
+
+  it('stays loading while programs are still unread', () => {
+    expect(decideLane({ ...base, programs: 'unread' })).toBe('stay');
+  });
+
+  it('goes back to loading when programs disappear from a settled row', () => {
+    expect(decideLane({ ...base, phase: 'ready', programs: 'unread' })).toBe('load');
+  });
+
+  it('morphs when the row waited, motion is allowed, and the setting is on', () => {
+    expect(decideLane(base)).toBe('morph');
+  });
+
+  it('fades in when programs resolved quickly', () => {
+    expect(decideLane({ ...base, nowMs: QUICK_RESOLVE_MS - 1 })).toBe('fade-in');
+  });
+
+  it('fades in instead of morphing when the setting is off', () => {
+    expect(decideLane({ ...base, morphEnabled: false })).toBe('fade-in');
+  });
+
+  it('lands without animation under reduced motion', () => {
+    expect(decideLane({ ...base, reducedMotion: true })).toBe('ready');
+  });
+
+  it('lands without animation when the channel has no EPG', () => {
+    expect(decideLane({ ...base, programs: 'empty' })).toBe('ready');
+  });
+
+  it('fades in when a channel that had no EPG gets programs later', () => {
+    expect(decideLane({ ...base, phase: 'ready', hadPrograms: false })).toBe('fade-in');
+  });
+
+  it('stays put when a settled row merely gets a different program set', () => {
+    expect(decideLane({ ...base, phase: 'ready', hadPrograms: true })).toBe('stay');
+  });
+
+  it('fades to the new set when the programs change mid-morph', () => {
+    expect(decideLane({ ...base, phase: 'morph', hadPrograms: true })).toBe('fade-in');
+  });
+
+  it('lands empty when the programs vanish mid-morph', () => {
+    expect(decideLane({ ...base, phase: 'morph', hadPrograms: true, programs: 'empty' })).toBe('ready');
   });
 });

@@ -1,8 +1,16 @@
-import { useEffect, useMemo, useRef, useState, memo } from 'react';
+import { useEffect, useMemo, useRef, useState, memo, type CSSProperties } from 'react';
 import type { StoredProgram } from '../db';
 import { useGuideMorphEnabled } from '../stores/uiStore';
 import { ProgramBlock, EmptyProgramBlock, getProgramStyle, isProgramCurrent } from './ProgramBlock';
-import { loadingBlocks, planMorph, resolveKind, MORPH_LEAD_MS, MORPH_TOTAL_MS } from './programLaneModel';
+import {
+  loadingBlocks,
+  planMorph,
+  decideLane,
+  MORPH_LEAD_MS,
+  MORPH_TOTAL_MS,
+  type LoadingBlock,
+  type MorphPlan,
+} from './programLaneModel';
 
 interface ProgramLaneProps {
   // undefined while the row's programs have not been read; [] when the channel has no EPG
@@ -15,9 +23,20 @@ interface ProgramLaneProps {
   onPlay: () => void;
 }
 
+interface VisibleProgram {
+  key: string;
+  left: number;
+  width: number;
+  onAir: boolean;
+  ended: boolean;
+  program: StoredProgram;
+}
+
 type Phase =
   | { kind: 'loading'; since: number }
-  | { kind: 'morph'; programs: StoredProgram[]; moving: boolean }
+  // The plan is fixed when the morph starts so blocks never swap programs
+  // mid-flight; laneKey records the window it was planned for.
+  | { kind: 'morph'; moving: boolean; plan: MorphPlan<VisibleProgram>; placeholders: LoadingBlock[]; laneKey: string }
   | { kind: 'ready'; entering: boolean };
 
 function programEndMs(program: StoredProgram): number {
@@ -26,6 +45,10 @@ function programEndMs(program: StoredProgram): number {
 
 function reducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+}
+
+function placeholderStyle(block: LoadingBlock): CSSProperties {
+  return { left: `${block.left}px`, width: `${Math.max(block.width - 2, 20)}px` };
 }
 
 // The program cells of one guide row. Before the programs are read the lane
@@ -55,61 +78,41 @@ export const ProgramLane = memo(function ProgramLane({
 
   const laneWidth = pixelsPerHour * visibleHours;
   const placeholders = useMemo(() => loadingBlocks(rowIndex, laneWidth), [rowIndex, laneWidth]);
+  const laneKey = `${windowStart.getTime()}:${windowEnd.getTime()}:${pixelsPerHour}`;
 
   // Programs arrays are rebuilt by every live query re-run; only a change in
   // which programs are present should move the lane between phases.
   const programKey = programs === undefined ? undefined : programs.map((p) => p.id).join(',');
+  const hadProgramsRef = useRef(programs !== undefined && programs.length > 0);
 
   useEffect(() => {
     const current = phaseRef.current;
-    if (programs === undefined) {
-      if (current.kind !== 'loading') setPhase({ kind: 'loading', since: Date.now() });
-      return;
-    }
-    if (current.kind === 'ready') return;
-    if (current.kind === 'morph') {
-      // The set of programs changed mid-morph; land on whatever is current.
-      setPhase({ kind: 'ready', entering: false });
-      return;
-    }
-    if (programs.length === 0 || reducedMotion() || !morphEnabledRef.current || resolveKind(current.since, Date.now()) === 'quick') {
-      setPhase({ kind: 'ready', entering: programs.length > 0 && !reducedMotion() });
-      return;
-    }
-    setPhase({ kind: 'morph', programs, moving: false });
-    const lead = setTimeout(() => setPhase({ kind: 'morph', programs, moving: true }), MORPH_LEAD_MS);
-    const done = setTimeout(() => setPhase({ kind: 'ready', entering: false }), MORPH_TOTAL_MS);
-    return () => {
-      clearTimeout(lead);
-      clearTimeout(done);
-    };
-    // programKey stands in for programs: see the comment above it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [programKey]);
+    const hadPrograms = hadProgramsRef.current;
+    hadProgramsRef.current = programs !== undefined && programs.length > 0;
 
-  if (phase.kind === 'loading') {
-    return (
-      <>
-        {placeholders.map((block, i) => (
-          <div
-            key={i}
-            className="program-block loading"
-            aria-hidden="true"
-            style={{
-              left: `${block.left}px`,
-              width: `${Math.max(block.width - 2, 20)}px`,
-              ['--dur' as string]: `${block.durationMs}ms`,
-              ['--phase' as string]: `${block.phaseMs}ms`,
-            }}
-          />
-        ))}
-      </>
-    );
-  }
+    const decision = decideLane({
+      phase: current.kind,
+      loadingSinceMs: current.kind === 'loading' ? current.since : 0,
+      hadPrograms,
+      programs: programs === undefined ? 'unread' : programs.length === 0 ? 'empty' : 'some',
+      nowMs: Date.now(),
+      reducedMotion: reducedMotion(),
+      morphEnabled: morphEnabledRef.current,
+    });
 
-  if (phase.kind === 'morph') {
+    if (decision === 'stay') return;
+    if (decision === 'load') {
+      setPhase({ kind: 'loading', since: Date.now() });
+      return;
+    }
+    if (decision === 'ready' || decision === 'fade-in') {
+      setPhase({ kind: 'ready', entering: decision === 'fade-in' });
+      return;
+    }
+
+    // morph: plan once, against the window as it is right now.
     const now = new Date();
-    const visible = phase.programs
+    const visible: VisibleProgram[] = (programs ?? [])
       .map((program) => ({ program, style: getProgramStyle(program, windowStart, windowEnd, pixelsPerHour) }))
       .filter((entry) => entry.style.visible)
       .map((entry) => ({
@@ -121,39 +124,79 @@ export const ProgramLane = memo(function ProgramLane({
         program: entry.program,
       }));
     const plan = planMorph(placeholders, visible);
+    if (plan.become.length === 0) {
+      // Nothing on screen to carry; behave like a quick resolve.
+      setPhase({ kind: 'ready', entering: visible.length > 0 });
+      return;
+    }
+    setPhase({ kind: 'morph', moving: false, plan, placeholders, laneKey });
+    const lead = setTimeout(() => {
+      if (phaseRef.current.kind === 'morph') setPhase({ ...phaseRef.current, moving: true });
+    }, MORPH_LEAD_MS);
+    const done = setTimeout(() => {
+      if (phaseRef.current.kind === 'morph') setPhase({ kind: 'ready', entering: false });
+    }, MORPH_TOTAL_MS);
+    return () => {
+      clearTimeout(lead);
+      clearTimeout(done);
+    };
+    // programKey stands in for programs (see above); the window values are
+    // read once when a morph is planned and guarded by the effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programKey]);
+
+  // A morph planned for one window cannot finish in another: if the guide
+  // pages or rescales mid-morph, land with a fade instead.
+  useEffect(() => {
+    const current = phaseRef.current;
+    if (current.kind === 'morph' && current.laneKey !== laneKey) {
+      setPhase({ kind: 'ready', entering: true });
+    }
+  }, [laneKey]);
+
+  if (phase.kind === 'loading') {
     return (
       <>
-        {plan.become.map(({ placeholder, program, titled }) => {
-          const from = placeholders[placeholder];
-          const current = phase.moving && program.onAir;
-          return (
-            <div
-              key={`m${placeholder}`}
-              className={`program-block morph become${current ? ' current' : ''}`}
-              style={
-                phase.moving
-                  ? { left: `${program.left}px`, width: `${program.width}px` }
-                  : { left: `${from.left}px`, width: `${Math.max(from.width - 2, 20)}px` }
-              }
-            >
-              {(titled || phase.moving) && (
-                <span className={`program-block-title${titled ? '' : ' late'}`}>{program.program.title}</span>
-              )}
-            </div>
-          );
-        })}
-        {plan.spare.map((placeholder) => {
-          const from = placeholders[placeholder];
-          return (
-            <div
-              key={`s${placeholder}`}
-              className={`program-block morph${phase.moving ? ' spare' : ''}`}
-              aria-hidden="true"
-              style={{ left: `${from.left}px`, width: `${Math.max(from.width - 2, 20)}px` }}
-            />
-          );
-        })}
-        {phase.moving &&
+        {placeholders.map((block, i) => (
+          <div
+            key={i}
+            className="program-block loading"
+            aria-hidden="true"
+            style={{
+              ...placeholderStyle(block),
+              '--dur': `${block.durationMs}ms`,
+              '--phase': `${block.phaseMs}ms`,
+            } as CSSProperties}
+          />
+        ))}
+      </>
+    );
+  }
+
+  if (phase.kind === 'morph') {
+    const { plan, moving } = phase;
+    return (
+      <>
+        {plan.become.map(({ placeholder, program, titled }) => (
+          <div
+            key={`m${placeholder}`}
+            className={`program-block morph become${moving && program.onAir ? ' current' : ''}`}
+            style={moving ? { left: `${program.left}px`, width: `${program.width}px` } : placeholderStyle(phase.placeholders[placeholder])}
+          >
+            {(titled || moving) && (
+              <span className={`program-block-title${titled ? '' : ' late'}`}>{program.program.title}</span>
+            )}
+          </div>
+        ))}
+        {plan.spare.map((placeholder) => (
+          <div
+            key={`s${placeholder}`}
+            className={`program-block morph${moving ? ' spare' : ''}`}
+            aria-hidden="true"
+            style={placeholderStyle(phase.placeholders[placeholder])}
+          />
+        ))}
+        {moving &&
           plan.extra.map((entry, i) => (
             <ProgramBlock
               key={entry.program.id}
