@@ -43,6 +43,91 @@
   font-style: italic;
 }
 
+/* Loading: the row's programs have not been read yet. Blocks hold still at 2%
+   white (5% background at 0.4 opacity, matching the empty block); only the
+   left edge, which every real block carries, wakes and fades. Each block runs
+   on its own period and phase (set inline by ProgramLane). */
+.program-block.loading {
+  background: rgba(255, 255, 255, 0.05);
+  opacity: 0.4;
+  border-left-color: transparent;
+  cursor: default;
+  animation: program-edge-wake var(--dur, 1900ms) ease-in-out var(--phase, 0ms) infinite;
+}
+
+@keyframes program-edge-wake {
+  0%, 45%, 100% { border-left-color: transparent; }
+  20% { border-left-color: rgba(255, 255, 255, 0.22); }
+}
+
+/* Morph: a placeholder takes its program's title, then carries it into the
+   program's real position. The 480ms values match MORPH_MS in
+   programLaneModel.ts; the opacity fade is CSS-only. */
+.program-block.morph {
+  background: rgba(255, 255, 255, 0.05);
+  opacity: 0.4;
+  border-left-color: transparent;
+  cursor: default;
+  transition:
+    left 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 320ms ease,
+    background-color 480ms ease,
+    border-left-color 480ms ease;
+}
+
+.program-block.morph.become {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.program-block.morph.current {
+  background: rgba(0, 212, 255, 0.08);
+  border-left-color: #00d4ff;
+}
+
+.program-block.morph.spare {
+  opacity: 0;
+}
+
+.program-block.morph .program-block-title {
+  opacity: 0;
+  animation: program-title-in 1400ms ease-out forwards;
+}
+
+/* A show that already ended gets its title only as its block lands */
+.program-block.morph .program-block-title.late {
+  animation-duration: 480ms;
+}
+
+@keyframes program-title-in {
+  to { opacity: 1; }
+}
+
+/* Fade-straight-in entrance: rows that resolve without a noticeable wait,
+   and any program in a morphing row that had no placeholder to carry it. */
+.program-block.program-block-in {
+  animation: program-block-in 320ms ease-out both;
+}
+
+@keyframes program-block-in {
+  from { opacity: 0; background-color: rgba(255, 255, 255, 0.02); }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .program-block.loading,
+  .program-block.morph,
+  .program-block.program-block-in {
+    animation: none;
+    transition: none;
+  }
+  .program-block.morph .program-block-title {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* Program title */
 .program-block-title {
   font-size: 0.85rem;

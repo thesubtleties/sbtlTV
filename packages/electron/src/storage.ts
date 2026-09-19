@@ -43,6 +43,7 @@ interface AppSettings {
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game (default true)
+  guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
 }
 
@@ -68,6 +69,7 @@ interface StoredSettings {
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game
+  guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series
 }
 
@@ -215,6 +217,7 @@ export function getSettings(): AppSettings {
   result.liveSourceOrder = stored.liveSourceOrder;
   result.vodSourceOrder = stored.vodSourceOrder;
   result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? true;
+  result.guideMorphEnabled = stored.guideMorphEnabled ?? true;
   result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
   return result;
 }
@@ -273,6 +276,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.sportsMatchupEnabled !== undefined) {
     updated.sportsMatchupEnabled = settings.sportsMatchupEnabled;
+  }
+  if (settings.guideMorphEnabled !== undefined) {
+    updated.guideMorphEnabled = settings.guideMorphEnabled;
   }
   if (settings.autoplayNextEpisode !== undefined) {
     updated.autoplayNextEpisode = settings.autoplayNextEpisode;

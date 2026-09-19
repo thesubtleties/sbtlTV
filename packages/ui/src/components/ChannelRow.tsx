@@ -1,5 +1,5 @@
 import { memo, useCallback } from 'react';
-import { ProgramBlock, EmptyProgramBlock } from './ProgramBlock';
+import { ProgramLane } from './ProgramLane';
 import { useIsFavoriteChannel, useToggleFavoriteChannel } from '../hooks/useFavorites';
 import type { StoredChannel, StoredProgram } from '../db';
 
@@ -8,12 +8,13 @@ interface ChannelRowProps {
   index: number;
   sortOrder: 'alphabetical' | 'number';
   channelColumnWidth: number;
-  programs: StoredProgram[];
+  // undefined while this row's programs have not been read yet; [] when the channel has no EPG
+  programs: StoredProgram[] | undefined;
   windowStart: Date;
   windowEnd: Date;
   pixelsPerHour: number;
   visibleHours: number;
-  onPlay: () => void;
+  onPlay: (channel: StoredChannel) => void;
 }
 
 export const ChannelRow = memo(function ChannelRow({
@@ -28,6 +29,8 @@ export const ChannelRow = memo(function ChannelRow({
   visibleHours,
   onPlay,
 }: ChannelRowProps) {
+  // Bound here rather than in ChannelPanel so the memo above sees a stable prop.
+  const handlePlay = useCallback(() => onPlay(channel), [onPlay, channel]);
   const isFavorite = useIsFavoriteChannel(channel.stream_id);
   const toggleFavorite = useToggleFavoriteChannel();
   const handleToggleFavorite = useCallback((e: React.MouseEvent) => {
@@ -45,7 +48,7 @@ export const ChannelRow = memo(function ChannelRow({
       <div
         className="guide-channel-info"
         style={{ width: channelColumnWidth, minWidth: channelColumnWidth }}
-        onClick={onPlay}
+        onClick={handlePlay}
       >
         <span className="guide-channel-number">{displayNumber}</span>
         <div className="guide-channel-logo">
@@ -83,20 +86,15 @@ export const ChannelRow = memo(function ChannelRow({
 
       {/* Program grid */}
       <div className="guide-program-grid">
-        {programs.length > 0 ? (
-          programs.map((program) => (
-            <ProgramBlock
-              key={program.id}
-              program={program}
-              windowStart={windowStart}
-              windowEnd={windowEnd}
-              pixelsPerHour={pixelsPerHour}
-              onClick={onPlay}
-            />
-          ))
-        ) : (
-          <EmptyProgramBlock pixelsPerHour={pixelsPerHour} visibleHours={visibleHours} />
-        )}
+        <ProgramLane
+          programs={programs}
+          rowIndex={index}
+          windowStart={windowStart}
+          windowEnd={windowEnd}
+          pixelsPerHour={pixelsPerHour}
+          visibleHours={visibleHours}
+          onPlay={handlePlay}
+        />
       </div>
     </div>
   );

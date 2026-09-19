@@ -76,6 +76,7 @@ export interface AppSettings {
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
   sportsMatchupEnabled?: boolean;  // Show team logos in the bar on a live sports game (default true)
+  guideMorphEnabled?: boolean;     // Animate guide rows into place after a noticeable wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
 }
 

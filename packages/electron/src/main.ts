@@ -115,6 +115,28 @@ const STATUS_THROTTLE_MS = 100;
 
 // Debug logging infrastructure
 let debugLogStream: fs.WriteStream | null = null;
+
+// Electron's default uncaughtException handler shows a blocking dialog that
+// freezes the main process, and with it every IPC call, until dismissed. An
+// unclean shutdown from that state has left IndexedDB unable to open. Log it
+// and tell the user without stopping the world.
+let lastUncaughtReportAt = 0;
+process.on('uncaughtException', (error) => {
+  const summary = error instanceof Error ? error.message : String(error);
+  const detail = error instanceof Error ? error.stack ?? summary : summary;
+  console.error('[main] Uncaught exception:', detail);
+  debugLog(`Uncaught exception: ${detail}`, 'system');
+  const now = Date.now();
+  if (now - lastUncaughtReportAt < 30_000) return;
+  lastUncaughtReportAt = now;
+  void dialog.showMessageBox({
+    type: 'error',
+    title: 'sbtlTV internal error',
+    message: 'An internal error occurred. sbtlTV will keep running.',
+    detail: `${summary}\n\nDetails are in the debug log when debug logging is enabled (Settings > System).`,
+    buttons: ['OK'],
+  }).catch(() => {});
+});
 let debugLoggingEnabled = false;
 const DEBUG_LOG_MAX_SIZE = 10 * 1024 * 1024; // 10MB max log size
 
@@ -165,6 +187,13 @@ function initDebugLogging(enabled: boolean): void {
     });
     debugLog('='.repeat(60));
     debugLog(`Debug logging started - sbtlTV v${app.getVersion()}`);
+    // CI writes dist/build-info.json so a log can be tied to an exact commit.
+    try {
+      const info = JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')) as { sha?: string; run?: string; ref?: string };
+      debugLog(`Build: ${info.sha ?? '?'} (${info.ref ?? '?'}, run ${info.run ?? '?'})`);
+    } catch {
+      debugLog('Build: local');
+    }
     if (!rotationSucceeded) {
       debugLog('Warning: Log rotation failed, continuing with existing file', 'system');
     }
@@ -1463,6 +1492,50 @@ function isBlockedUrl(url: string): boolean {
 // Fetch proxy - bypasses CORS by making requests from main process
 // Used for IPTV provider API calls (user-configured URLs)
 // Blocks internal network access unless allowLanSources is enabled in settings
+const MAX_PROXY_RESPONSE_BYTES = 512 * 1024 * 1024;
+
+// Electron's request API yields a plain Node stream. net.fetch's Web-stream
+// adapter has silently truncated large responses: a 20 MB movie list stopped
+// at 16.5 MB on Windows with no error, while the same machine pulled a 312 MB
+// EPG through this path intact. Every proxied request goes through here.
+async function requestBody(
+  url: string,
+  options?: { method?: string; headers?: Record<string, string>; body?: string }
+): Promise<{ ok: boolean; status: number; statusText: string; body: Buffer }> {
+  const response = await new Promise<Electron.IncomingMessage>((resolve, reject) => {
+    // Never serve API responses from Chromium's HTTP cache. A provider marked
+    // its movie list cacheable for a week and framed it by connection close;
+    // a transfer cut off mid-body was cached as complete and replayed on
+    // every sync for days. The app keeps its own database; the HTTP cache
+    // has nothing to add.
+    const request = electronNet.request({ url, method: options?.method || 'GET', cache: 'no-store' });
+    for (const [name, value] of Object.entries(options?.headers ?? {})) request.setHeader(name, value);
+    request.on('response', resolve);
+    request.on('error', reject);
+    if (options?.body !== undefined) request.write(options.body);
+    request.end();
+  });
+  // Electron's IncomingMessage is a Node Readable at runtime; its typings don't say so.
+  const stream = response as unknown as import('stream').Readable;
+  const chunks: Buffer[] = [];
+  let total = 0;
+  await new Promise<void>((resolve, reject) => {
+    stream.on('data', (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > MAX_PROXY_RESPONSE_BYTES) {
+        stream.destroy(new Error(`Response exceeds ${MAX_PROXY_RESPONSE_BYTES / 1024 / 1024}MB limit`));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    stream.on('end', resolve);
+    stream.on('error', reject);
+    stream.on('aborted', () => reject(new Error('Response aborted')));
+  });
+  const status = response.statusCode;
+  return { ok: status >= 200 && status < 300, status, statusText: response.statusMessage, body: Buffer.concat(chunks) };
+}
+
 ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => {
   try {
     // Check SSRF protection (unless LAN sources are allowed)
@@ -1474,19 +1547,17 @@ ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: s
       };
     }
 
-    const response = await electronNet.fetch(url, {
-      method: options?.method || 'GET',
-      headers: options?.headers,
-      body: options?.body,
-    });
-    const text = await response.text();
+    const response = await requestBody(url, options);
+    // Byte count as received from the network stack, before IPC: lets a
+    // truncated body be attributed to the network or to the transfer.
+    debugLog(`fetch-proxy ${response.status} ${response.body.length}B ${url.split('?')[0]}`, 'net');
     return {
       success: true,
       data: {
         ok: response.ok,
         status: response.status,
         statusText: response.statusText,
-        text,
+        text: response.body.toString('utf8'),
       },
     };
   } catch (error) {
@@ -1505,18 +1576,16 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
     return { success: false, error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > System > Security if you trust this source.' };
   }
   try {
-    const response = await electronNet.fetch(url);
+    const response = await requestBody(url);
     if (!response.ok) {
       return {
         success: false,
         error: `HTTP ${response.status}: ${response.statusText}`,
       };
     }
-    const buffer = await response.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
     return {
       success: true,
-      data: base64,
+      data: response.body.toString('base64'),
     };
   } catch (error) {
     return {
@@ -1583,7 +1652,7 @@ function parseEpgInWorkerThread(filePath: string, providerChannels?: ProviderCha
   });
 }
 
-const MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024;   // 500MB compressed
+const MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024 * 1024;   // 4GB on disk (an Xtream xmltv.php is often plain XML)
 const MAX_DECOMPRESS_BYTES = 4 * 1024 * 1024 * 1024; // 4GB decompressed
 
 // Stream download to temp file (avoids ArrayBuffer size limits for large EPG files)
@@ -1591,51 +1660,47 @@ async function downloadToTempFile(url: string): Promise<string> {
   const { createWriteStream } = await import('fs');
   const { randomUUID } = await import('crypto');
   const { tmpdir } = await import('os');
+  const { Transform } = await import('stream');
+  const { pipeline } = await import('stream/promises');
 
   const tmpPath = path.join(tmpdir(), `epg-${randomUUID()}.tmp`);
-  const response = await electronNet.fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-  if (!response.body) {
-    throw new Error('No response body');
+
+  // Electron's request API yields a plain Node stream. net.fetch wraps the body
+  // in a Web-stream adapter that can throw from inside Node when the reader is
+  // cancelled mid-download; pipeline() has no such path.
+  const response = await new Promise<Electron.IncomingMessage>((resolve, reject) => {
+    const request = electronNet.request({ url, method: 'GET', cache: 'no-store' });
+    // Ask for the bytes as stored. With gzip accepted, Chromium transparently
+    // inflates a .gz that the server also marks content-encoding: gzip and hands
+    // us the raw multi-GB XML instead of the archive.
+    request.setHeader('Accept-Encoding', 'identity');
+    request.on('response', resolve);
+    request.on('error', reject);
+    request.end();
+  });
+  // Electron's IncomingMessage is a Node Readable at runtime; its typings don't say so.
+  const body = response as unknown as import('stream').Readable;
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    body.resume();
+    throw new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`);
   }
 
-  // Stream response body to file
-  const fileStream = createWriteStream(tmpPath);
-  // Listen for errors before the first write. A write stream error with no
-  // listener (disk full, or destroy() while writes are still in flight after a
-  // network failure) is an uncaught exception that takes the main process down.
-  let streamError: Error | null = null;
-  fileStream.on('error', (error) => { streamError = error; });
-  const waitForDrain = () => new Promise<void>((resolve) => {
-    const done = () => { fileStream.off('drain', done); fileStream.off('error', done); resolve(); };
-    fileStream.once('drain', done);
-    fileStream.once('error', done);
-  });
-  // Convert Web ReadableStream to Node stream
-  const reader = response.body.getReader();
   let totalBytes = 0;
-  try {
-    while (true) {
-      if (streamError) throw streamError;
-      const { done, value } = await reader.read();
-      if (done) break;
-      totalBytes += value.byteLength;
+  const sizeGuard = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      totalBytes += chunk.length;
       if (totalBytes > MAX_DOWNLOAD_BYTES) {
-        throw new Error(`EPG download exceeds ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB limit`);
+        callback(new Error(`EPG download exceeds ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB limit`));
+        return;
       }
-      if (!fileStream.write(Buffer.from(value))) await waitForDrain();
-    }
-    await new Promise<void>((resolve, reject) => {
-      fileStream.once('error', reject);
-      fileStream.end(() => resolve());
-    });
-    if (streamError) throw streamError;
+      callback(null, chunk);
+    },
+  });
+
+  try {
+    await pipeline(body, sizeGuard, createWriteStream(tmpPath));
   } catch (err) {
-    fileStream.destroy();
-    await reader.cancel().catch(() => {});
-    try { (await import('fs')).unlinkSync(tmpPath); } catch {}
+    try { fs.unlinkSync(tmpPath); } catch {}
     throw err;
   }
 
@@ -1643,8 +1708,6 @@ async function downloadToTempFile(url: string): Promise<string> {
   return tmpPath;
 }
 
-// Read file, optionally decompress via streaming to another temp file, return path to raw XML
-// Streaming avoids holding 3GB+ decompressed data in a single Buffer
 async function decompressToFile(filePath: string, isGz: boolean): Promise<{ xmlPath: string; sizeMB: number }> {
   const { createReadStream, createWriteStream, statSync, unlinkSync } = await import('fs');
   const { createGunzip } = await import('zlib');
@@ -1652,8 +1715,8 @@ async function decompressToFile(filePath: string, isGz: boolean): Promise<{ xmlP
   const { randomUUID } = await import('crypto');
   const { tmpdir } = await import('os');
 
-  // Check magic bytes
-  if (!isGz) {
+  // Always check magic bytes: a .gz URL can arrive already inflated.
+  {
     const { readSync, openSync, closeSync } = await import('fs');
     const fd = openSync(filePath, 'r');
     const header = Buffer.alloc(2);
@@ -1713,8 +1776,7 @@ ipcMain.handle('fetch-and-parse-epg', async (_event, url: string, providerChanne
     const tmpPath = await downloadToTempFile(url);
     tempFiles.push(tmpPath);
 
-    const isGz = url.endsWith('.gz');
-    const { xmlPath, sizeMB } = await decompressToFile(tmpPath, isGz);
+    const { xmlPath, sizeMB } = await decompressToFile(tmpPath, false);
     if (xmlPath !== tmpPath) tempFiles.push(xmlPath);
 
     // Worker stream-parses from the file — no memory limits

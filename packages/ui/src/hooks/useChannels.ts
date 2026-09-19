@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getLastCategory, setLastCategory } from '../db';
 import type { StoredChannel, StoredCategory, SourceMeta, StoredProgram } from '../db';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useEnabledSourceIds, useLiveSourceOrder, useSourceMap } from './useSourceFiltering';
 import { sortCategoryGroups, resolveGroupPrimary } from './categorySort';
 import { useCategorySortOrder } from '../stores/uiStore';
@@ -173,68 +173,78 @@ export function useCategoriesWithCounts(): CategoryWithCount[] {
   return data ?? [];
 }
 
+// Programs are indexed on [stream_id+start]. Reading a channel's whole week
+// and filtering in JS was fine at 65k rows and slow at 500k; bound the start
+// time instead. A program that began before the window but is still running
+// is caught by looking back MAX_PROGRAM_MS.
+const MAX_PROGRAM_MS = 24 * 60 * 60 * 1000;
+
+async function programsStartingBetween(streamIds: string[], lower: Date, upper: Date): Promise<StoredProgram[]> {
+  if (streamIds.length === 0 || upper < lower) return [];
+  const ranges = streamIds.map((id) => [[id, lower], [id, upper]] as [[string, Date], [string, Date]]);
+  return db.programs
+    .where('[stream_id+start]')
+    .inAnyRange(ranges, { includeLowers: true, includeUppers: true })
+    .toArray();
+}
+
+// Latest-starting program per channel that is on air at `now`.
+function currentProgramsFrom(programs: StoredProgram[], now: Date): Map<string, StoredProgram> {
+  const current = new Map<string, StoredProgram>();
+  for (const program of programs) {
+    if (program.start <= now && program.end > now) {
+      const existing = current.get(program.stream_id);
+      if (!existing || program.start > existing.start) current.set(program.stream_id, program);
+    }
+  }
+  return current;
+}
+
 // Hook to get current program for a channel
 export function useCurrentProgram(streamId: string | null): StoredProgram | null {
   const program = useLiveQuery(
     async () => {
       if (!streamId) return null;
       const now = new Date();
-      // Find program where start <= now < end
-      const programs = await db.programs
-        .where('stream_id')
-        .equals(streamId)
-        .filter((p) => p.start <= now && p.end > now)
-        .first();
-      return programs ?? null;
+      const candidates = await programsStartingBetween([streamId], new Date(now.getTime() - MAX_PROGRAM_MS), now);
+      return currentProgramsFrom(candidates, now).get(streamId) ?? null;
     },
     [streamId]
   );
   return program ?? null;
 }
 
-// Hook to get all programs for channels within a time range (for EPG grid)
+// Hook to get all programs for channels within a time range (for EPG grid).
+// The map only holds entries for the requested stream IDs, so a missing entry
+// means "not read yet" and an empty array means "no EPG for this channel".
+// While a new set of IDs or a new window is being read, the previous map is
+// returned so rows already on screen keep their programs instead of flashing.
 export function useProgramsInRange(
   streamIds: string[],
   windowStart: Date,
   windowEnd: Date
 ): Map<string, StoredProgram[]> {
+  const lastPrograms = useRef<Map<string, StoredProgram[]>>(new Map());
   const programs = useLiveQuery(
     async () => {
       if (streamIds.length === 0) return new Map<string, StoredProgram[]>();
 
       const result = new Map<string, StoredProgram[]>();
-
-      // Initialize empty arrays for all channels
       for (const id of streamIds) {
         result.set(id, []);
       }
 
-      // Fetch all programs that overlap with the time window
-      // A program overlaps if: program.start < windowEnd AND program.end > windowStart
-      const allPrograms = await db.programs
-        .where('stream_id')
-        .anyOf(streamIds)
-        .filter((p) => {
-          const start = p.start instanceof Date ? p.start : new Date(p.start);
-          const end = p.end instanceof Date ? p.end : new Date(p.end);
-          return start < windowEnd && end > windowStart;
-        })
-        .toArray();
+      // Overlap: program.start < windowEnd AND program.end > windowStart.
+      const lower = new Date(windowStart.getTime() - MAX_PROGRAM_MS);
+      const upper = new Date(windowEnd.getTime() - 1);
+      const overlapping = (await programsStartingBetween(streamIds, lower, upper))
+        .filter((program) => program.end > windowStart);
 
-      // Group by stream_id and sort by start time
-      for (const prog of allPrograms) {
-        const existing = result.get(prog.stream_id) ?? [];
-        existing.push(prog);
-        result.set(prog.stream_id, existing);
+      for (const program of overlapping) {
+        result.get(program.stream_id)?.push(program);
       }
-
-      // Sort each channel's programs by start time
       for (const [, progs] of result) {
-        progs.sort((a, b) => {
-          const aStart = a.start instanceof Date ? a.start.getTime() : new Date(a.start).getTime();
-          const bStart = b.start instanceof Date ? b.start.getTime() : new Date(b.start).getTime();
-          return aStart - bStart;
-        });
+        progs.sort((a, b) => a.start.getTime() - b.start.getTime());
       }
 
       return result;
@@ -242,28 +252,21 @@ export function useProgramsInRange(
     [streamIds.join(','), windowStart.getTime(), windowEnd.getTime()]
   );
 
-  return programs ?? new Map();
+  if (programs) lastPrograms.current = programs;
+  return lastPrograms.current;
 }
 
-// Hook to get programs for a list of channel IDs (queries local DB - EPG is synced upfront)
+// Hook to get the current program for a list of channel IDs (queries local DB - EPG is synced upfront)
 export function usePrograms(streamIds: string[]): Map<string, StoredProgram | null> {
   const programs = useLiveQuery(
     async () => {
       if (streamIds.length === 0) return new Map();
       const now = new Date();
+      const candidates = await programsStartingBetween(streamIds, new Date(now.getTime() - MAX_PROGRAM_MS), now);
+      const current = currentProgramsFrom(candidates, now);
       const result = new Map<string, StoredProgram | null>();
-
       for (const id of streamIds) {
-        const program = await db.programs
-          .where('stream_id')
-          .equals(id)
-          .filter((p) => {
-            const start = p.start instanceof Date ? p.start : new Date(p.start);
-            const end = p.end instanceof Date ? p.end : new Date(p.end);
-            return start <= now && end > now;
-          })
-          .first();
-        result.set(id, program ?? null);
+        result.set(id, current.get(id) ?? null);
       }
       return result;
     },
