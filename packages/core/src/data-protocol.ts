@@ -91,6 +91,12 @@ export type ReplyFor<R extends DataRequest> =
   R extends { type: 'syncNow' | 'syncEpisodes' | 'rematchEpg' | 'clearAll' } ? { accepted: true } :
   never;
 
+// A request without its id, one variant at a time (a plain Omit over the union
+// would lose the discriminant). Clients take a body and add the id.
+export type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never;
+export type DataRequestBody = DistributiveOmit<DataRequest, 'id'>;
+export type ReplyForBody<B extends DataRequestBody> = ReplyFor<Extract<DataRequest, { type: B['type'] }>>;
+
 export type DataReply =
   | { id: number; ok: true; data: unknown }
   | { id: number; ok: false; error: string };

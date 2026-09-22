@@ -175,6 +175,15 @@ contextBridge.exposeInMainWorld('storage', {
 } satisfies StorageApi);
 
 // Expose fetch proxy API - bypasses CORS for API calls
+// Data process port: main hands a MessagePort over IPC; pass it into the page's
+// world. The renderer's DataClient listens for exactly this message.
+ipcRenderer.on('data-port', (event: IpcRendererEvent) => {
+  window.postMessage('data-port', '*', event.ports);
+});
+contextBridge.exposeInMainWorld('data', {
+  requestPort: () => ipcRenderer.send('data-request-port'),
+});
+
 contextBridge.exposeInMainWorld('fetchProxy', {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) =>
     ipcRenderer.invoke('fetch-proxy', url, options),

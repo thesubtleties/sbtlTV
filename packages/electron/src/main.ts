@@ -9,6 +9,7 @@ import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
 import electronUpdater from 'electron-updater';
 import { selectChromiumGpuIdentity } from './gpu-selection.js';
+import { startDataHost, type DataHost } from './data/data-host.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -42,6 +43,7 @@ const MIN_WIDTH = 640;
 const MIN_HEIGHT = 620;
 
 let mainWindow: BrowserWindow | null = null;
+let dataHost: DataHost | null = null;
 let mpvProcess: ChildProcess | null = null;
 let mpvSocket: net.Socket | null = null;
 let requestId = 0;
@@ -1315,6 +1317,7 @@ ipcMain.handle('storage-get-source', async (_event, id: string) => {
 ipcMain.handle('storage-save-source', async (_event, source: Source) => {
   try {
     storage.saveSource(source);
+    dataHost?.pushSources();
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1324,6 +1327,7 @@ ipcMain.handle('storage-save-source', async (_event, source: Source) => {
 ipcMain.handle('storage-delete-source', async (_event, id: string) => {
   try {
     storage.deleteSource(id);
+    dataHost?.pushSources();
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1345,6 +1349,7 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
     if (settings.debugLoggingEnabled !== undefined) {
       initDebugLogging(settings.debugLoggingEnabled);
     }
+    dataHost?.pushSettings();
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1808,6 +1813,18 @@ app.whenReady().then(async () => {
 
   await createWindow();
 
+  dataHost = startDataHost({
+    dbPath: path.join(app.getPath('userData'), 'sbtltv-data.sqlite'),
+    tempDir: app.getPath('temp'),
+    getSources: () => storage.getSources(),
+    getSettings: () => {
+      const s = storage.getSettings();
+      return { epgRefreshHours: s.epgRefreshHours ?? 6, vodRefreshHours: s.vodRefreshHours ?? 24, allowLanSources: s.allowLanSources ?? false, debugLoggingEnabled: s.debugLoggingEnabled ?? false };
+    },
+    log: (category, message) => debugLog(message, category),
+    onSync: () => {},
+  });
+
   if (USE_NATIVE_MPV) {
     let nativeSuccess = false;
     if (MpvTextureBridgeClass) {
@@ -1962,6 +1979,13 @@ app.whenReady().then(async () => {
       }, 1000);
     }
   });
+});
+
+ipcMain.on('data-request-port', (event) => dataHost?.giveRendererPort(event.sender));
+
+app.on('before-quit', () => {
+  dataHost?.shutdown();
+  dataHost = null;
 });
 
 app.on('window-all-closed', () => {

@@ -181,7 +181,12 @@ export interface SharedTextureApi {
 }
 
 declare global {
+  interface DataApi {
+    requestPort(): void;
+  }
+
   interface Window {
+    data?: DataApi;
     mpv?: MpvApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
