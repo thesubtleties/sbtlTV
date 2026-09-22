@@ -36,3 +36,18 @@ test('garbage is refused without throwing', () => {
   routeRendererMessage(db, 'nonsense', (r) => replies.push(r), () => {});
   assert.equal(replies.length, 1, 'no id means no reply');
 });
+
+test('syncEpisodes resolves the source from the stored series', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const jobs: SyncJob[] = [];
+  routeRendererMessage(db, { id: 11, type: 'syncEpisodes', seriesId: 's1_sr1' }, () => {}, (j) => jobs.push(j));
+  assert.deepEqual(jobs, [{ kind: 'episodes', sourceId: 's1', seriesId: 's1_sr1' }]);
+});
+
+test('updateVodDetails is acknowledged and queued', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const replies: DataReply[] = []; const jobs: SyncJob[] = [];
+  routeRendererMessage(db, { id: 12, type: 'updateVodDetails', kind: 'movie', itemId: 's1_m1', fields: { plot: 'p' } }, (r) => replies.push(r), (j) => jobs.push(j));
+  assert.deepEqual(replies, [{ id: 12, ok: true, data: { accepted: true } }]);
+  assert.deepEqual(jobs, [{ kind: 'vodDetails', itemKind: 'movie', itemId: 's1_m1', fields: { plot: 'p' } }]);
+});

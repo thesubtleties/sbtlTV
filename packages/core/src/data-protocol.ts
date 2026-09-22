@@ -55,7 +55,11 @@ export type DataRequest =
   | { id: number; type: 'syncNow'; sourceId?: string; what: 'channels' | 'vod' | 'all' }
   | { id: number; type: 'syncEpisodes'; seriesId: string }
   | { id: number; type: 'rematchEpg'; sourceId: string }
+  | { id: number; type: 'updateVodDetails'; kind: 'movie' | 'series'; itemId: string; fields: VodDetailFields }
   | { id: number; type: 'clearAll' };
+
+// Details the renderer fetched from TMDB on demand; only empty columns are filled.
+export interface VodDetailFields { plot?: string; genre?: string; cast?: string; director?: string }
 
 // 'categories' returns every item in any of the given categories (VodBrowse groups
 // same-named categories across sources); 'all' is the whole library, as the browse
@@ -88,7 +92,7 @@ export type ReplyFor<R extends DataRequest> =
   R extends { type: 'episodes' } ? EpisodeRow[] :
   R extends { type: 'vodCategories' } ? VodCategoryRow[] :
   R extends { type: 'vodCounts' } ? { movies: number; series: number } :
-  R extends { type: 'syncNow' | 'syncEpisodes' | 'rematchEpg' | 'clearAll' } ? { accepted: true } :
+  R extends { type: 'syncNow' | 'syncEpisodes' | 'rematchEpg' | 'updateVodDetails' | 'clearAll' } ? { accepted: true } :
   never;
 
 // A request without its id, one variant at a time (a plain Omit over the union

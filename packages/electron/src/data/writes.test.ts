@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { seedFixture } from './queries.test.js';
 import { runQuery } from './queries.js';
-import { replaceChannels, replaceEpg, replaceVod, replaceEpisodes, applyTmdbMatches, deleteSource, clearAll } from './writes.js';
+import { replaceChannels, replaceEpg, replaceVod, replaceEpisodes, applyTmdbMatches, updateVodDetails, deleteSource, clearAll } from './writes.js';
 
 const count = (db: DatabaseSync, sql: string) => (db.prepare(sql).get() as { c: number }).c;
 
@@ -82,4 +82,15 @@ test('deleteSource and clearAll remove every trace', () => {
   clearAll(db);
   assert.equal(count(db, "select count(*) c from channels"), 0);
   assert.equal(count(db, "select count(*) c from sources_meta"), 0);
+});
+
+test('updateVodDetails fills only the empty columns', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec("update vod_movies set plot = 'kept plot' where stream_id = 's1_m1'");
+  const changed = updateVodDetails(db, 'movie', 's1_m1', { plot: 'new plot', genre: 'Crime', cast: 'Pacino, De Niro' });
+  assert.deepEqual(changed, ['vod_movies']);
+  const m = db.prepare("select plot, genre, \"cast\" from vod_movies where stream_id='s1_m1'").get() as { plot: string; genre: string; cast: string };
+  assert.deepEqual({ ...m }, { plot: 'kept plot', genre: 'Crime', cast: 'Pacino, De Niro' });
+  updateVodDetails(db, 'series', 's1_sr1', { cast: 'Fox' });
+  assert.equal((db.prepare("select \"cast\" from vod_series where series_id='s1_sr1'").get() as { cast: string }).cast, 'Fox');
 });

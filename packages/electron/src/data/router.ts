@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { isDataRequest, type DataReply, type DataRequest } from '@sbtltv/core';
+import { isDataRequest, type DataReply, type DataRequest, type VodDetailFields } from '@sbtltv/core';
 import { runQuery } from './queries.js';
 
 export type SyncJob =
@@ -7,10 +7,11 @@ export type SyncJob =
   | { kind: 'vod'; sourceId: string }
   | { kind: 'episodes'; sourceId: string; seriesId: string }
   | { kind: 'rematch'; sourceId: string }
+  | { kind: 'vodDetails'; itemKind: 'movie' | 'series'; itemId: string; fields: VodDetailFields }
   | { kind: 'deleteSource'; sourceId: string }
   | { kind: 'clearAll' };
 
-const CONTROL = new Set(['syncNow', 'syncEpisodes', 'rematchEpg', 'clearAll']);
+const CONTROL = new Set(['syncNow', 'syncEpisodes', 'rematchEpg', 'updateVodDetails', 'clearAll']);
 const READS = new Set(['categories', 'channels', 'channelsByIds', 'channelCount', 'channelSearch', 'programsInRange', 'currentProgram', 'syncStatus', 'movies', 'series', 'episodes', 'vodCategories', 'vodCounts']);
 
 // Answers one renderer message: reads run against the read connection, control
@@ -28,10 +29,13 @@ export function routeRendererMessage(db: DatabaseSync, msg: unknown, send: (repl
           if (req.what !== 'channels') enqueue({ kind: 'vod', sourceId });
         }
       } else if (req.type === 'syncEpisodes') {
-        const sourceId = req.seriesId.slice(0, req.seriesId.indexOf('_'));
+        const row = db.prepare('select source_id from vod_series where series_id = ?').get(req.seriesId) as { source_id: string } | undefined;
+        const sourceId = row?.source_id ?? req.seriesId.slice(0, req.seriesId.indexOf('_'));
         enqueue({ kind: 'episodes', sourceId, seriesId: req.seriesId });
       } else if (req.type === 'rematchEpg') {
         enqueue({ kind: 'rematch', sourceId: req.sourceId });
+      } else if (req.type === 'updateVodDetails') {
+        enqueue({ kind: 'vodDetails', itemKind: req.kind, itemId: req.itemId, fields: req.fields });
       } else {
         enqueue({ kind: 'clearAll' });
       }

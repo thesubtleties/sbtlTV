@@ -13,6 +13,10 @@ const DATE_FIELDS: Partial<Record<DataRequest['type'], string[]>> = {
   series: ['added', 'match_attempted'],
 };
 
+function safeJson(text: string): Record<string, unknown> | undefined {
+  try { return JSON.parse(text) as Record<string, unknown>; } catch { return undefined; }
+}
+
 // Rows cross the port with integer milliseconds; the hooks' contracts have Dates.
 function revive(type: DataRequest['type'], data: unknown): unknown {
   if (type === 'syncStatus') {
@@ -26,6 +30,9 @@ function revive(type: DataRequest['type'], data: unknown): unknown {
         vod_movie_count: r.movie_count, vod_series_count: r.series_count, error: r.error ?? undefined,
       };
     });
+  }
+  if (type === 'episodes') {
+    return (data as Record<string, unknown>[]).map((r) => ({ ...r, info: typeof r.info === 'string' ? safeJson(r.info) : undefined }));
   }
   const fields = DATE_FIELDS[type];
   if (!fields || data == null) return data;

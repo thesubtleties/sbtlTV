@@ -76,10 +76,11 @@ test('vodCategories drops categories with nothing in them', () => {
   assert.deepEqual(cats.map((c) => c.category_id), ['s1_action']);
 });
 
-test('episodes come back in season and episode order', () => {
+test('episodes come back in season and episode order, carrying their series source', () => {
   const db = new DatabaseSync(':memory:'); seedFixture(db);
-  const eps = runQuery(db, { id: 1, type: 'episodes', seriesIds: ['s1_sr1'] }) as { id: string }[];
+  const eps = runQuery(db, { id: 1, type: 'episodes', seriesIds: ['s1_sr1'] }) as { id: string; source_id: string }[];
   assert.deepEqual(eps.map((e) => e.id), ['s1_e1', 's1_e2']);
+  assert.deepEqual(eps.map((e) => e.source_id), ['s1', 's1']);
 });
 
 test('control requests are refused by the read layer', () => {

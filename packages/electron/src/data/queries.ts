@@ -117,7 +117,11 @@ export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
       return withCategoryIds(db, rows as { series_id: string }[], 'series');
     }
     case 'episodes':
-      return stmt(db, `select id, series_id, season_num, episode_num, title, direct_url, plot, duration, info, tmdb_id from vod_episodes where series_id in (select value from json_each(?)) order by series_id, season_num, episode_num`).all(j(req.seriesIds));
+      return stmt(db, `
+        select e.id, e.series_id, e.season_num, e.episode_num, e.title, e.direct_url, e.plot, e.duration, e.info, e.tmdb_id, s.source_id
+        from vod_episodes e join vod_series s on s.series_id = e.series_id
+        where e.series_id in (select value from json_each(?))
+        order by e.series_id, e.season_num, e.episode_num`).all(j(req.seriesIds));
     case 'vodCategories':
       return stmt(db, `
         select vc.category_id, vc.source_id, vc.name, vc.type

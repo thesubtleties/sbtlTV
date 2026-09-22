@@ -11,7 +11,7 @@ import type { StageContext } from './sync-channels.js';
 import { syncChannels, makeXtreamClient } from './sync-channels.js';
 import { syncEpg } from './sync-epg.js';
 import { syncVod, syncEpisodes, matchTmdb } from './sync-vod.js';
-import { deleteSource, clearAll } from './writes.js';
+import { deleteSource, clearAll, updateVodDetails } from './writes.js';
 import type { SyncJob } from './router.js';
 
 if (!parentPort) throw new Error('sync-worker must run as a worker thread');
@@ -54,6 +54,7 @@ async function run(job: SyncJob): Promise<void> {
   const c = ctx();
   if (job.kind === 'deleteSource') { c.changed(deleteSource(db!, job.sourceId), job.sourceId); return; }
   if (job.kind === 'clearAll') { c.changed(clearAll(db!), null); return; }
+  if (job.kind === 'vodDetails') { c.changed(updateVodDetails(db!, job.itemKind, job.itemId, job.fields), null); return; }
   const source = sources.find((s) => s.id === job.sourceId);
   if (!source) { c.log('sync', `Job ${job.kind} for unknown source ${job.sourceId} skipped`); return; }
   switch (job.kind) {

@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { Category, Channel, Movie, Series, Episode, DataTable } from '@sbtltv/core';
+import type { Category, Channel, Movie, Series, Episode, DataTable, VodDetailFields } from '@sbtltv/core';
 
 export interface EpgProgramInput { epg_channel_id: string; startMs: number; endMs: number; title: string; description: string }
 export interface EpgLinkInput { stream_id: string; epg_channel_id: string; confidence: string; strategy: string }
@@ -120,6 +120,16 @@ export function applyTmdbMatches(db: DatabaseSync, kind: 'movie' | 'series', mat
     for (const m of matches) up.run(m.tmdb_id ?? null, m.popularity ?? null, m.matchAttemptedMs, m.id);
     return [table];
   });
+}
+
+// Details fetched lazily from TMDB (plot, genre, cast, director) fill empty columns only.
+export function updateVodDetails(db: DatabaseSync, kind: 'movie' | 'series', itemId: string, fields: VodDetailFields): DataTable[] {
+  const table = kind === 'movie' ? 'vod_movies' : 'vod_series';
+  const key = kind === 'movie' ? 'stream_id' : 'series_id';
+  const director = kind === 'movie' ? `, director = coalesce(nullif(director, ''), ?)` : '';
+  const params = [fields.plot ?? null, fields.genre ?? null, fields.cast ?? null, ...(kind === 'movie' ? [fields.director ?? null] : []), itemId];
+  db.prepare(`update ${table} set plot = coalesce(nullif(plot, ''), ?), genre = coalesce(nullif(genre, ''), ?), "cast" = coalesce(nullif("cast", ''), ?)${director} where ${key} = ?`).run(...params);
+  return [table];
 }
 
 export function setSourceError(db: DatabaseSync, sourceId: string, error: string | null): DataTable[] {
