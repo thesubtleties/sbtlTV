@@ -91,6 +91,7 @@ test('updateVodDetails fills only the empty columns', () => {
   assert.deepEqual(changed, ['vod_movies']);
   const m = db.prepare("select plot, genre, \"cast\" from vod_movies where stream_id='s1_m1'").get() as { plot: string; genre: string; cast: string };
   assert.deepEqual({ ...m }, { plot: 'kept plot', genre: 'Crime', cast: 'Pacino, De Niro' });
-  updateVodDetails(db, 'series', 's1_sr1', { cast: 'Fox' });
-  assert.equal((db.prepare("select \"cast\" from vod_series where series_id='s1_sr1'").get() as { cast: string }).cast, 'Fox');
+  updateVodDetails(db, 'series', 's1_sr1', { cast: 'Fox', backdrop_path: '/b.jpg' });
+  const sr = db.prepare("select \"cast\", backdrop_path from vod_series where series_id='s1_sr1'").get() as { cast: string; backdrop_path: string };
+  assert.deepEqual({ ...sr }, { cast: 'Fox', backdrop_path: '/b.jpg' });
 });

@@ -67,3 +67,20 @@ test('syncVod skips an empty list when data already exists, and syncEpisodes rep
   assert.equal(await syncEpisodes(c, source, vod, 's1_sr'), 1);
   assert.equal((db.prepare("select title from vod_episodes where series_id='s1_sr'").get() as { title: string }).title, 'Pilot');
 });
+
+test('syncChannels stores an imported playlist from its content and skips it when there is none', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  const { c, progress } = ctx(db);
+  const imported: Source = { id: 's9', name: 'File', type: 'm3u', url: 'imported:File', enabled: true };
+  const m3u = '#EXTM3U url-tvg="http://x/guide.xml"\n#EXTINF:-1 tvg-id="cbs.us" group-title="News",CBS\nhttp://x/cbs\n';
+  const out = await syncChannels(c, imported, null, m3u);
+  assert.equal(out?.channels.length, 1);
+  assert.equal(out?.epgUrl, 'http://x/guide.xml');
+  assert.equal((db.prepare("select count(*) c from channels where source_id='s9'").get() as { c: number }).c, 1);
+  // A scheduled sync has nothing to fetch for an imported file: keep the rows, no error, no progress.
+  progress.length = 0;
+  assert.equal(await syncChannels(c, imported, null), null);
+  assert.equal((db.prepare("select count(*) c from channels where source_id='s9'").get() as { c: number }).c, 1);
+  assert.equal((db.prepare("select error from sources_meta where source_id='s9'").get() as { error: string | null }).error, null);
+  assert.deepEqual(progress, []);
+});

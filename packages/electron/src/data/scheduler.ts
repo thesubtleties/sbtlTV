@@ -23,7 +23,8 @@ export function dueSyncs(metas: SourceMetaWire[], sources: Source[], settings: D
     const m = byId.get(s.id);
     return {
       sourceId: s.id,
-      channels: stale(m?.last_epg_sync ?? m?.last_channel_sync, settings.epgRefreshHours, nowMs),
+      // An imported file cannot be fetched again; only its VOD (none for M3U) could be.
+      channels: !s.url.startsWith('imported:') && stale(m?.last_epg_sync ?? m?.last_channel_sync, settings.epgRefreshHours, nowMs),
       vod: s.type === 'xtream' && stale(m?.last_vod_sync, settings.vodRefreshHours, nowMs),
     };
   });

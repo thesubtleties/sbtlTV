@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { Source, Channel, Category, DataTable, SyncProgress } from '@sbtltv/core';
-import { XtreamClient, fetchAndParseM3U } from '@sbtltv/local-adapter';
+import { XtreamClient, fetchAndParseM3U, parseM3U } from '@sbtltv/local-adapter';
 import { replaceChannels, setSourceError } from './writes.js';
 
 export interface StageContext {
@@ -30,12 +30,24 @@ function assertConnected(result: unknown): void {
   }
 }
 
-export async function syncChannels(ctx: StageContext, source: Source, client: ChannelClient | null): Promise<{ channels: Channel[]; epgUrl?: string } | null> {
+// A playlist the user imported from a file has no URL to fetch again; its rows
+// are replaced only when the renderer hands over new content.
+export const isImportedPlaylist = (source: Source): boolean => source.type === 'm3u' && source.url.startsWith('imported:');
+
+export async function syncChannels(ctx: StageContext, source: Source, client: ChannelClient | null, playlistContent?: string): Promise<{ channels: Channel[]; epgUrl?: string } | null> {
+  if (isImportedPlaylist(source) && playlistContent === undefined) {
+    ctx.log('sync', `Source ${source.name} is an imported file; keeping its stored channels`);
+    return null;
+  }
   ctx.progress({ sourceId: source.id, stage: 'channels', state: 'started' });
   ctx.log('sync', `Starting sync for source: ${source.name} (${source.type})`);
   try {
     let channels: Channel[]; let categories: Category[]; let epgUrl: string | undefined;
-    if (source.type === 'm3u') {
+    if (source.type === 'm3u' && playlistContent !== undefined) {
+      const parsed = parseM3U(playlistContent, source.id);
+      channels = parsed.channels; categories = parsed.categories; epgUrl = parsed.epgUrl ?? undefined;
+      ctx.log('sync', `Imported M3U parsed: ${channels.length} channels, ${categories.length} categories`);
+    } else if (source.type === 'm3u') {
       ctx.log('sync', `Fetching M3U from: ${source.url}`);
       const parsed = await fetchAndParseM3U(source.url, source.id);
       channels = parsed.channels; categories = parsed.categories; epgUrl = parsed.epgUrl ?? undefined;

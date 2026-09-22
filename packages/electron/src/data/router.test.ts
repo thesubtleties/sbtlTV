@@ -51,3 +51,11 @@ test('updateVodDetails is acknowledged and queued', () => {
   assert.deepEqual(replies, [{ id: 12, ok: true, data: { accepted: true } }]);
   assert.deepEqual(jobs, [{ kind: 'vodDetails', itemKind: 'movie', itemId: 's1_m1', fields: { plot: 'p' } }]);
 });
+
+test('importPlaylist is acknowledged and queued with its content', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const replies: DataReply[] = []; const jobs: SyncJob[] = [];
+  routeRendererMessage(db, { id: 13, type: 'importPlaylist', sourceId: 's9', content: '#EXTM3U' }, (r) => replies.push(r), (j) => jobs.push(j));
+  assert.deepEqual(replies, [{ id: 13, ok: true, data: { accepted: true } }]);
+  assert.deepEqual(jobs, [{ kind: 'importPlaylist', sourceId: 's9', content: '#EXTM3U' }]);
+});

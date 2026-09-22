@@ -8,10 +8,11 @@ export type SyncJob =
   | { kind: 'episodes'; sourceId: string; seriesId: string }
   | { kind: 'rematch'; sourceId: string }
   | { kind: 'vodDetails'; itemKind: 'movie' | 'series'; itemId: string; fields: VodDetailFields }
+  | { kind: 'importPlaylist'; sourceId: string; content: string }
   | { kind: 'deleteSource'; sourceId: string }
   | { kind: 'clearAll' };
 
-const CONTROL = new Set(['syncNow', 'syncEpisodes', 'rematchEpg', 'updateVodDetails', 'clearAll']);
+const CONTROL = new Set(['syncNow', 'syncEpisodes', 'rematchEpg', 'updateVodDetails', 'importPlaylist', 'clearAll']);
 const READS = new Set(['categories', 'channels', 'channelsByIds', 'channelCount', 'channelSearch', 'programsInRange', 'currentProgram', 'syncStatus', 'movies', 'series', 'episodes', 'vodCategories', 'vodCounts']);
 
 // Answers one renderer message: reads run against the read connection, control
@@ -36,6 +37,8 @@ export function routeRendererMessage(db: DatabaseSync, msg: unknown, send: (repl
         enqueue({ kind: 'rematch', sourceId: req.sourceId });
       } else if (req.type === 'updateVodDetails') {
         enqueue({ kind: 'vodDetails', itemKind: req.kind, itemId: req.itemId, fields: req.fields });
+      } else if (req.type === 'importPlaylist') {
+        enqueue({ kind: 'importPlaylist', sourceId: req.sourceId, content: req.content });
       } else {
         enqueue({ kind: 'clearAll' });
       }

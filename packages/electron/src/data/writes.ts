@@ -127,8 +127,8 @@ export function updateVodDetails(db: DatabaseSync, kind: 'movie' | 'series', ite
   const table = kind === 'movie' ? 'vod_movies' : 'vod_series';
   const key = kind === 'movie' ? 'stream_id' : 'series_id';
   const director = kind === 'movie' ? `, director = coalesce(nullif(director, ''), ?)` : '';
-  const params = [fields.plot ?? null, fields.genre ?? null, fields.cast ?? null, ...(kind === 'movie' ? [fields.director ?? null] : []), itemId];
-  db.prepare(`update ${table} set plot = coalesce(nullif(plot, ''), ?), genre = coalesce(nullif(genre, ''), ?), "cast" = coalesce(nullif("cast", ''), ?)${director} where ${key} = ?`).run(...params);
+  const params = [fields.plot ?? null, fields.genre ?? null, fields.cast ?? null, fields.backdrop_path ?? null, ...(kind === 'movie' ? [fields.director ?? null] : []), itemId];
+  db.prepare(`update ${table} set plot = coalesce(nullif(plot, ''), ?), genre = coalesce(nullif(genre, ''), ?), "cast" = coalesce(nullif("cast", ''), ?), backdrop_path = coalesce(nullif(backdrop_path, ''), ?)${director} where ${key} = ?`).run(...params);
   return [table];
 }
 

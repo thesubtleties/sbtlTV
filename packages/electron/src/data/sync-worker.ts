@@ -64,6 +64,12 @@ async function run(job: SyncJob): Promise<void> {
       await syncGuide(c, source, out.channels, out.epgUrl);
       return;
     }
+    case 'importPlaylist': {
+      const out = await syncChannels(c, source, null, job.content);
+      if (!out) return;
+      await syncGuide(c, source, out.channels, out.epgUrl);
+      return;
+    }
     case 'vod': {
       const client = makeXtreamClient(source);
       if (!client) return;
