@@ -2,10 +2,9 @@ import { type Table } from 'dexie';
 import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory } from './index';
 import { assignCategoryPositions } from './categoryPosition';
 import { fetchAndParseM3U, XtreamClient, type XmltvProgram, type XmltvChannel } from '@sbtltv/local-adapter';
-import { matchChannelsToEpg } from '../services/epg-matcher';
+import { matchChannelsToEpg, getEnrichedMovieExports, getEnrichedTvExports, findBestMatch, extractMatchParams } from '@sbtltv/core';
 import { buildChannelMap, expandProgramToStreams, summarizeFanOut } from '../services/epg-channel-map';
 import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
-import { getEnrichedMovieExports, getEnrichedTvExports, findBestMatch, extractMatchParams } from '../services/tmdb-exports';
 import { useUIStore } from '../stores/uiStore';
 
 // Debug logging helper - logs to console and optionally to debug file

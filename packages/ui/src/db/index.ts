@@ -97,23 +97,8 @@ export interface StoredWatchlistItem {
   added: Date;
 }
 
-export type MatchStrategy =
-  | 'exact_id' | 'code_match' | 'display_name' | 'name_code'
-  | 'slug_match' | 'base_display' | 'loose_name' | 'loose_code'
-  | 'base_loose' | 'base_looseslug' | 'loose_looseslug'
-  | 'callsign' | 'fuzzy' | 'manual';
-
-// EPG channel mapping (external EPG → provider channels)
-export interface EpgMapping {
-  id: string;                  // `${source_id}::${epg_source}::${stream_id}`
-  source_id: string;
-  epg_channel_id: string;      // Provider's epg_channel_id
-  xmltv_channel_id: string;    // Matched XMLTV channel ID
-  epg_source: string;          // EPG URL this mapping applies to
-  stream_id: string;           // Channel's stream_id for fast lookup
-  confidence: 'exact' | 'high' | 'medium' | 'manual';
-  strategy: MatchStrategy;
-}
+import type { EpgMapping } from '@sbtltv/core';
+export type { MatchStrategy, EpgMapping } from '@sbtltv/core';
 
 // Watch progress (position tracking, Trakt-compatible)
 export interface StoredWatchProgress {

@@ -12,6 +12,22 @@
  */
 
 // ===========================================================================
+// Fetch injection
+// ===========================================================================
+
+// The renderer swaps these for its fetch proxy; the data process uses Node's
+// global fetch. Nothing here touches `window`.
+export interface TmdbExportFetchers {
+  fetchText(url: string): Promise<string>;
+  fetchBinary(url: string): Promise<Uint8Array>;
+}
+let fetchers: TmdbExportFetchers = {
+  async fetchText(url) { const r = await fetch(url); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); },
+  async fetchBinary(url) { const r = await fetch(url); if (!r.ok) throw new Error(`HTTP ${r.status}`); return new Uint8Array(await r.arrayBuffer()); },
+};
+export function configureTmdbExportFetch(next: TmdbExportFetchers): void { fetchers = next; }
+
+// ===========================================================================
 // Types
 // ===========================================================================
 
@@ -151,22 +167,11 @@ async function downloadEnrichedExport(type: 'movie' | 'tv'): Promise<TmdbExportD
 
   try {
     let textContent: string;
-
-    // Use Electron's fetch proxy if available (bypasses CORS)
-    if (typeof window !== 'undefined' && window.fetchProxy?.fetch) {
-      const result = await window.fetchProxy.fetch(url);
-      if (!result.success || !result.data || !result.data.ok) {
-        console.warn(`[TMDB Export] Enriched ${type} fetch failed:`, result.error || result.data?.statusText);
-        return null;
-      }
-      textContent = result.data.text;
-    } else {
-      const response = await fetch(url);
-      if (!response.ok) {
-        console.warn(`[TMDB Export] Enriched ${type} not available: ${response.status}`);
-        return null;
-      }
-      textContent = await response.text();
+    try {
+      textContent = await fetchers.fetchText(url);
+    } catch (err) {
+      console.warn(`[TMDB Export] Enriched ${type} not available:`, err instanceof Error ? err.message : err);
+      return null;
     }
 
     // Parse NDJSON (one entry per line) - much faster than single JSON.parse
@@ -247,36 +252,14 @@ async function downloadExport(type: 'movie' | 'tv'): Promise<TmdbExportData> {
   const url = buildExportUrl(type);
   console.log(`[TMDB Export] Downloading ${type} export from ${url}`);
 
-  let gzippedData: ArrayBuffer;
-
-  // Use Electron's binary fetch proxy (bypasses CORS, returns base64)
-  if (typeof window !== 'undefined' && window.fetchProxy?.fetchBinary) {
-    const result = await window.fetchProxy.fetchBinary(url);
-    if (!result.success || !result.data) {
-      throw new Error(result.error || 'Failed to fetch TMDB export');
-    }
-    // Decode base64 to ArrayBuffer
-    const binaryString = atob(result.data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    gzippedData = bytes.buffer;
-  } else {
-    // Fallback to regular fetch (works in Node.js or when CORS is not an issue)
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to download TMDB export: ${response.status}`);
-    }
-    gzippedData = await response.arrayBuffer();
-  }
+  const gzippedData: Uint8Array = await fetchers.fetchBinary(url);
 
   // Decompress and parse using streaming (avoids ~200MB memory spike)
   const entries = new Map<string, TmdbExportEntry[]>();
   const byId = new Map<number, TmdbExportEntry>();
 
   // Create streaming pipeline: gzip → text decoder
-  const decompressedStream = new Response(gzippedData).body!
+  const decompressedStream = new Response(gzippedData as BodyInit).body!
     .pipeThrough(new DecompressionStream('gzip'))
     .pipeThrough(new TextDecoderStream());
 

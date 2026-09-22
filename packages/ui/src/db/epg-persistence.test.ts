@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { Channel } from '@sbtltv/core';
 import type { XmltvChannel, XmltvProgram } from '@sbtltv/local-adapter';
 import { db } from './index';
-import { matchChannelsToEpg } from '../services/epg-matcher';
+import { matchChannelsToEpg } from '@sbtltv/core';
 import { buildChannelMap, expandProgramToStreams } from '../services/epg-channel-map';
 
 // End-to-end persistence checks for the #87 fix. The pure helpers verify the

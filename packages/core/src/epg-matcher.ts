@@ -14,14 +14,10 @@
  * 10. loose_looseslug — Looser name → EPG loose slug
  * 11. callsign       — Call sign extraction ([KWCX]xxx, parens) → code map with DT variants
  * 12. fuzzy          — Word-overlap + substring matching (0.6 threshold)
- *
- * Worker thread copy (epg-parse-worker.ts) duplicates strategies 1-12 because
- * the worker can't import renderer modules. Keep both in sync.
  */
 
-import type { XmltvChannel } from '@sbtltv/local-adapter';
-import type { Channel } from '@sbtltv/core';
-import type { EpgMapping, MatchStrategy } from '../db/index';
+import type { Channel } from './types';
+import type { EpgMapping, MatchStrategy, EpgChannelInfo } from './epg-types';
 
 /**
  * Normalize a channel name for fuzzy matching:
@@ -68,7 +64,7 @@ function stripTld(id: string): string {
  */
 export function matchChannelsToEpg(
   channels: Channel[],
-  xmltvChannels: XmltvChannel[],
+  xmltvChannels: EpgChannelInfo[],
   sourceId: string,
   epgSource: string,
 ): EpgMapping[] {
