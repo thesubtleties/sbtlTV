@@ -9,11 +9,18 @@ export interface OpenOptions {
 
 function tryOpen(path: string, opts: OpenOptions): DatabaseSync {
   const db = new DatabaseSync(path, { readOnly: opts.readOnly, timeout: 5000 });
-  if (!opts.readOnly) {
-    db.exec('pragma journal_mode = wal');
-    db.exec('pragma synchronous = normal');
+  try {
+    if (!opts.readOnly) {
+      db.exec('pragma journal_mode = wal');
+      db.exec('pragma synchronous = normal');
+    }
+    db.exec('pragma foreign_keys = on');
+  } catch (e) {
+    // A file that is not a database fails here, after the handle exists. Close it
+    // before giving up: Windows will not rename a file that is still open.
+    try { db.close(); } catch { /* already unusable */ }
+    throw e;
   }
-  db.exec('pragma foreign_keys = on');
   return db;
 }
 
