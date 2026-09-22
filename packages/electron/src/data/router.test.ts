@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
+import { seedFixture } from './queries.test.js';
+import { routeRendererMessage, type SyncJob } from './router.js';
+import type { DataReply } from '@sbtltv/core';
+
+test('a read request is answered from the database', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const replies: DataReply[] = []; const jobs: SyncJob[] = [];
+  routeRendererMessage(db, { id: 7, type: 'channelCount', sourceIds: [] }, (r) => replies.push(r), (j) => jobs.push(j));
+  assert.deepEqual(replies, [{ id: 7, ok: true, data: 3 }]);
+  assert.deepEqual(jobs, []);
+});
+
+test('a control request is acknowledged and queued', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const replies: DataReply[] = []; const jobs: SyncJob[] = [];
+  routeRendererMessage(db, { id: 8, type: 'syncNow', what: 'all', sourceId: 's1' }, (r) => replies.push(r), (j) => jobs.push(j));
+  assert.deepEqual(replies, [{ id: 8, ok: true, data: { accepted: true } }]);
+  assert.deepEqual(jobs, [{ kind: 'channels', sourceId: 's1' }, { kind: 'vod', sourceId: 's1' }]);
+});
+
+test('syncNow without a source fans out to every enabled source', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const jobs: SyncJob[] = [];
+  routeRendererMessage(db, { id: 10, type: 'syncNow', what: 'channels' }, () => {}, (j) => jobs.push(j), () => ['s1', 's2']);
+  assert.deepEqual(jobs, [{ kind: 'channels', sourceId: 's1' }, { kind: 'channels', sourceId: 's2' }]);
+});
+
+test('garbage is refused without throwing', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const replies: DataReply[] = [];
+  routeRendererMessage(db, { id: 9, type: 'drop table' }, (r) => replies.push(r), () => {});
+  assert.equal(replies[0].ok, false);
+  routeRendererMessage(db, 'nonsense', (r) => replies.push(r), () => {});
+  assert.equal(replies.length, 1, 'no id means no reply');
+});
