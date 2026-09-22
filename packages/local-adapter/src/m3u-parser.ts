@@ -1,3 +1,4 @@
+/// <reference path="./types/electron.d.ts" />
 /**
  * M3U Playlist Parser
  *

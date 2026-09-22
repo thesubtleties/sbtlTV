@@ -1,3 +1,4 @@
+/// <reference path="./types/electron.d.ts" />
 /**
  * Xtream Codes API Client
  *
@@ -51,6 +52,7 @@ export interface XtreamAuthResponse {
 export class XtreamClient {
   private config: XtreamConfig;
   private sourceId: string;
+  private serverInfo: XtreamServerInfo | null = null;
 
   constructor(config: XtreamConfig, sourceId: string) {
     // Normalize base URL (remove trailing slash)
@@ -101,12 +103,25 @@ export class XtreamClient {
       }
     }
 
-    // Fallback to regular fetch (works in Node.js or when CORS is not an issue)
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Xtream API error: ${response.status} ${response.statusText}`);
+    // Node (the data process) and any context without the proxy: same empty-200
+    // retry and the same parse diagnostics as above.
+    for (let attempt = 1; ; attempt++) {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`Xtream API error: ${response.status} ${response.statusText}`);
+      }
+      const body = await response.text();
+      if (body.length === 0 && attempt === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        continue;
+      }
+      try {
+        return JSON.parse(body);
+      } catch (error) {
+        const head = body.length > 0 ? `, starts with ${JSON.stringify(body.slice(0, 120))}` : '';
+        throw new Error(`Xtream API returned unparseable JSON (HTTP ${response.status}, ${body.length} bytes${head}): ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
-    return response.json();
   }
 
   // ===========================================================================
@@ -124,6 +139,7 @@ export class XtreamClient {
       if (info.user_info.auth !== 1) {
         return { success: false, error: 'Authentication failed' };
       }
+      this.serverInfo = info.server_info ?? null;
       return { success: true, info };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -295,6 +311,14 @@ export class XtreamClient {
   getEpgUrl(): string {
     const { baseUrl, username, password } = this.config;
     return `${baseUrl}/xmltv.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+  }
+
+  // The guide URL the panel advertises in server_info (host and port can differ
+  // from the base URL). Known only after a successful testConnection().
+  getServerEpgUrl(): string | undefined {
+    if (!this.serverInfo?.url || !this.serverInfo.port) return undefined;
+    const { username, password } = this.config;
+    return `${this.serverInfo.url}:${this.serverInfo.port}/xmltv.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
   }
 
   async getShortEpg(streamId: string, limit = 4): Promise<XtreamEpgEntry[]> {
