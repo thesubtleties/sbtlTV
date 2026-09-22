@@ -31,6 +31,9 @@ importers:
       '@sbtltv/core':
         specifier: workspace:*
         version: link:../core
+      '@sbtltv/local-adapter':
+        specifier: workspace:*
+        version: link:../local-adapter
       electron-store:
         specifier: ^11.0.2
         version: 11.0.2
@@ -44,6 +47,9 @@ importers:
       electron-builder:
         specifier: ^26.4.0
         version: 26.4.0(electron-builder-squirrel-windows@26.4.0)
+      esbuild:
+        specifier: ^0.27.2
+        version: 0.27.2
       typescript:
         specifier: ^5.3.0
         version: 5.9.3

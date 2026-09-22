@@ -11,10 +11,10 @@
   "type": "module",
   "main": "./dist/main.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/bundle-data.mjs",
     "dev": "electron . --dev",
     "start": "electron .",
-    "test": "tsc && node --experimental-vm-modules --test dist/gpu-selection.test.js dist/preload-shared-texture.test.js dist/mpv-texture-bridge.test.js dist/data/schema.test.js dist/data/queries.test.js dist/data/writes.test.js",
+    "test": "tsc && node scripts/bundle-data.mjs && node --experimental-vm-modules --test dist/gpu-selection.test.js dist/preload-shared-texture.test.js dist/mpv-texture-bridge.test.js dist/data/schema.test.js dist/data/queries.test.js dist/data/writes.test.js dist/data/epg-source.test.js",
     "test:playback": "electron tests/native-playback.cjs",
     "typecheck": "tsc --noEmit",
     "pack": "electron-builder --dir",
@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@sbtltv/core": "workspace:*",
+    "@sbtltv/local-adapter": "workspace:*",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3"
   },
@@ -34,6 +35,7 @@
   "devDependencies": {
     "electron": "^44.3.0",
     "electron-builder": "^26.4.0",
+    "esbuild": "^0.27.2",
     "typescript": "^5.3.0"
   }
 }
