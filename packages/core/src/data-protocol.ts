@@ -113,6 +113,7 @@ export interface SyncProgress {
   state: 'started' | 'finished' | 'failed';
   message?: string;
   counts?: Record<string, number>;
+  seriesId?: string;     // episodes stage only
 }
 export type DataEvent =
   | { kind: 'changed'; table: DataTable; sourceId: string | null }

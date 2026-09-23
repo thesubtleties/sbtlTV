@@ -90,10 +90,19 @@ export async function syncVod(ctx: StageContext, source: Source, client: VodClie
 }
 
 export async function syncEpisodes(ctx: StageContext, source: Source, client: VodClient, seriesId: string): Promise<number> {
-  const seasons = await client.getSeriesInfo(seriesId);
-  const episodes = seasons.flatMap((s) => s.episodes.map((e) => ({ ...e, source_id: source.id })));
-  ctx.changed(replaceEpisodes(ctx.db, seriesId, episodes), source.id);
-  return episodes.length;
+  ctx.progress({ sourceId: source.id, stage: 'episodes', state: 'started', seriesId });
+  try {
+    const seasons = await client.getSeriesInfo(seriesId);
+    const episodes = seasons.flatMap((s) => s.episodes.map((e) => ({ ...e, source_id: source.id })));
+    ctx.changed(replaceEpisodes(ctx.db, seriesId, episodes), source.id);
+    ctx.progress({ sourceId: source.id, stage: 'episodes', state: 'finished', seriesId, counts: { episodes: episodes.length } });
+    return episodes.length;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    ctx.log('vod', `Episode fetch failed for ${seriesId}: ${message}`);
+    ctx.progress({ sourceId: source.id, stage: 'episodes', state: 'failed', seriesId, message });
+    return 0;
+  }
 }
 
 // Matches rows that have never been attempted. match_attempted survives resyncs now

@@ -29,6 +29,8 @@ export function startDataHost(opts: DataHostOptions): DataHost {
   let ready = false;
   let stopping = false;
   let restarts = 0;
+  let fatal = false;
+  let restartTimer: NodeJS.Timeout | null = null;
   const wanting = new Set<WebContents>();
 
   const send = (m: ControlMessage, ports: MessagePortMain[] = []) => child?.postMessage(m, ports);
@@ -41,8 +43,11 @@ export function startDataHost(opts: DataHostOptions): DataHost {
   }
 
   function spawn(): void {
+    if (stopping) return;
+    restartTimer = null;
     const entry = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data-process.js');
     ready = false;
+    fatal = false;
     child = utilityProcess.fork(entry, [], { serviceName: 'sbtltv-data', stdio: 'pipe' });
     child.stdout?.on('data', (d) => opts.log('data', String(d).trimEnd()));
     child.stderr?.on('data', (d) => opts.log('data', `stderr: ${String(d).trimEnd()}`));
@@ -55,16 +60,22 @@ export function startDataHost(opts: DataHostOptions): DataHost {
           break;
         case 'log': opts.log(m.category, m.message); break;
         case 'sync': opts.onSync(m.progress); break;
-        case 'fatal': opts.log('data', `fatal: ${m.error}`); break;
+        case 'fatal': fatal = true; opts.log('data', `FATAL: ${m.error}`); break;
       }
     });
     child.on('exit', (code) => {
       child = null; ready = false;
       if (stopping) return;
+      if (fatal) {
+        // A deterministic startup failure (migration, unreadable file): a restart
+        // would only loop. The log has the reason; the app keeps running without data.
+        opts.log('data', `data process exited with ${code} after a fatal error; not restarting`);
+        return;
+      }
       restarts++;
       const delay = Math.min(30_000, 1000 * 2 ** restarts);
       opts.log('data', `data process exited with ${code}; restarting in ${delay}ms`);
-      setTimeout(spawn, delay);
+      restartTimer = setTimeout(spawn, delay);
     });
     send({ type: 'init', dbPath: opts.dbPath, tempDir: opts.tempDir, sources: opts.getSources(), settings: opts.getSettings() });
   }
@@ -78,6 +89,10 @@ export function startDataHost(opts: DataHostOptions): DataHost {
       if (!wanting.has(wc)) { wanting.add(wc); wc.once('destroyed', () => wanting.delete(wc)); }
       if (ready) givePort(wc);
     },
-    shutdown: () => { stopping = true; send({ type: 'shutdown' }); },
+    shutdown: () => {
+      stopping = true;
+      if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+      send({ type: 'shutdown' });
+    },
   };
 }

@@ -1,9 +1,10 @@
 /**
- * Sync worker: the one thread that writes to the data file. Runs sync jobs one
- * at a time on request from the data process and reports log lines, progress,
- * and changed tables back to it.
+ * Sync worker: one of the two threads that write to the data file. The data
+ * process hands it one job at a time (see lanes.ts) and it reports log lines,
+ * progress, changed tables, and completion back. Started with
+ * workerData.role = 'sync' (bulk syncs) or 'quick' (on-demand jobs).
  */
-import { parentPort } from 'node:worker_threads';
+import { parentPort, workerData } from 'node:worker_threads';
 import type { Source, DataSettings, DataTable, SyncProgress, Channel } from '@sbtltv/core';
 import { configureTmdbExportFetch } from '@sbtltv/core';
 import { openDatabase } from './db.js';
@@ -12,18 +13,17 @@ import { syncChannels, makeXtreamClient } from './sync-channels.js';
 import { syncEpg } from './sync-epg.js';
 import { syncVod, syncEpisodes, matchTmdb } from './sync-vod.js';
 import { deleteSource, clearAll, updateVodDetails } from './writes.js';
-import { isSameJob, type SyncJob } from './router.js';
+import type { SyncJob } from './router.js';
 
 if (!parentPort) throw new Error('sync-worker must run as a worker thread');
 const port = parentPort;
 const post = (m: unknown) => port.postMessage(m);
+const role: string = (workerData as { role?: string } | undefined)?.role ?? 'sync';
 
 let db: ReturnType<typeof openDatabase> | null = null;
 let sources: Source[] = [];
 let settings: DataSettings = { epgRefreshHours: 6, vodRefreshHours: 24, allowLanSources: false, debugLoggingEnabled: false };
 let tempDir = '';
-const queue: SyncJob[] = [];
-let running = false;
 
 function ctx(): StageContext {
   return {
@@ -34,9 +34,9 @@ function ctx(): StageContext {
   };
 }
 
-// The guide selection mirrors sync.ts: auto-load means the panel's built-in
-// guide for Xtream (or the playlist's url-tvg for M3U); a manual override URL
-// is used only when auto-load is off.
+// The guide selection mirrors the old renderer sync: auto-load means the panel's
+// built-in guide for Xtream (or the playlist's url-tvg for M3U); a manual
+// override URL is used only when auto-load is off.
 async function syncGuide(c: StageContext, source: Source, channels: Channel[], playlistEpgUrl: string | undefined): Promise<void> {
   const shouldLoadEpg = source.auto_load_epg ?? source.type === 'xtream';
   if (shouldLoadEpg && source.type === 'xtream') {
@@ -97,23 +97,19 @@ async function run(job: SyncJob): Promise<void> {
   }
 }
 
-async function pump(): Promise<void> {
-  if (running) return;
-  running = true;
-  while (queue.length > 0) {
-    const job = queue.shift()!;
-    try { await run(job); } catch (e) { post({ type: 'log', category: 'sync', message: `Job ${job.kind} crashed: ${e instanceof Error ? e.stack ?? e.message : String(e)}` }); }
-  }
-  running = false;
-  post({ type: 'idle' });
-}
-
 port.on('message', (m: { type: string } & Record<string, unknown>) => {
   switch (m.type) {
     case 'init':
       tempDir = m.tempDir as string;
       settings = m.settings as DataSettings;
-      db = openDatabase(m.dbPath as string, { readOnly: false, log: (msg) => post({ type: 'log', category: 'data', message: msg }) });
+      try {
+        db = openDatabase(m.dbPath as string, { readOnly: false, busyTimeoutMs: 30_000, log: (msg) => post({ type: 'log', category: 'data', message: msg }) });
+      } catch (e) {
+        // A migration that fails or a file newer than this build: report and
+        // stop; the data process decides whether that is fatal for the app.
+        post({ type: 'fatal', error: `${role} worker could not open the data file: ${e instanceof Error ? e.stack ?? e.message : String(e)}` });
+        return;
+      }
       configureTmdbExportFetch({
         async fetchText(url) { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); },
         async fetchBinary(url) { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return new Uint8Array(await r.arrayBuffer()); },
@@ -124,8 +120,9 @@ port.on('message', (m: { type: string } & Record<string, unknown>) => {
     case 'settings': settings = m.settings as DataSettings; break;
     case 'job': {
       const job = m.job as SyncJob;
-      if (!queue.some((q) => isSameJob(q, job))) queue.push(job);
-      void pump();
+      run(job)
+        .catch((e) => post({ type: 'log', category: 'sync', message: `Job ${job.kind} crashed: ${e instanceof Error ? e.stack ?? e.message : String(e)}` }))
+        .finally(() => post({ type: 'job-finished', job }));
       break;
     }
     case 'shutdown': db?.close(); process.exit(0);

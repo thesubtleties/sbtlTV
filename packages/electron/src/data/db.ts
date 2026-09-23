@@ -5,10 +5,14 @@ import { migrate } from './schema.js';
 export interface OpenOptions {
   readOnly: boolean;
   log?: (message: string) => void;
+  // How long a statement waits for a lock held by another connection. Writers
+  // on the two sync lanes wait for each other's transactions (a guide replace
+  // commits in a few seconds); readers under WAL rarely wait at all.
+  busyTimeoutMs?: number;
 }
 
 function tryOpen(path: string, opts: OpenOptions): DatabaseSync {
-  const db = new DatabaseSync(path, { readOnly: opts.readOnly, timeout: 5000 });
+  const db = new DatabaseSync(path, { readOnly: opts.readOnly, timeout: opts.busyTimeoutMs ?? 5000 });
   try {
     if (!opts.readOnly) {
       db.exec('pragma journal_mode = wal');
@@ -24,6 +28,9 @@ function tryOpen(path: string, opts: OpenOptions): DatabaseSync {
   return db;
 }
 
+// quick_check rather than the spec's integrity_check: it runs on every launch
+// against a file that can reach hundreds of MB, and skips only the exhaustive
+// index cross-checks. Everything in the file is rebuildable anyway.
 function healthy(db: DatabaseSync): boolean {
   try {
     const row = db.prepare('pragma quick_check').get() as { quick_check: string };
