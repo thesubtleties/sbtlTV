@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { DataClient } from './client';
 
 // A fake MessagePort pair with the subset the client uses.
@@ -71,5 +71,25 @@ describe('DataClient', () => {
     const pending = client.query({ type: 'channelCount', sourceIds: [] });
     client.attach(renderer);
     expect(await pending).toBe(4);
+  });
+});
+
+describe('DataClient port acquisition', () => {
+  it('keeps asking for a port until one is attached', () => {
+    vi.useFakeTimers();
+    try {
+      const [renderer] = pair();
+      const client = new DataClient();
+      let asks = 0;
+      client.requestPortUntilAttached(() => asks++, 1000);
+      expect(asks).toBe(1);
+      vi.advanceTimersByTime(2500);
+      expect(asks).toBe(3);
+      client.attach(renderer);
+      vi.advanceTimersByTime(5000);
+      expect(asks).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

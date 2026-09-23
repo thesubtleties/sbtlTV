@@ -1609,8 +1609,7 @@ app.whenReady().then(async () => {
   if (compatibilityModeRequested) compatibilityHandoff = consumeCompatibilityHandoff();
   else discardStaleCompatibilityHandoff();
 
-  await createWindow();
-
+  // Before the window: the page asks for its data port as soon as it loads.
   dataHost = startDataHost({
     dbPath: path.join(app.getPath('userData'), 'sbtltv-data.sqlite'),
     tempDir: app.getPath('temp'),
@@ -1622,6 +1621,8 @@ app.whenReady().then(async () => {
     log: (category, message) => debugLog(message, category),
     onSync: () => {},
   });
+
+  await createWindow();
 
   if (USE_NATIVE_MPV) {
     let nativeSuccess = false;

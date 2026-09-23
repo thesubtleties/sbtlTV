@@ -47,10 +47,24 @@ export class DataClient {
   private queued: unknown[] = [];
   private subs = new Map<DataTable, Set<() => void>>();
   private syncSubs = new Set<(p: SyncProgress) => void>();
+  private portTimer: ReturnType<typeof setInterval> | null = null;
   private readyResolve!: () => void;
   ready: Promise<void> = new Promise((r) => { this.readyResolve = r; });
 
+  // Asks main for a port now and again every `intervalMs` until one arrives.
+  // Main may not be ready to answer the first request (the page can load before
+  // the data host exists), and a restarted data process needs a fresh port.
+  requestPortUntilAttached(request: () => void, intervalMs = 2000): void {
+    if (this.portTimer) clearInterval(this.portTimer);
+    request();
+    this.portTimer = setInterval(() => {
+      if (this.port) { clearInterval(this.portTimer!); this.portTimer = null; return; }
+      request();
+    }, intervalMs);
+  }
+
   attach(port: MessagePort): void {
+    if (this.portTimer) { clearInterval(this.portTimer); this.portTimer = null; }
     this.port = port;
     port.addEventListener('message', (e: MessageEvent) => this.onMessage(e.data));
     port.start();
@@ -102,5 +116,5 @@ if (typeof window !== 'undefined') {
   window.addEventListener('message', (e) => {
     if (e.source === window && e.data === 'data-port' && e.ports[0]) data.attach(e.ports[0]);
   });
-  window.data?.requestPort();
+  data.requestPortUntilAttached(() => window.data?.requestPort());
 }

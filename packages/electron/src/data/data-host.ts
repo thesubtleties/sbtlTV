@@ -37,6 +37,7 @@ export function startDataHost(opts: DataHostOptions): DataHost {
     const { port1, port2 } = new MessageChannelMain();
     send({ type: 'renderer-port' }, [port1]);
     wc.postMessage('data-port', null, [port2]);
+    opts.log('data', `renderer port handed to webContents ${wc.id}`);
   }
 
   function spawn(): void {
