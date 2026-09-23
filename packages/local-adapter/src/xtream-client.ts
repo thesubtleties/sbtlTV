@@ -12,6 +12,7 @@
  */
 
 import type { Channel, Category, Movie, Series, Season } from '@sbtltv/core';
+import { guardedFetch } from './fetch-guard';
 
 export interface XtreamConfig {
   baseUrl: string;
@@ -105,7 +106,7 @@ export class XtreamClient {
     // Node (the data process) and any context without the proxy: same empty-200
     // retry and the same parse diagnostics as above.
     for (let attempt = 1; ; attempt++) {
-      const response = await fetch(url, { cache: 'no-store' });
+      const response = await guardedFetch(url, { cache: 'no-store' });
       if (!response.ok) {
         throw new Error(`Xtream API error: ${response.status} ${response.statusText}`);
       }

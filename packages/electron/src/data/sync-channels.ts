@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { Source, Channel, Category, DataTable, SyncProgress } from '@sbtltv/core';
 import { XtreamClient, fetchAndParseM3U, parseM3U } from '@sbtltv/local-adapter';
+import { checkProviderUrl, redactUrl } from '@sbtltv/core';
 import { replaceChannels, setSourceError } from './writes.js';
 
 export interface StageContext {
@@ -48,11 +49,13 @@ export async function syncChannels(ctx: StageContext, source: Source, client: Ch
       channels = parsed.channels; categories = parsed.categories; epgUrl = parsed.epgUrl ?? undefined;
       ctx.log('sync', `Imported M3U parsed: ${channels.length} channels, ${categories.length} categories`);
     } else if (source.type === 'm3u') {
-      ctx.log('sync', `Fetching M3U from: ${source.url}`);
+      checkProviderUrl(source.url, ctx.allowLanSources);
+      ctx.log('sync', `Fetching M3U from: ${redactUrl(source.url)}`);
       const parsed = await fetchAndParseM3U(source.url, source.id);
       channels = parsed.channels; categories = parsed.categories; epgUrl = parsed.epgUrl ?? undefined;
       ctx.log('sync', `M3U parsed: ${channels.length} channels, ${categories.length} categories`);
     } else if (source.type === 'xtream' && client) {
+      checkProviderUrl(source.url, ctx.allowLanSources);
       ctx.log('sync', 'Testing Xtream connection...');
       assertConnected(await client.testConnection());
       ctx.log('sync', 'Connection test passed');

@@ -6,7 +6,8 @@
  */
 import { parentPort, workerData } from 'node:worker_threads';
 import type { Source, DataSettings, DataTable, SyncProgress, Channel } from '@sbtltv/core';
-import { configureTmdbExportFetch } from '@sbtltv/core';
+import { configureTmdbExportFetch, checkProviderUrl } from '@sbtltv/core';
+import { setUrlGuard } from '@sbtltv/local-adapter';
 import { openDatabase } from './db.js';
 import type { StageContext } from './sync-channels.js';
 import { syncChannels, makeXtreamClient } from './sync-channels.js';
@@ -102,6 +103,8 @@ port.on('message', (m: { type: string } & Record<string, unknown>) => {
     case 'init':
       tempDir = m.tempDir as string;
       settings = m.settings as DataSettings;
+      // Provider requests made by the clients in this thread obey the LAN setting.
+      setUrlGuard((url) => checkProviderUrl(url, settings.allowLanSources));
       try {
         db = openDatabase(m.dbPath as string, { readOnly: false, busyTimeoutMs: 30_000, log: (msg) => post({ type: 'log', category: 'data', message: msg }) });
       } catch (e) {

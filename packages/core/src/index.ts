@@ -12,3 +12,4 @@ export * from './epg-types';
 export * from './epg-matcher';
 export * from './epg-links';
 export * from './tmdb-exports';
+export * from './url-guard';

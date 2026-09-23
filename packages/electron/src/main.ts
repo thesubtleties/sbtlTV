@@ -1477,6 +1477,8 @@ function isAllowedBinaryUrl(url: string, allowLan: boolean): boolean {
 
 // SSRF protection - block requests to internal/private networks
 // These patterns match localhost, private IP ranges, and cloud metadata endpoints
+// Kept in step with packages/core/src/url-guard.ts, which the data process uses
+// for provider requests; main cannot import workspace TypeScript at runtime.
 const BLOCKED_URL_PATTERNS = [
   /^https?:\/\/localhost(?::\d+)?(?:\/|$)/i,
   /^https?:\/\/127\.\d+\.\d+\.\d+/,

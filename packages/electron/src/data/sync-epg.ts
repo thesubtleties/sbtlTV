@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import type { Source, Channel } from '@sbtltv/core';
-import { matchChannelsToEpg, buildEpgLinks } from '@sbtltv/core';
+import { matchChannelsToEpg, buildEpgLinks, redactUrl } from '@sbtltv/core';
 import type { StageContext } from './sync-channels.js';
 import { replaceEpg } from './writes.js';
 import type { EpgProgramInput } from './writes.js';
@@ -19,13 +19,13 @@ export async function syncEpg(ctx: StageContext, source: Source, channels: Chann
   const failedUrls: string[] = [];
   try {
     for (const url of urls) {
-      ctx.log('epg', `Fetching XMLTV from: ${url}`);
+      ctx.log('epg', `Fetching XMLTV from: ${redactUrl(url)}`);
       let tmp: string;
       try {
-        tmp = await downloadToTempFile(url, ctx.tempDir, (m) => ctx.log('net', m));
+        tmp = await downloadToTempFile(url, ctx.tempDir, (m) => ctx.log('net', m), ctx.allowLanSources);
       } catch (e) {
-        failedUrls.push(url);
-        ctx.log('epg', `EPG WARNING: fetch failed for ${url}: ${e instanceof Error ? e.message : String(e)}`);
+        failedUrls.push(redactUrl(url));
+        ctx.log('epg', `EPG WARNING: fetch failed for ${redactUrl(url)}: ${e instanceof Error ? e.message : String(e)}`);
         continue;
       }
       let xmlPath = tmp;

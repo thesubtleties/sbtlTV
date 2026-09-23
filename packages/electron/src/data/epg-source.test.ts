@@ -44,3 +44,47 @@ test('parseXmltvFile keeps only programmes for channels the provider has when a 
   assert.equal(parsed.programs[0].startMs, Date.UTC(2026, 8, 21, 12));
   assert.equal(parsed.programs[0].endMs, Date.UTC(2026, 8, 21, 13));
 });
+
+import { createServer } from 'node:http';
+import { downloadToTempFile } from './epg-source.js';
+import { readFileSync } from 'node:fs';
+
+function serve(handler: Parameters<typeof createServer>[1]): Promise<{ url: string; close: () => void }> {
+  return new Promise((resolve) => {
+    const server = createServer(handler);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as { port: number };
+      resolve({ url: `http://127.0.0.1:${port}`, close: () => server.close() });
+    });
+  });
+}
+
+test('downloadToTempFile follows a redirect, then refuses one that leads to the local network when LAN is off', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'epg-'));
+  const { url, close } = await serve((req, res) => {
+    if (req.url === '/hop') { res.writeHead(302, { Location: '/guide.xml' }); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'application/xml' }); res.end(XML);
+  });
+  try {
+    // A loopback server is itself a LAN address, so this only works with LAN allowed.
+    const saved = await downloadToTempFile(`${url}/hop`, dir, () => {}, true);
+    assert.equal(readFileSync(saved, 'utf8'), XML);
+    await assert.rejects(downloadToTempFile(`${url}/hop`, dir, () => {}, false), /local network/);
+  } finally {
+    close();
+  }
+});
+
+test('downloadToTempFile rejects a non-2xx and gives up after too many redirects', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'epg-'));
+  const { url, close } = await serve((req, res) => {
+    if (req.url?.startsWith('/loop')) { res.writeHead(302, { Location: '/loop' }); res.end(); return; }
+    res.writeHead(404); res.end('nope');
+  });
+  try {
+    await assert.rejects(downloadToTempFile(`${url}/missing`, dir, () => {}, true), /HTTP 404/);
+    await assert.rejects(downloadToTempFile(`${url}/loop`, dir, () => {}, true), /redirect/);
+  } finally {
+    close();
+  }
+});

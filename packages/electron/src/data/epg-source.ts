@@ -14,7 +14,7 @@ import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { matchChannelsToEpg } from '@sbtltv/core';
+import { matchChannelsToEpg, checkProviderUrl, redactUrl } from '@sbtltv/core';
 import type { Channel, EpgChannelInfo } from '@sbtltv/core';
 
 export const MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024 * 1024;   // 4GB on disk (an Xtream xmltv.php is often plain XML)
@@ -38,16 +38,21 @@ function sizeGuard(limit: number, what: string): Transform {
   });
 }
 
-function get(url: string, redirects = 0): Promise<http.IncomingMessage> {
+const MAX_REDIRECTS = 5;
+
+// Every hop, including redirect targets, is checked against the LAN block.
+function get(url: string, allowLan: boolean, redirects = 0): Promise<http.IncomingMessage> {
   return new Promise((resolve, reject) => {
+    try { checkProviderUrl(url, allowLan); } catch (e) { reject(e); return; }
     const mod = url.startsWith('https:') ? https : http;
     // Ask for the bytes as stored: with gzip accepted, some servers inflate a .gz
     // in flight and hand over the raw multi-GB XML instead of the archive.
     const req = mod.get(url, { headers: { 'Accept-Encoding': 'identity', 'Cache-Control': 'no-cache' } }, (res) => {
       const status = res.statusCode ?? 0;
-      if (status >= 300 && status < 400 && res.headers.location && redirects < 5) {
+      if (status >= 300 && status < 400 && res.headers.location) {
         res.resume();
-        resolve(get(new URL(res.headers.location, url).toString(), redirects + 1));
+        if (redirects >= MAX_REDIRECTS) { reject(new Error(`too many redirects (${MAX_REDIRECTS}) fetching ${redactUrl(url)}`)); return; }
+        resolve(get(new URL(res.headers.location, url).toString(), allowLan, redirects + 1));
         return;
       }
       if (status < 200 || status >= 300) { res.resume(); reject(new Error(`HTTP ${status}${res.statusMessage ? `: ${res.statusMessage}` : ''}`)); return; }
@@ -58,8 +63,8 @@ function get(url: string, redirects = 0): Promise<http.IncomingMessage> {
 }
 
 // Streams the response to a temp file (no ArrayBuffer size limits) and returns its path.
-export async function downloadToTempFile(url: string, tempDir: string, log: Log): Promise<string> {
-  const res = await get(url);
+export async function downloadToTempFile(url: string, tempDir: string, log: Log, allowLan: boolean): Promise<string> {
+  const res = await get(url, allowLan);
   const tmpPath = path.join(tempDir, `epg-${randomUUID()}.tmp`);
   let bytes = 0;
   const counter = new Transform({ transform(chunk: Buffer, _e, cb) { bytes += chunk.length; cb(null, chunk); } });
@@ -69,7 +74,7 @@ export async function downloadToTempFile(url: string, tempDir: string, log: Log)
     await fsp.unlink(tmpPath).catch(() => {});
     throw err;
   }
-  log(`epg-download ${res.statusCode} ${bytes}B ${url.split('?')[0]}`);
+  log(`epg-download ${res.statusCode} ${bytes}B ${redactUrl(url)}`);
   return tmpPath;
 }
 
