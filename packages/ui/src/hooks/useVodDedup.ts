@@ -163,6 +163,11 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
     if (allEpisodes) void fetchAll();
   }, [relatedKey, allEpisodes === undefined]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The fetches run in the data process; a failure for any related series arrives as a progress event.
+  useEffect(() => data.onSync((p) => {
+    if (p.stage === 'episodes' && p.state === 'failed' && p.seriesId && relatedSeriesIds.includes(p.seriesId)) setError(p.message ?? 'Failed to fetch episodes');
+  }), [relatedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Merge: prefer primary/preferred source, fill gaps
   const seasons = useMemo(() => {
     if (!allEpisodes || allEpisodes.length === 0) return {} as Record<number, StoredEpisode[]>;

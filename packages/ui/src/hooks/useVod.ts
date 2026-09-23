@@ -65,6 +65,11 @@ export function useSeriesDetails(seriesId: string | null) {
     if (seriesId && episodes && episodes.length === 0) void refetch();
   }, [seriesId, episodes?.length, refetch]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The fetch runs in the data process; its failure arrives as a progress event.
+  useEffect(() => data.onSync((p) => {
+    if (p.stage === 'episodes' && p.state === 'failed' && p.seriesId === seriesId) setError(p.message ?? 'Failed to fetch episodes');
+  }), [seriesId]);
+
   const seasons = useMemo(() => {
     const out: Record<number, StoredEpisode[]> = {};
     for (const ep of episodes ?? []) (out[ep.season_num] ??= []).push(ep);

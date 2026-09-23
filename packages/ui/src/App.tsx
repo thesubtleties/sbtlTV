@@ -520,21 +520,23 @@ function App() {
       if (result.data) useUIStore.getState().hydrateSources(result.data);
     }).catch((err) => {
       debugLog(`Loading sources failed: ${err instanceof Error ? err.message : String(err)}`, 'sync');
+      useToastStore.getState().addToast({ kind: 'error', title: 'Could not load sources', message: 'The app settings could not be read — details are in the debug log.', duration: 8000 });
     });
   }, []);
 
   useEffect(() => data.onSync((p) => {
-    // An EPG stage follows a successful channels stage, so only the EPG stage
-    // ending (or the channels stage failing) clears the channel banner.
-    if (p.stage === 'channels') {
-      if (p.state === 'started') setChannelSyncing(true);
-      if (p.state === 'failed') {
-        setChannelSyncing(false);
-        useToastStore.getState().addToast({ kind: 'error', title: 'Sync failed', message: 'Check the source and your connection — details are in the debug log.', duration: 8000 });
-      }
+    // The channel banner covers the channels stage and the guide stage that
+    // usually follows it: it clears when either stage ends, and the guide stage
+    // starting raises it again. A source with no guide only ever sends channels.
+    const toast = (title: string) => useToastStore.getState().addToast({ kind: 'error', title, message: 'Check the source and your connection — details are in the debug log.', duration: 8000 });
+    if (p.stage === 'channels' || p.stage === 'epg') {
+      setChannelSyncing(p.state === 'started');
+      if (p.state === 'failed') toast(p.stage === 'channels' ? 'Sync failed' : 'Guide sync failed');
     }
-    if (p.stage === 'epg' && p.state !== 'started') setChannelSyncing(false);
-    if (p.stage === 'vod') setVodSyncing(p.state === 'started');
+    if (p.stage === 'vod') {
+      setVodSyncing(p.state === 'started');
+      if (p.state === 'failed') toast('Library sync failed');
+    }
     if (p.stage === 'tmdb') useUIStore.getState().setTmdbMatching(p.state === 'started');
   }), [setChannelSyncing, setVodSyncing]);
 
