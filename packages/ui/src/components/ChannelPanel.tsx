@@ -61,10 +61,13 @@ export function ChannelPanel({
     channelListRef.current?.scrollToIndex({ index: 0 });
   }, [scrollTopNonce]);
 
-  // Scroll the channel list to top whenever the search query changes.
+  // Scroll the channel list to top whenever the search query or the category
+  // changes. The list used to empty for a frame between categories, which reset
+  // the scroll on its own; the data client keeps the previous rows on screen
+  // while the next category loads, so the reset is explicit now.
   useEffect(() => {
     channelListRef.current?.scrollToIndex({ index: 0 });
-  }, [searchQuery]);
+  }, [searchQuery, categoryId]);
 
   // Clear the search when switching categories - the search is scoped to the current category,
   // so a leftover query would filter the new category against the wrong term. useLayoutEffect so

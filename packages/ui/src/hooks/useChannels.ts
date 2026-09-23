@@ -123,24 +123,27 @@ export function groupProgramsByStream(streamIds: string[], rows: StoredProgram[]
 // returned so rows already on screen keep their programs instead of flashing.
 // Both EPG tables are watched so a rematch (links only) refreshes the guide.
 export function useProgramsInRange(streamIds: string[], windowStart: Date, windowEnd: Date): Map<string, StoredProgram[]> {
-  const { data } = useDataQuery(
+  const { data, stale } = useDataQuery(
     streamIds.length > 0 ? { type: 'programsInRange', streamIds, windowStartMs: windowStart.getTime(), windowEndMs: windowEnd.getTime() } : null,
     ['epg_programs', 'epg_links'],
     [streamIds.join(','), windowStart.getTime(), windowEnd.getTime()],
   );
   const last = useRef<Map<string, StoredProgram[]>>(new Map());
-  if (data) last.current = groupProgramsByStream(streamIds, data);
+  // Rows fetched for an earlier set of ids must not be grouped against the new
+  // ids: that would report every new row as "no EPG" instead of "not read yet".
+  if (data && !stale) last.current = groupProgramsByStream(streamIds, data);
   return last.current;
 }
 
 // Hook to get the current program for a list of channel IDs
 export function usePrograms(streamIds: string[]): Map<string, StoredProgram | null> {
   const nowMinute = Math.floor(Date.now() / 60_000) * 60_000;
-  const { data } = useDataQuery(
+  const { data: fetched, stale } = useDataQuery(
     streamIds.length > 0 ? { type: 'programsInRange', streamIds, windowStartMs: nowMinute, windowEndMs: nowMinute + 1 } : null,
     ['epg_programs', 'epg_links'],
     [streamIds.join(','), nowMinute],
   );
+  const data = stale ? undefined : fetched;
   return useMemo(() => {
     const result = new Map<string, StoredProgram | null>();
     for (const id of streamIds) result.set(id, null);
