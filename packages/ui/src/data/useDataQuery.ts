@@ -4,13 +4,16 @@ import { data } from './client';
 
 // Runs a query, re-runs it when any of `tables` changes, and keeps the previous
 // result while a new one is in flight (no flash to empty). `req` null = idle.
-// `deps` must change whenever `req` changes.
-export function useDataQuery<B extends DataRequestBody>(req: B | null, tables: DataTable[], deps: unknown[]): { data: ReplyForBody<B> | undefined; loading: boolean } {
-  const [result, setResult] = useState<ReplyForBody<B> | undefined>(undefined);
+// `deps` must change whenever `req` changes. `stale` is true while the data
+// on hand was fetched for a different request than the current one, so callers
+// that must not mix answers with questions (the guide's per-row "unread"
+// state) can wait for the matching reply.
+export function useDataQuery<B extends DataRequestBody>(req: B | null, tables: DataTable[], deps: unknown[]): { data: ReplyForBody<B> | undefined; loading: boolean; stale: boolean } {
+  const key = JSON.stringify(deps);
+  const [result, setResult] = useState<{ key: string; data: ReplyForBody<B> } | undefined>(undefined);
   const [loading, setLoading] = useState(req !== null);
   const reqRef = useRef(req);
   reqRef.current = req;
-  const key = JSON.stringify(deps);
   const tablesKey = tables.join(',');
 
   useEffect(() => {
@@ -23,7 +26,7 @@ export function useDataQuery<B extends DataRequestBody>(req: B | null, tables: D
       setLoading(true);
       try {
         const out = await data.query(r);
-        if (alive && mine === generation) { setResult(out); setLoading(false); }
+        if (alive && mine === generation) { setResult({ key, data: out }); setLoading(false); }
       } catch {
         if (alive && mine === generation) setLoading(false);
       }
@@ -33,5 +36,5 @@ export function useDataQuery<B extends DataRequestBody>(req: B | null, tables: D
     return () => { alive = false; unsubscribe(); };
   }, [key, tablesKey]);
 
-  return { data: result, loading };
+  return { data: result?.data, loading, stale: result !== undefined && result.key !== key };
 }
