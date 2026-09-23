@@ -108,3 +108,15 @@ test('two sources sharing one guide keep their own programme rows', () => {
   const rest = runQuery(db, { id: 2, type: 'programsInRange', streamIds: ['s2_20'], windowStartMs: 9000, windowEndMs: 9600 }) as { title: string }[];
   assert.deepEqual(rest.map((r) => r.title), ['Late'], 'deleting the other source leaves this guide intact');
 });
+
+test('replaceVod keeps details the provider stopped sending', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec("update vod_movies set plot = 'from tmdb', \"cast\" = 'Pacino', genre = 'Crime' where stream_id = 's1_m1'");
+  replaceVod(db, 's1', {
+    categories: [],
+    movies: [{ stream_id: 's1_m1', source_id: 's1', name: 'Heat', stream_icon: '', category_ids: [], direct_url: 'http://x/m1', genre: 'Thriller' }],
+    series: [],
+  });
+  const m = db.prepare("select plot, \"cast\", genre from vod_movies where stream_id='s1_m1'").get() as { plot: string; cast: string; genre: string };
+  assert.deepEqual({ ...m }, { plot: 'from tmdb', cast: 'Pacino', genre: 'Thriller' });
+});

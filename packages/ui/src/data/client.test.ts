@@ -93,3 +93,15 @@ describe('DataClient port acquisition', () => {
     }
   });
 });
+
+describe('DataClient reconnect', () => {
+  it('rejects requests that were waiting on a port that went away', async () => {
+    const [renderer] = pair();
+    const [renderer2] = pair();
+    const client = new DataClient();
+    client.attach(renderer);
+    const hung = client.query({ type: 'channelCount', sourceIds: [] });
+    client.attach(renderer2);
+    await expect(hung).rejects.toThrow(/reconnected/);
+  });
+});

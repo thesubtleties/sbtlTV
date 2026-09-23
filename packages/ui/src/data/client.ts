@@ -52,8 +52,8 @@ export class DataClient {
   ready: Promise<void> = new Promise((r) => { this.readyResolve = r; });
 
   // Asks main for a port now and again every `intervalMs` until one arrives.
-  // Main may not be ready to answer the first request (the page can load before
-  // the data host exists), and a restarted data process needs a fresh port.
+  // The data process is forked before the window loads, but it answers only
+  // once its database is open, and a restarted process needs a fresh port.
   requestPortUntilAttached(request: () => void, intervalMs = 2000): void {
     if (this.portTimer) clearInterval(this.portTimer);
     request();
@@ -65,6 +65,11 @@ export class DataClient {
 
   attach(port: MessagePort): void {
     if (this.portTimer) { clearInterval(this.portTimer); this.portTimer = null; }
+    if (this.port) {
+      // A replacement port means the data process restarted: replies to
+      // requests sent on the old port will never come.
+      for (const [id, p] of this.pending) { this.pending.delete(id); p.reject(new Error('data process reconnected; request lost')); }
+    }
     this.port = port;
     port.addEventListener('message', (e: MessageEvent) => this.onMessage(e.data));
     port.start();

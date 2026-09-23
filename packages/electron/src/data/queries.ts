@@ -134,7 +134,9 @@ export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
         movies: (stmt(db, `select count(*) as c from vod_movies where ${SRC}`).get({ $sources: j(req.sourceIds) }) as { c: number }).c,
         series: (stmt(db, `select count(*) as c from vod_series where ${SRC}`).get({ $sources: j(req.sourceIds) }) as { c: number }).c,
       };
-    case 'syncNow': case 'syncEpisodes': case 'rematchEpg': case 'clearAll':
+    case 'syncNow': case 'syncEpisodes': case 'rematchEpg': case 'updateVodDetails': case 'importPlaylist': case 'clearAll':
       throw new Error(`unsupported on the read connection: ${req.type}`);
+    default:
+      throw new Error(`unknown request type: ${String((req as { type: unknown }).type)}`);
   }
 }

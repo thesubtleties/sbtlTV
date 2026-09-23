@@ -65,13 +65,17 @@ export function replaceVod(db: DatabaseSync, sourceId: string, input: { movies: 
   return tx(db, () => {
     // Enrichment columns (imdb_id, backdrop_path, popularity, match_attempted, added) are never
     // overwritten here; the upsert only touches provider fields. A provider-supplied tmdb_id is
-    // stored on insert and never replaces one already on the row.
+    // stored on insert and never replaces one already on the row. Descriptive fields the
+    // provider leaves empty keep whatever is stored (the lazily fetched TMDB plot, cast, genre).
     const upM = db.prepare(`
       insert into vod_movies(stream_id, source_id, name, title, year, stream_icon, direct_url, plot, "cast", director, genre, release_date, duration, rating, tmdb_id, added)
       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(stream_id) do update set name = excluded.name, title = excluded.title, year = excluded.year, stream_icon = excluded.stream_icon,
-        direct_url = excluded.direct_url, plot = excluded.plot, "cast" = excluded."cast", director = excluded.director, genre = excluded.genre,
-        release_date = excluded.release_date, duration = excluded.duration, rating = excluded.rating,
+        direct_url = excluded.direct_url,
+        plot = coalesce(nullif(excluded.plot, ''), vod_movies.plot), "cast" = coalesce(nullif(excluded."cast", ''), vod_movies."cast"),
+        director = coalesce(nullif(excluded.director, ''), vod_movies.director), genre = coalesce(nullif(excluded.genre, ''), vod_movies.genre),
+        release_date = coalesce(nullif(excluded.release_date, ''), vod_movies.release_date), duration = coalesce(excluded.duration, vod_movies.duration),
+        rating = coalesce(nullif(excluded.rating, ''), vod_movies.rating),
         tmdb_id = coalesce(vod_movies.tmdb_id, excluded.tmdb_id)`);
     const now = Date.now();
     for (const m of input.movies) upM.run(m.stream_id, sourceId, m.name, m.title ?? null, m.year ?? null, m.stream_icon ?? '', m.direct_url, m.plot ?? null, m.cast ?? null, m.director ?? null, m.genre ?? null, m.release_date ?? null, m.duration ?? null, m.rating ?? null, m.tmdb_id ?? null, now);
@@ -81,7 +85,9 @@ export function replaceVod(db: DatabaseSync, sourceId: string, input: { movies: 
       insert into vod_series(series_id, source_id, name, title, year, cover, plot, "cast", genre, release_date, rating, tmdb_id, added)
       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(series_id) do update set name = excluded.name, title = excluded.title, year = excluded.year, cover = excluded.cover,
-        plot = excluded.plot, "cast" = excluded."cast", genre = excluded.genre, release_date = excluded.release_date, rating = excluded.rating,
+        plot = coalesce(nullif(excluded.plot, ''), vod_series.plot), "cast" = coalesce(nullif(excluded."cast", ''), vod_series."cast"),
+        genre = coalesce(nullif(excluded.genre, ''), vod_series.genre), release_date = coalesce(nullif(excluded.release_date, ''), vod_series.release_date),
+        rating = coalesce(nullif(excluded.rating, ''), vod_series.rating),
         tmdb_id = coalesce(vod_series.tmdb_id, excluded.tmdb_id)`);
     for (const s of input.series) upS.run(s.series_id, sourceId, s.name, s.title ?? null, s.year ?? null, s.cover ?? '', s.plot ?? null, s.cast ?? null, s.genre ?? null, s.release_date ?? null, s.rating ?? null, s.tmdb_id ?? null, now);
     const keepSeries = j(input.series.map((s) => s.series_id));
@@ -124,7 +130,7 @@ export function applyTmdbMatches(db: DatabaseSync, kind: 'movie' | 'series', mat
   });
 }
 
-// Details fetched lazily from TMDB (plot, genre, cast, director) fill empty columns only.
+// Details fetched lazily from TMDB (plot, genre, cast, backdrop_path, and director for movies) fill empty columns only.
 export function updateVodDetails(db: DatabaseSync, kind: 'movie' | 'series', itemId: string, fields: VodDetailFields): DataTable[] {
   const table = kind === 'movie' ? 'vod_movies' : 'vod_series';
   const key = kind === 'movie' ? 'stream_id' : 'series_id';

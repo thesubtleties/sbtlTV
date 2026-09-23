@@ -68,3 +68,21 @@ test('isSameJob matches jobs that would do identical work', () => {
   // Content-bearing jobs are never collapsed: two imports may carry different playlists.
   assert.ok(!isSameJob({ kind: 'importPlaylist', sourceId: 's1', content: 'a' }, { kind: 'importPlaylist', sourceId: 's1', content: 'b' }));
 });
+
+test('malformed but well-typed requests are refused before they reach the database', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const replies: DataReply[] = [];
+  routeRendererMessage(db, { id: 20, type: 'channels', categoryId: null, sourceIds: 'oops', sort: 'alphabetical' }, (r) => replies.push(r), () => {});
+  routeRendererMessage(db, { id: 21, type: 'channelSearch', query: 'a', sourceIds: [], limit: -1 }, (r) => replies.push(r), () => {});
+  routeRendererMessage(db, { id: 22, type: 'channelsByIds', streamIds: new Array(100_001).fill('x') }, (r) => replies.push(r), () => {});
+  routeRendererMessage(db, { id: 23, type: 'programsInRange', streamIds: ['s1_10'], windowStartMs: 'now', windowEndMs: 1 }, (r) => replies.push(r), () => {});
+  assert.deepEqual(replies.map((r) => [r.id, r.ok]), [[20, false], [21, false], [22, false], [23, false]]);
+  assert.ok(replies.every((r) => !r.ok && /invalid request/.test(r.error)));
+});
+
+test('a limit above the cap is clamped rather than refused', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const replies: DataReply[] = [];
+  routeRendererMessage(db, { id: 24, type: 'movies', by: { kind: 'popular' }, sourceIds: [], limit: 1_000_000 }, (r) => replies.push(r), () => {});
+  assert.equal(replies[0].ok, true);
+});

@@ -73,7 +73,9 @@ export async function syncVod(ctx: StageContext, source: Source, client: VodClie
       ...(useMovies ? movieCats!.map((c) => ({ category_id: c.category_id, name: c.category_name, type: 'movie' as const })) : existingCats.filter((c) => c.type === 'movie')),
       ...(useSeries ? seriesCats!.map((c) => ({ category_id: c.category_id, name: c.category_name, type: 'series' as const })) : existingCats.filter((c) => c.type === 'series')),
     ];
-    const removedMovies = useMovies ? existingMovies - count(ctx.db, `select count(*) c from vod_movies where source_id = ? and stream_id in (select value from json_each('${JSON.stringify(keepMovies.map((m) => m.stream_id)).replace(/'/g, "''")}'))`, source.id) : 0;
+    const removedMovies = useMovies
+      ? existingMovies - (ctx.db.prepare('select count(*) c from vod_movies where source_id = ? and stream_id in (select value from json_each(?))').get(source.id, JSON.stringify(keepMovies.map((m) => m.stream_id))) as { c: number }).c
+      : 0;
     const t0 = Date.now();
     const tables = replaceVod(ctx.db, source.id, { movies: keepMovies, series: keepSeries, categories });
     ctx.changed(tables, source.id);
