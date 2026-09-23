@@ -105,3 +105,21 @@ describe('DataClient reconnect', () => {
     await expect(hung).rejects.toThrow(/reconnected/);
   });
 });
+
+describe('DataClient date and JSON revival', () => {
+  it('revives movie dates and episode info', async () => {
+    const [renderer, server] = pair();
+    server.addEventListener('message', (e: { data: unknown }) => {
+      const req = e.data as { id: number; type: string };
+      if (req.type === 'movies') server.postMessage({ id: req.id, ok: true, data: [{ stream_id: 'm', added: 1000, match_attempted: null }] });
+      if (req.type === 'episodes') server.postMessage({ id: req.id, ok: true, data: [{ id: 'e1', info: '{"rating":8}' }, { id: 'e2', info: '{broken' }, { id: 'e3', info: null }] });
+    });
+    const client = new DataClient();
+    client.attach(renderer);
+    const [movie] = await client.query({ type: 'movies', by: { kind: 'all' }, sourceIds: [] });
+    expect(movie.added).toBeInstanceOf(Date);
+    expect(movie.match_attempted).toBeNull();
+    const episodes = await client.query({ type: 'episodes', seriesIds: ['s'] });
+    expect(episodes.map((e) => e.info)).toEqual([{ rating: 8 }, undefined, undefined]);
+  });
+});

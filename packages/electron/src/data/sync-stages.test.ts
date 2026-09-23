@@ -84,3 +84,80 @@ test('syncChannels stores an imported playlist from its content and skips it whe
   assert.equal((db.prepare("select error from sources_meta where source_id='s9'").get() as { error: string | null }).error, null);
   assert.deepEqual(progress, []);
 });
+
+import { createServer } from 'node:http';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { syncEpg } from './sync-stages.js';
+
+test('syncVod replaces movies and keeps series untouched when the series fetch rejects', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  db.exec("insert into vod_series(series_id, source_id, name, tmdb_id, plot) values ('s1_sr', 's1', 'Kept', 4607, 'a plot'); insert into vod_episodes(id, series_id, season_num, episode_num, title, direct_url) values ('s1_e1', 's1_sr', 1, 1, 'Pilot', 'u')");
+  const { c, progress } = ctx(db);
+  const vod: VodClient = {
+    async getVodCategories() { return [{ category_id: 's1_a', category_name: 'Action', source_id: 's1' }]; },
+    async getVodStreams() { return [{ stream_id: 's1_m1', name: 'Heat', stream_icon: '', category_ids: ['s1_a'], direct_url: 'u', source_id: 's1' }]; },
+    async getSeriesCategories() { throw new Error('panel down'); },
+    async getSeries() { throw new Error('panel down'); },
+    async getSeriesInfo() { return []; },
+  };
+  assert.deepEqual(await syncVod(c, source, vod), { movies: 1, series: 1 });
+  const kept = db.prepare("select name, tmdb_id, plot from vod_series where series_id='s1_sr'").get() as { name: string; tmdb_id: number; plot: string };
+  assert.deepEqual({ ...kept }, { name: 'Kept', tmdb_id: 4607, plot: 'a plot' });
+  assert.equal((db.prepare("select count(*) c from vod_episodes where series_id='s1_sr'").get() as { c: number }).c, 1);
+  assert.equal((db.prepare("select count(*) c from vod_movies where stream_id='s1_m1'").get() as { c: number }).c, 1);
+  assert.equal(progress.at(-1)?.state, 'finished');
+});
+
+const GUIDE = `<?xml version="1.0" encoding="UTF-8"?><tv>
+  <channel id="cbs.us"><display-name>CBS</display-name></channel>
+  <programme start="20260921120000 +0000" stop="20260921130000 +0000" channel="cbs.us"><title>Noon</title></programme>
+</tv>`;
+
+function serve(handler: Parameters<typeof createServer>[1]): Promise<{ url: string; close: () => void }> {
+  return new Promise((resolve) => {
+    const server = createServer(handler);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as { port: number };
+      resolve({ url: `http://127.0.0.1:${port}`, close: () => server.close() });
+    });
+  });
+}
+
+const cbs = { stream_id: 's1_10', name: 'CBS', stream_icon: '', epg_channel_id: 'cbs.us', category_ids: [], direct_url: 'u', source_id: 's1' };
+
+test('syncEpg stores the guide from the URLs that work when one of several fails', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  const { c, progress } = ctx(db);
+  c.tempDir = mkdtempSync(path.join(tmpdir(), 'epg-stage-')); c.allowLanSources = true;
+  const logs: string[] = []; c.log = (_cat, m) => logs.push(m);
+  const { url, close } = await serve((req, res) => {
+    if (req.url === '/bad') { res.writeHead(500); res.end(); return; }
+    res.writeHead(200); res.end(GUIDE);
+  });
+  try {
+    const stored = await syncEpg(c, source, [cbs], `${url}/bad, ${url}/good.xml`, 'override');
+    assert.equal(stored, 1);
+    assert.equal((db.prepare("select count(*) c from epg_links where stream_id='s1_10'").get() as { c: number }).c, 1);
+    assert.ok(logs.some((m) => /1\/2 EPG URLs failed/.test(m)));
+    assert.equal(progress.at(-1)?.state, 'finished');
+  } finally { close(); }
+});
+
+test('syncEpg keeps the old guide when nothing in the new one matches, and fails cleanly when every URL fails', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  db.exec("insert into epg_programs values ('s1::old::x::1', 's1', 'old', 'x', 1, 2, 'Old', ''); insert into epg_links values ('s1_10', 'old', 'x', 's1', 'exact', 'exact_id')");
+  const { c, progress } = ctx(db);
+  c.tempDir = mkdtempSync(path.join(tmpdir(), 'epg-stage-')); c.allowLanSources = true;
+  const { url, close } = await serve((_req, res) => { res.writeHead(200); res.end(GUIDE); });
+  try {
+    const unrelated = { ...cbs, stream_id: 's1_10', name: 'Zzz', epg_channel_id: 'nothing.here' };
+    assert.equal(await syncEpg(c, source, [unrelated], `${url}/guide.xml`, 'override'), 0);
+    assert.equal((db.prepare("select title from epg_programs").get() as { title: string }).title, 'Old', 'old programmes survive');
+    assert.equal(progress.at(-1)?.state, 'finished');
+  } finally { close(); }
+  assert.equal(await syncEpg(c, source, [cbs], 'http://127.0.0.1:1/nothing', 'override'), 0);
+  assert.equal(progress.at(-1)?.state, 'failed');
+  assert.equal((db.prepare("select count(*) c from epg_programs").get() as { c: number }).c, 1, 'a failed download keeps the old guide');
+});

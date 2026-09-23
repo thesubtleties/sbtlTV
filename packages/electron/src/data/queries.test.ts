@@ -89,3 +89,49 @@ test('control requests are refused by the read layer', () => {
   const db = new DatabaseSync(':memory:'); seedFixture(db);
   assert.throws(() => runQuery(db, { id: 1, type: 'syncNow', what: 'all' }), /unsupported/);
 });
+
+test('series selectors: all, ids, tmdb ids, categories, search, popular', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec("insert into vod_series(series_id, source_id, name, tmdb_id, popularity) values ('s2_sr9', 's2', 'Lost in Space', 9, 0)");
+  const ids = (rows: unknown) => (rows as { series_id: string }[]).map((s) => s.series_id);
+  assert.deepEqual(ids(runQuery(db, { id: 1, type: 'series', by: { kind: 'all' }, sourceIds: [] })), ['s1_sr1', 's2_sr9']);
+  assert.deepEqual(ids(runQuery(db, { id: 2, type: 'series', by: { kind: 'all' }, sourceIds: ['s2'] })), ['s2_sr9']);
+  assert.deepEqual(ids(runQuery(db, { id: 3, type: 'series', by: { kind: 'ids', seriesIds: ['s1_sr1'] }, sourceIds: [] })), ['s1_sr1']);
+  assert.deepEqual(ids(runQuery(db, { id: 4, type: 'series', by: { kind: 'tmdbIds', tmdbIds: [4607] }, sourceIds: [] })), ['s1_sr1']);
+  const inCat = runQuery(db, { id: 5, type: 'series', by: { kind: 'categories', categoryIds: ['s1_drama'] }, sourceIds: [] }) as { series_id: string; category_ids: string[] }[];
+  assert.deepEqual(inCat.map((s) => [s.series_id, s.category_ids]), [['s1_sr1', ['s1_drama']]]);
+  assert.deepEqual(ids(runQuery(db, { id: 6, type: 'series', by: { kind: 'search', text: 'space' }, sourceIds: [] })), ['s2_sr9']);
+  assert.deepEqual(ids(runQuery(db, { id: 7, type: 'series', by: { kind: 'popular' }, sourceIds: [] })), ['s1_sr1'], 'popular skips rows with no popularity');
+});
+
+test('channelSearch treats % and _ in the query literally', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec("insert into channels(stream_id, source_id, name, direct_url) values ('s1_pct', 's1', '100% Sports', 'u'), ('s1_us', 's1', 'A_B', 'u')");
+  const names = (q: string) => (runQuery(db, { id: 1, type: 'channelSearch', query: q, sourceIds: [], limit: 10 }) as { name: string }[]).map((c) => c.name);
+  assert.deepEqual(names('100%'), ['100% Sports']);
+  assert.deepEqual(names('%'), ['100% Sports'], 'a bare % is not a wildcard');
+  assert.deepEqual(names('A_B'), ['A_B']);
+  assert.deepEqual(names('AXB'), [], '_ does not match any character');
+});
+
+test('programsInRange and currentProgram apply the 24h lookback at the boundary', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = 5_000_000;
+  db.exec(`insert into epg_programs values
+    ('s1::epg1::cbs.us::edge', 's1', 'epg1', 'cbs.us', ${now - DAY}, ${now + 1000}, 'Edge', ''),
+    ('s1::epg1::cbs.us::old', 's1', 'epg1', 'cbs.us', ${now - DAY - 1}, ${now + 1000}, 'Too old', '')`);
+  const titles = (runQuery(db, { id: 1, type: 'programsInRange', streamIds: ['s1_10'], windowStartMs: now, windowEndMs: now + 10 }) as { title: string }[]).map((p) => p.title);
+  assert.deepEqual(titles, ['Edge']);
+  assert.equal((runQuery(db, { id: 2, type: 'currentProgram', streamId: 's1_10', nowMs: now }) as { title: string }).title, 'Edge');
+});
+
+test('sourceIds filters every table that carries a source', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec("insert into vod_movies(stream_id, source_id, name, direct_url) values ('s2_m1', 's2', 'Other', 'u'); insert into vod_categories values ('s2', 's2_cat', 'Other', 'movie'); insert into vod_item_categories values ('s2_m1', 'movie', 's2_cat')");
+  assert.deepEqual((runQuery(db, { id: 1, type: 'channels', categoryId: null, sourceIds: ['s2'], sort: 'alphabetical' }) as { stream_id: string }[]).map((c) => c.stream_id), ['s2_20']);
+  assert.deepEqual((runQuery(db, { id: 2, type: 'movies', by: { kind: 'all' }, sourceIds: ['s2'] }) as { stream_id: string }[]).map((m) => m.stream_id), ['s2_m1']);
+  assert.deepEqual((runQuery(db, { id: 3, type: 'vodCategories', kind: 'movie', sourceIds: ['s2'] }) as { category_id: string }[]).map((c) => c.category_id), ['s2_cat']);
+  assert.equal(runQuery(db, { id: 4, type: 'channelCount', sourceIds: ['s2'] }), 1);
+  assert.deepEqual(runQuery(db, { id: 5, type: 'vodCounts', sourceIds: ['s2'] }), { movies: 1, series: 0 });
+});

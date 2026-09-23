@@ -120,3 +120,63 @@ test('replaceVod keeps details the provider stopped sending', () => {
   const m = db.prepare("select plot, \"cast\", genre from vod_movies where stream_id='s1_m1'").get() as { plot: string; cast: string; genre: string };
   assert.deepEqual({ ...m }, { plot: 'from tmdb', cast: 'Pacino', genre: 'Thriller' });
 });
+
+import { mkdtempSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { openDatabase } from './db.js';
+
+test('a reader on a second connection sees the old rows until the writer commits', () => {
+  const p = path.join(mkdtempSync(path.join(tmpdir(), 'sbtltv-atomic-')), 'data.sqlite');
+  const writer = openDatabase(p, { readOnly: false });
+  seedFixture(writer);
+  const reader = openDatabase(p, { readOnly: true });
+  const names = () => (reader.prepare("select name from channels where source_id='s1' order by name").all() as { name: string }[]).map((r) => r.name);
+  assert.deepEqual(names(), ['ABC', 'CBS']);
+
+  writer.exec('begin immediate');
+  writer.prepare("delete from channels where source_id='s1'").run();
+  writer.prepare("insert into channels(stream_id, source_id, name, direct_url) values ('s1_99', 's1', 'NEW', 'u')").run();
+  assert.deepEqual(names(), ['ABC', 'CBS'], 'uncommitted replacement is invisible');
+  writer.exec('rollback');
+  assert.deepEqual(names(), ['ABC', 'CBS'], 'rollback leaves the old rows');
+
+  replaceChannels(writer, 's1', { categories: [], channels: [{ stream_id: 's1_99', source_id: 's1', name: 'NEW', stream_icon: '', epg_channel_id: '', category_ids: [], direct_url: 'u' }] });
+  assert.deepEqual(names(), ['NEW'], 'committed replacement is visible at once');
+  reader.close(); writer.close();
+});
+
+test('replaceVod keeps surviving series with their episodes and enrichment, drops the rest with theirs', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec("insert into vod_series(series_id, source_id, name, tmdb_id, popularity) values ('s1_sr2', 's1', 'Gone', 1, 1)");
+  db.exec("insert into vod_episodes(id, series_id, season_num, episode_num, title, direct_url) values ('s1_e9', 's1_sr2', 1, 1, 'Bye', 'u')");
+  replaceVod(db, 's1', { categories: [], movies: [], series: [{ series_id: 's1_sr1', source_id: 's1', name: 'Lost (2004)', cover: '', category_ids: ['s1_drama'] }] });
+  const kept = db.prepare("select name, tmdb_id, popularity from vod_series where series_id='s1_sr1'").get() as { name: string; tmdb_id: number; popularity: number };
+  assert.deepEqual({ ...kept }, { name: 'Lost (2004)', tmdb_id: 4607, popularity: 30 });
+  assert.equal(count(db, "select count(*) c from vod_episodes where series_id='s1_sr1'"), 2, 'survivor keeps its episodes');
+  assert.equal(count(db, "select count(*) c from vod_series where series_id='s1_sr2'"), 0);
+  assert.equal(count(db, "select count(*) c from vod_episodes where series_id='s1_sr2'"), 0, 'dropped series loses its episodes');
+  assert.equal(count(db, "select count(*) c from vod_item_categories where item_id in ('s1_m1', 's1_m2')"), 0, 'deleted movies lose their category links');
+});
+
+test('applyTmdbMatches stamps the attempt even when nothing matched', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  applyTmdbMatches(db, 'movie', [{ id: 's1_m1', matchAttemptedMs: 77 }]);
+  const m = db.prepare("select tmdb_id, popularity, match_attempted from vod_movies where stream_id='s1_m1'").get() as { tmdb_id: number; popularity: number; match_attempted: number };
+  assert.deepEqual({ ...m }, { tmdb_id: 949, popularity: 50.5, match_attempted: 77 });
+});
+
+test('openDatabase recovers a corrupt file that has stale WAL and shm siblings', () => {
+  const p = path.join(mkdtempSync(path.join(tmpdir(), 'sbtltv-wal-')), 'data.sqlite');
+  writeFileSync(p, 'not a database');
+  writeFileSync(`${p}-wal`, 'stale wal');
+  writeFileSync(`${p}-shm`, 'stale shm');
+  const db = openDatabase(p, { readOnly: false });
+  assert.equal((db.prepare("select count(*) c from sqlite_master where name='channels'").get() as { c: number }).c, 1, 'fresh schema in place');
+  db.close();
+  const files = readdirSync(path.dirname(p));
+  assert.ok(files.some((f) => /^data\.sqlite\.corrupt-\d+$/.test(f)), 'corrupt file moved aside');
+  // SQLite discards the siblings of a file it cannot read; none must survive next to the fresh file.
+  assert.ok(!files.includes('data.sqlite-wal') || existsSync(p));
+  assert.ok(existsSync(p));
+});

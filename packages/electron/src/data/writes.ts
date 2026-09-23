@@ -66,6 +66,9 @@ export function replaceEpg(db: DatabaseSync, sourceId: string, epgSource: string
 
 export function replaceVod(db: DatabaseSync, sourceId: string, input: { movies: Movie[]; series: Series[]; categories: VodCategoryInput[] }): DataTable[] {
   return tx(db, () => {
+    // Category links go first, while the source's current items are still known:
+    // a link left behind by a vanished movie would keep an emptied category visible.
+    db.prepare(`delete from vod_item_categories where item_id in (select stream_id from vod_movies where source_id = ?) or item_id in (select series_id from vod_series where source_id = ?)`).run(sourceId, sourceId);
     // Enrichment columns (imdb_id, backdrop_path, popularity, match_attempted, added) are never
     // overwritten here; the upsert only touches provider fields. A provider-supplied tmdb_id is
     // stored on insert and never replaces one already on the row. Descriptive fields the
@@ -97,7 +100,6 @@ export function replaceVod(db: DatabaseSync, sourceId: string, input: { movies: 
     db.prepare(`delete from vod_episodes where series_id in (select series_id from vod_series where source_id = ? and series_id not in (select value from json_each(?)))`).run(sourceId, keepSeries);
     db.prepare(`delete from vod_series where source_id = ? and series_id not in (select value from json_each(?))`).run(sourceId, keepSeries);
 
-    db.prepare(`delete from vod_item_categories where item_id in (select stream_id from vod_movies where source_id = ?) or item_id in (select series_id from vod_series where source_id = ?)`).run(sourceId, sourceId);
     const insIC = db.prepare(`insert or ignore into vod_item_categories(item_id, item_type, category_id) values (?, ?, ?)`);
     for (const m of input.movies) for (const c of m.category_ids) insIC.run(m.stream_id, 'movie', c);
     for (const s of input.series) for (const c of s.category_ids) insIC.run(s.series_id, 'series', c);
