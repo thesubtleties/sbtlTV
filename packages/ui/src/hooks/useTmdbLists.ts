@@ -126,7 +126,8 @@ function sortByTmdbOrder<T extends { tmdb_id?: number }>(
   items: T[],
   tmdbOrder: Map<number, number>
 ): T[] {
-  // Dedup: one item per tmdb_id (first encountered wins — Dexie returns in insert order)
+  // Dedup: one item per tmdb_id. The rows arrive in no defined order, so which
+  // source's copy wins is arbitrary; the detail views resolve sources properly.
   const seen = new Set<number>();
   return items
     .filter((item) => {

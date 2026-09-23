@@ -16,6 +16,8 @@ function tryOpen(path: string, opts: OpenOptions): DatabaseSync {
   try {
     if (!opts.readOnly) {
       db.exec('pragma journal_mode = wal');
+      // NORMAL under WAL: a power cut can lose the last transaction but never
+      // corrupts the file. Everything in it is rebuildable, so that trade is fine.
       db.exec('pragma synchronous = normal');
     }
     db.exec('pragma foreign_keys = on');

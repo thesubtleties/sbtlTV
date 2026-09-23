@@ -1,9 +1,10 @@
 /**
  * EPG source handling for the data process: download an XMLTV guide to a temp
  * file, inflate it on disk when it is gzip, and stream-parse it with constant
- * memory. Two-phase parsing: phase 1 reads only <channel> elements and matches
- * them against the provider's channels (core's matcher), phase 2 skips every
- * <programme> for a channel nobody watches.
+ * memory. Two passes over the file: the first collects the <channel> elements
+ * (programme blocks are scanned past and discarded) and matches them against
+ * the provider's channels with core's matcher; the second parses only the
+ * <programme> blocks of matched channels and skips the rest early.
  */
 import { createReadStream, createWriteStream, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { promises as fsp } from 'node:fs';
@@ -280,8 +281,8 @@ function streamParseXmltv(
   });
 }
 
-// Which XMLTV channels does any provider channel resolve to? The same 12
-// strategies the guide uses for its links, plus the provider's own id when the
+// Which XMLTV channels does any provider channel resolve to? Every automatic
+// strategy the guide uses for its links, plus the provider's own id when the
 // guide contains it.
 function matchedXmltvIds(xmltvChannels: EpgChannelInfo[], providerChannels: ProviderChannel[]): Set<string> {
   const channels: Channel[] = providerChannels.map((c) => ({

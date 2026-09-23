@@ -121,7 +121,7 @@ export function groupProgramsByStream(streamIds: string[], rows: StoredProgram[]
 // means "not read yet" and an empty array means "no EPG for this channel".
 // While a new set of IDs or a new window is being read, the previous map is
 // returned so rows already on screen keep their programs instead of flashing.
-// Both EPG tables are watched so a rematch (links only) refreshes the guide.
+// Both EPG tables are watched: a guide sync or rematch rewrites both for the source.
 export function useProgramsInRange(streamIds: string[], windowStart: Date, windowEnd: Date): Map<string, StoredProgram[]> {
   const { data, stale } = useDataQuery(
     streamIds.length > 0 ? { type: 'programsInRange', streamIds, windowStartMs: windowStart.getTime(), windowEndMs: windowEnd.getTime() } : null,

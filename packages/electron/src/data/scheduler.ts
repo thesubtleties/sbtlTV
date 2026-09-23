@@ -7,7 +7,7 @@ export interface SourceMetaWire {
   last_vod_sync?: number | null;
 }
 
-// Rules copied from sync.ts isEpgStale/isVodStale and App.tsx: 0 hours means
+// Staleness rules (moved here from the old renderer-side sync checks): 0 hours means
 // never automatic; no timestamp means due; channels/EPG use the EPG refresh
 // setting against the last EPG sync (or channel sync if EPG never ran); VOD
 // only exists for Xtream sources.

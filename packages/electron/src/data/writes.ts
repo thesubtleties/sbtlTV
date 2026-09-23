@@ -5,6 +5,9 @@ export interface EpgProgramInput { epg_channel_id: string; startMs: number; endM
 export interface EpgLinkInput { stream_id: string; epg_channel_id: string; confidence: string; strategy: string }
 export interface VodCategoryInput { category_id: string; name: string; type: 'movie' | 'series' }
 
+// `begin immediate` takes the write lock up front: with two writer lanes and a
+// long-lived reader under WAL, a deferred transaction could fail to upgrade
+// its lock halfway through.
 function tx<T>(db: DatabaseSync, fn: () => T): T {
   db.exec('begin immediate');
   try {

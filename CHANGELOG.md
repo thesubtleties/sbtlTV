@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - **Channel, guide and library data now live in a SQLite database managed by a background process** - syncing no longer runs inside the app window, so a large source cannot freeze the guide or black out the screen, and storing a 500,000-programme guide takes seconds instead of many minutes. Existing installs resync once on first launch. Watchlist, watch progress and favorites are unchanged
-- **Programmes are stored once per guide channel** - channels that share a guide channel no longer duplicate its programmes, and re-matching the guide no longer rewrites them
+- **Programmes are stored once per guide channel** - channels that share a guide channel (HD, FHD and backup variants) no longer duplicate its programmes
 - **Movie and series matching is incremental** - a library resync no longer re-runs TMDB matching for titles it already matched
 
 ## [0.10.1] - 2026-09-19

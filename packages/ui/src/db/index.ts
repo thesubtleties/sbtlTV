@@ -171,7 +171,7 @@ class SbtltvDatabase extends Dexie {
       watchProgress: 'id, type, tmdb_id, stream_id, updated_at, [type+completed]',
     }).upgrade(async (tx) => {
       // Set forced resync flag so app re-syncs with stable M3U IDs
-      await tx.table('prefs').put({ key: 'needs_resync', value: 'true' });
+      await tx.table('prefs').put({ key: 'needs_resync', value: 'true' }); // read by 0.10.x only; 0.11.0 resyncs from an empty file regardless
     });
 
     // Compound PK for vodCategories: [source_id+category_id] prevents silent overwrites
@@ -220,7 +220,7 @@ class SbtltvDatabase extends Dexie {
     // builds it in place, existing records preserved (position stays undefined until a
     // source is next synced). No upgrade callback / no forced resync: backfill for
     // opt-in users happens via auto-resync-on-enable in the settings UI. The index
-    // powers the readiness check `db.categories.where('position').aboveOrEqual(0)`.
+    // powered the renderer's readiness check; 0.11.0 assigns positions in the data process.
     this.version(14).stores({
       categories: 'category_id, source_id, category_name, position',
     });

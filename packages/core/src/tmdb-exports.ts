@@ -15,8 +15,9 @@
 // Fetch injection
 // ===========================================================================
 
-// The renderer swaps these for its fetch proxy; the data process uses Node's
-// global fetch. Nothing here touches `window`.
+// The electron data process configures these with Node's global fetch (see
+// sync-worker.ts). Nothing here touches `window`; the renderer no longer
+// matches exports itself.
 export interface TmdbExportFetchers {
   fetchText(url: string): Promise<string>;
   fetchBinary(url: string): Promise<Uint8Array>;

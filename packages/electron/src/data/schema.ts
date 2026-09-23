@@ -60,6 +60,8 @@ create table if not exists epg_programs (
 );
 create index if not exists epg_programs_channel_start on epg_programs(source_id, epg_source, epg_channel_id, start);
 
+-- One row per (stream, guide). replaceEpg clears a source's links wholesale, so a
+-- guide switch never leaves rows under the old guide name.
 create table if not exists epg_links (
   stream_id text not null,
   epg_source text not null,

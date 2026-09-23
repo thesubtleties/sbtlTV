@@ -19,7 +19,8 @@ export interface ChannelClient {
   getServerEpgUrl?(): string | undefined;
 }
 
-// Same category positions as the renderer assigned (packages/ui/src/db/categoryPosition.ts): arrival index.
+// Stamps each category with its 0-based provider-arrival index (both adapters deliver
+// categories in provider order). Provider sort in the guide reads this position.
 function withPositions(categories: Category[]): Category[] {
   return categories.map((c, i) => ({ ...c, position: i }));
 }
