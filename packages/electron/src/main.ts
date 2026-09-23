@@ -1479,21 +1479,45 @@ function isAllowedBinaryUrl(url: string, allowLan: boolean): boolean {
 // These patterns match localhost, private IP ranges, and cloud metadata endpoints
 // Kept in step with packages/core/src/url-guard.ts, which the data process uses
 // for provider requests; main cannot import workspace TypeScript at runtime.
-const BLOCKED_URL_PATTERNS = [
-  /^https?:\/\/localhost(?::\d+)?(?:\/|$)/i,
-  /^https?:\/\/127\.\d+\.\d+\.\d+/,
-  /^https?:\/\/0\.0\.0\.0/,                     // Alternative localhost
-  /^https?:\/\/\[?::1\]?/,                      // IPv6 localhost
-  /^https?:\/\/\[?::ffff:127\./,                // IPv4-mapped IPv6 localhost
-  /^https?:\/\/10\.\d+\.\d+\.\d+/,              // Private Class A
-  /^https?:\/\/172\.(1[6-9]|2\d|3[01])\./,      // Private Class B
-  /^https?:\/\/192\.168\./,                     // Private Class C
-  /^https?:\/\/169\.254\./,                     // Link-local + cloud metadata
-  /^file:/i,                                    // File protocol
-];
-
+// The check runs on the parsed hostname so userinfo tricks and numeric or
+// mapped spellings of a private address are caught; DNS rebinding is not.
+function ipv4Octets(host: string): number[] | null {
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return null;
+  const octets = m.slice(1).map(Number);
+  return octets.every((o) => o <= 255) ? octets : null;
+}
+function isPrivateIpv4(octets: number[]): boolean {
+  const [a, b] = octets;
+  return a === 0 || a === 10 || a === 127
+    || (a === 100 && b >= 64 && b <= 127)
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168);
+}
+function isPrivateHost(hostname: string): boolean {
+  const host = hostname.replace(/\.$/, '').toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  const v4 = ipv4Octets(host);
+  if (v4) return isPrivateIpv4(v4);
+  if (host.startsWith('[') && host.endsWith(']')) {
+    const v6 = host.slice(1, -1);
+    if (v6 === '::1' || v6 === '::') return true;
+    const mapped = v6.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/) ?? v6.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) {
+      const dotted = mapped[2] === undefined ? mapped[1] : (() => { const hi = parseInt(mapped[1], 16); const lo = parseInt(mapped[2], 16); return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`; })();
+      const o = ipv4Octets(dotted);
+      return o ? isPrivateIpv4(o) : true;
+    }
+    if (/^fe[89ab]/.test(v6) || /^f[cd]/.test(v6)) return true;
+  }
+  return false;
+}
 function isBlockedUrl(url: string): boolean {
-  return BLOCKED_URL_PATTERNS.some(pattern => pattern.test(url));
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return true; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+  return isPrivateHost(parsed.hostname);
 }
 
 // Fetch proxy - bypasses CORS by making requests from main process
