@@ -42,7 +42,7 @@ test('replaceEpg replaces one epg source and updates links; programs are stored 
     links: [{ stream_id: 's1_10', epg_channel_id: 'cbs.us', confidence: 'exact', strategy: 'exact_id' }, { stream_id: 's1_11', epg_channel_id: 'cbs.us', confidence: 'high', strategy: 'display_name' }],
   });
   assert.deepEqual([...changed].sort(), ['epg_links', 'epg_programs', 'sources_meta']);
-  assert.equal(count(db, "select count(*) c from epg_programs where epg_source='epg1'"), 1);
+  assert.equal(count(db, "select count(*) c from epg_programs where source_id='s1' and epg_source='epg1'"), 1);
   const rows = runQuery(db, { id: 1, type: 'programsInRange', streamIds: ['s1_10', 's1_11'], windowStartMs: 9000, windowEndMs: 9600 }) as { stream_id: string }[];
   assert.deepEqual(rows.map((r) => r.stream_id), ['s1_10', 's1_11']);
 });

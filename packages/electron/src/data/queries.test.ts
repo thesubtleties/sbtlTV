@@ -16,9 +16,11 @@ export function seedFixture(db: DatabaseSync): void {
     insert into channel_categories values ('s1_10', 's1_news'), ('s1_11', 's1_news'), ('s1_11', 's1_sports'), ('s2_20', 's2_news');
     insert into epg_links values ('s1_10', 'epg1', 'cbs.us', 's1', 'exact', 'exact_id'), ('s2_20', 'epg1', 'cbs.us', 's2', 'exact', 'exact_id');
     insert into epg_programs values
-      ('epg1::cbs.us::1000', 's1', 'epg1', 'cbs.us', 1000, 2000, 'Morning', ''),
-      ('epg1::cbs.us::2000', 's1', 'epg1', 'cbs.us', 2000, 3000, 'Noon', ''),
-      ('epg1::cbs.us::3000', 's1', 'epg1', 'cbs.us', 3000, 4000, 'Evening', '');
+      ('s1::epg1::cbs.us::1000', 's1', 'epg1', 'cbs.us', 1000, 2000, 'Morning', ''),
+      ('s1::epg1::cbs.us::2000', 's1', 'epg1', 'cbs.us', 2000, 3000, 'Noon', ''),
+      ('s1::epg1::cbs.us::3000', 's1', 'epg1', 'cbs.us', 3000, 4000, 'Evening', ''),
+      ('s2::epg1::cbs.us::2000', 's2', 'epg1', 'cbs.us', 2000, 3000, 'Noon', ''),
+      ('s2::epg1::cbs.us::3000', 's2', 'epg1', 'cbs.us', 3000, 4000, 'Evening', '');
     insert into vod_categories values ('s1', 's1_action', 'Action', 'movie'), ('s1', 's1_empty', 'Empty', 'movie'), ('s1', 's1_drama', 'Drama', 'series');
     insert into vod_movies(stream_id, source_id, name, direct_url, tmdb_id, popularity, added) values
       ('s1_m1', 's1', 'Heat', 'http://x/m1', 949, 50.5, 5000), ('s1_m2', 's1', 'Alien', 'http://x/m2', 348, 80.1, 6000);
