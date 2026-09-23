@@ -12,7 +12,7 @@ import { syncChannels, makeXtreamClient } from './sync-channels.js';
 import { syncEpg } from './sync-epg.js';
 import { syncVod, syncEpisodes, matchTmdb } from './sync-vod.js';
 import { deleteSource, clearAll, updateVodDetails } from './writes.js';
-import type { SyncJob } from './router.js';
+import { isSameJob, type SyncJob } from './router.js';
 
 if (!parentPort) throw new Error('sync-worker must run as a worker thread');
 const port = parentPort;
@@ -122,7 +122,12 @@ port.on('message', (m: { type: string } & Record<string, unknown>) => {
       break;
     case 'sources': sources = m.sources as Source[]; break;
     case 'settings': settings = m.settings as DataSettings; break;
-    case 'job': queue.push(m.job as SyncJob); void pump(); break;
+    case 'job': {
+      const job = m.job as SyncJob;
+      if (!queue.some((q) => isSameJob(q, job))) queue.push(job);
+      void pump();
+      break;
+    }
     case 'shutdown': db?.close(); process.exit(0);
   }
 });

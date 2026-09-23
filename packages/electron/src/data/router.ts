@@ -12,6 +12,18 @@ export type SyncJob =
   | { kind: 'deleteSource'; sourceId: string }
   | { kind: 'clearAll' };
 
+// Two queued jobs that would do the same work (a scheduler pass and a Sync button,
+// or two scheduler passes) collapse into one. Jobs carrying data never collapse.
+export function isSameJob(a: SyncJob, b: SyncJob): boolean {
+  if (a.kind !== b.kind) return false;
+  switch (a.kind) {
+    case 'channels': case 'vod': case 'rematch': case 'deleteSource': return a.sourceId === (b as { sourceId: string }).sourceId;
+    case 'episodes': return a.seriesId === (b as { seriesId: string }).seriesId;
+    case 'clearAll': return true;
+    default: return false;
+  }
+}
+
 const CONTROL = new Set(['syncNow', 'syncEpisodes', 'rematchEpg', 'updateVodDetails', 'importPlaylist', 'clearAll']);
 const READS = new Set(['categories', 'channels', 'channelsByIds', 'channelCount', 'channelSearch', 'programsInRange', 'currentProgram', 'syncStatus', 'movies', 'series', 'episodes', 'vodCategories', 'vodCounts']);
 

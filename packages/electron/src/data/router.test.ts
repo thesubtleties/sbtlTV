@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { seedFixture } from './queries.test.js';
-import { routeRendererMessage, type SyncJob } from './router.js';
+import { routeRendererMessage, isSameJob, type SyncJob } from './router.js';
 import type { DataReply } from '@sbtltv/core';
 
 test('a read request is answered from the database', () => {
@@ -58,4 +58,13 @@ test('importPlaylist is acknowledged and queued with its content', () => {
   routeRendererMessage(db, { id: 13, type: 'importPlaylist', sourceId: 's9', content: '#EXTM3U' }, (r) => replies.push(r), (j) => jobs.push(j));
   assert.deepEqual(replies, [{ id: 13, ok: true, data: { accepted: true } }]);
   assert.deepEqual(jobs, [{ kind: 'importPlaylist', sourceId: 's9', content: '#EXTM3U' }]);
+});
+
+test('isSameJob matches jobs that would do identical work', () => {
+  assert.ok(isSameJob({ kind: 'vod', sourceId: 's1' }, { kind: 'vod', sourceId: 's1' }));
+  assert.ok(!isSameJob({ kind: 'vod', sourceId: 's1' }, { kind: 'channels', sourceId: 's1' }));
+  assert.ok(!isSameJob({ kind: 'episodes', sourceId: 's1', seriesId: 'a' }, { kind: 'episodes', sourceId: 's1', seriesId: 'b' }));
+  assert.ok(isSameJob({ kind: 'clearAll' }, { kind: 'clearAll' }));
+  // Content-bearing jobs are never collapsed: two imports may carry different playlists.
+  assert.ok(!isSameJob({ kind: 'importPlaylist', sourceId: 's1', content: 'a' }, { kind: 'importPlaylist', sourceId: 's1', content: 'b' }));
 });
