@@ -225,13 +225,12 @@ class SbtltvDatabase extends Dexie {
       categories: 'category_id, source_id, category_name, position',
     });
 
-    // 0.11.0: every rebuildable table moved to the data process (SQLite). `null`
-    // deletes the store and its rows on upgrade; each source resyncs once into
-    // the new file. The user-owned tables above are untouched.
-    this.version(15).stores({
-      channels: null, categories: null, sourcesMeta: null, programs: null, epgMappings: null,
-      vodMovies: null, vodSeries: null, vodEpisodes: null, vodCategories: null,
-    });
+    // 0.11.0 moved every rebuildable table (channels, categories, programs,
+    // epgMappings, sourcesMeta, the vod* stores) to the data process's SQLite
+    // file. Nothing reads those stores any more, but the schema stays at v14 and
+    // the rows stay in place on purpose: a rollback to 0.10.x must still open
+    // this database (Dexie refuses a newer version). Dropping the stores to
+    // reclaim the space is deferred until the SQLite layer has proven itself.
   }
 }
 

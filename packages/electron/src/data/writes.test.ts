@@ -95,3 +95,16 @@ test('updateVodDetails fills only the empty columns', () => {
   const sr = db.prepare("select \"cast\", backdrop_path from vod_series where series_id='s1_sr1'").get() as { cast: string; backdrop_path: string };
   assert.deepEqual({ ...sr }, { cast: 'Fox', backdrop_path: '/b.jpg' });
 });
+
+test('two sources sharing one guide keep their own programme rows', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const guide = { programs: [{ epg_channel_id: 'cbs.us', startMs: 9000, endMs: 9500, title: 'Late', description: '' }], links: [] as { stream_id: string; epg_channel_id: string; confidence: string; strategy: string }[] };
+  replaceEpg(db, 's1', 'xtream://panel', { ...guide, links: [{ stream_id: 's1_10', epg_channel_id: 'cbs.us', confidence: 'exact', strategy: 'exact_id' }] });
+  replaceEpg(db, 's2', 'xtream://panel', { ...guide, links: [{ stream_id: 's2_20', epg_channel_id: 'cbs.us', confidence: 'exact', strategy: 'exact_id' }] });
+  assert.equal(count(db, "select count(*) c from epg_programs where epg_source='xtream://panel'"), 2, 'one copy per source');
+  const both = runQuery(db, { id: 1, type: 'programsInRange', streamIds: ['s1_10', 's2_20'], windowStartMs: 9000, windowEndMs: 9600 }) as { stream_id: string }[];
+  assert.deepEqual(both.map((r) => r.stream_id), ['s1_10', 's2_20'], 'each stream sees exactly one copy');
+  deleteSource(db, 's1');
+  const rest = runQuery(db, { id: 2, type: 'programsInRange', streamIds: ['s2_20'], windowStartMs: 9000, windowEndMs: 9600 }) as { title: string }[];
+  assert.deepEqual(rest.map((r) => r.title), ['Late'], 'deleting the other source leaves this guide intact');
+});

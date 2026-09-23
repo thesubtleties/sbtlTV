@@ -79,7 +79,7 @@ export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
       return stmt(db, `
         select ${PROGRAM_COLS}
         from epg_links l
-        join epg_programs p on p.epg_source = l.epg_source and p.epg_channel_id = l.epg_channel_id
+        join epg_programs p on p.source_id = l.source_id and p.epg_source = l.epg_source and p.epg_channel_id = l.epg_channel_id
         where l.stream_id in (select value from json_each($ids))
           and p.start >= $lower and p.start < $upper and p.end > $winStart
         order by l.stream_id, p.start`).all({ $ids: j(req.streamIds), $lower: req.windowStartMs - LOOKBACK_MS, $upper: req.windowEndMs, $winStart: req.windowStartMs });
@@ -87,7 +87,7 @@ export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
       const row = stmt(db, `
         select ${PROGRAM_COLS}
         from epg_links l
-        join epg_programs p on p.epg_source = l.epg_source and p.epg_channel_id = l.epg_channel_id
+        join epg_programs p on p.source_id = l.source_id and p.epg_source = l.epg_source and p.epg_channel_id = l.epg_channel_id
         where l.stream_id = $id and p.start >= $lower and p.start <= $now and p.end > $now
         order by p.start desc limit 1`).get({ $id: req.streamId, $lower: req.nowMs - LOOKBACK_MS, $now: req.nowMs });
       return row ?? null;

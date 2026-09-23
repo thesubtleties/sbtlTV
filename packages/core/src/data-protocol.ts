@@ -20,7 +20,7 @@ export interface SourceMetaRow {
 export interface CategoryRow extends Category { channel_count?: number }
 export type ChannelRow = Channel & { tv_archive_days?: number };
 export interface ProgramRow {
-  id: string;            // `${epgSource}::${epgChannelId}::${startMs}`
+  id: string;            // `${sourceId}::${epgSource}::${epgChannelId}::${startMs}`
   stream_id: string;     // the stream this row was joined to
   title: string;
   description: string;

@@ -46,12 +46,14 @@ export function replaceChannels(db: DatabaseSync, sourceId: string, input: { cat
 // A source has one guide at a time (several URLs are merged into one guide named
 // `epgSource`), so the whole source's programmes and links are replaced. This keeps
 // a guide switch (built-in to override, or back) from leaving stale links behind.
+// Programme ids carry the source id: two sources pointing at the same guide each
+// keep their own copy, so deleting or resyncing one never touches the other.
 export function replaceEpg(db: DatabaseSync, sourceId: string, epgSource: string, input: { programs: EpgProgramInput[]; links: EpgLinkInput[] }): DataTable[] {
   return tx(db, () => {
     db.prepare(`delete from epg_programs where source_id = ?`).run(sourceId);
     db.prepare(`delete from epg_links where source_id = ?`).run(sourceId);
     const insP = db.prepare(`insert or ignore into epg_programs(id, source_id, epg_source, epg_channel_id, start, end, title, description) values (?, ?, ?, ?, ?, ?, ?, ?)`);
-    for (const p of input.programs) insP.run(`${epgSource}::${p.epg_channel_id}::${p.startMs}`, sourceId, epgSource, p.epg_channel_id, p.startMs, p.endMs, p.title, p.description);
+    for (const p of input.programs) insP.run(`${sourceId}::${epgSource}::${p.epg_channel_id}::${p.startMs}`, sourceId, epgSource, p.epg_channel_id, p.startMs, p.endMs, p.title, p.description);
     const insL = db.prepare(`insert or replace into epg_links(stream_id, epg_source, epg_channel_id, source_id, confidence, strategy) values (?, ?, ?, ?, ?, ?)`);
     for (const l of input.links) insL.run(l.stream_id, epgSource, l.epg_channel_id, sourceId, l.confidence, l.strategy);
     db.prepare(`insert into sources_meta(source_id, last_epg_sync) values (?, ?) on conflict(source_id) do update set last_epg_sync = excluded.last_epg_sync`).run(sourceId, Date.now());

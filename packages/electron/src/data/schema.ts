@@ -58,8 +58,7 @@ create table if not exists epg_programs (
   title text not null,
   description text not null default ''
 );
-create index if not exists epg_programs_channel_start on epg_programs(epg_source, epg_channel_id, start);
-create index if not exists epg_programs_source on epg_programs(source_id);
+create index if not exists epg_programs_channel_start on epg_programs(source_id, epg_source, epg_channel_id, start);
 
 create table if not exists epg_links (
   stream_id text not null,
