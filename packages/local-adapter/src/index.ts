@@ -14,3 +14,6 @@ export type {
   XtreamUserInfo,
   XtreamAuthResponse,
 } from './xtream-client';
+
+// Node-side URL guard (installed by the data process)
+export { setUrlGuard, guardedFetch } from './fetch-guard';

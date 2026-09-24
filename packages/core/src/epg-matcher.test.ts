@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Channel } from '@sbtltv/core';
+import type { Channel } from './types';
 import { matchChannelsToEpg } from './epg-matcher';
 
 function channel(streamId: string): Channel {

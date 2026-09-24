@@ -1,0 +1,78 @@
+import { DatabaseSync } from 'node:sqlite';
+import { existsSync, renameSync } from 'node:fs';
+import { migrate } from './schema.js';
+
+export interface OpenOptions {
+  readOnly: boolean;
+  log?: (message: string) => void;
+  // How long a statement waits for a lock held by another connection. Writers
+  // on the two sync lanes wait for each other's transactions (a guide replace
+  // commits in a few seconds); readers under WAL rarely wait at all.
+  busyTimeoutMs?: number;
+}
+
+function tryOpen(path: string, opts: OpenOptions): DatabaseSync {
+  const db = new DatabaseSync(path, { readOnly: opts.readOnly, timeout: opts.busyTimeoutMs ?? 5000 });
+  try {
+    if (!opts.readOnly) {
+      db.exec('pragma journal_mode = wal');
+      // NORMAL under WAL: a power cut can lose the last transaction but never
+      // corrupts the file. Everything in it is rebuildable, so that trade is fine.
+      db.exec('pragma synchronous = normal');
+    }
+    db.exec('pragma foreign_keys = on');
+  } catch (e) {
+    // A file that is not a database fails here, after the handle exists. Close it
+    // before giving up: Windows will not rename a file that is still open.
+    try { db.close(); } catch { /* already unusable */ }
+    throw e;
+  }
+  return db;
+}
+
+// quick_check rather than the spec's integrity_check: it runs on every launch
+// against a file that can reach hundreds of MB, and skips only the exhaustive
+// index cross-checks. Everything in the file is rebuildable anyway.
+function healthy(db: DatabaseSync): boolean {
+  try {
+    const row = db.prepare('pragma quick_check').get() as { quick_check: string };
+    return row.quick_check === 'ok';
+  } catch {
+    return false;
+  }
+}
+
+// Opens the file and returns null (closing it) when it fails the quick check.
+function openHealthy(path: string, opts: OpenOptions): DatabaseSync | null {
+  let db: DatabaseSync | null = null;
+  try {
+    db = tryOpen(path, opts);
+    if (healthy(db)) return db;
+  } catch {
+    // fall through: unopenable counts as unhealthy
+  }
+  try { db?.close(); } catch { /* already unusable */ }
+  return null;
+}
+
+// Opens (creating if needed) the data file. The writer connection runs the
+// integrity check and migrations; readers assume the writer already did.
+export function openDatabase(path: string, opts: OpenOptions): DatabaseSync {
+  const log = opts.log ?? (() => {});
+  if (opts.readOnly) return tryOpen(path, opts);
+
+  let db = openHealthy(path, opts);
+  if (!db) {
+    if (existsSync(path)) {
+      const aside = `${path}.corrupt-${Date.now()}`;
+      renameSync(path, aside);
+      for (const suffix of ['-wal', '-shm']) {
+        if (existsSync(path + suffix)) renameSync(path + suffix, aside + suffix);
+      }
+      log(`data file failed its integrity check; moved to ${aside} and starting fresh (all of it is rebuildable)`);
+    }
+    db = tryOpen(path, opts);
+  }
+  migrate(db);
+  return db;
+}

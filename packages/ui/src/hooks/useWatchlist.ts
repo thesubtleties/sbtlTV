@@ -1,7 +1,10 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { db, type StoredWatchlistItem } from '../db';
+import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
+
+const NO_ITEMS: StoredWatchlistItem[] = [];
 
 function wlId(type: 'movie' | 'series', key: string): string {
   return `${type}_${key}`;
@@ -52,89 +55,60 @@ export function useToggleWatchlist() {
   }, []);
 }
 
+// Watchlist entries stay on Dexie; the movie and series rows come from the data
+// process by tmdb_id (cross-source) or by the stored id when there is no match.
+function useWatchlistKeys(type: 'movie' | 'series') {
+  const items = useLiveQuery(() => db.watchlist.where('type').equals(type).toArray(), [type]) ?? NO_ITEMS;
+  const byTmdb = useMemo(() => items.filter((i) => i.tmdb_id).map((i) => i.tmdb_id!), [items]);
+  const byStream = useMemo(() => items.filter((i) => !i.tmdb_id && i.stream_id).map((i) => i.stream_id!), [items]);
+  return { items, byTmdb, byStream };
+}
+
+function orderByAdded<T>(items: StoredWatchlistItem[], rows: T[], keyOf: (row: T) => string): T[] {
+  // Dedup by tmdb_id (cross-source), fall back to the stored id
+  const seen = new Set<string>();
+  const deduped = rows.filter((r) => {
+    const key = keyOf(r);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  // Sort by watchlist added date (oldest first, newest last)
+  const addedMap = new Map(items.map((i) => [wlSortKey(i.tmdb_id, i.stream_id), i.added]));
+  return deduped.sort((a, b) => (addedMap.get(keyOf(a))?.getTime() ?? 0) - (addedMap.get(keyOf(b))?.getTime() ?? 0));
+}
+
 export function useWatchlistMovies() {
   const enabledIds = useEnabledSourceIds();
-  return useLiveQuery(async () => {
-    const items = await db.watchlist.where('type').equals('movie').toArray();
+  const { items, byTmdb, byStream } = useWatchlistKeys('movie');
+  const { data: tmdbMovies } = useDataQuery(
+    byTmdb.length > 0 ? { type: 'movies', by: { kind: 'tmdbIds', tmdbIds: byTmdb }, sourceIds: enabledIds } : null,
+    ['vod_movies'], [byTmdb.join(','), enabledIds.join(',')],
+  );
+  const { data: streamMovies } = useDataQuery(
+    byStream.length > 0 ? { type: 'movies', by: { kind: 'ids', streamIds: byStream }, sourceIds: enabledIds } : null,
+    ['vod_movies'], [byStream.join(','), enabledIds.join(',')],
+  );
+  return useMemo(() => {
     if (items.length === 0) return [];
-
-    const byTmdb = items.filter(i => i.tmdb_id).map(i => i.tmdb_id!);
-    const byStream = items.filter(i => !i.tmdb_id && i.stream_id).map(i => i.stream_id!);
-
-    const [tmdbMovies, streamMovies] = await Promise.all([
-      byTmdb.length > 0 ? db.vodMovies.where('tmdb_id').anyOf(byTmdb).toArray() : [],
-      byStream.length > 0 ? db.vodMovies.where('stream_id').anyOf(byStream).toArray() : [],
-    ]);
-
-    let all = [...tmdbMovies, ...streamMovies];
-
-    if (enabledIds.length > 0) {
-      const enabledSet = new Set(enabledIds);
-      all = all.filter(m => enabledSet.has(m.source_id));
-    }
-
-    // Dedup by tmdb_id (cross-source), fall back to stream_id
-    const seen = new Set<string>();
-    const deduped = all.filter(m => {
-      const key = wlSortKey(m.tmdb_id, m.stream_id);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    // Sort by watchlist added date (oldest first, newest last)
-    const addedMap = new Map(items.map(i => [wlSortKey(i.tmdb_id, i.stream_id), i.added]));
-    deduped.sort((a, b) => {
-      const dateA = addedMap.get(wlSortKey(a.tmdb_id, a.stream_id))?.getTime() ?? 0;
-      const dateB = addedMap.get(wlSortKey(b.tmdb_id, b.stream_id))?.getTime() ?? 0;
-      return dateA - dateB;
-    });
-
-    return deduped;
-  }, [enabledIds.join(',')]) ?? [];
+    return orderByAdded(items, [...(tmdbMovies ?? []), ...(streamMovies ?? [])], (m) => wlSortKey(m.tmdb_id, m.stream_id));
+  }, [items, tmdbMovies, streamMovies]);
 }
 
 export function useWatchlistSeries() {
   const enabledIds = useEnabledSourceIds();
-  return useLiveQuery(async () => {
-    const items = await db.watchlist.where('type').equals('series').toArray();
+  const { items, byTmdb, byStream } = useWatchlistKeys('series');
+  const { data: tmdbSeries } = useDataQuery(
+    byTmdb.length > 0 ? { type: 'series', by: { kind: 'tmdbIds', tmdbIds: byTmdb }, sourceIds: enabledIds } : null,
+    ['vod_series'], [byTmdb.join(','), enabledIds.join(',')],
+  );
+  const { data: streamSeries } = useDataQuery(
+    byStream.length > 0 ? { type: 'series', by: { kind: 'ids', seriesIds: byStream }, sourceIds: enabledIds } : null,
+    ['vod_series'], [byStream.join(','), enabledIds.join(',')],
+  );
+  // Note: watchlist entries store the id as stream_id for both movies and series
+  return useMemo(() => {
     if (items.length === 0) return [];
-
-    const byTmdb = items.filter(i => i.tmdb_id).map(i => i.tmdb_id!);
-    const byStream = items.filter(i => !i.tmdb_id && i.stream_id).map(i => i.stream_id!);
-
-    const [tmdbSeries, streamSeries] = await Promise.all([
-      byTmdb.length > 0 ? db.vodSeries.where('tmdb_id').anyOf(byTmdb).toArray() : [],
-      byStream.length > 0 ? db.vodSeries.where('series_id').anyOf(byStream).toArray() : [],
-    ]);
-
-    let all = [...tmdbSeries, ...streamSeries];
-
-    if (enabledIds.length > 0) {
-      const enabledSet = new Set(enabledIds);
-      all = all.filter(s => enabledSet.has(s.source_id));
-    }
-
-    // Dedup by tmdb_id (cross-source), fall back to series_id
-    const seen = new Set<string>();
-    const deduped = all.filter(s => {
-      const key = wlSortKey(s.tmdb_id, s.series_id);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    // Sort by watchlist added date (oldest first, newest last)
-    // Note: watchlist entries store the id as stream_id for both movies and series
-    const addedMap = new Map(items.map(i => [wlSortKey(i.tmdb_id, i.stream_id), i.added]));
-    deduped.sort((a, b) => {
-      const keyA = wlSortKey(a.tmdb_id, a.series_id);
-      const keyB = wlSortKey(b.tmdb_id, b.series_id);
-      const dateA = addedMap.get(keyA)?.getTime() ?? 0;
-      const dateB = addedMap.get(keyB)?.getTime() ?? 0;
-      return dateA - dateB;
-    });
-
-    return deduped;
-  }, [enabledIds.join(',')]) ?? [];
+    return orderByAdded(items, [...(tmdbSeries ?? []), ...(streamSeries ?? [])], (s) => wlSortKey(s.tmdb_id, s.series_id));
+  }, [items, tmdbSeries, streamSeries]);
 }

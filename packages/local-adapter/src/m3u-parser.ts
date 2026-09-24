@@ -1,3 +1,5 @@
+/// <reference path="./types/electron.d.ts" />
+import { guardedFetch } from './fetch-guard';
 /**
  * M3U Playlist Parser
  *
@@ -243,8 +245,8 @@ export async function fetchAndParseM3U(url: string, sourceId: string): Promise<M
     return parseM3U(result.data.text, sourceId);
   }
 
-  // Fallback to regular fetch (Node.js or when CORS is not an issue)
-  const response = await fetch(url);
+  // Node (the data process): every hop passes the installed URL guard.
+  const response = await guardedFetch(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch M3U: ${response.status} ${response.statusText}`);

@@ -1,95 +1,53 @@
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db, getLastCategory, setLastCategory } from '../db';
-import type { StoredChannel, StoredCategory, SourceMeta, StoredProgram } from '../db';
+import { getLastCategory, setLastCategory } from '../db';
+import type { CategoryRow, ChannelRow, ProgramRow, SourceMetaRow } from '@sbtltv/core';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds, useLiveSourceOrder, useSourceMap } from './useSourceFiltering';
 import { sortCategoryGroups, resolveGroupPrimary } from './categorySort';
 import { useCategorySortOrder } from '../stores/uiStore';
 
+// The guide's rows come from the data process now; these keep the names callers use.
+export type StoredCategory = CategoryRow;
+export type StoredChannel = ChannelRow;
+export type StoredProgram = ProgramRow;
+export type SourceMeta = SourceMetaRow;
+
 // Hook to get all categories across enabled sources
-export function useCategories() {
+export function useCategories(): StoredCategory[] {
   const enabledIds = useEnabledSourceIds();
-  const categories = useLiveQuery(
-    () => {
-      if (enabledIds.length === 0) return db.categories.orderBy('category_name').toArray();
-      return db.categories
-        .where('source_id').anyOf(enabledIds)
-        .sortBy('category_name');
-    },
-    [enabledIds.join(',')]
-  );
-  return categories ?? [];
+  const { data } = useDataQuery({ type: 'categories', sourceIds: enabledIds }, ['categories', 'channels'], [enabledIds.join(',')]);
+  return data ?? [];
 }
 
 // Hook to get categories for a specific source
-export function useCategoriesForSource(sourceId: string | null) {
-  const categories = useLiveQuery(
-    () => (sourceId ? db.categories.where('source_id').equals(sourceId).sortBy('category_name') : db.categories.orderBy('category_name').toArray()),
-    [sourceId]
-  );
-  return categories ?? [];
+export function useCategoriesForSource(sourceId: string | null): StoredCategory[] {
+  const { data } = useDataQuery({ type: 'categories', sourceIds: sourceId ? [sourceId] : [] }, ['categories', 'channels'], [sourceId]);
+  return data ?? [];
 }
 
 // Hook to get channels for a category (or all if categoryId is null)
 // sortOrder: 'alphabetical' (default) or 'number' (by channel_num from provider)
-export function useChannels(categoryId: string | null, sortOrder: 'alphabetical' | 'number' = 'alphabetical') {
+export function useChannels(categoryId: string | null, sortOrder: 'alphabetical' | 'number' = 'alphabetical'): StoredChannel[] {
   const enabledIds = useEnabledSourceIds();
-  const channels = useLiveQuery(
-    async () => {
-      let results: StoredChannel[];
-      if (!categoryId) {
-        results = await db.channels.toArray();
-      } else {
-        // Channels in this category
-        results = await db.channels.where('category_ids').equals(categoryId).toArray();
-      }
-
-      // Filter by enabled sources
-      if (enabledIds.length > 0) {
-        const enabledSet = new Set(enabledIds);
-        results = results.filter(ch => enabledSet.has(ch.source_id));
-      }
-
-      // Sort based on preference
-      if (sortOrder === 'number') {
-        // Sort by channel_num, with channels lacking a number at the end (alphabetically)
-        return results.sort((a, b) => {
-          const aNum = a.channel_num;
-          const bNum = b.channel_num;
-          if (aNum !== undefined && bNum !== undefined) {
-            return aNum - bNum;
-          }
-          if (aNum !== undefined) return -1; // a has number, b doesn't
-          if (bNum !== undefined) return 1;  // b has number, a doesn't
-          return a.name.localeCompare(b.name); // both lack numbers, sort alphabetically
-        });
-      }
-      // Default: alphabetical
-      return results.sort((a, b) => a.name.localeCompare(b.name));
-    },
-    [categoryId, sortOrder, enabledIds.join(',')]
+  const { data } = useDataQuery(
+    { type: 'channels', categoryId, sourceIds: enabledIds, sort: sortOrder },
+    ['channels', 'categories'],
+    [categoryId, sortOrder, enabledIds.join(',')],
   );
-  return channels ?? [];
+  return data ?? [];
 }
 
 // Hook to get total channel count (from enabled sources)
-export function useChannelCount() {
+export function useChannelCount(): number {
   const enabledIds = useEnabledSourceIds();
-  const count = useLiveQuery(
-    async () => {
-      if (enabledIds.length === 0) return db.channels.count();
-      return db.channels.where('source_id').anyOf(enabledIds).count();
-    },
-    [enabledIds.join(',')]
-  );
-  return count ?? 0;
+  const { data } = useDataQuery({ type: 'channelCount', sourceIds: enabledIds }, ['channels'], [enabledIds.join(',')]);
+  return data ?? 0;
 }
 
-// Hook to get channel count for a category (from enabled sources)
 // Hook to get sync metadata for all sources
-export function useSyncStatus() {
-  const status = useLiveQuery(() => db.sourcesMeta.toArray());
-  return status ?? [];
+export function useSyncStatus(): SourceMeta[] {
+  const { data } = useDataQuery({ type: 'syncStatus' }, ['sources_meta'], []);
+  return data ?? [];
 }
 
 // Hook to manage selected category with persistence
@@ -117,29 +75,15 @@ export function useSelectedCategory() {
 }
 
 // Hook to search channels by name (from enabled sources)
-export function useChannelSearch(query: string, limit = 50) {
+export function useChannelSearch(query: string, limit = 50): StoredChannel[] {
   const enabledIds = useEnabledSourceIds();
-  const channels = useLiveQuery(
-    async () => {
-      if (!query || query.length < 2) {
-        return [];
-      }
-      const lowerQuery = query.toLowerCase();
-      let results = await db.channels
-        .filter((ch) => ch.name.toLowerCase().includes(lowerQuery))
-        .limit(enabledIds.length > 0 ? limit * 3 : limit) // over-fetch before source filter
-        .toArray();
-
-      if (enabledIds.length > 0) {
-        const enabledSet = new Set(enabledIds);
-        results = results.filter(ch => enabledSet.has(ch.source_id));
-      }
-
-      return results.slice(0, limit);
-    },
-    [query, limit, enabledIds.join(',')]
+  const active = query.length >= 2;
+  const { data } = useDataQuery(
+    active ? { type: 'channelSearch', query, sourceIds: enabledIds, limit } : null,
+    ['channels'],
+    [active ? query : '', limit, enabledIds.join(',')],
   );
-  return channels ?? [];
+  return active ? (data ?? []) : [];
 }
 
 // Categories with channel counts
@@ -147,71 +91,29 @@ export interface CategoryWithCount extends StoredCategory {
   channelCount: number;
 }
 
-// Hook to get categories with their channel counts (from enabled sources)
+// Hook to get categories with their channel counts (from enabled sources).
+// The counts ride along with the categories query.
 export function useCategoriesWithCounts(): CategoryWithCount[] {
-  const enabledIds = useEnabledSourceIds();
-  const data = useLiveQuery(async () => {
-    let categories: StoredCategory[];
-    if (enabledIds.length === 0) {
-      categories = await db.categories.orderBy('category_name').toArray();
-    } else {
-      categories = await db.categories.where('source_id').anyOf(enabledIds).sortBy('category_name');
-    }
-
-    const enabledSet = enabledIds.length > 0 ? new Set(enabledIds) : null;
-    const withCounts: CategoryWithCount[] = await Promise.all(
-      categories.map(async (cat) => {
-        const channels = await db.channels.where('category_ids').equals(cat.category_id).toArray();
-        const count = enabledSet
-          ? channels.filter(ch => enabledSet.has(ch.source_id)).length
-          : channels.length;
-        return { ...cat, channelCount: count };
-      })
-    );
-    return withCounts;
-  }, [enabledIds.join(',')]);
-  return data ?? [];
-}
-
-// Programs are indexed on [stream_id+start]. Reading a channel's whole week
-// and filtering in JS was fine at 65k rows and slow at 500k; bound the start
-// time instead. A program that began before the window but is still running
-// is caught by looking back MAX_PROGRAM_MS.
-const MAX_PROGRAM_MS = 24 * 60 * 60 * 1000;
-
-async function programsStartingBetween(streamIds: string[], lower: Date, upper: Date): Promise<StoredProgram[]> {
-  if (streamIds.length === 0 || upper < lower) return [];
-  const ranges = streamIds.map((id) => [[id, lower], [id, upper]] as [[string, Date], [string, Date]]);
-  return db.programs
-    .where('[stream_id+start]')
-    .inAnyRange(ranges, { includeLowers: true, includeUppers: true })
-    .toArray();
-}
-
-// Latest-starting program per channel that is on air at `now`.
-function currentProgramsFrom(programs: StoredProgram[], now: Date): Map<string, StoredProgram> {
-  const current = new Map<string, StoredProgram>();
-  for (const program of programs) {
-    if (program.start <= now && program.end > now) {
-      const existing = current.get(program.stream_id);
-      if (!existing || program.start > existing.start) current.set(program.stream_id, program);
-    }
-  }
-  return current;
+  const categories = useCategories();
+  return useMemo(() => categories.map((c) => ({ ...c, channelCount: c.channel_count ?? 0 })), [categories]);
 }
 
 // Hook to get current program for a channel
 export function useCurrentProgram(streamId: string | null): StoredProgram | null {
-  const program = useLiveQuery(
-    async () => {
-      if (!streamId) return null;
-      const now = new Date();
-      const candidates = await programsStartingBetween([streamId], new Date(now.getTime() - MAX_PROGRAM_MS), now);
-      return currentProgramsFrom(candidates, now).get(streamId) ?? null;
-    },
-    [streamId]
+  const nowMinute = Math.floor(Date.now() / 60_000) * 60_000;
+  const { data } = useDataQuery(
+    streamId ? { type: 'currentProgram', streamId, nowMs: nowMinute } : null,
+    ['epg_programs', 'epg_links'],
+    [streamId, nowMinute],
   );
-  return program ?? null;
+  return data ?? null;
+}
+
+export function groupProgramsByStream(streamIds: string[], rows: StoredProgram[]): Map<string, StoredProgram[]> {
+  const result = new Map<string, StoredProgram[]>();
+  for (const id of streamIds) result.set(id, []);
+  for (const row of rows) result.get(row.stream_id)?.push(row);
+  return result;
 }
 
 // Hook to get all programs for channels within a time range (for EPG grid).
@@ -219,60 +121,40 @@ export function useCurrentProgram(streamId: string | null): StoredProgram | null
 // means "not read yet" and an empty array means "no EPG for this channel".
 // While a new set of IDs or a new window is being read, the previous map is
 // returned so rows already on screen keep their programs instead of flashing.
-export function useProgramsInRange(
-  streamIds: string[],
-  windowStart: Date,
-  windowEnd: Date
-): Map<string, StoredProgram[]> {
-  const lastPrograms = useRef<Map<string, StoredProgram[]>>(new Map());
-  const programs = useLiveQuery(
-    async () => {
-      if (streamIds.length === 0) return new Map<string, StoredProgram[]>();
-
-      const result = new Map<string, StoredProgram[]>();
-      for (const id of streamIds) {
-        result.set(id, []);
-      }
-
-      // Overlap: program.start < windowEnd AND program.end > windowStart.
-      const lower = new Date(windowStart.getTime() - MAX_PROGRAM_MS);
-      const upper = new Date(windowEnd.getTime() - 1);
-      const overlapping = (await programsStartingBetween(streamIds, lower, upper))
-        .filter((program) => program.end > windowStart);
-
-      for (const program of overlapping) {
-        result.get(program.stream_id)?.push(program);
-      }
-      for (const [, progs] of result) {
-        progs.sort((a, b) => a.start.getTime() - b.start.getTime());
-      }
-
-      return result;
-    },
-    [streamIds.join(','), windowStart.getTime(), windowEnd.getTime()]
+// Both EPG tables are watched: a guide sync or rematch rewrites both for the source.
+export function useProgramsInRange(streamIds: string[], windowStart: Date, windowEnd: Date): Map<string, StoredProgram[]> {
+  const { data, stale } = useDataQuery(
+    streamIds.length > 0 ? { type: 'programsInRange', streamIds, windowStartMs: windowStart.getTime(), windowEndMs: windowEnd.getTime() } : null,
+    ['epg_programs', 'epg_links'],
+    [streamIds.join(','), windowStart.getTime(), windowEnd.getTime()],
   );
-
-  if (programs) lastPrograms.current = programs;
-  return lastPrograms.current;
+  const last = useRef<Map<string, StoredProgram[]>>(new Map());
+  // Rows fetched for an earlier set of ids must not be grouped against the new
+  // ids: that would report every new row as "no EPG" instead of "not read yet".
+  if (data && !stale) last.current = groupProgramsByStream(streamIds, data);
+  return last.current;
 }
 
-// Hook to get the current program for a list of channel IDs (queries local DB - EPG is synced upfront)
+// Hook to get the current program for a list of channel IDs
 export function usePrograms(streamIds: string[]): Map<string, StoredProgram | null> {
-  const programs = useLiveQuery(
-    async () => {
-      if (streamIds.length === 0) return new Map();
-      const now = new Date();
-      const candidates = await programsStartingBetween(streamIds, new Date(now.getTime() - MAX_PROGRAM_MS), now);
-      const current = currentProgramsFrom(candidates, now);
-      const result = new Map<string, StoredProgram | null>();
-      for (const id of streamIds) {
-        result.set(id, current.get(id) ?? null);
-      }
-      return result;
-    },
-    [streamIds.join(',')]
+  const nowMinute = Math.floor(Date.now() / 60_000) * 60_000;
+  const { data: fetched, stale } = useDataQuery(
+    streamIds.length > 0 ? { type: 'programsInRange', streamIds, windowStartMs: nowMinute, windowEndMs: nowMinute + 1 } : null,
+    ['epg_programs', 'epg_links'],
+    [streamIds.join(','), nowMinute],
   );
-  return programs ?? new Map();
+  const data = stale ? undefined : fetched;
+  return useMemo(() => {
+    const result = new Map<string, StoredProgram | null>();
+    for (const id of streamIds) result.set(id, null);
+    for (const row of data ?? []) {
+      if (row.start.getTime() <= nowMinute && row.end.getTime() > nowMinute) {
+        const cur = result.get(row.stream_id);
+        if (!cur || row.start > cur.start) result.set(row.stream_id, row);
+      }
+    }
+    return result;
+  }, [data, streamIds.join(','), nowMinute]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 // Grouped category for adaptive category strip

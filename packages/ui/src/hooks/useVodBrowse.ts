@@ -1,10 +1,22 @@
-import { useState, useEffect } from 'react';
-import { db, type StoredMovie, type StoredSeries } from '../db';
+import { useState, useEffect, useMemo } from 'react';
+import type { MovieRow, SeriesRow } from '@sbtltv/core';
+import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
 
 // ===========================================================================
 // Browse Hooks (for gallery view with Virtuoso)
 // ===========================================================================
+
+function selector(categoryIds: string[] | null) {
+  return categoryIds && categoryIds.length > 0 ? { kind: 'categories' as const, categoryIds } : { kind: 'all' as const };
+}
+
+function applySearch<T extends { name: string }>(items: T[] | undefined, search?: string): T[] {
+  if (!items) return [];
+  if (!search) return items;
+  const q = search.toLowerCase();
+  return items.filter((m) => m.name.toLowerCase().includes(q));
+}
 
 /**
  * All movies for browse view (optionally filtered by category, source-aware)
@@ -13,111 +25,25 @@ import { useEnabledSourceIds } from './useSourceFiltering';
  */
 export function usePaginatedMovies(categoryIds: string[] | null, search?: string) {
   const enabledIds = useEnabledSourceIds();
-  const [items, setItems] = useState<StoredMovie[]>([]);
-  const [loading, setLoading] = useState(false);
-  const categoryKey = categoryIds?.join(',') ?? null;
-
-  useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      try {
-        let result: StoredMovie[];
-
-        if (categoryIds && categoryIds.length === 1) {
-          result = await db.vodMovies.where('category_ids').equals(categoryIds[0]).toArray();
-        } else if (categoryIds && categoryIds.length > 1) {
-          result = await db.vodMovies.where('category_ids').anyOf(categoryIds).toArray();
-        } else {
-          result = await db.vodMovies.toArray();
-        }
-
-        // Filter by enabled sources
-        if (enabledIds.length > 0) {
-          const enabledSet = new Set(enabledIds);
-          result = result.filter(m => enabledSet.has(m.source_id));
-        }
-
-        // Apply search filter
-        if (search) {
-          const searchLower = search.toLowerCase();
-          result = result.filter(m => m.name.toLowerCase().includes(searchLower));
-        }
-
-        // Sort alphabetically
-        result.sort((a, b) => a.name.localeCompare(b.name));
-
-        setItems(result);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAll();
-  }, [categoryKey, search, enabledIds]);
-
-  return {
-    items,
-    loading,
-    hasMore: false,
-    loadMore: () => {},
-  };
+  const { data, loading } = useDataQuery(
+    { type: 'movies', by: selector(categoryIds), sourceIds: enabledIds },
+    ['vod_movies'], [categoryIds?.join(',') ?? null, enabledIds.join(',')],
+  );
+  const items: MovieRow[] = useMemo(() => applySearch(data, search), [data, search]);
+  return { items, loading, hasMore: false, loadMore: () => {} };
 }
 
 /**
  * All series for browse view (optionally filtered by category, source-aware)
- * Returns items sorted alphabetically - Virtuoso handles virtualization
- * Pass null for categoryIds to get ALL series, or array of category IDs to filter
  */
 export function usePaginatedSeries(categoryIds: string[] | null, search?: string) {
   const enabledIds = useEnabledSourceIds();
-  const [items, setItems] = useState<StoredSeries[]>([]);
-  const [loading, setLoading] = useState(false);
-  const categoryKey = categoryIds?.join(',') ?? null;
-
-  useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      try {
-        let result: StoredSeries[];
-
-        if (categoryIds && categoryIds.length === 1) {
-          result = await db.vodSeries.where('category_ids').equals(categoryIds[0]).toArray();
-        } else if (categoryIds && categoryIds.length > 1) {
-          result = await db.vodSeries.where('category_ids').anyOf(categoryIds).toArray();
-        } else {
-          result = await db.vodSeries.toArray();
-        }
-
-        // Filter by enabled sources
-        if (enabledIds.length > 0) {
-          const enabledSet = new Set(enabledIds);
-          result = result.filter(s => enabledSet.has(s.source_id));
-        }
-
-        // Apply search filter
-        if (search) {
-          const searchLower = search.toLowerCase();
-          result = result.filter(s => s.name.toLowerCase().includes(searchLower));
-        }
-
-        // Sort alphabetically
-        result.sort((a, b) => a.name.localeCompare(b.name));
-
-        setItems(result);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAll();
-  }, [categoryKey, search, enabledIds]);
-
-  return {
-    items,
-    loading,
-    hasMore: false,
-    loadMore: () => {},
-  };
+  const { data, loading } = useDataQuery(
+    { type: 'series', by: selector(categoryIds), sourceIds: enabledIds },
+    ['vod_series'], [categoryIds?.join(',') ?? null, enabledIds.join(',')],
+  );
+  const items: SeriesRow[] = useMemo(() => applySearch(data, search), [data, search]);
+  return { items, loading, hasMore: false, loadMore: () => {} };
 }
 
 /**

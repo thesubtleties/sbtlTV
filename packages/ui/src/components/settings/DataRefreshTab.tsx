@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { clearAllCachedData } from '../../db';
-import { syncAllSources } from '../../db/sync';
-import { useCacheClearing, useSetCacheClearing, useSetChannelSyncing, useUpdateSettings } from '../../stores/uiStore';
+import { data } from '../../data/client';
+import { useCacheClearing, useSetCacheClearing, useUpdateSettings } from '../../stores/uiStore';
 
 interface DataRefreshTabProps {
   vodRefreshHours: number;
@@ -19,7 +18,6 @@ export function DataRefreshTab({
   const [showConfirm, setShowConfirm] = useState(false);
   const isClearing = useCacheClearing();
   const setCacheClearing = useSetCacheClearing();
-  const setChannelSyncing = useSetChannelSyncing();
   const updateSettings = useUpdateSettings();
 
   async function saveRefreshSettings(vod: number, epg: number) {
@@ -32,16 +30,14 @@ export function DataRefreshTab({
     setCacheClearing(true);
     setShowConfirm(false);
     try {
-      await clearAllCachedData();
-      // Trigger fresh sync (no page reload needed)
-      setCacheClearing(false);
-      setChannelSyncing(true);
-      await syncAllSources();
-      setChannelSyncing(false);
+      // The data process empties its tables, then resyncs every source; the
+      // banner follows its progress events. Watch progress and favorites stay.
+      await data.query({ type: 'clearAll' });
+      await data.query({ type: 'syncNow', what: 'all' });
     } catch (error) {
       console.error('[Settings] Failed to clear cache:', error);
+    } finally {
       setCacheClearing(false);
-      setChannelSyncing(false);
     }
   }
 

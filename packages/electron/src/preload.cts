@@ -90,7 +90,6 @@ export interface FetchProxyResponse {
 export interface FetchProxyApi {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<StorageResult<FetchProxyResponse>>;
   fetchBinary: (url: string) => Promise<StorageResult<string>>; // Returns base64-encoded data
-  fetchAndParseEpg: (url: string, providerChannels?: { epg_channel_id: string; name: string; stream_id: string }[]) => Promise<StorageResult<{ channels: { id: string; displayNames: string[] }[]; programs: { channel_id: string; title: string; description: string; start: string; stop: string }[] }>>;
 }
 
 export interface DebugApi {
@@ -175,13 +174,20 @@ contextBridge.exposeInMainWorld('storage', {
 } satisfies StorageApi);
 
 // Expose fetch proxy API - bypasses CORS for API calls
+// Data process port: main hands a MessagePort over IPC; pass it into the page's
+// world. The renderer's DataClient listens for exactly this message.
+ipcRenderer.on('data-port', (event: IpcRendererEvent) => {
+  window.postMessage('data-port', '*', event.ports);
+});
+contextBridge.exposeInMainWorld('data', {
+  requestPort: () => ipcRenderer.send('data-request-port'),
+});
+
 contextBridge.exposeInMainWorld('fetchProxy', {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) =>
     ipcRenderer.invoke('fetch-proxy', url, options),
   fetchBinary: (url: string) =>
     ipcRenderer.invoke('fetch-binary', url),
-  fetchAndParseEpg: (url: string, providerChannels?: { epg_channel_id: string; name: string; stream_id: string }[]) =>
-    ipcRenderer.invoke('fetch-and-parse-epg', url, providerChannels),
 } satisfies FetchProxyApi);
 
 // Expose platform info for conditional UI (e.g., resize grip on Windows only)

@@ -1,6 +1,5 @@
-import { useMemo, useCallback } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type StoredMovie, type StoredEpisode } from '../db';
+import { useMemo } from 'react';
+import { useDataQuery } from '../data/useDataQuery';
 import { usePreferredSourceResolver, useSourceMap, useEnabledSourceIds } from './useSourceFiltering';
 
 export interface SourceOption {
@@ -19,16 +18,11 @@ export function useMoviePlaySources(tmdbId?: number, streamId?: string): SourceO
   const resolve = usePreferredSourceResolver('vod');
   const sourceMap = useSourceMap();
 
-  const movies = useLiveQuery(async () => {
-    if (tmdbId) {
-      return db.vodMovies.where('tmdb_id').equals(tmdbId).toArray();
-    }
-    if (streamId) {
-      const m = await db.vodMovies.get(streamId);
-      return m ? [m] : [];
-    }
-    return [];
-  }, [tmdbId, streamId]);
+  const { data: movies } = useDataQuery(
+    tmdbId ? { type: 'movies', by: { kind: 'tmdbIds', tmdbIds: [tmdbId] }, sourceIds: [] }
+      : streamId ? { type: 'movies', by: { kind: 'ids', streamIds: [streamId] }, sourceIds: [] } : null,
+    ['vod_movies'], [tmdbId, streamId],
+  );
 
   return useMemo(() => {
     if (!movies || movies.length === 0) return [];
@@ -75,38 +69,23 @@ export function useEpisodePlaySources(
   const resolve = usePreferredSourceResolver('vod');
   const sourceMap = useSourceMap();
 
-  const episodes = useLiveQuery(async () => {
-    if (!tmdbId && !fallbackSeriesId) return [];
-
-    if (tmdbId) {
-      // Find all series with this tmdb_id, then find matching episodes
-      const allSeries = await db.vodSeries.where('tmdb_id').equals(tmdbId).toArray();
-      const seriesIds = allSeries.map(s => s.series_id);
-      if (seriesIds.length === 0) return [];
-
-      const allEpisodes = await db.vodEpisodes
-        .where('series_id')
-        .anyOf(seriesIds)
-        .toArray();
-
-      return allEpisodes.filter(
-        ep => ep.season_num === seasonNum && ep.episode_num === episodeNum
-      );
-    }
-
-    // Fallback: single series
-    if (fallbackSeriesId) {
-      const eps = await db.vodEpisodes
-        .where('series_id')
-        .equals(fallbackSeriesId)
-        .toArray();
-      return eps.filter(
-        ep => ep.season_num === seasonNum && ep.episode_num === episodeNum
-      );
-    }
-
-    return [];
-  }, [tmdbId, fallbackSeriesId, seasonNum, episodeNum]);
+  // All series sharing the tmdb_id (or just the fallback series), then their episodes
+  const { data: relatedSeries } = useDataQuery(
+    tmdbId ? { type: 'series', by: { kind: 'tmdbIds', tmdbIds: [tmdbId] }, sourceIds: [] } : null,
+    ['vod_series'], [tmdbId],
+  );
+  const seriesIds = useMemo(() => {
+    if (tmdbId) return (relatedSeries ?? []).map((s) => s.series_id);
+    return fallbackSeriesId ? [fallbackSeriesId] : [];
+  }, [tmdbId, relatedSeries, fallbackSeriesId]);
+  const { data: allEpisodes } = useDataQuery(
+    seriesIds.length > 0 ? { type: 'episodes', seriesIds } : null,
+    ['vod_episodes'], [seriesIds.join(',')],
+  );
+  const episodes = useMemo(
+    () => (allEpisodes ?? []).filter((ep) => ep.season_num === seasonNum && ep.episode_num === episodeNum),
+    [allEpisodes, seasonNum, episodeNum],
+  );
 
   return useMemo(() => {
     if (!episodes || episodes.length === 0) return [];

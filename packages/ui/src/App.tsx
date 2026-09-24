@@ -14,9 +14,8 @@ import { VideoCanvas } from './components/VideoCanvas';
 import { useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
 import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode } from './stores/uiStore';
-import { syncVodForSource, isVodStale, isEpgStale, syncSource } from './db/sync';
+import { data } from './data/client';
 import type { StoredChannel, StoredSeries } from './db';
-import { db } from './db';
 import type { VodPlayInfo } from './types/media';
 import { updateWatchProgress, getResumePosition } from './hooks/useWatchProgress';
 import { mergedEpisodesForSeries } from './hooks/useContinueWatching';
@@ -166,8 +165,8 @@ function App() {
     }
     // Resolve the EXACT series being watched (seriesStreamId), with a tmdb fallback.
     let series: StoredSeries | undefined;
-    if (cur.seriesStreamId) series = await db.vodSeries.get(cur.seriesStreamId);
-    if (!series && cur.tmdbId) series = await db.vodSeries.where('tmdb_id').equals(cur.tmdbId).first();
+    if (cur.seriesStreamId) series = (await data.query({ type: 'series', by: { kind: 'ids', seriesIds: [cur.seriesStreamId] }, sourceIds: [] }))[0];
+    if (!series && cur.tmdbId) series = (await data.query({ type: 'series', by: { kind: 'tmdbIds', tmdbIds: [cur.tmdbId] }, sourceIds: [] }))[0];
     if (!series) { debugLog(`[next-ep] no series (streamId=${cur.seriesStreamId} tmdb=${cur.tmdbId})`, 'mpv'); return null; }
     // Episodes can live under any tmdb-matched series (cross-source / duplicate) — use the same
     // merged set the Continue Watching card and SeriesDetail use, so "next episode" stays consistent.
@@ -513,88 +512,33 @@ function App() {
     return () => window.updater?.removeAllListeners();
   }, []);
 
-  // Sync sources on app load (if sources exist)
+  // Hydrate sources into Zustand for reactive source filtering. Syncing itself is
+  // scheduled by the data process; the banner below follows its progress events.
   useEffect(() => {
-    const doInitialSync = async () => {
-      if (!window.storage) return;
-      try {
-        const result = await window.storage.getSources();
-        // Hydrate sources into Zustand for reactive source filtering
-        if (result.data) {
-          useUIStore.getState().hydrateSources(result.data);
-        }
-        if (result.data && result.data.length > 0) {
-          // Purge orphaned data from deleted sources
-          const { purgeOrphanedData } = await import('./db');
-          await purgeOrphanedData(result.data.map(s => s.id));
+    if (!window.storage) return;
+    window.storage.getSources().then((result) => {
+      if (result.data) useUIStore.getState().hydrateSources(result.data);
+    }).catch((err) => {
+      debugLog(`Loading sources failed: ${err instanceof Error ? err.message : String(err)}`, 'sync');
+      useToastStore.getState().addToast({ kind: 'error', title: 'Could not load sources', message: 'The app settings could not be read — details are in the debug log.', duration: 8000 });
+    });
+  }, []);
 
-          // Check if forced resync needed (e.g., after DB migration)
-          const resyncPref = await db.prefs.get('needs_resync');
-          const forceResync = resyncPref?.value === 'true';
-          if (forceResync) {
-            debugLog('Forced resync needed (DB migration)', 'sync');
-            await db.prefs.delete('needs_resync');
-          }
-
-          // Read refresh settings from Zustand (already hydrated)
-          const { settings } = useUIStore.getState();
-          const epgRefreshHrs = settings.epgRefreshHours ?? 6;
-          const vodRefreshHrs = settings.vodRefreshHours ?? 24;
-
-          // Sync channels/EPG only for stale sources (or all if forced)
-          const enabledSources = result.data.filter(s => s.enabled);
-          const staleSources = [];
-          for (const source of enabledSources) {
-            const stale = forceResync || await isEpgStale(source.id, epgRefreshHrs);
-            if (stale) {
-              staleSources.push(source);
-            } else {
-              debugLog(`Source ${source.name} is fresh, skipping channel/EPG sync`, 'sync');
-            }
-          }
-
-          if (staleSources.length > 0) {
-            setChannelSyncing(true);
-            for (const source of staleSources) {
-              debugLog(`Source ${source.name} is stale, syncing...`, 'sync');
-              await syncSource(source);
-            }
-          }
-
-          // Sync VOD only for Xtream sources that are stale
-          const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
-          if (xtreamSources.length > 0) {
-            const staleVodSources = [];
-            for (const source of xtreamSources) {
-              const stale = forceResync || await isVodStale(source.id, vodRefreshHrs);
-              if (stale) {
-                staleVodSources.push(source);
-              } else {
-                debugLog(`Source ${source.name} is fresh, skipping VOD sync`, 'vod');
-              }
-            }
-
-            if (staleVodSources.length > 0) {
-              setVodSyncing(true);
-              for (const source of staleVodSources) {
-                debugLog(`Source ${source.name} is stale, syncing VOD...`, 'vod');
-                await syncVodForSource(source);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        debugLog(`Initial sync failed: ${errMsg}`, 'sync');
-        console.error('[App] Initial sync failed:', err);
-        useToastStore.getState().addToast({ kind: 'error', title: 'Sync failed', message: 'Check the source and your connection — details are in the debug log.', duration: 8000 });
-      } finally {
-        setChannelSyncing(false);
-        setVodSyncing(false);
-      }
-    };
-    doInitialSync();
-  }, [setChannelSyncing, setVodSyncing]);
+  useEffect(() => data.onSync((p) => {
+    // The channel banner covers the channels stage and the guide stage that
+    // usually follows it: it clears when either stage ends, and the guide stage
+    // starting raises it again. A source with no guide only ever sends channels.
+    const toast = (title: string) => useToastStore.getState().addToast({ kind: 'error', title, message: 'Check the source and your connection — details are in the debug log.', duration: 8000 });
+    if (p.stage === 'channels' || p.stage === 'epg') {
+      setChannelSyncing(p.state === 'started');
+      if (p.state === 'failed') toast(p.stage === 'channels' ? 'Sync failed' : 'Guide sync failed');
+    }
+    if (p.stage === 'vod') {
+      setVodSyncing(p.state === 'started');
+      if (p.state === 'failed') toast('Library sync failed');
+    }
+    if (p.stage === 'tmdb') useUIStore.getState().setTmdbMatching(p.state === 'started');
+  }), [setChannelSyncing, setVodSyncing]);
 
   // Keyboard shortcuts
   useEffect(() => {

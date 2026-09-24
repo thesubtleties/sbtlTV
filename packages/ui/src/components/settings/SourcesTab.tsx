@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Source } from '../../types/electron';
-import { syncAllSources, syncAllVod, markSourceDeleted, unmarkSourceDeleted } from '../../db/sync';
-import { clearSourceData, clearVodData, db } from '../../db';
+import { data } from '../../data/client';
 import { useSyncStatus } from '../../hooks/useChannels';
-import { useChannelSyncing, useSetChannelSyncing, useVodSyncing, useSetVodSyncing, useUIStore, useUpdateSettings } from '../../stores/uiStore';
+import { useChannelSyncing, useVodSyncing, useUIStore, useUpdateSettings } from '../../stores/uiStore';
 import { parseM3U } from '@sbtltv/local-adapter';
 import { useToast } from '../../hooks/useToast';
 
@@ -47,9 +46,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
 
   // Global sync state - persists across Settings open/close
   const syncing = useChannelSyncing();
-  const setSyncing = useSetChannelSyncing();
   const vodSyncing = useVodSyncing();
-  const setVodSyncing = useSetVodSyncing();
 
   const hasXtreamSource = sources.some(s => s.type === 'xtream');
   const updateSettings = useUpdateSettings();
@@ -137,12 +134,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
     const p = toast.progress(`Removing ${sourceName}…`);
     const startedAt = Date.now();
     try {
-      // Mark source as deleted FIRST - prevents sync from writing results after deletion
-      markSourceDeleted(id);
-
-      // Clean up all data in IndexedDB before removing source config
-      await clearSourceData(id);
-      await clearVodData(id);
+      // Main pushes the new source list to the data process, which drops the rows.
       const result = await window.storage.deleteSource(id);
       if (result.error) throw new Error(result.error); // soft IPC error — surface as a failure
 
@@ -165,8 +157,6 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       if (elapsed < 500) await new Promise((r) => setTimeout(r, 500 - elapsed));
       p.succeed(`Removed ${sourceName}`);
     } catch (err) {
-      // Deletion failed part-way — un-suppress sync for this still-present source.
-      unmarkSourceDeleted(id);
       const msg = err instanceof Error ? err.message : String(err);
       p.fail(`Couldn't remove ${sourceName}`, msg);
     }
@@ -227,25 +217,9 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
       }
     }
 
-    // For file imports, store channels directly in the database
+    // For file imports, hand the playlist to the data process (there is no URL to fetch)
     if (importedM3U) {
-      const parsed = parseM3U(importedM3U.rawContent, sourceId);
-
-      await db.transaction('rw', [db.channels, db.categories, db.sourcesMeta], async () => {
-        if (parsed.channels.length > 0) {
-          await db.channels.bulkPut(parsed.channels);
-        }
-        if (parsed.categories.length > 0) {
-          await db.categories.bulkPut(parsed.categories);
-        }
-        await db.sourcesMeta.put({
-          source_id: sourceId,
-          epg_url: parsed.epgUrl ?? undefined,
-          last_synced: new Date(),
-          channel_count: parsed.channels.length,
-          category_count: parsed.categories.length,
-        });
-      });
+      await data.query({ type: 'importPlaylist', sourceId, content: importedM3U.rawContent });
     }
 
     setShowAddForm(false);
@@ -263,29 +237,24 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
     setError(null);
   }
 
+  // The data process runs the sync; the banner follows its progress events (App.tsx).
   async function handleSync() {
-    setSyncing(true);
     setSyncError(null);
     try {
-      await syncAllSources();
+      await data.query({ type: 'syncNow', what: 'channels' });
     } catch (err) {
       console.error('Sync error:', err);
       setSyncError(err instanceof Error ? err.message : 'Channel sync failed');
-    } finally {
-      setSyncing(false);
     }
   }
 
   async function handleVodSync() {
-    setVodSyncing(true);
     setSyncError(null);
     try {
-      await syncAllVod();
+      await data.query({ type: 'syncNow', what: 'vod' });
     } catch (err) {
       console.error('VOD sync error:', err);
       setSyncError(err instanceof Error ? err.message : 'VOD sync failed');
-    } finally {
-      setVodSyncing(false);
     }
   }
 

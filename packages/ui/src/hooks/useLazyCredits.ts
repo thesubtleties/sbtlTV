@@ -10,7 +10,8 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { db, type StoredMovie } from '../db';
+import { data } from '../data/client';
+import type { VodDetailFields } from '@sbtltv/core';
 import { getMovieCredits, getTvShowCredits } from '../services/tmdb';
 import { type MediaItem, isMovie } from '../types/media';
 
@@ -94,13 +95,13 @@ export function useLazyCredits(
             .join(', ');
           if (directors) directorString = directors;
 
-          // Cache to DB
-          const updates: Partial<StoredMovie> = {};
+          // Cache to the data process - it only fills fields that are empty
+          const updates: VodDetailFields = {};
           if (castString && !hasCast) updates.cast = castString;
           if (directorString && !hasDirector) updates.director = directorString;
 
           if (Object.keys(updates).length > 0) {
-            await db.vodMovies.update(item.stream_id, updates);
+            await data.query({ type: 'updateVodDetails', kind: 'movie', itemId: item.stream_id, fields: updates });
           }
         } else {
           const credits = await getTvShowCredits(apiKey, item.tmdb_id!);
@@ -113,9 +114,9 @@ export function useLazyCredits(
             .join(', ');
           if (topCast) castString = topCast;
 
-          // Cache to DB
+          // Cache to the data process
           if (castString && !hasCast) {
-            await db.vodSeries.update(item.series_id, { cast: castString });
+            await data.query({ type: 'updateVodDetails', kind: 'series', itemId: item.series_id, fields: { cast: castString } });
           }
         }
 

@@ -1,6 +1,5 @@
 import { useUpdateSettings } from '../../stores/uiStore';
-import { db } from '../../db';
-import { syncAllSources } from '../../db/sync';
+import { data } from '../../data/client';
 import { useToast } from '../../hooks/useToast';
 import { debugLog } from '../../utils/debugLog';
 
@@ -56,25 +55,19 @@ export function EpgTab({
     if (order !== 'provider') return;
 
     // Provider order needs per-category `position`; backfill via resync if absent.
-    // syncAllSources() only throws on infra errors — per-source failures come back
-    // in the result map, so inspect it rather than trusting a non-throw as success.
+    // The data process runs the sync; the banner follows its progress events.
     let progress: ReturnType<typeof toast.progress> | undefined;
     try {
-      const ready = (await db.categories.where('position').aboveOrEqual(0).count()) > 0;
+      const cats = await data.query({ type: 'categories', sourceIds: [] });
+      const ready = cats.some((c) => c.position != null);
       if (ready) return;
 
       progress = toast.progress('Preparing provider order…', 'Re-syncing your channels');
-      const results = await syncAllSources();
-      const failed = [...results.values()].filter((r) => !r.success).length;
-
-      if (results.size === 0) {
+      if (cats.length === 0) {
         progress.fail('No channels to sync', 'Add a source in the Sources tab first');
-      } else if (failed === results.size) {
-        progress.fail('Could not prepare provider order', 'Try syncing from the Sources tab');
-      } else if (failed > 0) {
-        progress.succeed('Provider order ready', 'Some sources failed — check the Sources tab');
       } else {
-        progress.succeed('Provider order ready');
+        await data.query({ type: 'syncNow', what: 'channels' });
+        progress.succeed('Provider order ready once the sync finishes', 'Check the Sources tab for progress');
       }
     } catch (err) {
       debugLog(`[category-sort] provider-order resync failed: ${err instanceof Error ? err.message : String(err)}`, 'sync');

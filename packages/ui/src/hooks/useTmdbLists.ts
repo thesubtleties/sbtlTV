@@ -12,12 +12,12 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 
 const MAX_LIST_RETRIES = 3;
 const LIST_RETRY_BASE_MS = 5000;
 import { useEnabledSourceIds } from './useSourceFiltering';
-import { db, type StoredMovie, type StoredSeries } from '../db';
+import { useDataQuery } from '../data/useDataQuery';
+import type { StoredMovie, StoredSeries } from '../db';
 import {
   // WithCache functions (work with or without token)
   getTrendingMoviesWithCache,
@@ -98,33 +98,25 @@ export function useEnabledSeriesGenres(): number[] | undefined {
  * Query local movies by TMDB IDs using the tmdb_id index
  * Much faster than filtering all movies!
  */
-function useMoviesByTmdbIds(tmdbIds: number[]) {
+function useMoviesByTmdbIds(tmdbIds: number[]): StoredMovie[] | undefined {
   const enabledIds = useEnabledSourceIds();
-  return useLiveQuery(async () => {
-    if (tmdbIds.length === 0) return [];
-    let movies = await db.vodMovies.where('tmdb_id').anyOf(tmdbIds).toArray();
-    if (enabledIds.length > 0) {
-      const enabledSet = new Set(enabledIds);
-      movies = movies.filter(m => enabledSet.has(m.source_id));
-    }
-    return movies;
-  }, [tmdbIds.join(','), enabledIds.join(',')]);
+  const { data } = useDataQuery(
+    { type: 'movies', by: { kind: 'tmdbIds', tmdbIds }, sourceIds: enabledIds },
+    ['vod_movies'], [tmdbIds.join(','), enabledIds.join(',')],
+  );
+  return data;
 }
 
 /**
  * Query local series by TMDB IDs using the tmdb_id index (source-filtered)
  */
-function useSeriesByTmdbIds(tmdbIds: number[]) {
+function useSeriesByTmdbIds(tmdbIds: number[]): StoredSeries[] | undefined {
   const enabledIds = useEnabledSourceIds();
-  return useLiveQuery(async () => {
-    if (tmdbIds.length === 0) return [];
-    let series = await db.vodSeries.where('tmdb_id').anyOf(tmdbIds).toArray();
-    if (enabledIds.length > 0) {
-      const enabledSet = new Set(enabledIds);
-      series = series.filter(s => enabledSet.has(s.source_id));
-    }
-    return series;
-  }, [tmdbIds.join(','), enabledIds.join(',')]);
+  const { data } = useDataQuery(
+    { type: 'series', by: { kind: 'tmdbIds', tmdbIds }, sourceIds: enabledIds },
+    ['vod_series'], [tmdbIds.join(','), enabledIds.join(',')],
+  );
+  return data;
 }
 
 /**
@@ -134,7 +126,8 @@ function sortByTmdbOrder<T extends { tmdb_id?: number }>(
   items: T[],
   tmdbOrder: Map<number, number>
 ): T[] {
-  // Dedup: one item per tmdb_id (first encountered wins — Dexie returns in insert order)
+  // Dedup: one item per tmdb_id. The rows arrive in no defined order, so which
+  // source's copy wins is arbitrary; the detail views resolve sources properly.
   const seen = new Set<number>();
   return items
     .filter((item) => {
@@ -285,35 +278,22 @@ export function useUpcomingMovies(accessToken: string | null) {
  */
 export function useLocalPopularMovies(limit = 20) {
   const enabledIds = useEnabledSourceIds();
-  const movies = useLiveQuery(async () => {
-    if (limit === 0) return [];
-    // Fetch a generous buffer for source filtering + dedup, not the full table
-    const BUFFER = limit * 10;
-    let all = await db.vodMovies
-      .orderBy('popularity')
-      .reverse()
-      .filter((m) => m.popularity !== undefined && m.popularity > 0)
-      .limit(BUFFER)
-      .toArray();
-    if (enabledIds.length > 0) {
-      const enabledSet = new Set(enabledIds);
-      all = all.filter(m => enabledSet.has(m.source_id));
-    }
-    // Dedup by tmdb_id
+  // Fetch a generous buffer for dedup, not the full table
+  const { data, loading } = useDataQuery(
+    limit > 0 ? { type: 'movies', by: { kind: 'popular' }, sourceIds: enabledIds, limit: limit * 10 } : null,
+    ['vod_movies'], [limit, enabledIds.join(',')],
+  );
+  const movies = useMemo(() => {
     const seen = new Set<number>();
-    const deduped = all.filter(m => {
+    return (data ?? []).filter((m) => {
       if (!m.tmdb_id) return true;
       if (seen.has(m.tmdb_id)) return false;
       seen.add(m.tmdb_id);
       return true;
-    });
-    return deduped.slice(0, limit);
-  }, [limit, enabledIds.join(',')]);
+    }).slice(0, limit);
+  }, [data, limit]);
 
-  return {
-    movies: movies ?? [],
-    loading: movies === undefined,
-  };
+  return { movies, loading: limit > 0 && loading };
 }
 
 /**
@@ -385,34 +365,21 @@ export function useAiringTodaySeries(accessToken: string | null) {
  */
 export function useLocalPopularSeries(limit = 20) {
   const enabledIds = useEnabledSourceIds();
-  const series = useLiveQuery(async () => {
-    if (limit === 0) return [];
-    const BUFFER = limit * 10;
-    let all = await db.vodSeries
-      .orderBy('popularity')
-      .reverse()
-      .filter((s) => s.popularity !== undefined && s.popularity > 0)
-      .limit(BUFFER)
-      .toArray();
-    if (enabledIds.length > 0) {
-      const enabledSet = new Set(enabledIds);
-      all = all.filter(s => enabledSet.has(s.source_id));
-    }
-    // Dedup by tmdb_id
+  const { data, loading } = useDataQuery(
+    limit > 0 ? { type: 'series', by: { kind: 'popular' }, sourceIds: enabledIds, limit: limit * 10 } : null,
+    ['vod_series'], [limit, enabledIds.join(',')],
+  );
+  const series = useMemo(() => {
     const seen = new Set<number>();
-    const deduped = all.filter(s => {
+    return (data ?? []).filter((s) => {
       if (!s.tmdb_id) return true;
       if (seen.has(s.tmdb_id)) return false;
       seen.add(s.tmdb_id);
       return true;
-    });
-    return deduped.slice(0, limit);
-  }, [limit, enabledIds.join(',')]);
+    }).slice(0, limit);
+  }, [data, limit]);
 
-  return {
-    series: series ?? [],
-    loading: series === undefined,
-  };
+  return { series, loading: limit > 0 && loading };
 }
 
 /**
