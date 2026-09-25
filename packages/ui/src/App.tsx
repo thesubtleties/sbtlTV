@@ -185,6 +185,19 @@ function App() {
   useEffect(() => { triggerUpNextRef.current = triggerUpNext; }, [triggerUpNext]);
   useEffect(() => { autoplayEnabledRef.current = autoplayEnabled; }, [autoplayEnabled]);
   useEffect(() => { isFullscreenRef.current = isFullscreen; }, [isFullscreen]);
+  // Playback keys (seek, volume) read live state from a ref because the key
+  // handler is registered once on mount.
+  const playbackRef = useRef({ position: 0, duration: 0, volume: 100, activeView: 'none' as View, categoriesOpen: false });
+  useEffect(() => {
+    playbackRef.current = { position, duration, volume, activeView, categoriesOpen };
+  }, [position, duration, volume, activeView, categoriesOpen]);
+  // Linux only: true when mpv runs in its own window (compatibility player), where
+  // that window owns fullscreen and the default mpv key bindings.
+  const linuxExternalPlayerRef = useRef(false);
+  const refreshPlayerMode = () => {
+    if (!window.platform?.isLinux || !window.mpv) return;
+    window.mpv.getMode().then((info) => { linuxExternalPlayerRef.current = info.mode === 'external'; }).catch(() => {});
+  };
 
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
@@ -202,9 +215,11 @@ function App() {
       return;
     }
 
+    refreshPlayerMode();
     window.mpv.onReady((ready) => {
       console.log('mpv ready:', ready);
       setMpvReady(ready);
+      refreshPlayerMode();
     });
 
     window.mpv.onStatus((status: MpvStatus) => {
@@ -334,6 +349,13 @@ function App() {
     if (!window.mpv) return;
     await window.mpv.toggleMute();
     // UI state updated via mpv status callback
+  };
+
+  // Keyboard volume step (mpv's 9 / 0 keys)
+  const handleVolumeStep = async (delta: number) => {
+    const next = Math.min(100, Math.max(0, Math.round(playbackRef.current.volume + delta)));
+    setVolume(next);
+    if (window.mpv) await window.mpv.setVolume(next);
   };
 
   const handleStop = async () => {
@@ -560,8 +582,33 @@ function App() {
           e.preventDefault();
           handleToggleFullscreen();
           break;
+        case 'p':
+          // mpv's other pause key
+          e.preventDefault();
+          handleTogglePlay();
+          break;
         case 'm':
           handleToggleMute();
+          break;
+        case 'ArrowLeft':
+        case 'ArrowRight':
+        case 'ArrowUp':
+        case 'ArrowDown': {
+          // mpv's seek keys (5s sideways, 60s up/down), only while watching with
+          // nothing else open: the guide uses left/right for its timeline and the
+          // library views use arrows to browse. Live streams have no duration.
+          const { position, duration, activeView, categoriesOpen } = playbackRef.current;
+          if (activeView !== 'none' || categoriesOpen || duration <= 0) break;
+          e.preventDefault();
+          const delta = e.key === 'ArrowLeft' ? -5 : e.key === 'ArrowRight' ? 5 : e.key === 'ArrowUp' ? 60 : -60;
+          handleSeek(Math.min(Math.max(0, position + delta), duration));
+          break;
+        }
+        case '9':
+          handleVolumeStep(-5);
+          break;
+        case '0':
+          handleVolumeStep(5);
           break;
         case 'g':
           // Toggle guide
@@ -599,9 +646,10 @@ function App() {
   const handleMaximize = () => window.electronWindow?.maximize();
   const handleClose = () => window.electronWindow?.close();
   const handleToggleFullscreen = () => {
-    // Linux runs mpv in its own window (with its own `f` fullscreen), so toggling the Electron
-    // window here would fullscreen the chrome, not the video — no-op on Linux.
-    if (window.platform?.isLinux) return;
+    // Linux compatibility player runs mpv in its own window (with its own `f` fullscreen), so
+    // toggling the Electron window there would fullscreen the chrome, not the video. The
+    // in-window player renders inside this window and fullscreens like macOS.
+    if (linuxExternalPlayerRef.current) return;
     window.electronWindow?.setFullscreen();
   };
 
