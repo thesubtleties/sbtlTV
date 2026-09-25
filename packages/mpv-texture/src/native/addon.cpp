@@ -269,6 +269,19 @@ Napi::Value GetStatus(const Napi::CallbackInfo& info) {
     return StatusToJS(env, status);
 }
 
+// Read an mpv property as a string; undefined when unavailable
+Napi::Value GetProperty(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!g_context || info.Length() < 1 || !info[0].IsString()) {
+        return env.Undefined();
+    }
+
+    const std::string value = g_context->getPropertyString(info[0].As<Napi::String>().Utf8Value());
+    if (value.empty()) return env.Undefined();
+    return Napi::String::New(env, value);
+}
+
 // Set frame callback
 Napi::Value OnFrame(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
@@ -421,6 +434,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("setVolume", Napi::Function::New(env, SetVolume));
     exports.Set("toggleMute", Napi::Function::New(env, ToggleMute));
     exports.Set("getStatus", Napi::Function::New(env, GetStatus));
+    exports.Set("getProperty", Napi::Function::New(env, GetProperty));
     exports.Set("onFrame", Napi::Function::New(env, OnFrame));
     exports.Set("onStatus", Napi::Function::New(env, OnStatus));
     exports.Set("onError", Napi::Function::New(env, OnError));

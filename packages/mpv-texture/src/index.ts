@@ -155,6 +155,7 @@ interface NativeAddon {
   setVolume(volume: number): void;
   toggleMute(): void;
   getStatus(): MpvStatus | undefined;
+  getProperty(name: string): string | undefined;
   onFrame(callback: (info: TextureInfo) => void): void;
   onStatus(callback: (status: MpvStatus) => void): void;
   onError(callback: (error: string) => void): void;
@@ -312,6 +313,17 @@ export class MpvTexture {
   getStatus(): MpvStatus | undefined {
     if (!this._initialized) return undefined;
     return addon.getStatus();
+  }
+
+  /**
+   * Read an mpv property as a string ('hwdec-current', 'video-codec',
+   * 'frame-drop-count', ...)
+   *
+   * @returns The property value, or undefined if unavailable or not initialized
+   */
+  getProperty(name: string): string | undefined {
+    if (!this._initialized) return undefined;
+    return addon.getProperty(name);
   }
 
   /**

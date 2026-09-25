@@ -19,6 +19,8 @@ export interface MpvResult {
 export interface MpvModeInfo {
   mode: 'native' | 'external';
   sharedTextureAvailable: boolean;
+  /** mpv's hwdec-current while playing natively ('vaapi', 'videotoolbox', 'no', ...), else null */
+  hwdecCurrent?: string | null;
 }
 
 export interface MpvApi {

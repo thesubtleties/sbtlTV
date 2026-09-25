@@ -26,6 +26,7 @@ async function createBridge() {
     onFrame(callback: (frame: TextureInfo) => void) { frameCallback = callback; },
     onStatus() {}, onError() {},
     load: async () => {},
+    getProperty() { return undefined; },
     stop() { stops++; },
     releaseFrame(bufferId: number) { nativeReleases.push(bufferId); },
     destroy() { destroyed = true; native.isInitialized = false; },

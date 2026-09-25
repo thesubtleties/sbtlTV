@@ -81,6 +81,10 @@ public:
     // Get current status
     MpvStatus getStatus() const;
 
+    // Read any mpv property as a string ("hwdec-current", "video-codec",
+    // "frame-drop-count"). Empty when the property is unavailable.
+    std::string getPropertyString(const std::string& name) const;
+
 private:
     // Event handling thread
     void eventLoop();
@@ -143,6 +147,12 @@ private:
 
     // Platform-specific GL context handle
     void* m_glContext = nullptr;
+
+#ifdef __linux__
+    // libmpv keeps the pointer handed to mpv_render_context_create for the
+    // life of the render context, so the struct must outlive it.
+    mpv_opengl_drm_params_v2 m_drmParams{};
+#endif
 };
 
 } // namespace mpv_texture

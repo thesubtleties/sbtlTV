@@ -82,6 +82,8 @@ const mpvState: MpvState = {
 // Generation counter prevents stale seeks on rapid re-load.
 let pendingResume: { position: number; generation: number } | null = null;
 let loadGeneration = 0;
+// Load generation whose first decoded frame has already been logged.
+let decodeLoggedGeneration = -1;
 let currentMedia: { url: string; startPosition: number } | null = null;
 let pipelineFailurePromptOpen = false;
 let nativeRecoveryInProgress = false;
@@ -736,6 +738,13 @@ async function initNativeMpv(): Promise<boolean> {
       mpvState.width = status.width;
       mpvState.height = status.height;
 
+      // First frame of each load: record how it is being decoded so a "frame
+      // drops on AMD" report can be told apart from a software-decode report.
+      if (status.width > 0 && decodeLoggedGeneration !== loadGeneration) {
+        decodeLoggedGeneration = loadGeneration;
+        debugLog(`Decoding ${status.width}x${status.height} ${bridge?.decodeSummary() ?? 'hwdec:?'}`, 'mpv');
+      }
+
       // File loaded — execute pending resume seek (native path)
       if (pendingResume && status.duration > 0 && mpvBridge) {
         const { position, generation } = pendingResume;
@@ -1295,6 +1304,9 @@ ipcMain.handle('mpv-get-status', async () => {
 ipcMain.handle('mpv-get-mode', async () => ({
   mode: useNativeMpv ? 'native' : 'external',
   sharedTextureAvailable: useNativeMpv,
+  // Active hardware decoder while something is playing natively (mpv's
+  // hwdec-current: 'vaapi', 'videotoolbox', 'no', ...); null otherwise.
+  hwdecCurrent: (useNativeMpv && mpvBridge?.getProperty('hwdec-current')) || null,
 }));
 
 // IPC Handlers - Storage

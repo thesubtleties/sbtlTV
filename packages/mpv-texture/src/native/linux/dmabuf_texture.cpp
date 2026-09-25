@@ -314,6 +314,18 @@ private:
     EGLImageKHR createDmaBufImage(const DmaBufSlot& slot, uint32_t width, uint32_t height) {
         if (slot.planes.size() > 4) return EGL_NO_IMAGE_KHR;
 
+        // The MODIFIER_LO/HI attributes belong to EGL_EXT_image_dma_buf_import_modifiers.
+        // Passing them to a driver without that extension makes eglCreateImageKHR
+        // fail with EGL_BAD_ATTRIBUTE even for a linear buffer. A linear buffer
+        // imports correctly without them; a tiled one cannot be described at all.
+        const bool has_modifier = slot.modifier != DRM_FORMAT_MOD_INVALID;
+        const bool pass_modifier = has_modifier && m_context->supportsDmaBufImportModifiers();
+        if (has_modifier && !pass_modifier && slot.modifier != DRM_FORMAT_MOD_LINEAR) {
+            std::cerr << "[LinuxDmaBuf] Buffer uses modifier " << slot.modifier
+                      << " but EGL_EXT_image_dma_buf_import_modifiers is unavailable" << std::endl;
+            return EGL_NO_IMAGE_KHR;
+        }
+
         constexpr EGLint fd_attributes[] = {
             EGL_DMA_BUF_PLANE0_FD_EXT, EGL_DMA_BUF_PLANE1_FD_EXT,
             EGL_DMA_BUF_PLANE2_FD_EXT, EGL_DMA_BUF_PLANE3_FD_EXT
@@ -347,7 +359,7 @@ private:
                 offset_attributes[index], static_cast<EGLint>(plane.offset),
                 pitch_attributes[index], static_cast<EGLint>(plane.stride)
             });
-            if (slot.modifier != DRM_FORMAT_MOD_INVALID) {
+            if (pass_modifier) {
                 attributes.insert(attributes.end(), {
                     modifier_low_attributes[index], static_cast<EGLint>(slot.modifier & 0xffffffff),
                     modifier_high_attributes[index], static_cast<EGLint>(slot.modifier >> 32)

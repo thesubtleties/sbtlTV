@@ -134,7 +134,7 @@ export class MpvTextureBridge {
         const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
         const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
         const avgRelease = this.stats.releaseCount > 0 ? (this.stats.releaseMs / this.stats.releaseCount).toFixed(1) : '?';
-        const message = `[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}/${this.stats.maxSendMs.toFixed(1)}ms release:${avgRelease}/${this.stats.maxReleaseMs.toFixed(1)}ms`;
+        const message = `[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}/${this.stats.maxSendMs.toFixed(1)}ms release:${avgRelease}/${this.stats.maxReleaseMs.toFixed(1)}ms | ${this.decodeSummary()}`;
         console.log(message);
         this.diagnosticsCallback?.(message);
         this.stats = {
@@ -366,6 +366,23 @@ export class MpvTextureBridge {
    */
   toggleMute(): void {
     this.mpv?.toggleMute();
+  }
+
+  /**
+   * Read an mpv property as a string (undefined when unavailable)
+   */
+  getProperty(name: string): string | undefined {
+    return this.mpv?.getProperty(name);
+  }
+
+  /**
+   * One-line decode diagnostic: which hwdec is active, the codec, and mpv's
+   * own drop counters (output-side and decoder-side). Reads properties, so
+   * call it at log cadence, not per frame.
+   */
+  decodeSummary(): string {
+    const value = (name: string) => this.getProperty(name) ?? '?';
+    return `hwdec:${value('hwdec-current')} codec:${value('video-codec')} vo-drop:${value('frame-drop-count')} dec-drop:${value('decoder-frame-drop-count')}`;
   }
 
   /**
