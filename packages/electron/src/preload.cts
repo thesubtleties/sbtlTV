@@ -21,6 +21,12 @@ export interface MpvResult {
 export interface MpvModeInfo {
   mode: 'native' | 'external';
   sharedTextureAvailable: boolean;
+  /** False until the launch has decided between native and external; `mode` is a placeholder until then */
+  settled?: boolean;
+  /** mpv's hwdec-current while playing natively ('vaapi', 'videotoolbox', 'no', ...), else null */
+  hwdecCurrent?: string | null;
+  /** Linux: player this process launched with ('native' | 'compatibility'); null elsewhere */
+  launchPlayerMode?: 'native' | 'compatibility' | null;
 }
 
 export interface MpvApi {
@@ -49,6 +55,7 @@ export interface ElectronWindowApi {
   setFullscreen: () => Promise<void>;
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => void;
   removeFullscreenListener: () => void;
+  relaunch: () => Promise<void>;
 }
 
 export interface StorageResult<T = void> {
@@ -126,6 +133,7 @@ contextBridge.exposeInMainWorld('electronWindow', {
     // callback + ipcRenderer.removeListener so this cleanup doesn't clobber the other subscriber.
     ipcRenderer.removeAllListeners('window-fullscreen-changed');
   },
+  relaunch: () => ipcRenderer.invoke('app-relaunch'),
 } satisfies ElectronWindowApi);
 
 // Expose mpv API to the renderer process

@@ -81,6 +81,11 @@ public:
     // Get current status
     MpvStatus getStatus() const;
 
+    // Read any mpv property as a string ("hwdec-current", "video-codec",
+    // "frame-drop-count"). Returns false when mpv has no value for it; an
+    // empty string is a valid value. Synchronous round trip into mpv's core.
+    bool getPropertyString(const std::string& name, std::string& value) const;
+
 private:
     // Event handling thread
     void eventLoop();

@@ -19,6 +19,12 @@ export interface MpvResult {
 export interface MpvModeInfo {
   mode: 'native' | 'external';
   sharedTextureAvailable: boolean;
+  /** False until the launch has decided between native and external; `mode` is a placeholder until then */
+  settled?: boolean;
+  /** mpv's hwdec-current while playing natively ('vaapi', 'videotoolbox', 'no', ...), else null */
+  hwdecCurrent?: string | null;
+  /** Linux: player this process launched with ('native' | 'compatibility'); null elsewhere */
+  launchPlayerMode?: 'native' | 'compatibility' | null;
 }
 
 export interface MpvApi {
@@ -47,6 +53,7 @@ export interface ElectronWindowApi {
   setFullscreen: () => Promise<void>;
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => void;
   removeFullscreenListener: () => void;
+  relaunch: () => Promise<void>;
 }
 
 export interface StorageResult<T = void> {
@@ -78,6 +85,7 @@ export interface AppSettings {
   sportsMatchupEnabled?: boolean;  // Show team logos in the bar on a live sports game (default true)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a noticeable wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
+  linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
 }
 
 export interface Source {

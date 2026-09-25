@@ -54,6 +54,8 @@ bool MpvApi::load(std::string& error) {
     LOAD_MPV_SYMBOL(terminateDestroy, "mpv_terminate_destroy");
     LOAD_MPV_SYMBOL(setOptionString, "mpv_set_option_string");
     LOAD_MPV_SYMBOL(setProperty, "mpv_set_property");
+    LOAD_MPV_SYMBOL(getPropertyString, "mpv_get_property_string");
+    LOAD_MPV_SYMBOL(freeData, "mpv_free");
     LOAD_MPV_SYMBOL(command, "mpv_command");
     LOAD_MPV_SYMBOL(errorString, "mpv_error_string");
     LOAD_MPV_SYMBOL(observeProperty, "mpv_observe_property");
@@ -77,6 +79,8 @@ bool MpvApi::load(std::string& error) {
     terminateDestroy = &::mpv_terminate_destroy;
     setOptionString = &::mpv_set_option_string;
     setProperty = &::mpv_set_property;
+    getPropertyString = &::mpv_get_property_string;
+    freeData = &::mpv_free;
     command = &::mpv_command;
     errorString = &::mpv_error_string;
     observeProperty = &::mpv_observe_property;

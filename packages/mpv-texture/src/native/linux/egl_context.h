@@ -31,6 +31,12 @@ public:
 
     EGLDisplay display() const { return m_display; }
     gbm_device* gbmDevice() const { return m_gbmDevice; }
+    // Open file descriptor for the selected DRM render node; -1 before
+    // initialization. Handed to libmpv so its VA-API interop can create a
+    // VADisplay without an X11 or Wayland connection.
+    int drmFd() const { return m_drmFd; }
+    // Whether eglCreateImageKHR accepts EGL_DMA_BUF_PLANEn_MODIFIER_* attributes.
+    bool supportsDmaBufImportModifiers() const { return m_supportsDmaBufImportModifiers; }
     const std::string& renderNode() const { return m_renderNode; }
     bool debugLogging() const { return m_debugLogging; }
 
@@ -48,6 +54,7 @@ private:
     std::string m_renderNode;
     std::string m_lastFailure;
     bool m_debugLogging = false;
+    bool m_supportsDmaBufImportModifiers = false;
 };
 
 } // namespace mpv_texture

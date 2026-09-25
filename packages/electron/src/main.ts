@@ -16,10 +16,18 @@ type UpdateInfo = electronUpdater.UpdateInfo;
 // which may not be available on all platforms
 type MpvTextureBridgeType = import('./mpv-texture-bridge.js').MpvTextureBridge;
 const MPV_COMPATIBILITY_ARG = '--mpv-compatibility-mode';
-const compatibilityModeRequested = process.platform === 'linux' && process.argv.includes(MPV_COMPATIBILITY_ARG);
+// Compatibility (floating mpv window) mode is chosen per launch: by the flag a
+// pipeline-failure restart passes, or by the Linux player setting. Both are
+// read here, before app 'ready', because the bridge import below depends on it.
+const compatibilityModeFromFlag = process.platform === 'linux' && process.argv.includes(MPV_COMPATIBILITY_ARG);
+const compatibilityModeFromSetting = process.platform === 'linux' && storage.getLinuxPlayerMode() === 'compatibility';
+const compatibilityModeRequested = compatibilityModeFromFlag || compatibilityModeFromSetting;
 let MpvTextureBridgeClass: (new () => MpvTextureBridgeType) | null = null;
 // Why the native path is unavailable this launch, shown in the Linux fallback dialog.
 let nativeInitError: string | null = null;
+// True once the launch has decided between the native bridge and external mpv.
+// The renderer mounts before that decision, so 'mpv-get-mode' reports it.
+let playerModeSettled = false;
 if (process.platform === 'darwin' || (process.platform === 'linux' && !compatibilityModeRequested)) {
   try {
     const mod = await import('./mpv-texture-bridge.js');
@@ -82,6 +90,8 @@ const mpvState: MpvState = {
 // Generation counter prevents stale seeks on rapid re-load.
 let pendingResume: { position: number; generation: number } | null = null;
 let loadGeneration = 0;
+// Load generation whose first decoded frame has already been logged.
+let decodeLoggedGeneration = -1;
 let currentMedia: { url: string; startPosition: number } | null = null;
 let pipelineFailurePromptOpen = false;
 let nativeRecoveryInProgress = false;
@@ -678,6 +688,7 @@ async function initMpv(): Promise<void> {
     await connectToMpvSocket();
 
     console.log('[mpv] Initialized successfully (embedded mode)');
+    playerModeSettled = true;
     sendToRenderer('mpv-ready', true);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -736,6 +747,13 @@ async function initNativeMpv(): Promise<boolean> {
       mpvState.width = status.width;
       mpvState.height = status.height;
 
+      // First frame of each load: record how it is being decoded so a "frame
+      // drops on AMD" report can be told apart from a software-decode report.
+      if (status.width > 0 && decodeLoggedGeneration !== loadGeneration) {
+        decodeLoggedGeneration = loadGeneration;
+        debugLog(`Decoding ${status.width}x${status.height} ${bridge?.decodeSummary() ?? 'hwdec:?'}`, 'mpv');
+      }
+
       // File loaded — execute pending resume seek (native path)
       if (pendingResume && status.duration > 0 && mpvBridge) {
         const { position, generation } = pendingResume;
@@ -767,6 +785,7 @@ async function initNativeMpv(): Promise<boolean> {
 
     console.log('[mpv] Native mpv-texture bridge initialized');
     debugLog('Native mpv-texture bridge initialized', 'mpv');
+    playerModeSettled = true;
     sendToRenderer('mpv-ready', true);
     return true;
   } catch (error) {
@@ -828,6 +847,12 @@ function restartInCompatibilityMode(handoff: CompatibilityHandoff | null): void 
   if (handoff) saveCompatibilityHandoff(handoff);
   const relaunchArgs = process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG);
   app.relaunch({ args: [...relaunchArgs, MPV_COMPATIBILITY_ARG] });
+  // exit, not quit: a graceful quit tears the native bridge down, which joins
+  // the render thread, and a wedged render thread is one reason we are here.
+  // The data process gets its shutdown message (non-blocking) and the OS
+  // reaps it with us; SQLite's WAL keeps the file consistent.
+  dataHost?.shutdown();
+  dataHost = null;
   app.exit(0);
 }
 
@@ -1044,6 +1069,13 @@ ipcMain.handle('window-maximize', () => {
   }
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
+// Plain restart with the same arguments (the Linux player setting is read at launch).
+ipcMain.handle('app-relaunch', () => {
+  debugLog('Relaunch requested from Settings', 'app');
+  // Drop a per-launch compatibility flag so the saved setting decides the mode.
+  app.relaunch({ args: process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG) });
+  app.quit();
+});
 
 // Window resize for frameless windows
 ipcMain.handle('window-get-size', () => mainWindow?.getSize());
@@ -1295,6 +1327,13 @@ ipcMain.handle('mpv-get-status', async () => {
 ipcMain.handle('mpv-get-mode', async () => ({
   mode: useNativeMpv ? 'native' : 'external',
   sharedTextureAvailable: useNativeMpv,
+  settled: playerModeSettled,
+  // Active hardware decoder while something is playing natively (mpv's
+  // hwdec-current: 'vaapi', 'videotoolbox', 'no', ...); null otherwise.
+  hwdecCurrent: (useNativeMpv && mpvBridge?.getProperty('hwdec-current')) || null,
+  // Linux: the player this process was launched with (setting or flag), so
+  // Settings can tell whether a saved change still needs a restart.
+  launchPlayerMode: process.platform === 'linux' ? (compatibilityModeRequested ? 'compatibility' : 'native') : null,
 }));
 
 // IPC Handlers - Storage
@@ -1631,6 +1670,10 @@ app.whenReady().then(async () => {
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
   initDebugLogging(settings.debugLoggingEnabled ?? false);
+  if (process.platform === 'linux') {
+    const reason = compatibilityModeFromFlag ? 'launch flag' : compatibilityModeFromSetting ? 'setting' : 'default';
+    debugLog(`Linux player mode: ${compatibilityModeRequested ? 'compatibility' : 'native'} (${reason})`, 'mpv');
+  }
   let compatibilityHandoff: CompatibilityHandoff | null = null;
   if (compatibilityModeRequested) compatibilityHandoff = consumeCompatibilityHandoff();
   else discardStaleCompatibilityHandoff();
