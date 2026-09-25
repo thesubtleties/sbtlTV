@@ -847,8 +847,13 @@ function restartInCompatibilityMode(handoff: CompatibilityHandoff | null): void 
   if (handoff) saveCompatibilityHandoff(handoff);
   const relaunchArgs = process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG);
   app.relaunch({ args: [...relaunchArgs, MPV_COMPATIBILITY_ARG] });
-  // quit, not exit: before-quit shuts the data process down cleanly.
-  app.quit();
+  // exit, not quit: a graceful quit tears the native bridge down, which joins
+  // the render thread, and a wedged render thread is one reason we are here.
+  // The data process gets its shutdown message (non-blocking) and the OS
+  // reaps it with us; SQLite's WAL keeps the file consistent.
+  dataHost?.shutdown();
+  dataHost = null;
+  app.exit(0);
 }
 
 async function handleNativePipelineFailure(error: string): Promise<void> {
