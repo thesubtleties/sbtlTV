@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { db } from '../db';
+import { data } from '../data/client';
 import {
   getMovieDetails,
   getTvShowDetails,
@@ -99,9 +99,7 @@ export function useLazyBackdrop(
 
           // Cache to DB
           if (backdropPath) {
-            await db.vodMovies.update(item.stream_id, {
-              backdrop_path: backdropPath,
-            });
+            await data.query({ type: 'updateVodDetails', kind: 'movie', itemId: item.stream_id, fields: { backdrop_path: backdropPath } });
           }
         } else {
           const details = await getTvShowDetails(apiKey, item.tmdb_id!);
@@ -110,9 +108,7 @@ export function useLazyBackdrop(
 
           // Cache to DB
           if (backdropPath) {
-            await db.vodSeries.update(item.series_id, {
-              backdrop_path: backdropPath,
-            });
+            await data.query({ type: 'updateVodDetails', kind: 'series', itemId: item.series_id, fields: { backdrop_path: backdropPath } });
           }
         }
 

@@ -17,6 +17,8 @@ struct MpvApi {
     decltype(&::mpv_terminate_destroy) terminateDestroy = nullptr;
     decltype(&::mpv_set_option_string) setOptionString = nullptr;
     decltype(&::mpv_set_property) setProperty = nullptr;
+    decltype(&::mpv_get_property_string) getPropertyString = nullptr;
+    decltype(&::mpv_free) freeData = nullptr;
     decltype(&::mpv_command) command = nullptr;
     decltype(&::mpv_error_string) errorString = nullptr;
     decltype(&::mpv_observe_property) observeProperty = nullptr;

@@ -9,16 +9,25 @@ import type { Source } from '@sbtltv/core';
 import * as storage from './storage.js';
 import electronUpdater from 'electron-updater';
 import { selectChromiumGpuIdentity } from './gpu-selection.js';
+import { startDataHost, type DataHost } from './data/data-host.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
 // which may not be available on all platforms
 type MpvTextureBridgeType = import('./mpv-texture-bridge.js').MpvTextureBridge;
 const MPV_COMPATIBILITY_ARG = '--mpv-compatibility-mode';
-const compatibilityModeRequested = process.platform === 'linux' && process.argv.includes(MPV_COMPATIBILITY_ARG);
+// Compatibility (floating mpv window) mode is chosen per launch: by the flag a
+// pipeline-failure restart passes, or by the Linux player setting. Both are
+// read here, before app 'ready', because the bridge import below depends on it.
+const compatibilityModeFromFlag = process.platform === 'linux' && process.argv.includes(MPV_COMPATIBILITY_ARG);
+const compatibilityModeFromSetting = process.platform === 'linux' && storage.getLinuxPlayerMode() === 'compatibility';
+const compatibilityModeRequested = compatibilityModeFromFlag || compatibilityModeFromSetting;
 let MpvTextureBridgeClass: (new () => MpvTextureBridgeType) | null = null;
 // Why the native path is unavailable this launch, shown in the Linux fallback dialog.
 let nativeInitError: string | null = null;
+// True once the launch has decided between the native bridge and external mpv.
+// The renderer mounts before that decision, so 'mpv-get-mode' reports it.
+let playerModeSettled = false;
 if (process.platform === 'darwin' || (process.platform === 'linux' && !compatibilityModeRequested)) {
   try {
     const mod = await import('./mpv-texture-bridge.js');
@@ -42,6 +51,7 @@ const MIN_WIDTH = 640;
 const MIN_HEIGHT = 620;
 
 let mainWindow: BrowserWindow | null = null;
+let dataHost: DataHost | null = null;
 let mpvProcess: ChildProcess | null = null;
 let mpvSocket: net.Socket | null = null;
 let requestId = 0;
@@ -80,6 +90,8 @@ const mpvState: MpvState = {
 // Generation counter prevents stale seeks on rapid re-load.
 let pendingResume: { position: number; generation: number } | null = null;
 let loadGeneration = 0;
+// Load generation whose first decoded frame has already been logged.
+let decodeLoggedGeneration = -1;
 let currentMedia: { url: string; startPosition: number } | null = null;
 let pipelineFailurePromptOpen = false;
 let nativeRecoveryInProgress = false;
@@ -676,6 +688,7 @@ async function initMpv(): Promise<void> {
     await connectToMpvSocket();
 
     console.log('[mpv] Initialized successfully (embedded mode)');
+    playerModeSettled = true;
     sendToRenderer('mpv-ready', true);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -734,6 +747,13 @@ async function initNativeMpv(): Promise<boolean> {
       mpvState.width = status.width;
       mpvState.height = status.height;
 
+      // First frame of each load: record how it is being decoded so a "frame
+      // drops on AMD" report can be told apart from a software-decode report.
+      if (status.width > 0 && decodeLoggedGeneration !== loadGeneration) {
+        decodeLoggedGeneration = loadGeneration;
+        debugLog(`Decoding ${status.width}x${status.height} ${bridge?.decodeSummary() ?? 'hwdec:?'}`, 'mpv');
+      }
+
       // File loaded — execute pending resume seek (native path)
       if (pendingResume && status.duration > 0 && mpvBridge) {
         const { position, generation } = pendingResume;
@@ -765,6 +785,7 @@ async function initNativeMpv(): Promise<boolean> {
 
     console.log('[mpv] Native mpv-texture bridge initialized');
     debugLog('Native mpv-texture bridge initialized', 'mpv');
+    playerModeSettled = true;
     sendToRenderer('mpv-ready', true);
     return true;
   } catch (error) {
@@ -826,6 +847,12 @@ function restartInCompatibilityMode(handoff: CompatibilityHandoff | null): void 
   if (handoff) saveCompatibilityHandoff(handoff);
   const relaunchArgs = process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG);
   app.relaunch({ args: [...relaunchArgs, MPV_COMPATIBILITY_ARG] });
+  // exit, not quit: a graceful quit tears the native bridge down, which joins
+  // the render thread, and a wedged render thread is one reason we are here.
+  // The data process gets its shutdown message (non-blocking) and the OS
+  // reaps it with us; SQLite's WAL keeps the file consistent.
+  dataHost?.shutdown();
+  dataHost = null;
   app.exit(0);
 }
 
@@ -1042,6 +1069,13 @@ ipcMain.handle('window-maximize', () => {
   }
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
+// Plain restart with the same arguments (the Linux player setting is read at launch).
+ipcMain.handle('app-relaunch', () => {
+  debugLog('Relaunch requested from Settings', 'app');
+  // Drop a per-launch compatibility flag so the saved setting decides the mode.
+  app.relaunch({ args: process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG) });
+  app.quit();
+});
 
 // Window resize for frameless windows
 ipcMain.handle('window-get-size', () => mainWindow?.getSize());
@@ -1293,6 +1327,13 @@ ipcMain.handle('mpv-get-status', async () => {
 ipcMain.handle('mpv-get-mode', async () => ({
   mode: useNativeMpv ? 'native' : 'external',
   sharedTextureAvailable: useNativeMpv,
+  settled: playerModeSettled,
+  // Active hardware decoder while something is playing natively (mpv's
+  // hwdec-current: 'vaapi', 'videotoolbox', 'no', ...); null otherwise.
+  hwdecCurrent: (useNativeMpv && mpvBridge?.getProperty('hwdec-current')) || null,
+  // Linux: the player this process was launched with (setting or flag), so
+  // Settings can tell whether a saved change still needs a restart.
+  launchPlayerMode: process.platform === 'linux' ? (compatibilityModeRequested ? 'compatibility' : 'native') : null,
 }));
 
 // IPC Handlers - Storage
@@ -1315,6 +1356,7 @@ ipcMain.handle('storage-get-source', async (_event, id: string) => {
 ipcMain.handle('storage-save-source', async (_event, source: Source) => {
   try {
     storage.saveSource(source);
+    dataHost?.pushSources();
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1324,6 +1366,7 @@ ipcMain.handle('storage-save-source', async (_event, source: Source) => {
 ipcMain.handle('storage-delete-source', async (_event, id: string) => {
   try {
     storage.deleteSource(id);
+    dataHost?.pushSources();
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1345,6 +1388,7 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
     if (settings.debugLoggingEnabled !== undefined) {
       initDebugLogging(settings.debugLoggingEnabled);
     }
+    dataHost?.pushSettings();
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1472,21 +1516,47 @@ function isAllowedBinaryUrl(url: string, allowLan: boolean): boolean {
 
 // SSRF protection - block requests to internal/private networks
 // These patterns match localhost, private IP ranges, and cloud metadata endpoints
-const BLOCKED_URL_PATTERNS = [
-  /^https?:\/\/localhost(?::\d+)?(?:\/|$)/i,
-  /^https?:\/\/127\.\d+\.\d+\.\d+/,
-  /^https?:\/\/0\.0\.0\.0/,                     // Alternative localhost
-  /^https?:\/\/\[?::1\]?/,                      // IPv6 localhost
-  /^https?:\/\/\[?::ffff:127\./,                // IPv4-mapped IPv6 localhost
-  /^https?:\/\/10\.\d+\.\d+\.\d+/,              // Private Class A
-  /^https?:\/\/172\.(1[6-9]|2\d|3[01])\./,      // Private Class B
-  /^https?:\/\/192\.168\./,                     // Private Class C
-  /^https?:\/\/169\.254\./,                     // Link-local + cloud metadata
-  /^file:/i,                                    // File protocol
-];
-
+// Kept in step with packages/core/src/url-guard.ts, which the data process uses
+// for provider requests; main cannot import workspace TypeScript at runtime.
+// The check runs on the parsed hostname so userinfo tricks and numeric or
+// mapped spellings of a private address are caught; DNS rebinding is not.
+function ipv4Octets(host: string): number[] | null {
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return null;
+  const octets = m.slice(1).map(Number);
+  return octets.every((o) => o <= 255) ? octets : null;
+}
+function isPrivateIpv4(octets: number[]): boolean {
+  const [a, b] = octets;
+  return a === 0 || a === 10 || a === 127
+    || (a === 100 && b >= 64 && b <= 127)
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168);
+}
+function isPrivateHost(hostname: string): boolean {
+  const host = hostname.replace(/\.$/, '').toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  const v4 = ipv4Octets(host);
+  if (v4) return isPrivateIpv4(v4);
+  if (host.startsWith('[') && host.endsWith(']')) {
+    const v6 = host.slice(1, -1);
+    if (v6 === '::1' || v6 === '::') return true;
+    const mapped = v6.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/) ?? v6.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) {
+      const dotted = mapped[2] === undefined ? mapped[1] : (() => { const hi = parseInt(mapped[1], 16); const lo = parseInt(mapped[2], 16); return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`; })();
+      const o = ipv4Octets(dotted);
+      return o ? isPrivateIpv4(o) : true;
+    }
+    if (/^fe[89ab]/.test(v6) || /^f[cd]/.test(v6)) return true;
+  }
+  return false;
+}
 function isBlockedUrl(url: string): boolean {
-  return BLOCKED_URL_PATTERNS.some(pattern => pattern.test(url));
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return true; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+  return isPrivateHost(parsed.hostname);
 }
 
 // Fetch proxy - bypasses CORS by making requests from main process
@@ -1595,216 +1665,31 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
   }
 });
 
-// =========================================================================
-// EPG: Fetch, decompress, and parse XMLTV in a worker thread
-// Main process stays unblocked; only structured results cross IPC
-// =========================================================================
-import { Worker as WorkerThread } from 'worker_threads';
-
-interface ProviderChannelInfo {
-  epg_channel_id: string;
-  name: string;
-  stream_id: string;
-}
-
-function parseEpgInWorkerThread(filePath: string, providerChannels?: ProviderChannelInfo[]): Promise<{ channels: { id: string; displayNames: string[] }[]; programs: { channel_id: string; title: string; description: string; start: string; stop: string }[] }> {
-  return new Promise((resolve, reject) => {
-    const workerPath = path.join(__dirname, 'epg-parse-worker.js');
-    const worker = new WorkerThread(workerPath, {
-      workerData: { filePath, providerChannels },
-      resourceLimits: { maxOldGenerationSizeMb: 8192 },
-    });
-    let settled = false;
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      worker.terminate();
-      reject(new Error('EPG parse timed out after 8 minutes'));
-    }, 8 * 60 * 1000);
-    worker.on('message', (result) => {
-      if (result.type === 'log') {
-        debugLog(result.message, 'epg');
-        return;
-      }
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      if (result.error) {
-        reject(new Error(`EPG worker error: ${result.error}`));
-      } else {
-        resolve(result);
-      }
-      worker.terminate();
-    });
-    worker.on('error', (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      reject(err);
-      worker.terminate();
-    });
-    worker.on('exit', (code) => {
-      if (!settled && code !== 0) {
-        settled = true;
-        reject(new Error(`EPG worker exited with code ${code}`));
-      }
-    });
-  });
-}
-
-const MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024 * 1024;   // 4GB on disk (an Xtream xmltv.php is often plain XML)
-const MAX_DECOMPRESS_BYTES = 4 * 1024 * 1024 * 1024; // 4GB decompressed
-
-// Stream download to temp file (avoids ArrayBuffer size limits for large EPG files)
-async function downloadToTempFile(url: string): Promise<string> {
-  const { createWriteStream } = await import('fs');
-  const { randomUUID } = await import('crypto');
-  const { tmpdir } = await import('os');
-  const { Transform } = await import('stream');
-  const { pipeline } = await import('stream/promises');
-
-  const tmpPath = path.join(tmpdir(), `epg-${randomUUID()}.tmp`);
-
-  // Electron's request API yields a plain Node stream. net.fetch wraps the body
-  // in a Web-stream adapter that can throw from inside Node when the reader is
-  // cancelled mid-download; pipeline() has no such path.
-  const response = await new Promise<Electron.IncomingMessage>((resolve, reject) => {
-    const request = electronNet.request({ url, method: 'GET', cache: 'no-store' });
-    // Ask for the bytes as stored. With gzip accepted, Chromium transparently
-    // inflates a .gz that the server also marks content-encoding: gzip and hands
-    // us the raw multi-GB XML instead of the archive.
-    request.setHeader('Accept-Encoding', 'identity');
-    request.on('response', resolve);
-    request.on('error', reject);
-    request.end();
-  });
-  // Electron's IncomingMessage is a Node Readable at runtime; its typings don't say so.
-  const body = response as unknown as import('stream').Readable;
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    body.resume();
-    throw new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`);
-  }
-
-  let totalBytes = 0;
-  const sizeGuard = new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      totalBytes += chunk.length;
-      if (totalBytes > MAX_DOWNLOAD_BYTES) {
-        callback(new Error(`EPG download exceeds ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB limit`));
-        return;
-      }
-      callback(null, chunk);
-    },
-  });
-
-  try {
-    await pipeline(body, sizeGuard, createWriteStream(tmpPath));
-  } catch (err) {
-    try { fs.unlinkSync(tmpPath); } catch {}
-    throw err;
-  }
-
-  console.log(`[epg] Downloaded ${Math.round(totalBytes / 1024 / 1024)}MB to temp file`);
-  return tmpPath;
-}
-
-async function decompressToFile(filePath: string, isGz: boolean): Promise<{ xmlPath: string; sizeMB: number }> {
-  const { createReadStream, createWriteStream, statSync, unlinkSync } = await import('fs');
-  const { createGunzip } = await import('zlib');
-  const { pipeline } = await import('stream/promises');
-  const { randomUUID } = await import('crypto');
-  const { tmpdir } = await import('os');
-
-  // Always check magic bytes: a .gz URL can arrive already inflated.
-  {
-    const { readSync, openSync, closeSync } = await import('fs');
-    const fd = openSync(filePath, 'r');
-    const header = Buffer.alloc(2);
-    readSync(fd, header, 0, 2, 0);
-    closeSync(fd);
-    isGz = header[0] === 0x1f && header[1] === 0x8b;
-  }
-
-  if (!isGz) {
-    const size = statSync(filePath).size;
-    return { xmlPath: filePath, sizeMB: Math.round(size / 1024 / 1024) };
-  }
-
-  const xmlPath = path.join(tmpdir(), `epg-xml-${randomUUID()}.tmp`);
-  const compressedSize = statSync(filePath).size;
-  console.log(`[epg] Streaming decompression of ${Math.round(compressedSize / 1024 / 1024)}MB...`);
-
-  const { Transform } = await import('stream');
-  let decompressedBytes = 0;
-  const sizeGuard = new Transform({
-    transform(chunk, _encoding, callback) {
-      decompressedBytes += chunk.length;
-      if (decompressedBytes > MAX_DECOMPRESS_BYTES) {
-        callback(new Error(`EPG decompression exceeds ${MAX_DECOMPRESS_BYTES / 1024 / 1024 / 1024}GB limit`));
-      } else {
-        callback(null, chunk);
-      }
-    },
-  });
-
-  await pipeline(
-    createReadStream(filePath),
-    createGunzip(),
-    sizeGuard,
-    createWriteStream(xmlPath),
-  );
-
-  // Clean up compressed file
-  try { unlinkSync(filePath); } catch (e) {
-    console.warn(`[epg] Failed to clean up compressed temp file ${filePath}:`, e);
-  }
-
-  const decompressedSize = statSync(xmlPath).size;
-  console.log(`[epg] Decompressed to ${Math.round(decompressedSize / 1024 / 1024)}MB on disk`);
-  return { xmlPath, sizeMB: Math.round(decompressedSize / 1024 / 1024) };
-}
-
-// Fetch, decompress, and parse EPG — parsing runs in a worker thread
-ipcMain.handle('fetch-and-parse-epg', async (_event, url: string, providerChannels?: ProviderChannelInfo[]) => {
-  const settings = storage.getSettings();
-  if (!isAllowedBinaryUrl(url, settings.allowLanSources ?? false)) {
-    return { success: false, error: 'Blocked: Local network access is disabled. Enable "Allow LAN sources" in Settings > System > Security if you trust this source.' };
-  }
-  const tempFiles: string[] = [];
-  try {
-    console.log(`[epg] Fetching ${url}...`);
-    const tmpPath = await downloadToTempFile(url);
-    tempFiles.push(tmpPath);
-
-    const { xmlPath, sizeMB } = await decompressToFile(tmpPath, false);
-    if (xmlPath !== tmpPath) tempFiles.push(xmlPath);
-
-    // Worker stream-parses from the file — no memory limits
-    console.log(`[epg] Parsing ${sizeMB}MB in worker thread...`);
-    const t0 = Date.now();
-    const result = await parseEpgInWorkerThread(xmlPath, providerChannels);
-    console.log(`[epg] Parsed ${result.channels.length} channels, ${result.programs.length} programs in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-
-    return { success: true, data: result };
-  } catch (error) {
-    console.error('[epg] Parse failed:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Fetch/parse failed' };
-  } finally {
-    const { unlinkSync } = await import('fs');
-    for (const f of tempFiles) {
-      try { unlinkSync(f); } catch {}
-    }
-  }
-});
-
 // App lifecycle
 app.whenReady().then(async () => {
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
   initDebugLogging(settings.debugLoggingEnabled ?? false);
+  if (process.platform === 'linux') {
+    const reason = compatibilityModeFromFlag ? 'launch flag' : compatibilityModeFromSetting ? 'setting' : 'default';
+    debugLog(`Linux player mode: ${compatibilityModeRequested ? 'compatibility' : 'native'} (${reason})`, 'mpv');
+  }
   let compatibilityHandoff: CompatibilityHandoff | null = null;
   if (compatibilityModeRequested) compatibilityHandoff = consumeCompatibilityHandoff();
   else discardStaleCompatibilityHandoff();
+
+  // Before the window: the page asks for its data port as soon as it loads.
+  dataHost = startDataHost({
+    dbPath: path.join(app.getPath('userData'), 'sbtltv-data.sqlite'),
+    tempDir: app.getPath('temp'),
+    getSources: () => storage.getSources(),
+    getSettings: () => {
+      const s = storage.getSettings();
+      return { epgRefreshHours: s.epgRefreshHours ?? 6, vodRefreshHours: s.vodRefreshHours ?? 24, allowLanSources: s.allowLanSources ?? false, debugLoggingEnabled: s.debugLoggingEnabled ?? false };
+    },
+    log: (category, message) => debugLog(message, category),
+    onSync: () => {},
+  });
 
   await createWindow();
 
@@ -1962,6 +1847,13 @@ app.whenReady().then(async () => {
       }, 1000);
     }
   });
+});
+
+ipcMain.on('data-request-port', (event) => dataHost?.giveRendererPort(event.sender));
+
+app.on('before-quit', () => {
+  dataHost?.shutdown();
+  dataHost = null;
 });
 
 app.on('window-all-closed', () => {

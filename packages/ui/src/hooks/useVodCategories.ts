@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type VodCategory } from '../db';
+import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
 
 // ===========================================================================
@@ -8,40 +7,16 @@ import { useEnabledSourceIds } from './useSourceFiltering';
 // ===========================================================================
 
 /**
- * Get VOD categories by type (excludes empty categories, filtered by enabled sources)
+ * Get VOD categories by type (excludes empty categories, filtered by enabled sources).
+ * The query already prunes categories with nothing in them.
  */
 export function useVodCategories(type: 'movie' | 'series') {
   const enabledIds = useEnabledSourceIds();
-
-  // Phase 1: instant — all categories from the indexed table
-  const allCategories = useLiveQuery(async () => {
-    let cats = await db.vodCategories.where('type').equals(type).toArray();
-    if (enabledIds.length > 0) {
-      const enabledSet = new Set(enabledIds);
-      cats = cats.filter(cat => enabledSet.has(cat.source_id));
-    }
-    return cats;
-  }, [type, enabledIds.join(',')]);
-
-  // Phase 2: lazy prune — per-category indexed exists check
-  const prunedCategories = useLiveQuery(async () => {
-    const cats = allCategories;
-    if (!cats || cats.length === 0) return undefined;
-    const table = type === 'movie' ? db.vodMovies : db.vodSeries;
-    // Check each category with a fast indexed lookup (stops at first match)
-    const checks = await Promise.all(
-      cats.map(async (cat) => {
-        const item = await table.where('category_ids').equals(cat.category_id).limit(1).first();
-        return item ? cat : null;
-      })
-    );
-    return checks.filter((c): c is VodCategory => c !== null);
-  }, [allCategories]);
-
-  return {
-    categories: prunedCategories ?? allCategories ?? [],
-    loading: allCategories === undefined,
-  };
+  const { data, loading } = useDataQuery(
+    { type: 'vodCategories', kind: type, sourceIds: enabledIds },
+    ['vod_categories', 'vod_movies', 'vod_series'], [type, enabledIds.join(',')],
+  );
+  return { categories: data ?? [], loading };
 }
 
 // Grouped VOD category (deduped by name across sources)

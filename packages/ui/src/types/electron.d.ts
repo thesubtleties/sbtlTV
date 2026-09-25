@@ -19,6 +19,12 @@ export interface MpvResult {
 export interface MpvModeInfo {
   mode: 'native' | 'external';
   sharedTextureAvailable: boolean;
+  /** False until the launch has decided between native and external; `mode` is a placeholder until then */
+  settled?: boolean;
+  /** mpv's hwdec-current while playing natively ('vaapi', 'videotoolbox', 'no', ...), else null */
+  hwdecCurrent?: string | null;
+  /** Linux: player this process launched with ('native' | 'compatibility'); null elsewhere */
+  launchPlayerMode?: 'native' | 'compatibility' | null;
 }
 
 export interface MpvApi {
@@ -47,6 +53,7 @@ export interface ElectronWindowApi {
   setFullscreen: () => Promise<void>;
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => void;
   removeFullscreenListener: () => void;
+  relaunch: () => Promise<void>;
 }
 
 export interface StorageResult<T = void> {
@@ -78,6 +85,7 @@ export interface AppSettings {
   sportsMatchupEnabled?: boolean;  // Show team logos in the bar on a live sports game (default true)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a noticeable wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
+  linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
 }
 
 export interface Source {
@@ -118,9 +126,6 @@ export interface FetchProxyResponse {
 export interface FetchProxyApi {
   fetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<StorageResult<FetchProxyResponse>>;
   fetchBinary: (url: string) => Promise<StorageResult<string>>; // Returns base64-encoded data
-  // Provider channel shape must match ProviderChannelInfo in main.ts and ProviderChannel in epg-parse-worker.ts
-  // Return shape must match EpgChannel/EpgProgram in epg-parse-worker.ts (dates are ISO strings over IPC)
-  fetchAndParseEpg: (url: string, providerChannels?: { epg_channel_id: string; name: string; stream_id: string }[]) => Promise<StorageResult<{ channels: { id: string; displayNames: string[] }[]; programs: { channel_id: string; title: string; description: string; start: string; stop: string }[] }>>;
 }
 
 export interface PlatformApi {
@@ -181,7 +186,12 @@ export interface SharedTextureApi {
 }
 
 declare global {
+  interface DataApi {
+    requestPort(): void;
+  }
+
   interface Window {
+    data?: DataApi;
     mpv?: MpvApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;

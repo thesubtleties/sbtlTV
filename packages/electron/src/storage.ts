@@ -1,6 +1,7 @@
 import Store from 'electron-store';
 import { safeStorage } from 'electron';
 import type { Source } from '@sbtltv/core';
+import { normalizeLinuxPlayerMode, type LinuxPlayerMode } from './linux-player-mode.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -45,7 +46,10 @@ interface AppSettings {
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game (default true)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
+  linuxPlayerMode?: LinuxPlayerMode;  // Linux only: 'compatibility' runs mpv in its own window (default 'native'); takes effect on restart
 }
+
+export type { LinuxPlayerMode };
 
 // Internal storage format (encrypted)
 interface StoredSettings {
@@ -71,6 +75,7 @@ interface StoredSettings {
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series
+  linuxPlayerMode?: LinuxPlayerMode;  // Linux only: video player used at next launch
 }
 
 const store = new Store<StoreSchema>({
@@ -219,7 +224,16 @@ export function getSettings(): AppSettings {
   result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? true;
   result.guideMorphEnabled = stored.guideMorphEnabled ?? true;
   result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
+  result.linuxPlayerMode = normalizeLinuxPlayerMode(stored.linuxPlayerMode);
   return result;
+}
+
+/**
+ * Linux player mode for this launch. Read at module load in main.ts, before
+ * app 'ready', so it must not touch safeStorage (getSettings decrypts keys).
+ */
+export function getLinuxPlayerMode(): LinuxPlayerMode {
+  return normalizeLinuxPlayerMode(store.get('settings').linuxPlayerMode);
 }
 
 /**
@@ -282,6 +296,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.autoplayNextEpisode !== undefined) {
     updated.autoplayNextEpisode = settings.autoplayNextEpisode;
+  }
+  if (settings.linuxPlayerMode !== undefined) {
+    updated.linuxPlayerMode = normalizeLinuxPlayerMode(settings.linuxPlayerMode);
   }
 
   store.set('settings', updated);

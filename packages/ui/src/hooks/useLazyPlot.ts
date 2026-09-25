@@ -10,7 +10,8 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { db, type StoredMovie, type StoredSeries } from '../db';
+import { data } from '../data/client';
+import type { VodDetailFields } from '@sbtltv/core';
 import { getMovieDetails, getTvShowDetails } from '../services/tmdb';
 import { type MediaItem, isMovie } from '../types/media';
 
@@ -88,13 +89,13 @@ export function useLazyPlot(
             genreStr = details.genres.map((g) => g.name).join(', ');
           }
 
-          // Cache to DB - only update fields we're missing
-          const updates: Partial<StoredMovie> = {};
+          // Cache to the data process - it only fills fields that are empty
+          const updates: VodDetailFields = {};
           if (overview && !existingPlot) updates.plot = overview;
           if (genreStr && !existingGenre) updates.genre = genreStr;
 
           if (Object.keys(updates).length > 0) {
-            await db.vodMovies.update(item.stream_id, updates);
+            await data.query({ type: 'updateVodDetails', kind: 'movie', itemId: item.stream_id, fields: updates });
           }
         } else {
           const details = await getTvShowDetails(apiKey, item.tmdb_id!);
@@ -106,13 +107,13 @@ export function useLazyPlot(
             genreStr = details.genres.map((g) => g.name).join(', ');
           }
 
-          // Cache to DB
-          const updates: Partial<StoredSeries> = {};
+          // Cache to the data process
+          const updates: VodDetailFields = {};
           if (overview && !existingPlot) updates.plot = overview;
           if (genreStr && !existingGenre) updates.genre = genreStr;
 
           if (Object.keys(updates).length > 0) {
-            await db.vodSeries.update(item.series_id, updates);
+            await data.query({ type: 'updateVodDetails', kind: 'series', itemId: item.series_id, fields: updates });
           }
         }
 

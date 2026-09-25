@@ -154,6 +154,7 @@ bool LinuxEglContext::initializeDevice(const std::string& render_node) {
     if (!eglBindAPI(EGL_OPENGL_API)) return fail("eglBindAPI");
     const char* extensions = eglQueryString(m_display, EGL_EXTENSIONS);
     const bool supports_surfaceless = hasExtension(extensions, "EGL_KHR_surfaceless_context");
+    m_supportsDmaBufImportModifiers = hasExtension(extensions, "EGL_EXT_image_dma_buf_import_modifiers");
 
     const EGLint config_attributes[] = {
         EGL_SURFACE_TYPE, supports_surfaceless ? 0 : EGL_PBUFFER_BIT,
@@ -202,7 +203,9 @@ bool LinuxEglContext::initializeDevice(const std::string& render_node) {
                   << " GBM=" << gbm_device_get_backend_name(m_gbmDevice)
                   << " EGL=" << eglQueryString(m_display, EGL_VENDOR)
                   << " GL=" << (vendor ? vendor : "unknown")
-                  << " renderer=" << (renderer ? renderer : "unknown") << std::endl;
+                  << " renderer=" << (renderer ? renderer : "unknown")
+                  << " drmFd=" << m_drmFd
+                  << " dmabufModifiers=" << (m_supportsDmaBufImportModifiers ? "yes" : "no") << std::endl;
     }
     return true;
 }
@@ -226,6 +229,7 @@ void LinuxEglContext::destroyDevice() {
     m_display = EGL_NO_DISPLAY;
     m_gbmDevice = nullptr;
     m_drmFd = -1;
+    m_supportsDmaBufImportModifiers = false;
     m_renderNode.clear();
 }
 

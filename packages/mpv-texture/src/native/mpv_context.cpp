@@ -331,10 +331,32 @@ bool MpvContext::create(const MpvConfig& config) {
     };
 
     int advanced_control = 1;
+#ifdef __linux__
+    // Our GL context is surfaceless GBM: no X11 or Wayland display for libmpv
+    // to derive a VADisplay from. Without the render node fd, the VA-API
+    // interop cannot initialise and hwdec=auto lands on a copy path or
+    // software decoding on Mesa drivers (AMD, Intel). The scanout fields stay
+    // unset; only render_fd is used for VA-API. mpv_render_context_create()
+    // copies the struct (libmpv_gpu.c keeps its own "drm_params_v2" copy), so
+    // a local suffices; the fd it names belongs to g_linuxEglContext, which
+    // destroy() tears down only after the render context is freed.
+    mpv_opengl_drm_params_v2 drm_params{};
+    drm_params.fd = -1;
+    drm_params.crtc_id = -1;
+    drm_params.connector_id = -1;
+    drm_params.atomic_request_ptr = nullptr;
+    drm_params.render_fd = g_linuxEglContext ? g_linuxEglContext->drmFd() : -1;
+    if (config.debugLogging) {
+        std::cout << "[MpvContext] DRM render fd for VA-API interop: " << drm_params.render_fd << std::endl;
+    }
+#endif
     mpv_render_param params[] = {
         {MPV_RENDER_PARAM_API_TYPE, const_cast<char*>(MPV_RENDER_API_TYPE_OPENGL)},
         {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init_params},
         {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced_control},
+#ifdef __linux__
+        {MPV_RENDER_PARAM_DRM_DISPLAY_V2, &drm_params},
+#endif
         {MPV_RENDER_PARAM_INVALID, nullptr}
     };
 
@@ -518,6 +540,15 @@ void MpvContext::releaseFrame(uint32_t buffer_id) {
 MpvStatus MpvContext::getStatus() const {
     std::lock_guard<std::mutex> lock(m_statusMutex);
     return m_status;
+}
+
+bool MpvContext::getPropertyString(const std::string& name, std::string& value) const {
+    if (!m_mpv) return false;
+    char* raw = mpvApi().getPropertyString(m_mpv, name.c_str());
+    if (!raw) return false;
+    value = raw;
+    mpvApi().freeData(raw);
+    return true;
 }
 
 void MpvContext::eventLoop() {

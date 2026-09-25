@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type StoredMovie, type StoredSeries, type StoredEpisode } from '../db';
-import { syncSeriesEpisodes } from '../db/sync';
+import type { StoredMovie, StoredSeries, StoredEpisode } from '../db';
+import { data } from '../data/client';
+import { useDataQuery } from '../data/useDataQuery';
 import { usePreferredSourceResolver, useEnabledSourceIds } from './useSourceFiltering';
 
 export interface DedupedMovie {
@@ -118,71 +118,55 @@ export function useDedupedSeries(series: StoredSeries[]): DedupedSeries[] {
 export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
   const enabledIds = useEnabledSourceIds();
   const resolve = usePreferredSourceResolver('vod');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Find all series with same tmdb_id
-  const relatedSeriesIds = useLiveQuery(async () => {
-    if (!tmdbId) return [primarySeriesId];
-    const all = await db.vodSeries.where('tmdb_id').equals(tmdbId).toArray();
-    let filtered = all;
-    if (enabledIds.length > 0) {
-      const enabledSet = new Set(enabledIds);
-      filtered = all.filter(s => enabledSet.has(s.source_id));
-    }
-    if (filtered.length === 0) return [primarySeriesId];
+  const { data: related } = useDataQuery(
+    tmdbId ? { type: 'series', by: { kind: 'tmdbIds', tmdbIds: [tmdbId] }, sourceIds: enabledIds } : null,
+    ['vod_series'], [tmdbId, enabledIds.join(',')],
+  );
+  const relatedSeriesIds = useMemo(() => {
+    if (!related || related.length === 0) return [primarySeriesId];
+    const list = [...related];
     // Sort by preference, primary first
-    const sourceIds = filtered.map(s => s.source_id);
-    const preferredId = resolve(sourceIds);
-    filtered.sort((a, b) => {
+    const preferredId = resolve(list.map((s) => s.source_id));
+    list.sort((a, b) => {
       if (a.series_id === primarySeriesId) return -1;
       if (b.series_id === primarySeriesId) return 1;
       if (a.source_id === preferredId) return -1;
       if (b.source_id === preferredId) return 1;
       return 0;
     });
-    return filtered.map(s => s.series_id);
-  }, [primarySeriesId, tmdbId, enabledIds.join(','), resolve]);
+    return list.map((s) => s.series_id);
+  }, [related, primarySeriesId, resolve]);
+  const relatedKey = relatedSeriesIds.join(',');
 
-  // Fetch episodes for all related series (on-demand)
+  // Query all episodes from related series
+  const { data: allEpisodes, loading } = useDataQuery(
+    { type: 'episodes', seriesIds: relatedSeriesIds },
+    ['vod_episodes'], [relatedKey],
+  );
+
+  // Fetch episodes (on demand) for related series that have none stored
   const fetchAll = useCallback(async () => {
-    if (!relatedSeriesIds || relatedSeriesIds.length === 0) return;
-
-    setLoading(true);
     setError(null);
+    const have = new Set((allEpisodes ?? []).map((e) => e.series_id));
     try {
-      if (!window.storage) return;
-      const sourcesResult = await window.storage.getSources();
-      const allSources = sourcesResult.data ?? [];
-
-      await Promise.all(
-        relatedSeriesIds.map(async (sid) => {
-          const s = await db.vodSeries.get(sid);
-          if (!s) return;
-          const cached = await db.vodEpisodes.where('series_id').equals(sid).count();
-          if (cached > 0) return; // Already have episodes
-          const source = allSources.find(src => src.id === s.source_id);
-          if (!source) return;
-          await syncSeriesEpisodes(source, sid);
-        })
-      );
+      await Promise.all(relatedSeriesIds.filter((sid) => !have.has(sid)).map((seriesId) => data.query({ type: 'syncEpisodes', seriesId })));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch episodes');
-    } finally {
-      setLoading(false);
     }
-  }, [relatedSeriesIds]);
+  }, [relatedSeriesIds, allEpisodes]);
 
-  // Trigger fetch on mount
+  // Trigger once the stored episodes are known
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    if (allEpisodes) void fetchAll();
+  }, [relatedKey, allEpisodes === undefined]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Query all episodes from related series, merge by season+episode
-  const allEpisodes = useLiveQuery(async () => {
-    if (!relatedSeriesIds || relatedSeriesIds.length === 0) return [];
-    return db.vodEpisodes.where('series_id').anyOf(relatedSeriesIds).toArray();
-  }, [relatedSeriesIds]);
+  // The fetches run in the data process; a failure for any related series arrives as a progress event.
+  useEffect(() => data.onSync((p) => {
+    if (p.stage === 'episodes' && p.state === 'failed' && p.seriesId && relatedSeriesIds.includes(p.seriesId)) setError(p.message ?? 'Failed to fetch episodes');
+  }), [relatedKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Merge: prefer primary/preferred source, fill gaps
   const seasons = useMemo(() => {
@@ -190,7 +174,7 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
 
     // Priority order for series_ids (primary first, then preferred)
     const priority = new Map<string, number>();
-    (relatedSeriesIds ?? []).forEach((sid, i) => priority.set(sid, i));
+    relatedSeriesIds.forEach((sid, i) => priority.set(sid, i));
 
     // Group by season+episode, keep highest priority
     const episodeMap = new Map<string, StoredEpisode>();
@@ -222,9 +206,9 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
 
   return {
     seasons,
-    loading: loading || allEpisodes === undefined,
+    loading,
     error,
     refetch: fetchAll,
-    sourceCount: relatedSeriesIds?.length ?? 1,
+    sourceCount: relatedSeriesIds.length,
   };
 }
