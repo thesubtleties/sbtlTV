@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.11.0] - 2026-09-25
 
 ### Changed
 - **Channel, guide and library data now live in a SQLite database managed by a background process** - syncing no longer runs inside the app window, so a large source cannot freeze the guide or black out the screen, and storing a 500,000-programme guide takes seconds instead of many minutes. Existing installs resync once on first launch. Watchlist, watch progress and favorites are unchanged
