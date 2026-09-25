@@ -16,7 +16,12 @@ type UpdateInfo = electronUpdater.UpdateInfo;
 // which may not be available on all platforms
 type MpvTextureBridgeType = import('./mpv-texture-bridge.js').MpvTextureBridge;
 const MPV_COMPATIBILITY_ARG = '--mpv-compatibility-mode';
-const compatibilityModeRequested = process.platform === 'linux' && process.argv.includes(MPV_COMPATIBILITY_ARG);
+// Compatibility (floating mpv window) mode is chosen per launch: by the flag a
+// pipeline-failure restart passes, or by the Linux player setting. Both are
+// read here, before app 'ready', because the bridge import below depends on it.
+const compatibilityModeFromFlag = process.platform === 'linux' && process.argv.includes(MPV_COMPATIBILITY_ARG);
+const compatibilityModeFromSetting = process.platform === 'linux' && storage.getLinuxPlayerMode() === 'compatibility';
+const compatibilityModeRequested = compatibilityModeFromFlag || compatibilityModeFromSetting;
 let MpvTextureBridgeClass: (new () => MpvTextureBridgeType) | null = null;
 // Why the native path is unavailable this launch, shown in the Linux fallback dialog.
 let nativeInitError: string | null = null;
@@ -1053,6 +1058,13 @@ ipcMain.handle('window-maximize', () => {
   }
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
+// Plain restart with the same arguments (the Linux player setting is read at launch).
+ipcMain.handle('app-relaunch', () => {
+  debugLog('Relaunch requested from Settings', 'app');
+  // Drop a per-launch compatibility flag so the saved setting decides the mode.
+  app.relaunch({ args: process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG) });
+  app.quit();
+});
 
 // Window resize for frameless windows
 ipcMain.handle('window-get-size', () => mainWindow?.getSize());
@@ -1307,6 +1319,9 @@ ipcMain.handle('mpv-get-mode', async () => ({
   // Active hardware decoder while something is playing natively (mpv's
   // hwdec-current: 'vaapi', 'videotoolbox', 'no', ...); null otherwise.
   hwdecCurrent: (useNativeMpv && mpvBridge?.getProperty('hwdec-current')) || null,
+  // Linux: the player this process was launched with (setting or flag), so
+  // Settings can tell whether a saved change still needs a restart.
+  launchPlayerMode: process.platform === 'linux' ? (compatibilityModeRequested ? 'compatibility' : 'native') : null,
 }));
 
 // IPC Handlers - Storage
@@ -1643,6 +1658,10 @@ app.whenReady().then(async () => {
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
   initDebugLogging(settings.debugLoggingEnabled ?? false);
+  if (process.platform === 'linux') {
+    const reason = compatibilityModeFromFlag ? 'launch flag' : compatibilityModeFromSetting ? 'setting' : 'default';
+    debugLog(`Linux player mode: ${compatibilityModeRequested ? 'compatibility' : 'native'} (${reason})`, 'mpv');
+  }
   let compatibilityHandoff: CompatibilityHandoff | null = null;
   if (compatibilityModeRequested) compatibilityHandoff = consumeCompatibilityHandoff();
   else discardStaleCompatibilityHandoff();

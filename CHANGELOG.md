@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - **Programmes are stored once per guide channel** - channels that share a guide channel (HD, FHD and backup variants) no longer duplicate its programmes
 - **Movie and series matching is incremental** - a library resync no longer re-runs TMDB matching for titles it already matched
 
+### Added
+- **Linux player choice** - Settings > Security has a Video Player section on Linux that switches between the in-window player and the compatibility player (mpv in its own window, as before 0.10) for users whose GPU drops frames with the in-window pipeline. Takes effect on restart; a Restart button is offered
+
 ### Fixed
 - **Linux hardware decoding on AMD and Intel GPUs** - the in-window player never handed libmpv its DRM render node, so VA-API could not attach to the GPU and playback fell back to a copy path or software decoding, dropping frames on anything but NVIDIA. The render node is now passed at startup, and the debug log records the active decoder (`hwdec-current`), codec and mpv's own drop counters for each stream
 - **Linux DMA-BUF import on drivers without modifier support** - frame buffers were always described with format-modifier attributes, which drivers lacking `EGL_EXT_image_dma_buf_import_modifiers` reject outright. Linear buffers are now imported without them

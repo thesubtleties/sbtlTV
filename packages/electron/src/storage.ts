@@ -45,7 +45,13 @@ interface AppSettings {
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game (default true)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
+  linuxPlayerMode?: LinuxPlayerMode;  // Linux only: 'compatibility' runs mpv in its own window (default 'native'); takes effect on restart
 }
+
+// Linux video player: 'native' renders inside the app window through the
+// mpv-texture addon; 'compatibility' launches the external mpv window (the
+// pre-0.10 "legacy" player). Read at startup, so a change needs a restart.
+export type LinuxPlayerMode = 'native' | 'compatibility';
 
 // Internal storage format (encrypted)
 interface StoredSettings {
@@ -71,6 +77,7 @@ interface StoredSettings {
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series
+  linuxPlayerMode?: LinuxPlayerMode;  // Linux only: video player used at next launch
 }
 
 const store = new Store<StoreSchema>({
@@ -219,7 +226,16 @@ export function getSettings(): AppSettings {
   result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? true;
   result.guideMorphEnabled = stored.guideMorphEnabled ?? true;
   result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
+  result.linuxPlayerMode = stored.linuxPlayerMode ?? 'native';
   return result;
+}
+
+/**
+ * Linux player mode for this launch. Read at module load in main.ts, before
+ * app 'ready', so it must not touch safeStorage (getSettings decrypts keys).
+ */
+export function getLinuxPlayerMode(): LinuxPlayerMode {
+  return store.get('settings').linuxPlayerMode === 'compatibility' ? 'compatibility' : 'native';
 }
 
 /**
@@ -282,6 +298,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.autoplayNextEpisode !== undefined) {
     updated.autoplayNextEpisode = settings.autoplayNextEpisode;
+  }
+  if (settings.linuxPlayerMode !== undefined) {
+    updated.linuxPlayerMode = settings.linuxPlayerMode === 'compatibility' ? 'compatibility' : 'native';
   }
 
   store.set('settings', updated);
