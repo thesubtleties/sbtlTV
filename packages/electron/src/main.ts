@@ -25,6 +25,9 @@ const compatibilityModeRequested = compatibilityModeFromFlag || compatibilityMod
 let MpvTextureBridgeClass: (new () => MpvTextureBridgeType) | null = null;
 // Why the native path is unavailable this launch, shown in the Linux fallback dialog.
 let nativeInitError: string | null = null;
+// True once the launch has decided between the native bridge and external mpv.
+// The renderer mounts before that decision, so 'mpv-get-mode' reports it.
+let playerModeSettled = false;
 if (process.platform === 'darwin' || (process.platform === 'linux' && !compatibilityModeRequested)) {
   try {
     const mod = await import('./mpv-texture-bridge.js');
@@ -685,6 +688,7 @@ async function initMpv(): Promise<void> {
     await connectToMpvSocket();
 
     console.log('[mpv] Initialized successfully (embedded mode)');
+    playerModeSettled = true;
     sendToRenderer('mpv-ready', true);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -781,6 +785,7 @@ async function initNativeMpv(): Promise<boolean> {
 
     console.log('[mpv] Native mpv-texture bridge initialized');
     debugLog('Native mpv-texture bridge initialized', 'mpv');
+    playerModeSettled = true;
     sendToRenderer('mpv-ready', true);
     return true;
   } catch (error) {
@@ -842,7 +847,8 @@ function restartInCompatibilityMode(handoff: CompatibilityHandoff | null): void 
   if (handoff) saveCompatibilityHandoff(handoff);
   const relaunchArgs = process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG);
   app.relaunch({ args: [...relaunchArgs, MPV_COMPATIBILITY_ARG] });
-  app.exit(0);
+  // quit, not exit: before-quit shuts the data process down cleanly.
+  app.quit();
 }
 
 async function handleNativePipelineFailure(error: string): Promise<void> {
@@ -1316,6 +1322,7 @@ ipcMain.handle('mpv-get-status', async () => {
 ipcMain.handle('mpv-get-mode', async () => ({
   mode: useNativeMpv ? 'native' : 'external',
   sharedTextureAvailable: useNativeMpv,
+  settled: playerModeSettled,
   // Active hardware decoder while something is playing natively (mpv's
   // hwdec-current: 'vaapi', 'videotoolbox', 'no', ...); null otherwise.
   hwdecCurrent: (useNativeMpv && mpvBridge?.getProperty('hwdec-current')) || null,

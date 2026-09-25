@@ -269,7 +269,10 @@ Napi::Value GetStatus(const Napi::CallbackInfo& info) {
     return StatusToJS(env, status);
 }
 
-// Read an mpv property as a string; undefined when unavailable
+// Read an mpv property as a string; undefined when mpv has no value for it.
+// Synchronous call into mpv's core on the JS thread: main-process use only,
+// never expose it over IPC, and prefer decoder-level properties (some VO
+// properties block until the render thread has run).
 Napi::Value GetProperty(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
@@ -277,8 +280,10 @@ Napi::Value GetProperty(const Napi::CallbackInfo& info) {
         return env.Undefined();
     }
 
-    const std::string value = g_context->getPropertyString(info[0].As<Napi::String>().Utf8Value());
-    if (value.empty()) return env.Undefined();
+    std::string value;
+    if (!g_context->getPropertyString(info[0].As<Napi::String>().Utf8Value(), value)) {
+        return env.Undefined();
+    }
     return Napi::String::New(env, value);
 }
 

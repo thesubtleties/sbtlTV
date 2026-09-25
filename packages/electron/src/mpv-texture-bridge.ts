@@ -369,7 +369,10 @@ export class MpvTextureBridge {
   }
 
   /**
-   * Read an mpv property as a string (undefined when unavailable)
+   * Read an mpv property as a string (undefined when mpv has no value).
+   * Synchronous round trip into mpv's core on the main thread: never expose
+   * it over IPC, and stick to decoder-level properties; some VO properties
+   * block until the render thread has run.
    */
   getProperty(name: string): string | undefined {
     return this.mpv?.getProperty(name);

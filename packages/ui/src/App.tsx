@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { MpvStatus } from './types/electron';
 import { Settings } from './components/Settings';
 import { Sidebar, type View } from './components/Sidebar';
+import { resolveSeek, resolveVolumeStep } from './hooks/playbackKeys';
 import { NowPlayingBar } from './components/NowPlayingBar';
 import { CategoryStrip } from './components/CategoryStrip';
 import { ChannelPanel } from './components/ChannelPanel';
@@ -192,11 +193,17 @@ function App() {
     playbackRef.current = { position, duration, volume, activeView, categoriesOpen };
   }, [position, duration, volume, activeView, categoriesOpen]);
   // Linux only: true when mpv runs in its own window (compatibility player), where
-  // that window owns fullscreen and the default mpv key bindings.
+  // that window owns fullscreen and the default mpv key bindings. State drives the
+  // on-screen button; the ref serves the mount-once key handler.
+  const [linuxExternalPlayer, setLinuxExternalPlayer] = useState(false);
   const linuxExternalPlayerRef = useRef(false);
+  useEffect(() => { linuxExternalPlayerRef.current = linuxExternalPlayer; }, [linuxExternalPlayer]);
   const refreshPlayerMode = () => {
     if (!window.platform?.isLinux || !window.mpv) return;
-    window.mpv.getMode().then((info) => { linuxExternalPlayerRef.current = info.mode === 'external'; }).catch(() => {});
+    window.mpv.getMode()
+      // Before main has picked a player the mode is a placeholder; mpv-ready triggers another read.
+      .then((info) => { if (info.settled) setLinuxExternalPlayer(info.mode === 'external'); })
+      .catch((err) => debugLog(`getMode failed: ${err instanceof Error ? err.message : err}`, 'mpv'));
   };
 
   // Track volume slider dragging to ignore mpv updates during drag
@@ -353,7 +360,7 @@ function App() {
 
   // Keyboard volume step (mpv's 9 / 0 keys)
   const handleVolumeStep = async (delta: number) => {
-    const next = Math.min(100, Math.max(0, Math.round(playbackRef.current.volume + delta)));
+    const next = resolveVolumeStep(playbackRef.current.volume, delta);
     setVolume(next);
     if (window.mpv) await window.mpv.setVolume(next);
   };
@@ -594,14 +601,12 @@ function App() {
         case 'ArrowRight':
         case 'ArrowUp':
         case 'ArrowDown': {
-          // mpv's seek keys (5s sideways, 60s up/down), only while watching with
-          // nothing else open: the guide uses left/right for its timeline and the
-          // library views use arrows to browse. Live streams have no duration.
-          const { position, duration, activeView, categoriesOpen } = playbackRef.current;
-          if (activeView !== 'none' || categoriesOpen || duration <= 0) break;
+          // mpv's seek keys; resolveSeek returns null while the guide or a library
+          // view is open (they own the arrows) or for live streams (no duration).
+          const target = resolveSeek(e.key, playbackRef.current);
+          if (target === null) break;
           e.preventDefault();
-          const delta = e.key === 'ArrowLeft' ? -5 : e.key === 'ArrowRight' ? 5 : e.key === 'ArrowUp' ? 60 : -60;
-          handleSeek(Math.min(Math.max(0, position + delta), duration));
+          handleSeek(target);
           break;
         }
         case '9':
@@ -738,7 +743,7 @@ function App() {
         onNextEpisode={handleNextEpisode}
         showNextEpisode={vodInfo?.type === 'series'}
         isFullscreen={isFullscreen}
-        onToggleFullscreen={window.platform?.isLinux ? undefined : handleToggleFullscreen}
+        onToggleFullscreen={linuxExternalPlayer ? undefined : handleToggleFullscreen}
       />
 
       {upNext && (

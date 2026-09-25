@@ -1,6 +1,7 @@
 import Store from 'electron-store';
 import { safeStorage } from 'electron';
 import type { Source } from '@sbtltv/core';
+import { normalizeLinuxPlayerMode, type LinuxPlayerMode } from './linux-player-mode.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -48,10 +49,7 @@ interface AppSettings {
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: 'compatibility' runs mpv in its own window (default 'native'); takes effect on restart
 }
 
-// Linux video player: 'native' renders inside the app window through the
-// mpv-texture addon; 'compatibility' launches the external mpv window (the
-// pre-0.10 "legacy" player). Read at startup, so a change needs a restart.
-export type LinuxPlayerMode = 'native' | 'compatibility';
+export type { LinuxPlayerMode };
 
 // Internal storage format (encrypted)
 interface StoredSettings {
@@ -226,7 +224,7 @@ export function getSettings(): AppSettings {
   result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? true;
   result.guideMorphEnabled = stored.guideMorphEnabled ?? true;
   result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
-  result.linuxPlayerMode = stored.linuxPlayerMode ?? 'native';
+  result.linuxPlayerMode = normalizeLinuxPlayerMode(stored.linuxPlayerMode);
   return result;
 }
 
@@ -235,7 +233,7 @@ export function getSettings(): AppSettings {
  * app 'ready', so it must not touch safeStorage (getSettings decrypts keys).
  */
 export function getLinuxPlayerMode(): LinuxPlayerMode {
-  return store.get('settings').linuxPlayerMode === 'compatibility' ? 'compatibility' : 'native';
+  return normalizeLinuxPlayerMode(store.get('settings').linuxPlayerMode);
 }
 
 /**
@@ -300,7 +298,7 @@ export function updateSettings(settings: Partial<AppSettings>): void {
     updated.autoplayNextEpisode = settings.autoplayNextEpisode;
   }
   if (settings.linuxPlayerMode !== undefined) {
-    updated.linuxPlayerMode = settings.linuxPlayerMode === 'compatibility' ? 'compatibility' : 'native';
+    updated.linuxPlayerMode = normalizeLinuxPlayerMode(settings.linuxPlayerMode);
   }
 
   store.set('settings', updated);

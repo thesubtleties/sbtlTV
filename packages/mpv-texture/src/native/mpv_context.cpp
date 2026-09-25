@@ -336,15 +336,18 @@ bool MpvContext::create(const MpvConfig& config) {
     // to derive a VADisplay from. Without the render node fd, the VA-API
     // interop cannot initialise and hwdec=auto lands on a copy path or
     // software decoding on Mesa drivers (AMD, Intel). The scanout fields stay
-    // unset; only render_fd is used for VA-API.
-    m_drmParams = mpv_opengl_drm_params_v2{};
-    m_drmParams.fd = -1;
-    m_drmParams.crtc_id = -1;
-    m_drmParams.connector_id = -1;
-    m_drmParams.atomic_request_ptr = nullptr;
-    m_drmParams.render_fd = g_linuxEglContext ? g_linuxEglContext->drmFd() : -1;
+    // unset; only render_fd is used for VA-API. mpv_render_context_create()
+    // copies the struct (libmpv_gpu.c keeps its own "drm_params_v2" copy), so
+    // a local suffices; the fd it names belongs to g_linuxEglContext, which
+    // destroy() tears down only after the render context is freed.
+    mpv_opengl_drm_params_v2 drm_params{};
+    drm_params.fd = -1;
+    drm_params.crtc_id = -1;
+    drm_params.connector_id = -1;
+    drm_params.atomic_request_ptr = nullptr;
+    drm_params.render_fd = g_linuxEglContext ? g_linuxEglContext->drmFd() : -1;
     if (config.debugLogging) {
-        std::cout << "[MpvContext] DRM render fd for VA-API interop: " << m_drmParams.render_fd << std::endl;
+        std::cout << "[MpvContext] DRM render fd for VA-API interop: " << drm_params.render_fd << std::endl;
     }
 #endif
     mpv_render_param params[] = {
@@ -352,7 +355,7 @@ bool MpvContext::create(const MpvConfig& config) {
         {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init_params},
         {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced_control},
 #ifdef __linux__
-        {MPV_RENDER_PARAM_DRM_DISPLAY_V2, &m_drmParams},
+        {MPV_RENDER_PARAM_DRM_DISPLAY_V2, &drm_params},
 #endif
         {MPV_RENDER_PARAM_INVALID, nullptr}
     };
@@ -539,13 +542,13 @@ MpvStatus MpvContext::getStatus() const {
     return m_status;
 }
 
-std::string MpvContext::getPropertyString(const std::string& name) const {
-    if (!m_mpv) return "";
-    char* value = mpvApi().getPropertyString(m_mpv, name.c_str());
-    if (!value) return "";
-    std::string result = value;
-    mpvApi().freeData(value);
-    return result;
+bool MpvContext::getPropertyString(const std::string& name, std::string& value) const {
+    if (!m_mpv) return false;
+    char* raw = mpvApi().getPropertyString(m_mpv, name.c_str());
+    if (!raw) return false;
+    value = raw;
+    mpvApi().freeData(raw);
+    return true;
 }
 
 void MpvContext::eventLoop() {

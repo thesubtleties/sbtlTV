@@ -84,7 +84,10 @@ public:
         const auto query_modifiers = reinterpret_cast<PFNEGLQUERYDMABUFMODIFIERSEXTPROC>(
             m_context->getProcAddress("eglQueryDmaBufModifiersEXT")
         );
-        if (query_modifiers) {
+        // Mesa resolves the query entry point even when the display does not
+        // advertise the extension; only trust it when createDmaBufImage could
+        // describe the resulting buffers.
+        if (query_modifiers && m_context->supportsDmaBufImportModifiers()) {
             EGLint modifier_count = 0;
             if (query_modifiers(
                 m_context->display(), DRM_FORMAT_ARGB8888, 0, nullptr, nullptr, &modifier_count

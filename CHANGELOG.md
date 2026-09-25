@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 - **Linux player choice** - Settings > Security has a Video Player section on Linux that switches between the in-window player and the compatibility player (mpv in its own window, as before 0.10) for users whose GPU drops frames with the in-window pipeline. Takes effect on restart; a Restart button is offered
 
 ### Improved
-- **Playback keys** - the usual mpv keys now work while watching: Left/Right seek 5 seconds, Up/Down seek a minute, 9 and 0 change volume, P pauses (alongside Space, M and F). Seeking applies to movies and episodes; the guide keeps Left/Right for its timeline
+- **Playback keys** - the usual mpv keys now work while watching: Left/Right seek 5 seconds, Up/Down seek a minute, 9 and 0 change volume, P pauses like Space. Seeking applies to movies and episodes; the guide keeps Left/Right for its timeline
 - **Fullscreen on Linux** - F and F11 fullscreen the app window with the in-window player; only the compatibility player leaves fullscreen to its own mpv window
 
 ### Fixed

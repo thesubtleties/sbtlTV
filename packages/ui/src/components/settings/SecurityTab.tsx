@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useUpdateSettings } from '../../stores/uiStore';
+import { debugLog } from '../../utils/debugLog';
 
 type LinuxPlayerMode = 'native' | 'compatibility';
 
@@ -25,7 +26,7 @@ export function SecurityTab({
     let cancelled = false;
     window.mpv.getMode().then((info) => {
       if (!cancelled) setLaunchedPlayerMode(info.launchPlayerMode ?? null);
-    }).catch(() => {});
+    }).catch((err) => debugLog(`getMode failed: ${err instanceof Error ? err.message : err}`, 'settings'));
     return () => { cancelled = true; };
   }, []);
   const playerModeChanged = launchedPlayerMode !== null && linuxPlayerMode !== launchedPlayerMode;

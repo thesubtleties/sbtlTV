@@ -20,13 +20,14 @@ async function createBridge() {
     rendererOwns: boolean;
   }> = [];
   const sends: Array<{ acknowledge: () => void; reject: () => void }> = [];
+  const properties: Record<string, string | undefined> = {};
   const native = {
     isInitialized: true,
     create() {},
     onFrame(callback: (frame: TextureInfo) => void) { frameCallback = callback; },
     onStatus() {}, onError() {},
     load: async () => {},
-    getProperty() { return undefined; },
+    getProperty(name: string) { return properties[name]; },
     stop() { stops++; },
     releaseFrame(bufferId: number) { nativeReleases.push(bufferId); },
     destroy() { destroyed = true; native.isInitialized = false; },
@@ -85,7 +86,7 @@ async function createBridge() {
   await bridge.initialize({ webContents, isDestroyed: () => false } as unknown as Parameters<MpvTextureBridge['initialize']>[0]);
   bridge.onPipelineFailure(message => failures.push(message));
   return {
-    bridge, webContents, nativeReleases, failures, imports, sends,
+    bridge, webContents, nativeReleases, failures, imports, sends, properties,
     get destroyed() { return destroyed; },
     get stops() { return stops; },
     advance(ms: number) { now += ms; },
@@ -183,6 +184,18 @@ test('timeouts persisting for 3s stop transfers and retain uncertain ownership u
   assert.equal(state.imports[0].mainReleases, 1);
   assert.deepEqual([...state.nativeReleases].sort(), [1, 2, 3, 4, 5]);
   assert.equal(state.failures.length, 1);
+});
+
+test('decodeSummary reports each mpv property on its own, with ? for the ones mpv lacks', async () => {
+  const state = await createBridge();
+  assert.equal(state.bridge.getProperty('hwdec-current'), undefined);
+  assert.equal(state.bridge.decodeSummary(), 'hwdec:? codec:? vo-drop:? dec-drop:?');
+  Object.assign(state.properties, { 'hwdec-current': 'vaapi', 'video-codec': 'h264', 'decoder-frame-drop-count': '3' });
+  assert.equal(state.bridge.getProperty('hwdec-current'), 'vaapi');
+  assert.equal(state.bridge.decodeSummary(), 'hwdec:vaapi codec:h264 vo-drop:? dec-drop:3');
+  const destruction = state.bridge.destroy();
+  state.webContents.emit('destroyed');
+  await destruction;
 });
 
 test('a transfer that rejects after renderer disposal releases exactly once', async () => {

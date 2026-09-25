@@ -319,7 +319,9 @@ export class MpvTexture {
    * Read an mpv property as a string ('hwdec-current', 'video-codec',
    * 'frame-drop-count', ...)
    *
-   * @returns The property value, or undefined if unavailable or not initialized
+   * Synchronous call into mpv's core: keep it in the main process and off IPC.
+   *
+   * @returns The property value, or undefined if mpv has no value or the context is not initialized
    */
   getProperty(name: string): string | undefined {
     if (!this._initialized) return undefined;

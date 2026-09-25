@@ -21,6 +21,8 @@ export interface MpvResult {
 export interface MpvModeInfo {
   mode: 'native' | 'external';
   sharedTextureAvailable: boolean;
+  /** False until the launch has decided between native and external; `mode` is a placeholder until then */
+  settled?: boolean;
   /** mpv's hwdec-current while playing natively ('vaapi', 'videotoolbox', 'no', ...), else null */
   hwdecCurrent?: string | null;
   /** Linux: player this process launched with ('native' | 'compatibility'); null elsewhere */
