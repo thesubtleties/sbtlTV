@@ -734,12 +734,11 @@ async function initNativeMpv(): Promise<boolean> {
       gpuDeviceId: gpu.deviceId,
       debugLogging: debugLoggingEnabled,
       finishBeforeExport: process.env.SBTLTV_MPV_GL_FINISH === '1',
-      // Linux only. A live TS joined mid-GOP makes Intel's VA-API driver reject
-      // the first pictures; mpv's default of 3 errors then evicts zero-copy
-      // vaapi for the whole stream. 100 errors is about 4s of a broken hwdec
-      // before mpv still falls back. The stats overlay gives Linux testers
-      // decode and drop numbers on the video (I key) without a terminal.
-      softwareFallbackErrors: isLinux ? 100 : undefined,
+      // Linux only: the stats overlay gives testers decode and drop numbers on
+      // the video (I key) without a terminal. mpv's software-fallback threshold
+      // is left at its default: on Intel iHD the zero-copy surfaces fail to
+      // decode at all (green frames), so a higher threshold only prolonged that
+      // before the working copy path took over (tested on 0.11.1 pre-release).
       statsOverlay: isLinux,
     });
 
