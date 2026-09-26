@@ -3,6 +3,8 @@
  */
 
 #include <napi.h>
+#include <string>
+#include <vector>
 #include "mpv_context.h"
 
 // Request high-performance GPU on Windows (NVIDIA Optimus / AMD PowerXpress)
@@ -118,6 +120,12 @@ Napi::Value Create(const Napi::CallbackInfo& info) {
         }
         if (configObj.Has("finishBeforeExport") && configObj.Get("finishBeforeExport").IsBoolean()) {
             config.finishBeforeExport = configObj.Get("finishBeforeExport").As<Napi::Boolean>().Value();
+        }
+        if (configObj.Has("softwareFallbackErrors") && configObj.Get("softwareFallbackErrors").IsNumber()) {
+            config.softwareFallbackErrors = configObj.Get("softwareFallbackErrors").As<Napi::Number>().Int32Value();
+        }
+        if (configObj.Has("statsOverlay") && configObj.Get("statsOverlay").IsBoolean()) {
+            config.statsOverlay = configObj.Get("statsOverlay").As<Napi::Boolean>().Value();
         }
     }
 
@@ -267,6 +275,25 @@ Napi::Value GetStatus(const Napi::CallbackInfo& info) {
 
     MpvStatus status = g_context->getStatus();
     return StatusToJS(env, status);
+}
+
+// Run an mpv command from string arguments; false when mpv rejected it
+Napi::Value Command(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!g_context) {
+        return Napi::Boolean::New(env, false);
+    }
+
+    std::vector<std::string> args;
+    for (size_t index = 0; index < info.Length(); index++) {
+        if (!info[index].IsString()) {
+            Napi::TypeError::New(env, "command arguments must be strings").ThrowAsJavaScriptException();
+            return env.Undefined();
+        }
+        args.push_back(info[index].As<Napi::String>().Utf8Value());
+    }
+    return Napi::Boolean::New(env, g_context->command(args));
 }
 
 // Read an mpv property as a string; undefined when mpv has no value for it.
@@ -440,6 +467,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("toggleMute", Napi::Function::New(env, ToggleMute));
     exports.Set("getStatus", Napi::Function::New(env, GetStatus));
     exports.Set("getProperty", Napi::Function::New(env, GetProperty));
+    exports.Set("command", Napi::Function::New(env, Command));
     exports.Set("onFrame", Napi::Function::New(env, OnFrame));
     exports.Set("onStatus", Napi::Function::New(env, OnStatus));
     exports.Set("onError", Napi::Function::New(env, OnError));

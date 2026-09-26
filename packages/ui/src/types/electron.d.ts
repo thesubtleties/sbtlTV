@@ -38,6 +38,8 @@ export interface MpvApi {
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
   getMode: () => Promise<MpvModeInfo>;
+  /** Linux in-window player: show mpv's stats overlay (persistent keeps it on screen) */
+  toggleStats: (persistent: boolean) => Promise<MpvResult>;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;

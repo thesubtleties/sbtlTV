@@ -265,9 +265,17 @@ bool MpvContext::create(const MpvConfig& config) {
     mpvApi().setOptionString(m_mpv, "load-commands", "no");
     mpvApi().setOptionString(m_mpv, "load-positioning", "no");
     mpvApi().setOptionString(m_mpv, "load-select", "no");
-    mpvApi().setOptionString(m_mpv, "load-stats-overlay", "no");
+    mpvApi().setOptionString(m_mpv, "load-stats-overlay", config.statsOverlay ? "yes" : "no");
     mpvApi().setOptionString(m_mpv, "input-default-bindings", "no");
     mpvApi().setOptionString(m_mpv, "msg-level", "all=v");
+    if (config.softwareFallbackErrors > 0) {
+        // A live TS joined mid-GOP feeds the hardware decoder pictures with
+        // missing references; some drivers (Intel iHD) reject those where
+        // software would conceal. mpv's default gives up on the hwdec after 3
+        // such errors and settles on a copy path for the whole stream.
+        const std::string threshold = std::to_string(config.softwareFallbackErrors);
+        mpvApi().setOptionString(m_mpv, "vd-lavc-software-fallback", threshold.c_str());
+    }
 #ifdef __linux__
     // The PipeWire client library cannot safely cross Electron's FFmpeg
     // isolation boundary. PulseAudio remains available through PipeWire's
@@ -540,6 +548,20 @@ void MpvContext::releaseFrame(uint32_t buffer_id) {
 MpvStatus MpvContext::getStatus() const {
     std::lock_guard<std::mutex> lock(m_statusMutex);
     return m_status;
+}
+
+bool MpvContext::command(const std::vector<std::string>& args) {
+    if (!m_mpv || args.empty()) return false;
+    std::vector<const char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& arg : args) argv.push_back(arg.c_str());
+    argv.push_back(nullptr);
+    const int result = mpvApi().command(m_mpv, argv.data());
+    if (result < 0) {
+        std::cerr << "[MpvContext] command '" << args.front() << "' failed: "
+                  << mpvApi().errorString(result) << std::endl;
+    }
+    return result >= 0;
 }
 
 bool MpvContext::getPropertyString(const std::string& name, std::string& value) const {
