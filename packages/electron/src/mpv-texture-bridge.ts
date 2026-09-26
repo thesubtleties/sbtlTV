@@ -369,6 +369,13 @@ export class MpvTextureBridge {
   }
 
   /**
+   * Run an mpv command (false when unavailable or rejected)
+   */
+  command(...args: string[]): boolean {
+    return this.mpv?.command(...args) ?? false;
+  }
+
+  /**
    * Read an mpv property as a string (undefined when mpv has no value).
    * Synchronous round trip into mpv's core on the main thread: never expose
    * it over IPC, and stick to decoder-level properties; some VO properties

@@ -10,6 +10,7 @@ import * as storage from './storage.js';
 import electronUpdater from 'electron-updater';
 import { selectChromiumGpuIdentity } from './gpu-selection.js';
 import { startDataHost, type DataHost } from './data/data-host.js';
+import { isTransientDecodeError } from './mpv-error-filter.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -391,8 +392,13 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
     mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', true));
     mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', false));
   } else if (process.platform === 'linux') {
-    mainWindow.on('maximize', () => mainWindow?.webContents.send('window-fullscreen-changed', true));
-    mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window-fullscreen-changed', false));
+    // In-window player: real fullscreen, so the OS events drive the state.
+    // Compatibility player: mpv plays in its own window and handles its own
+    // fullscreen; for this window, maximize is what "fullscreen" has meant.
+    mainWindow.on('enter-full-screen', () => { if (useNativeMpv) mainWindow?.webContents.send('window-fullscreen-changed', true); });
+    mainWindow.on('leave-full-screen', () => { if (useNativeMpv) mainWindow?.webContents.send('window-fullscreen-changed', false); });
+    mainWindow.on('maximize', () => { if (!useNativeMpv) mainWindow?.webContents.send('window-fullscreen-changed', true); });
+    mainWindow.on('unmaximize', () => { if (!useNativeMpv) mainWindow?.webContents.send('window-fullscreen-changed', false); });
   }
 }
 
@@ -715,12 +721,20 @@ async function initNativeMpv(): Promise<boolean> {
       );
     }
     bridge = new MpvTextureBridgeClass();
+    const isLinux = process.platform === 'linux';
     const success = await bridge.initialize(mainWindow, {
       hwdec: 'auto',
       gpuVendorId: gpu.vendorId,
       gpuDeviceId: gpu.deviceId,
       debugLogging: debugLoggingEnabled,
       finishBeforeExport: process.env.SBTLTV_MPV_GL_FINISH === '1',
+      // Linux only. A live TS joined mid-GOP makes Intel's VA-API driver reject
+      // the first pictures; mpv's default of 3 errors then evicts zero-copy
+      // vaapi for the whole stream. 100 errors is about 4s of a broken hwdec
+      // before mpv still falls back. The stats overlay gives Linux testers
+      // decode and drop numbers on the video (I key) without a terminal.
+      softwareFallbackErrors: isLinux ? 100 : undefined,
+      statsOverlay: isLinux,
     });
 
     if (!success) {
@@ -772,6 +786,13 @@ async function initNativeMpv(): Promise<boolean> {
     // Forward errors to renderer
     bridge.onError((error) => {
       if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
+      // Linux only: hwdec probing and mid-GOP decode errors are logged by
+      // ffmpeg at error level but recover on their own; the debug log keeps
+      // them, the red banner does not.
+      if (process.platform === 'linux' && isTransientDecodeError(error)) {
+        debugLog(`mpv (not shown): ${error.trim()}`, 'mpv');
+        return;
+      }
       sendToRenderer('mpv-error', error);
     });
 
@@ -843,10 +864,18 @@ async function resetNativePlayback(): Promise<void> {
   }
 }
 
+// app.relaunch defaults to process.execPath, which for an AppImage is the
+// binary inside a mount that disappears when this process exits. Relaunch the
+// AppImage itself instead; elsewhere this is a plain relaunch.
+function relaunchApp(args: string[]): void {
+  const appImage = process.env.APPIMAGE;
+  app.relaunch(appImage ? { execPath: appImage, args } : { args });
+}
+
 function restartInCompatibilityMode(handoff: CompatibilityHandoff | null): void {
   if (handoff) saveCompatibilityHandoff(handoff);
   const relaunchArgs = process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG);
-  app.relaunch({ args: [...relaunchArgs, MPV_COMPATIBILITY_ARG] });
+  relaunchApp([...relaunchArgs, MPV_COMPATIBILITY_ARG]);
   // exit, not quit: a graceful quit tears the native bridge down, which joins
   // the render thread, and a wedged render thread is one reason we are here.
   // The data process gets its shutdown message (non-blocking) and the OS
@@ -1073,7 +1102,7 @@ ipcMain.handle('window-close', () => mainWindow?.close());
 ipcMain.handle('app-relaunch', () => {
   debugLog('Relaunch requested from Settings', 'app');
   // Drop a per-launch compatibility flag so the saved setting decides the mode.
-  app.relaunch({ args: process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG) });
+  relaunchApp(process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG));
   app.quit();
 });
 
@@ -1102,11 +1131,24 @@ ipcMain.handle('window-set-fullscreen', () => {
   } else if (process.platform === 'darwin') {
     // macOS: opaque window + native mpv texture — true OS fullscreen + enter/leave events work.
     mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  } else if (useNativeMpv) {
+    // Linux in-window player: the video is in this window, so fullscreen it like macOS.
+    mainWindow.setFullScreen(!mainWindow.isFullScreen());
   } else {
-    // Linux: maximize is the working fullscreen equivalent for the frameless Electron window.
+    // Linux compatibility player: maximize is the working fullscreen equivalent for the
+    // frameless Electron window; mpv's own window handles its fullscreen.
     if (mainWindow.isMaximized()) mainWindow.unmaximize();
     else mainWindow.maximize();
   }
+});
+
+// Linux in-window player only: mpv's stats overlay (I shows it for a few
+// seconds, Shift+I keeps it up). Elsewhere this is a no-op.
+ipcMain.handle('mpv-toggle-stats', async (_event, persistent: boolean) => {
+  if (process.platform !== 'linux' || !useNativeMpv || !mpvBridge) return { success: true };
+  const shown = mpvBridge.command('script-binding', persistent ? 'stats/display-stats-toggle' : 'stats/display-stats');
+  if (!shown) debugLog('stats overlay command rejected (libmpv without the stats script?)', 'mpv');
+  return { success: true };
 });
 
 async function loadMedia(url: string, startPosition?: number): Promise<{ success?: boolean; error?: string }> {

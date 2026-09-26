@@ -9,6 +9,7 @@
 #include <mpv/render.h>
 #include <mpv/render_gl.h>
 #include <string>
+#include <vector>
 #include <functional>
 #include <atomic>
 #include <thread>
@@ -45,6 +46,12 @@ struct MpvConfig {
     uint32_t gpuDeviceId = 0;
     bool debugLogging = false;
     bool finishBeforeExport = false;
+    // mpv's vd-lavc-software-fallback: consecutive hardware decode errors
+    // tolerated before mpv abandons the hwdec. 0 keeps mpv's default (3).
+    int softwareFallbackErrors = 0;
+    // Load mpv's built-in stats overlay script so "script-binding stats/..."
+    // commands can show decode and drop statistics on the video.
+    bool statsOverlay = false;
 };
 
 class MpvContext {
@@ -69,6 +76,8 @@ public:
     void seek(double position);
     void setVolume(double volume);
     void toggleMute();
+    // Run an mpv command (e.g. {"script-binding", "stats/display-stats"}).
+    bool command(const std::vector<std::string>& args);
 
     // Callbacks
     void setFrameCallback(FrameCallback callback);

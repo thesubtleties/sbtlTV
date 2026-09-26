@@ -139,6 +139,10 @@ export interface MpvConfig {
   debugLogging?: boolean;
   /** Block for GPU completion before exporting each frame (diagnostic only) */
   finishBeforeExport?: boolean;
+  /** Consecutive hardware decode errors tolerated before mpv drops the hwdec (mpv default 3) */
+  softwareFallbackErrors?: number;
+  /** Load mpv's built-in stats overlay script (toggled with command('script-binding', 'stats/...')) */
+  statsOverlay?: boolean;
 }
 
 /**
@@ -156,6 +160,7 @@ interface NativeAddon {
   toggleMute(): void;
   getStatus(): MpvStatus | undefined;
   getProperty(name: string): string | undefined;
+  command(...args: string[]): boolean;
   onFrame(callback: (info: TextureInfo) => void): void;
   onStatus(callback: (status: MpvStatus) => void): void;
   onError(callback: (error: string) => void): void;
@@ -303,6 +308,16 @@ export class MpvTexture {
   toggleMute(): void {
     this.ensureInitialized();
     addon.toggleMute();
+  }
+
+  /**
+   * Run an mpv command, e.g. command('script-binding', 'stats/display-stats')
+   *
+   * @returns false when the context is not initialized or mpv rejected the command
+   */
+  command(...args: string[]): boolean {
+    if (!this._initialized) return false;
+    return addon.command(...args);
   }
 
   /**

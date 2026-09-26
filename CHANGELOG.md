@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Linux: hardware decoding gave up on live streams** - joining a live stream between keyframes makes Intel's VA-API driver reject the first few pictures, and mpv abandoned zero-copy decoding after three of them, settling on a slower copy path for the rest of the stream. The in-window player now tolerates those first errors
+- **Linux: red error banners while a stream started** - hardware decoder probing and the broken first pictures of a live stream were shown as errors ("Could not dynamically load CUDA", "co located POCs unavailable", "Mapping hardware decoded surface failed"). They recover on their own and now go to the debug log only
+- **Linux AppImage: Restart buttons did nothing** - the Restart button in Settings and the Restart in Compatibility Mode button relaunched a path inside the AppImage mount, which is gone by the time the new process starts. They now relaunch the AppImage itself
+- **Linux: F and F11 maximized instead of fullscreening** - with the in-window player the window now enters real fullscreen; the compatibility player keeps the previous behaviour
+
+### Added
+- **Linux: mpv stats overlay** - with the in-window player, I shows mpv's statistics (decoder, hwdec, dropped frames) on the video for a few seconds and Shift+I keeps them on screen
+
 ## [0.11.0] - 2026-09-25
 
 ### Changed

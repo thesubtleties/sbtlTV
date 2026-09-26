@@ -597,6 +597,12 @@ function App() {
         case 'm':
           handleToggleMute();
           break;
+        case 'i':
+        case 'I':
+          // mpv's stats overlay; Linux in-window player only (the compatibility
+          // player's own window already has the binding).
+          if (window.platform?.isLinux) window.mpv?.toggleStats(e.key === 'I');
+          break;
         case 'ArrowLeft':
         case 'ArrowRight':
         case 'ArrowUp':
