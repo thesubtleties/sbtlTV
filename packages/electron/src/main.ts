@@ -60,6 +60,11 @@ const pendingRequests = new Map<number, { resolve: (data: unknown) => void; reje
 
 // Native mpv-texture state
 let useNativeMpv = false;
+// Linux: which player this launch settled on. Unlike useNativeMpv it never
+// flips back during a native reset, so window fullscreen wiring can rely on
+// it. True when the compatibility player was requested, or when native init
+// failed and external mpv was started instead.
+let linuxExternalPlayer = compatibilityModeRequested;
 let mpvBridge: MpvTextureBridgeType | null = null;
 
 // Track mpv state
@@ -395,10 +400,10 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
     // In-window player: real fullscreen, so the OS events drive the state.
     // Compatibility player: mpv plays in its own window and handles its own
     // fullscreen; for this window, maximize is what "fullscreen" has meant.
-    mainWindow.on('enter-full-screen', () => { if (useNativeMpv) mainWindow?.webContents.send('window-fullscreen-changed', true); });
-    mainWindow.on('leave-full-screen', () => { if (useNativeMpv) mainWindow?.webContents.send('window-fullscreen-changed', false); });
-    mainWindow.on('maximize', () => { if (!useNativeMpv) mainWindow?.webContents.send('window-fullscreen-changed', true); });
-    mainWindow.on('unmaximize', () => { if (!useNativeMpv) mainWindow?.webContents.send('window-fullscreen-changed', false); });
+    mainWindow.on('enter-full-screen', () => { if (!linuxExternalPlayer) mainWindow?.webContents.send('window-fullscreen-changed', true); });
+    mainWindow.on('leave-full-screen', () => { if (!linuxExternalPlayer) mainWindow?.webContents.send('window-fullscreen-changed', false); });
+    mainWindow.on('maximize', () => { if (linuxExternalPlayer) mainWindow?.webContents.send('window-fullscreen-changed', true); });
+    mainWindow.on('unmaximize', () => { if (linuxExternalPlayer) mainWindow?.webContents.send('window-fullscreen-changed', false); });
   }
 }
 
@@ -553,6 +558,7 @@ async function checkMpvAvailable(): Promise<boolean> {
 
 async function initMpv(): Promise<void> {
   if (!mainWindow) return;
+  if (process.platform === 'linux') linuxExternalPlayer = true;
 
   // Reset shutdown flag when starting
   isShuttingDown = false;
@@ -869,6 +875,13 @@ async function resetNativePlayback(): Promise<void> {
 // AppImage itself instead; elsewhere this is a plain relaunch.
 function relaunchApp(args: string[]): void {
   const appImage = process.env.APPIMAGE;
+  if (appImage && !fs.existsSync(appImage)) {
+    // A stale variable (moved or deleted file) would make the relaunch fail
+    // silently after we exit; fall back to the default and say so.
+    debugLog(`APPIMAGE points at a missing file (${appImage}); relaunching the default path`, 'app');
+    app.relaunch({ args });
+    return;
+  }
   app.relaunch(appImage ? { execPath: appImage, args } : { args });
 }
 
@@ -1131,7 +1144,7 @@ ipcMain.handle('window-set-fullscreen', () => {
   } else if (process.platform === 'darwin') {
     // macOS: opaque window + native mpv texture — true OS fullscreen + enter/leave events work.
     mainWindow.setFullScreen(!mainWindow.isFullScreen());
-  } else if (useNativeMpv) {
+  } else if (!linuxExternalPlayer) {
     // Linux in-window player: the video is in this window, so fullscreen it like macOS.
     mainWindow.setFullScreen(!mainWindow.isFullScreen());
   } else {
@@ -1145,10 +1158,12 @@ ipcMain.handle('window-set-fullscreen', () => {
 // Linux in-window player only: mpv's stats overlay (I shows it for a few
 // seconds, Shift+I keeps it up). Elsewhere this is a no-op.
 ipcMain.handle('mpv-toggle-stats', async (_event, persistent: boolean) => {
-  if (process.platform !== 'linux' || !useNativeMpv || !mpvBridge) return { success: true };
+  if (process.platform !== 'linux' || !useNativeMpv || !mpvBridge) {
+    return { error: 'Stats overlay is only available with the Linux in-window player' };
+  }
   const shown = mpvBridge.command('script-binding', persistent ? 'stats/display-stats-toggle' : 'stats/display-stats');
-  if (!shown) debugLog('stats overlay command rejected (libmpv without the stats script?)', 'mpv');
-  return { success: true };
+  if (!shown) debugLog('stats overlay command rejected; libmpv prints the reason on stderr', 'mpv');
+  return shown ? { success: true } : { error: 'mpv rejected the stats command' };
 });
 
 async function loadMedia(url: string, startPosition?: number): Promise<{ success?: boolean; error?: string }> {

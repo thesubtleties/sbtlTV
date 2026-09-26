@@ -15,8 +15,10 @@ test('decoder and hwdec probe noise is transient', () => {
   }
 });
 
-test('stream and network failures still reach the banner', () => {
+test('stream, network and audio failures still reach the banner', () => {
   for (const message of [
+    'ffmpeg/audio: aac: channel element 1.0 is not allocated\n',
+    'ad: Error decoding audio.\n',
     'ffmpeg: Server returned 404 Not Found\n',
     'stream: Failed to open http://example.invalid/live\n',
     'cplayer: Failed to recognize file format.\n',

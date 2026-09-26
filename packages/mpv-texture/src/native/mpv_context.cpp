@@ -556,7 +556,12 @@ bool MpvContext::command(const std::vector<std::string>& args) {
     argv.reserve(args.size() + 1);
     for (const auto& arg : args) argv.push_back(arg.c_str());
     argv.push_back(nullptr);
-    return mpvApi().command(m_mpv, argv.data()) >= 0;
+    const int result = mpvApi().command(m_mpv, argv.data());
+    if (result < 0) {
+        std::cerr << "[MpvContext] command '" << args.front() << "' failed: "
+                  << mpvApi().errorString(result) << std::endl;
+    }
+    return result >= 0;
 }
 
 bool MpvContext::getPropertyString(const std::string& name, std::string& value) const {

@@ -601,7 +601,7 @@ function App() {
         case 'I':
           // mpv's stats overlay; Linux in-window player only (the compatibility
           // player's own window already has the binding).
-          if (window.platform?.isLinux) window.mpv?.toggleStats(e.key === 'I');
+          if (window.platform?.isLinux && !linuxExternalPlayerRef.current) window.mpv?.toggleStats(e.key === 'I');
           break;
         case 'ArrowLeft':
         case 'ArrowRight':
