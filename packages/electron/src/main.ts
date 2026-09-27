@@ -768,9 +768,11 @@ async function initNativeMpv(): Promise<boolean> {
 
       // First frame of each load: record how it is being decoded so a "frame
       // drops on AMD" report can be told apart from a software-decode report.
-      if (status.width > 0 && decodeLoggedGeneration !== loadGeneration) {
+      // The previous stream's dimensions linger until the new decoder is up, so
+      // wait for hwdec-current to exist before logging the new stream's decode.
+      if (status.width > 0 && decodeLoggedGeneration !== loadGeneration && bridge?.getProperty('hwdec-current') !== undefined) {
         decodeLoggedGeneration = loadGeneration;
-        debugLog(`Decoding ${status.width}x${status.height} ${bridge?.decodeSummary() ?? 'hwdec:?'}`, 'mpv');
+        debugLog(`Decoding ${status.width}x${status.height} ${bridge.decodeSummary()}`, 'mpv');
       }
 
       // File loaded — execute pending resume seek (native path)

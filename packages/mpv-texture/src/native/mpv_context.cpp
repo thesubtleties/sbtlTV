@@ -393,6 +393,11 @@ bool MpvContext::create(const MpvConfig& config) {
     mpvApi().observeProperty(m_mpv, 5, "duration", MPV_FORMAT_DOUBLE);
     mpvApi().observeProperty(m_mpv, 6, "width", MPV_FORMAT_INT64);
     mpvApi().observeProperty(m_mpv, 7, "height", MPV_FORMAT_INT64);
+    // Display size after aspect correction (an anamorphic 720x576 stream shows
+    // as 1047x576). The render target must use it, or mpv letterboxes inside a
+    // coded-size texture and the canvas letterboxes that texture again.
+    mpvApi().observeProperty(m_mpv, 8, "dwidth", MPV_FORMAT_INT64);
+    mpvApi().observeProperty(m_mpv, 9, "dheight", MPV_FORMAT_INT64);
 
     // Start threads
     m_running = true;
@@ -620,6 +625,20 @@ void MpvContext::handleEvent(mpv_event* event) {
     }
 }
 
+// Called with m_statusMutex held. The render target takes mpv's display size
+// (aspect-corrected) once both dimensions are known, else the coded size.
+// GL calls must happen on the render thread, so only a request is made here.
+void MpvContext::scheduleResize() {
+    const bool haveDisplay = m_displayWidth > 0 && m_displayHeight > 0;
+    const int width = haveDisplay ? m_displayWidth : m_status.width;
+    const int height = haveDisplay ? m_displayHeight : m_status.height;
+    if (width <= 0 || height <= 0) return;
+    m_pendingWidth = static_cast<uint32_t>(width);
+    m_pendingHeight = static_cast<uint32_t>(height);
+    m_needsResize = true;
+    m_renderCV.notify_one();
+}
+
 void MpvContext::handlePropertyChange(mpv_event_property* prop) {
     bool statusChanged = false;
 
@@ -645,28 +664,28 @@ void MpvContext::handlePropertyChange(mpv_event_property* prop) {
             int newWidth = static_cast<int>(*static_cast<int64_t*>(prop->data));
             if (newWidth > 0 && newWidth != m_status.width) {
                 m_status.width = newWidth;
-                // Signal render thread to resize (GL calls must happen there)
-                if (m_status.height > 0) {
-                    m_pendingWidth = static_cast<uint32_t>(m_status.width);
-                    m_pendingHeight = static_cast<uint32_t>(m_status.height);
-                    m_needsResize = true;
-                    m_renderCV.notify_one();  // Wake render thread for resize
-                }
+                scheduleResize();
             }
             statusChanged = true;
         } else if (strcmp(prop->name, "height") == 0 && prop->format == MPV_FORMAT_INT64) {
             int newHeight = static_cast<int>(*static_cast<int64_t*>(prop->data));
             if (newHeight > 0 && newHeight != m_status.height) {
                 m_status.height = newHeight;
-                // Signal render thread to resize (GL calls must happen there)
-                if (m_status.width > 0) {
-                    m_pendingWidth = static_cast<uint32_t>(m_status.width);
-                    m_pendingHeight = static_cast<uint32_t>(m_status.height);
-                    m_needsResize = true;
-                    m_renderCV.notify_one();  // Wake render thread for resize
-                }
+                scheduleResize();
             }
             statusChanged = true;
+        } else if (strcmp(prop->name, "dwidth") == 0 && prop->format == MPV_FORMAT_INT64) {
+            int newWidth = static_cast<int>(*static_cast<int64_t*>(prop->data));
+            if (newWidth > 0 && newWidth != m_displayWidth) {
+                m_displayWidth = newWidth;
+                scheduleResize();
+            }
+        } else if (strcmp(prop->name, "dheight") == 0 && prop->format == MPV_FORMAT_INT64) {
+            int newHeight = static_cast<int>(*static_cast<int64_t*>(prop->data));
+            if (newHeight > 0 && newHeight != m_displayHeight) {
+                m_displayHeight = newHeight;
+                scheduleResize();
+            }
         }
     }
 

@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **macOS and Linux: widescreen SD channels played small with black bars on every side** - anamorphic streams (720x576 pixels shown at 16:9 or 16:11) were rendered into a texture of the pixel size, so the player letterboxed the picture once inside the texture and the window letterboxed it again. The render target now uses the display size
 - **Linux: hardware decoding on Intel produced green frames and fell back to a copy path** - libmpv's VA-API interop was given the same DRM file descriptor Mesa uses for the in-window renderer, so buffer handles clashed and every decoded surface was destroyed underneath the decoder. VA-API now gets its own descriptor, as mpv's and Kodi's DRM outputs do. This is also the most likely cause of the abort seen after a decoder fallback
 - **Linux: red error banners for recoverable decoder errors** - hardware decoder probing and the broken first pictures of a live stream were shown as errors ("Could not dynamically load CUDA", "co located POCs unavailable", "Mapping hardware decoded surface failed"). They recover on their own and now go to the debug log only
 - **Linux AppImage: Restart buttons did nothing** - the Restart button in Settings and the Restart in Compatibility Mode button relaunched a path inside the AppImage mount, which is gone by the time the new process starts. They now relaunch the AppImage itself

@@ -100,6 +100,7 @@ private:
     void eventLoop();
     void handleEvent(mpv_event* event);
     void handlePropertyChange(mpv_event_property* prop);
+    void scheduleResize();
 
     // Render thread
     void renderLoop();
@@ -138,6 +139,9 @@ private:
 
     // Current state
     MpvStatus m_status{};
+    // mpv's dwidth/dheight: display size after aspect correction; 0 until known
+    int m_displayWidth = 0;
+    int m_displayHeight = 0;
     mutable std::mutex m_statusMutex;
 
     // Callbacks
