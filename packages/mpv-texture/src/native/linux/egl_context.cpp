@@ -134,6 +134,13 @@ bool LinuxEglContext::initializeDevice(const std::string& render_node) {
 
     m_drmFd = open(render_node.c_str(), O_RDWR | O_CLOEXEC);
     if (m_drmFd < 0) return fail("open");
+    // Separate open (not dup: a dup shares the file description and so the
+    // GEM handle namespace). See vaRenderFd() in the header.
+    m_vaRenderFd = open(render_node.c_str(), O_RDWR | O_CLOEXEC);
+    if (m_vaRenderFd < 0 && m_debugLogging) {
+        std::cerr << "[LinuxEGL] Could not open " << render_node
+                  << " a second time for VA-API; hardware decoding will use a copy path" << std::endl;
+    }
 
     m_gbmDevice = gbm_create_device(m_drmFd);
     if (!m_gbmDevice) return fail("gbm_create_device");
@@ -205,6 +212,7 @@ bool LinuxEglContext::initializeDevice(const std::string& render_node) {
                   << " GL=" << (vendor ? vendor : "unknown")
                   << " renderer=" << (renderer ? renderer : "unknown")
                   << " drmFd=" << m_drmFd
+                  << " vaFd=" << m_vaRenderFd
                   << " dmabufModifiers=" << (m_supportsDmaBufImportModifiers ? "yes" : "no") << std::endl;
     }
     return true;
@@ -223,6 +231,10 @@ void LinuxEglContext::destroyDevice() {
     }
     if (m_gbmDevice) gbm_device_destroy(m_gbmDevice);
     if (m_drmFd >= 0) close(m_drmFd);
+    // mpv_render_context_free has run by now (MpvContext::destroy frees the
+    // render context before resetting this object), so no VA surface uses it.
+    if (m_vaRenderFd >= 0) close(m_vaRenderFd);
+    m_vaRenderFd = -1;
 
     m_surface = EGL_NO_SURFACE;
     m_context = EGL_NO_CONTEXT;

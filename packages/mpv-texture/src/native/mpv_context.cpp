@@ -343,8 +343,9 @@ bool MpvContext::create(const MpvConfig& config) {
     // Our GL context is surfaceless GBM: no X11 or Wayland display for libmpv
     // to derive a VADisplay from. Without the render node fd, the VA-API
     // interop cannot initialise and hwdec=auto lands on a copy path or
-    // software decoding on Mesa drivers (AMD, Intel). The scanout fields stay
-    // unset; only render_fd is used for VA-API. mpv_render_context_create()
+    // software decoding on Mesa drivers (AMD, Intel). The fd must be a
+    // separate open from the one GBM/EGL uses (see LinuxEglContext::vaRenderFd).
+    // The scanout fields stay unset; only render_fd is used for VA-API. mpv_render_context_create()
     // copies the struct (libmpv_gpu.c keeps its own "drm_params_v2" copy), so
     // a local suffices; the fd it names belongs to g_linuxEglContext, which
     // destroy() tears down only after the render context is freed.
@@ -353,7 +354,7 @@ bool MpvContext::create(const MpvConfig& config) {
     drm_params.crtc_id = -1;
     drm_params.connector_id = -1;
     drm_params.atomic_request_ptr = nullptr;
-    drm_params.render_fd = g_linuxEglContext ? g_linuxEglContext->drmFd() : -1;
+    drm_params.render_fd = g_linuxEglContext ? g_linuxEglContext->vaRenderFd() : -1;
     if (config.debugLogging) {
         std::cout << "[MpvContext] DRM render fd for VA-API interop: " << drm_params.render_fd << std::endl;
     }
