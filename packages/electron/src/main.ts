@@ -130,6 +130,10 @@ const SOCKET_PATH = process.platform === 'win32'
 // Throttle status updates to renderer (max once per 100ms)
 let lastStatusUpdate = 0;
 const STATUS_THROTTLE_MS = 100;
+// Native path: the last status forwarded, so position-only ticks (which mpv
+// reports at frame rate) can be rate limited while pause, mute, volume,
+// duration and size changes still go out at once.
+let lastNativeStatusSent: { at: number; playing: boolean; muted: boolean; volume: number; duration: number; width: number; height: number } | null = null;
 
 // Debug logging infrastructure
 let debugLogStream: fs.WriteStream | null = null;
@@ -787,7 +791,20 @@ async function initNativeMpv(): Promise<boolean> {
         }
       }
 
-      sendToRenderer('mpv-status', status);
+      // mpv reports time-pos on every frame. Each forwarded status is an IPC
+      // message plus a React commit on the renderer thread that also has to
+      // receive and draw every video frame, so position-only ticks are capped
+      // at 10/s (the external path has the same cap); anything discrete goes
+      // out immediately.
+      const now = Date.now();
+      const last = lastNativeStatusSent;
+      const discreteChange = !last
+        || last.playing !== status.playing || last.muted !== status.muted || last.volume !== status.volume
+        || last.duration !== status.duration || last.width !== status.width || last.height !== status.height;
+      if (discreteChange || !last || now - last.at >= STATUS_THROTTLE_MS) {
+        lastNativeStatusSent = { at: now, playing: status.playing, muted: status.muted, volume: status.volume, duration: status.duration, width: status.width, height: status.height };
+        sendToRenderer('mpv-status', status);
+      }
     });
 
     // Forward errors to renderer

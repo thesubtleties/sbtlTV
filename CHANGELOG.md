@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Improved
+- **macOS and Linux: less work on the video thread while playing** - the in-window player forwarded every position update from mpv to the interface, about 25 messages and interface refreshes per second on the same thread that receives and draws each video frame. Position updates are now capped at 10 per second, as the compatibility player already did; play, pause, mute, volume and stream changes are still immediate
+
 ### Fixed
 - **macOS and Linux: a stall every two seconds in the in-window player** - the 0.11.0 decode diagnostics read four mpv properties synchronously from the app's main thread every two seconds, and that read can wait on the player's render loop. On the Linux tester's machine it cost a 150ms hitch and a dropped frame per tick. The values now arrive through mpv's change notifications and the read is instant
 - **macOS and Linux: widescreen SD channels played small with black bars on every side** - anamorphic streams (720x576 pixels shown at 16:9 or 16:11) were rendered into a texture of the pixel size, so the player letterboxed the picture once inside the texture and the window letterboxed it again. The render target now uses the display size
