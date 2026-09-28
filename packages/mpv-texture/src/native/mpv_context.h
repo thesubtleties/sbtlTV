@@ -10,6 +10,7 @@
 #include <mpv/render_gl.h>
 #include <string>
 #include <vector>
+#include <map>
 #include <functional>
 #include <atomic>
 #include <thread>
@@ -90,9 +91,11 @@ public:
     // Get current status
     MpvStatus getStatus() const;
 
-    // Read any mpv property as a string ("hwdec-current", "video-codec",
-    // "frame-drop-count"). Returns false when mpv has no value for it; an
-    // empty string is a valid value. Synchronous round trip into mpv's core.
+    // Read an mpv property as a string. The properties in kCachedProperties
+    // are observed on the event thread and answered from a cache without
+    // touching mpv's core; anything else is a synchronous round trip that can
+    // block the caller while the core waits on the render thread. Returns
+    // false when mpv has no value; an empty string is a valid value.
     bool getPropertyString(const std::string& name, std::string& value) const;
 
 private:
@@ -101,6 +104,8 @@ private:
     void handleEvent(mpv_event* event);
     void handlePropertyChange(mpv_event_property* prop);
     void scheduleResize();
+    static const char* const kCachedProperties[4];
+    static bool isCachedProperty(const char* name);
 
     // Render thread
     void renderLoop();
@@ -142,6 +147,9 @@ private:
     // mpv's dwidth/dheight: display size after aspect correction; 0 until known
     int m_displayWidth = 0;
     int m_displayHeight = 0;
+    // Latest values of the observed diagnostic properties, keyed by name;
+    // absent while mpv reports the property unavailable. Guarded by m_statusMutex.
+    std::map<std::string, std::string> m_propertyCache;
     mutable std::mutex m_statusMutex;
 
     // Callbacks

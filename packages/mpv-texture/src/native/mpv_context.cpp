@@ -398,6 +398,13 @@ bool MpvContext::create(const MpvConfig& config) {
     // coded-size texture and the canvas letterboxes that texture again.
     mpvApi().observeProperty(m_mpv, 8, "dwidth", MPV_FORMAT_INT64);
     mpvApi().observeProperty(m_mpv, 9, "dheight", MPV_FORMAT_INT64);
+    // Diagnostics read every couple of seconds from the JS thread. Observed so
+    // the read never has to wait for mpv's core (with advanced control the core
+    // may be blocked on our render thread, and a synchronous read then stalls
+    // the JS thread for as long as that takes; 150ms per tick in the field).
+    for (const char* name : kCachedProperties) {
+        mpvApi().observeProperty(m_mpv, 0, name, MPV_FORMAT_STRING);
+    }
 
     // Start threads
     m_running = true;
@@ -570,8 +577,26 @@ bool MpvContext::command(const std::vector<std::string>& args) {
     return result >= 0;
 }
 
+const char* const MpvContext::kCachedProperties[] = {
+    "hwdec-current", "video-codec", "frame-drop-count", "decoder-frame-drop-count"
+};
+
+bool MpvContext::isCachedProperty(const char* name) {
+    for (const char* cached : kCachedProperties) {
+        if (strcmp(cached, name) == 0) return true;
+    }
+    return false;
+}
+
 bool MpvContext::getPropertyString(const std::string& name, std::string& value) const {
     if (!m_mpv) return false;
+    if (isCachedProperty(name.c_str())) {
+        std::lock_guard<std::mutex> lock(m_statusMutex);
+        const auto it = m_propertyCache.find(name);
+        if (it == m_propertyCache.end()) return false;
+        value = it->second;
+        return true;
+    }
     char* raw = mpvApi().getPropertyString(m_mpv, name.c_str());
     if (!raw) return false;
     value = raw;
@@ -685,6 +710,14 @@ void MpvContext::handlePropertyChange(mpv_event_property* prop) {
             if (newHeight > 0 && newHeight != m_displayHeight) {
                 m_displayHeight = newHeight;
                 scheduleResize();
+            }
+        } else if (isCachedProperty(prop->name)) {
+            // MPV_FORMAT_NONE means the property is unavailable right now
+            // (no decoder yet); drop the stale value so readers see "unknown".
+            if (prop->format == MPV_FORMAT_STRING && prop->data && *static_cast<char**>(prop->data)) {
+                m_propertyCache[prop->name] = *static_cast<char**>(prop->data);
+            } else {
+                m_propertyCache.erase(prop->name);
             }
         }
     }
