@@ -1112,13 +1112,6 @@ ipcMain.handle('window-maximize', () => {
   }
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
-// Plain restart with the same arguments (the Linux player setting is read at launch).
-ipcMain.handle('app-relaunch', () => {
-  debugLog('Relaunch requested from Settings', 'app');
-  // Drop a per-launch compatibility flag so the saved setting decides the mode.
-  relaunchApp(process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG));
-  app.quit();
-});
 
 // Window resize for frameless windows
 ipcMain.handle('window-get-size', () => mainWindow?.getSize());

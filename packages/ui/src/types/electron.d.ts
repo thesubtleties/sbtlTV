@@ -55,7 +55,6 @@ export interface ElectronWindowApi {
   setFullscreen: () => Promise<void>;
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => void;
   removeFullscreenListener: () => void;
-  relaunch: () => Promise<void>;
 }
 
 export interface StorageResult<T = void> {

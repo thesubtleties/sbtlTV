@@ -19,7 +19,7 @@ export function SecurityTab({
 }: SecurityTabProps) {
   const updateSettings = useUpdateSettings();
   // The player mode is read once at launch. Ask main which player this
-  // process started with and offer a restart only while the saved value differs.
+  // process started with so the hint can say a restart is still pending.
   const [launchedPlayerMode, setLaunchedPlayerMode] = useState<LinuxPlayerMode | null>(null);
   useEffect(() => {
     if (!window.platform?.isLinux || !window.mpv) return;
@@ -80,28 +80,9 @@ export function SecurityTab({
             </label>
             <p className="form-hint" style={{ marginTop: '0.5rem' }}>
               {playerModeChanged
-                ? 'Takes effect after restarting sbtlTV.'
-                : 'Changing this takes effect after restarting sbtlTV.'}
+                ? 'Quit and reopen sbtlTV to switch players.'
+                : 'Changing this takes effect the next time sbtlTV starts.'}
             </p>
-            {playerModeChanged && (
-              <button
-                type="button"
-                className="sync-button"
-                style={{ marginTop: '0.5rem', padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}
-                onClick={() => {
-                  // A tester's click produced no main-process log line at all, so
-                  // record each hop: the click, the bridge function, the IPC result.
-                  const relaunch = window.electronWindow?.relaunch;
-                  debugLog(`Restart clicked; relaunch is ${typeof relaunch}`, 'settings');
-                  if (typeof relaunch !== 'function') return;
-                  relaunch()
-                    .then(() => debugLog('Relaunch IPC acknowledged', 'settings'))
-                    .catch((err) => debugLog(`Relaunch IPC failed: ${err instanceof Error ? err.message : err}`, 'settings'));
-                }}
-              >
-                Restart sbtlTV
-              </button>
-            )}
           </div>
         </div>
       )}

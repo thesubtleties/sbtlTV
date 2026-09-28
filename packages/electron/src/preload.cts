@@ -57,7 +57,6 @@ export interface ElectronWindowApi {
   setFullscreen: () => Promise<void>;
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => void;
   removeFullscreenListener: () => void;
-  relaunch: () => Promise<void>;
 }
 
 export interface StorageResult<T = void> {
@@ -135,7 +134,6 @@ contextBridge.exposeInMainWorld('electronWindow', {
     // callback + ipcRenderer.removeListener so this cleanup doesn't clobber the other subscriber.
     ipcRenderer.removeAllListeners('window-fullscreen-changed');
   },
-  relaunch: () => ipcRenderer.invoke('app-relaunch'),
 } satisfies ElectronWindowApi);
 
 // Expose mpv API to the renderer process
