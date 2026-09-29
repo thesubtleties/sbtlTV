@@ -255,6 +255,8 @@ export interface SharedTextureApi {
   /** Report whether the renderer could draw the latest frame; errors escalate in main. */
   reportDrawResult: (ok: boolean, message?: string) => void;
   reportPipelineFailure: (message: string) => void;
+  /** Linux frame pacing: how far (ms) the shown picture trails frame arrival */
+  reportPresentationDelay: (delayMs: number) => void;
   isAvailable: boolean;
 }
 
@@ -384,6 +386,9 @@ contextBridge.exposeInMainWorld('sharedTexture', {
   },
   reportPipelineFailure: (message: string) => {
     if (typeof message === 'string') ipcRenderer.send('shared-texture-pipeline-failure', message);
+  },
+  reportPresentationDelay: (delayMs: number) => {
+    if (typeof delayMs === 'number' && Number.isFinite(delayMs)) ipcRenderer.send('shared-texture-presentation-delay', delayMs);
   },
   isAvailable: sharedTextureAvailable,
 } satisfies SharedTextureApi);

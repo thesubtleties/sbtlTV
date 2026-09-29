@@ -180,6 +180,8 @@ export interface SharedTextureApi {
   removeClearListener: () => void;
   /** Report whether the renderer could draw the latest frame; errors escalate in main */
   reportDrawResult: (ok: boolean, message?: string) => void;
+  /** Linux frame pacing: how far (ms) the shown picture trails frame arrival */
+  reportPresentationDelay?: (delayMs: number) => void;
   /** Report a renderer failure that requires native playback recovery. */
   reportPipelineFailure: (message: string) => void;
   /** Whether sharedTexture API is available (native mpv mode) */

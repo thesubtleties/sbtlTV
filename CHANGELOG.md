@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Improved
+- **Linux: smoother in-window playback** - frames reach the window unevenly on slower machines, and drawing each one the moment it arrived showed every late frame as a hitch. The in-window player now keeps a few frames queued and shows them on a steady clock, about 130ms behind (audio is delayed to match, so lip sync is unchanged)
 - **macOS and Linux: less work on the video thread while playing** - the in-window player forwarded every position update from mpv to the interface, about 25 messages and interface refreshes per second on the same thread that receives and draws each video frame. Position updates are now capped at 10 per second, as the compatibility player already did; play, pause, mute, volume and stream changes are still immediate
 
 ### Fixed

@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
+import { FramePacer } from '../hooks/framePacer';
 
 interface VideoCanvasProps {
   /** Whether the canvas should be visible */
@@ -55,6 +56,62 @@ interface WebGLState {
   vbo: WebGLBuffer;
   flipYLocation: WebGLUniformLocation;
   flipXLocation: WebGLUniformLocation;
+}
+
+// Linux paces presentation (see framePacer.ts). Each arriving frame is copied
+// into one of these textures and released at once, so queued frames hold GPU
+// textures rather than the shared DMA-BUF slots mpv renders into.
+interface PacedSlot {
+  texture: WebGLTexture;
+  width: number;
+  height: number;
+  arrivedAt: number;
+}
+// Queue limit plus the frame on screen plus the one being uploaded.
+const PACED_MAX_DEPTH = 6;
+const PACED_SLOT_COUNT = PACED_MAX_DEPTH + 2;
+
+function createVideoTexture(gl: WebGL2RenderingContext): WebGLTexture | null {
+  const texture = gl.createTexture();
+  if (!texture) return null;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  return texture;
+}
+
+// Draw a full-screen quad sampling `texture`, resizing the canvas first.
+function drawTextureQuad(
+  state: WebGLState, canvas: HTMLCanvasElement, texture: WebGLTexture,
+  width: number, height: number, flipY: boolean, flipX: boolean,
+): void {
+  const { gl, program, vao, flipYLocation, flipXLocation } = state;
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+    gl.viewport(0, 0, width, height);
+    console.log(`[VideoCanvas] Resized to ${width}x${height}`);
+  }
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.useProgram(program);
+  gl.uniform1i(flipYLocation, flipY ? 1 : 0);
+  gl.uniform1i(flipXLocation, flipX ? 1 : 0);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.flush();
+}
+
+interface PresentStats {
+  lastAt: number;
+  intervals: number[];
+  delaySum: number;
+  delayCount: number;
+}
+
+function createPresentStats(): PresentStats {
+  return { lastAt: 0, intervals: [], delaySum: 0, delayCount: 0 };
 }
 
 interface FrameCadenceStats {
@@ -190,20 +247,13 @@ function initWebGL(canvas: HTMLCanvasElement): WebGLState | null {
   gl.vertexAttribPointer(texCoordLoc, 2, gl.FLOAT, false, 16, 8);
 
   // Create texture
-  const texture = gl.createTexture();
+  const texture = createVideoTexture(gl);
   if (!texture) {
     gl.deleteBuffer(vbo);
     gl.deleteVertexArray(vao);
     gl.deleteProgram(program);
     return null;
   }
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-
-  // Set texture parameters for video
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
   console.log('[VideoCanvas] WebGL2 initialized');
 
@@ -221,6 +271,34 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
   const initializationFailureRef = useRef<string | null>(null);
   const pipelineFailureReportedRef = useRef(false);
   const restorationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Linux frame pacing state (unused elsewhere).
+  const pacedRef = useRef(!!window.platform?.isLinux);
+  const pacerRef = useRef(new FramePacer<PacedSlot>({ maxDepth: PACED_MAX_DEPTH }));
+  const allSlotsRef = useRef<PacedSlot[]>([]);
+  const freeSlotsRef = useRef<PacedSlot[]>([]);
+  const shownSlotRef = useRef<PacedSlot | null>(null);
+  const presentStatsRef = useRef<PresentStats>(createPresentStats());
+  const reportedDelayRef = useRef(0);
+  const flipRef = useRef({ flipY, flipX });
+  flipRef.current = { flipY, flipX };
+
+  // Return every paced slot to the free list (stream change).
+  const recyclePacedSlots = useCallback(() => {
+    for (const slot of pacerRef.current.reset()) freeSlotsRef.current.push(slot);
+    if (shownSlotRef.current) freeSlotsRef.current.push(shownSlotRef.current);
+    shownSlotRef.current = null;
+    presentStatsRef.current = createPresentStats();
+    reportedDelayRef.current = 0;
+  }, []);
+
+  // Forget every paced slot (context lost or destroyed; textures die with it).
+  const forgetPacedSlots = useCallback(() => {
+    pacerRef.current.reset();
+    allSlotsRef.current = [];
+    freeSlotsRef.current = [];
+    shownSlotRef.current = null;
+    presentStatsRef.current = createPresentStats();
+  }, []);
 
   const cancelRestorationTimer = useCallback(() => {
     if (restorationTimerRef.current !== null) clearTimeout(restorationTimerRef.current);
@@ -270,7 +348,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       return;
     }
 
-    const { gl, program, texture, vao, flipYLocation, flipXLocation } = glState;
+    const { gl, texture } = glState;
     const width = videoFrame.codedWidth;
     const height = videoFrame.codedHeight;
     const frameAt = performance.now();
@@ -285,26 +363,37 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     cadence.lastFrameIndex = index;
     cadence.frames++;
 
-    // Draw. The frame is closed in finally so a throw anywhere here cannot
-    // leak a VideoFrame (and, on Linux, the DMA-BUF slot behind it).
+    // Draw (or, on Linux, copy into a paced slot). The frame is closed in
+    // finally so a throw anywhere here cannot leak a VideoFrame (and, on
+    // Linux, the DMA-BUF slot behind it).
     const drawStartedAt = performance.now();
     let drawError: string | null = null;
+    let uploadSlot: PacedSlot | null = null;
+    let queued = false;
     try {
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-        gl.viewport(0, 0, width, height);
-        console.log(`[VideoCanvas] Resized to ${width}x${height}`);
+      if (pacedRef.current) {
+        uploadSlot = freeSlotsRef.current.pop() ?? null;
+        if (!uploadSlot && allSlotsRef.current.length < PACED_SLOT_COUNT) {
+          const slotTexture = createVideoTexture(gl);
+          if (!slotTexture) throw new Error('could not create a video texture');
+          uploadSlot = { texture: slotTexture, width: 0, height: 0, arrivedAt: 0 };
+          allSlotsRef.current.push(uploadSlot);
+        }
+        // Every slot busy (the display loop is not running): reuse the oldest queued frame.
+        if (!uploadSlot) uploadSlot = pacerRef.current.dropOldest() ?? null;
+        if (!uploadSlot) throw new Error('no video texture available');
+        gl.bindTexture(gl.TEXTURE_2D, uploadSlot.texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame);
+        uploadSlot.width = width;
+        uploadSlot.height = height;
+        uploadSlot.arrivedAt = frameAt;
+        for (const evicted of pacerRef.current.push(uploadSlot, frameAt)) freeSlotsRef.current.push(evicted);
+        queued = true;
+      } else {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame);
+        drawTextureQuad(glState, canvas, texture, width, height, flipY, flipX);
       }
-
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame);
-      gl.useProgram(program);
-      gl.uniform1i(flipYLocation, flipY ? 1 : 0);
-      gl.uniform1i(flipXLocation, flipX ? 1 : 0);
-      gl.bindVertexArray(vao);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      gl.flush();
     } catch (e) {
       drawErrorCount.current++;
       const count = drawErrorCount.current;
@@ -315,6 +404,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       }
     } finally {
       videoFrame.close();
+      if (uploadSlot && !queued) freeSlotsRef.current.push(uploadSlot);
     }
     // Preload also tracks import failures, so it must see successful draws.
     window.sharedTexture?.reportDrawResult(drawError === null, drawError ?? undefined);
@@ -327,10 +417,29 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       const intervals = [...cadence.intervals].sort((left, right) => left - right);
       const percentile = (value: number) => intervals[Math.min(intervals.length - 1, Math.floor(intervals.length * value))] ?? 0;
       const avgDraw = cadence.frames > 0 ? cadence.drawMs / cadence.frames : 0;
+      let paced = '';
+      if (pacedRef.current) {
+        const present = presentStatsRef.current;
+        const shown = [...present.intervals].sort((left, right) => left - right);
+        const shownAt = (value: number) => shown[Math.min(shown.length - 1, Math.floor(shown.length * value))] ?? 0;
+        const delay = present.delayCount > 0 ? present.delaySum / present.delayCount : 0;
+        const pacer = pacerRef.current;
+        paced = ` | shown:${present.delayCount} interval p50/p95/max:${shownAt(0.5).toFixed(1)}/${shownAt(0.95).toFixed(1)}/${shownAt(1).toFixed(1)}ms ` +
+          `delay:${delay.toFixed(0)}ms depth:${pacer.depth} underruns:${pacer.underruns} skipped:${pacer.skipped}`;
+        pacer.underruns = 0;
+        pacer.skipped = 0;
+        presentStatsRef.current = { ...createPresentStats(), lastAt: present.lastAt };
+        // Tell main how far behind arrival the picture is, so mpv can delay the
+        // audio by the same amount. Only when it moved noticeably.
+        if (present.delayCount >= 10 && Math.abs(delay - reportedDelayRef.current) > 15) {
+          reportedDelayRef.current = delay;
+          window.sharedTexture?.reportPresentationDelay?.(delay);
+        }
+      }
       window.debug?.logFromRenderer(
         `[VideoCanvas] cadence frames:${cadence.frames} gaps:${cadence.indexGaps} reverse:${cadence.outOfOrder} ` +
         `interval p50/p95/max:${percentile(0.5).toFixed(1)}/${percentile(0.95).toFixed(1)}/${percentile(1).toFixed(1)}ms ` +
-        `draw avg/max:${avgDraw.toFixed(1)}/${cadence.maxDrawMs.toFixed(1)}ms`
+        `draw avg/max:${avgDraw.toFixed(1)}/${cadence.maxDrawMs.toFixed(1)}ms${paced}`
       ).catch(() => {});
       cadenceRef.current = {
         ...createFrameCadenceStats(),
@@ -340,6 +449,44 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       };
     }
   }, [flipY, flipX, checkRendererHealth]);
+
+  // Linux: show queued frames on a steady clock from the display refresh loop.
+  useEffect(() => {
+    if (!pacedRef.current) return;
+    let raf = 0;
+    let lastTick = 0;
+    let refreshMs = 1000 / 60;
+    const loop = (now: number) => {
+      raf = requestAnimationFrame(loop);
+      if (lastTick > 0) {
+        const delta = now - lastTick;
+        if (delta > 4 && delta < 50) refreshMs += (delta - refreshMs) * 0.05;
+      }
+      lastTick = now;
+      const slot = pacerRef.current.tick(now, refreshMs);
+      if (!slot) return;
+      const canvas = canvasRef.current;
+      const glState = glStateRef.current;
+      if (!canvas || !glState || contextLostRef.current) {
+        freeSlotsRef.current.push(slot);
+        return;
+      }
+      try {
+        drawTextureQuad(glState, canvas, slot.texture, slot.width, slot.height, flipRef.current.flipY, flipRef.current.flipX);
+      } catch (e) {
+        console.error('[VideoCanvas] Paced draw failed:', e);
+      }
+      if (shownSlotRef.current) freeSlotsRef.current.push(shownSlotRef.current);
+      shownSlotRef.current = slot;
+      const present = presentStatsRef.current;
+      if (present.lastAt > 0) present.intervals.push(now - present.lastAt);
+      present.lastAt = now;
+      present.delaySum += now - slot.arrivedAt;
+      present.delayCount++;
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
 
   // Initialize WebGL on mount
@@ -366,6 +513,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       console.warn('[VideoCanvas] WebGL context lost');
       window.debug?.logFromRenderer('[VideoCanvas] WebGL context lost');
       glStateRef.current = null;
+      forgetPacedSlots();
       contextLostRef.current = true;
       checkRendererHealth();
     };
@@ -389,6 +537,8 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       const glState = glStateRef.current;
       if (glState) {
         const { gl, program, texture, vao, vbo } = glState;
+        for (const slot of allSlotsRef.current) gl.deleteTexture(slot.texture);
+        forgetPacedSlots();
         gl.deleteTexture(texture);
         gl.deleteVertexArray(vao);
         gl.deleteBuffer(vbo);
@@ -396,7 +546,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
         glStateRef.current = null;
       }
     };
-  }, [cancelRestorationTimer, checkRendererHealth]);
+  }, [cancelRestorationTimer, checkRendererHealth, forgetPacedSlots]);
 
   // Set up sharedTexture receiver
   useEffect(() => {
@@ -421,6 +571,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     window.sharedTexture.onClear(() => {
       hasVideoFrameRef.current = false;
       cancelRestorationTimer();
+      recyclePacedSlots();
       const glState = glStateRef.current;
       if (glState && !contextLostRef.current) {
         const { gl } = glState;
@@ -432,7 +583,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     return () => {
       window.sharedTexture?.removeClearListener();
     };
-  }, [cancelRestorationTimer]);
+  }, [cancelRestorationTimer, recyclePacedSlots]);
 
   // Don't render if sharedTexture not available
   if (!window.sharedTexture?.isAvailable) {

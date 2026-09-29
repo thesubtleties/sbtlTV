@@ -1477,6 +1477,17 @@ ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
   return { success: true };
 });
 
+// Linux frame pacing: the renderer shows frames a steady ~(queue depth) behind
+// arrival. Delay mpv's audio by the same amount so lip sync holds.
+ipcMain.on('shared-texture-presentation-delay', (_event, delayMs: unknown) => {
+  if (process.platform !== 'linux' || !useNativeMpv || !mpvBridge) return;
+  if (typeof delayMs !== 'number' || !Number.isFinite(delayMs)) return;
+  const seconds = Math.min(Math.max(delayMs, 0), 500) / 1000;
+  if (mpvBridge.command('set', 'audio-delay', seconds.toFixed(3))) {
+    debugLog(`Audio delayed ${Math.round(seconds * 1000)}ms to match paced video`, 'mpv');
+  }
+});
+
 // Renderer-side shared-texture failures (import or draw) feed the same
 // pipeline escalation as main-side send errors.
 ipcMain.on('shared-texture-frame-error', (event, message: unknown) => {
