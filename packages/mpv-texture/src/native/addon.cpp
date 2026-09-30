@@ -127,6 +127,9 @@ Napi::Value Create(const Napi::CallbackInfo& info) {
         if (configObj.Has("statsOverlay") && configObj.Get("statsOverlay").IsBoolean()) {
             config.statsOverlay = configObj.Get("statsOverlay").As<Napi::Boolean>().Value();
         }
+        if (configObj.Has("performanceMode") && configObj.Get("performanceMode").IsBoolean()) {
+            config.performanceMode = configObj.Get("performanceMode").As<Napi::Boolean>().Value();
+        }
     }
 
     g_context = new MpvContext();

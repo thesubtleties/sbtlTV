@@ -143,6 +143,8 @@ export interface MpvConfig {
   softwareFallbackErrors?: number;
   /** Load mpv's built-in stats overlay script (toggled with command('script-binding', 'stats/...')) */
   statsOverlay?: boolean;
+  /** Cheaper rendering (mpv's "fast" profile options) for slower GPUs */
+  performanceMode?: boolean;
 }
 
 /**

@@ -87,6 +87,7 @@ export interface AppSettings {
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a noticeable wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
+  linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video
 }
 
 export interface Source {

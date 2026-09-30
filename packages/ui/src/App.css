@@ -1,3 +1,13 @@
+/* Linux performance mode: a backdrop blur over playing video is recomputed
+   every video frame, which slower GPUs cannot afford. Panels keep their
+   translucent background, unblurred. */
+.performance-mode *,
+.performance-mode *::before,
+.performance-mode *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* Main container - full screen, TRANSPARENT so mpv video shows through */
 .app {
   width: 100vw;

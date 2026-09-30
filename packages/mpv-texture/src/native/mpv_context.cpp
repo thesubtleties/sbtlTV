@@ -268,6 +268,23 @@ bool MpvContext::create(const MpvConfig& config) {
     mpvApi().setOptionString(m_mpv, "load-stats-overlay", config.statsOverlay ? "yes" : "no");
     mpvApi().setOptionString(m_mpv, "input-default-bindings", "no");
     mpvApi().setOptionString(m_mpv, "msg-level", "all=v");
+    if (config.performanceMode) {
+        // mpv's "fast" profile (0.37+), spelled out so older libmpv applies it
+        // too; an option this libmpv lacks is simply rejected. The 8-bit
+        // intermediate replaces rgba16f: our output texture is 8-bit anyway.
+        static const char* const kPerformanceOptions[][2] = {
+            {"scale", "bilinear"}, {"dscale", "bilinear"}, {"cscale", "bilinear"},
+            {"dither", "no"}, {"correct-downscaling", "no"}, {"linear-downscaling", "no"},
+            {"sigmoid-upscaling", "no"}, {"hdr-compute-peak", "no"}, {"fbo-format", "rgba8"},
+        };
+        for (const auto& option : kPerformanceOptions) {
+            const int result = mpvApi().setOptionString(m_mpv, option[0], option[1]);
+            if (config.debugLogging) {
+                std::cout << "[MpvContext] performance mode " << option[0] << "=" << option[1]
+                          << (result < 0 ? " (not supported)" : "") << std::endl;
+            }
+        }
+    }
     if (config.softwareFallbackErrors > 0) {
         // A live TS joined mid-GOP feeds the hardware decoder pictures with
         // missing references; some drivers (Intel iHD) reject those where

@@ -744,6 +744,9 @@ async function initNativeMpv(): Promise<boolean> {
       // decode at all (green frames), so a higher threshold only prolonged that
       // before the working copy path took over (tested on 0.11.1 pre-release).
       statsOverlay: isLinux,
+      // Linux performance mode (Settings > Security): cheaper mpv rendering for
+      // GPUs that cannot keep up with the in-window pipeline. Read per launch.
+      performanceMode: isLinux && storage.getSettings().linuxPerformanceMode === true,
     });
 
     if (!success) {

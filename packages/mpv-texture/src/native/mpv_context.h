@@ -53,6 +53,9 @@ struct MpvConfig {
     // Load mpv's built-in stats overlay script so "script-binding stats/..."
     // commands can show decode and drop statistics on the video.
     bool statsOverlay = false;
+    // Cheaper rendering: the options of mpv's "fast" profile, set one by one
+    // because the profile itself only exists from mpv 0.37.
+    bool performanceMode = false;
 };
 
 class MpvContext {

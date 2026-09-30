@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - **Linux: F and F11 maximized instead of fullscreening** - with the in-window player the window now enters real fullscreen; the compatibility player keeps the previous behaviour
 
 ### Added
+- **Linux: performance mode** - Settings > Security has a Performance mode checkbox for machines whose in-window player drops frames. It uses mpv's cheap scaling options (the "fast" profile) and removes the blur behind the guide and controls, which is recomputed for every video frame. The blur change is immediate; the video settings apply after quitting and reopening
 - **Linux: mpv stats overlay** - with the in-window player, I shows mpv's statistics (decoder, hwdec, dropped frames) on the video for a few seconds and Shift+I keeps them on screen
 
 ## [0.11.0] - 2026-09-25
