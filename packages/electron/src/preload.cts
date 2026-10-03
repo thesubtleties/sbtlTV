@@ -104,6 +104,8 @@ export interface DebugApi {
   getLogPath: () => Promise<StorageResult<string>>;
   logFromRenderer: (message: string) => Promise<StorageResult>;
   openLogFolder: () => Promise<StorageResult>;
+  isEnabled: () => Promise<boolean>;
+  onEnabledChanged: (callback: (enabled: boolean) => void) => () => void;
 }
 
 export interface PlatformApi {
@@ -219,6 +221,12 @@ contextBridge.exposeInMainWorld('debug', {
   getLogPath: () => ipcRenderer.invoke('debug-get-log-path'),
   logFromRenderer: (message: string) => ipcRenderer.invoke('debug-log-renderer', message),
   openLogFolder: () => ipcRenderer.invoke('debug-open-log-folder'),
+  isEnabled: () => ipcRenderer.invoke('debug-is-enabled'),
+  onEnabledChanged: (callback: (enabled: boolean) => void) => {
+    const listener = (_event: IpcRendererEvent, enabled: boolean) => callback(enabled);
+    ipcRenderer.on('debug-logging-changed', listener);
+    return () => { ipcRenderer.removeListener('debug-logging-changed', listener); };
+  },
 } satisfies DebugApi);
 
 // Expose auto-updater API (types defined in electron.d.ts)

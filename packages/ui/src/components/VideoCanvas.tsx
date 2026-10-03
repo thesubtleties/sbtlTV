@@ -281,6 +281,8 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
   const reportedDelayRef = useRef(0);
   const flipRef = useRef({ flipY, flipX });
   flipRef.current = { flipY, flipX };
+  // The 2s cadence line is only built and sent while debug logging is on.
+  const debugEnabledRef = useRef(false);
 
   // Return every paced slot to the free list (stream change).
   const recyclePacedSlots = useCallback(() => {
@@ -436,11 +438,16 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
           window.sharedTexture?.reportPresentationDelay?.(delay);
         }
       }
-      window.debug?.logFromRenderer(
-        `[VideoCanvas] cadence frames:${cadence.frames} gaps:${cadence.indexGaps} reverse:${cadence.outOfOrder} ` +
-        `interval p50/p95/max:${percentile(0.5).toFixed(1)}/${percentile(0.95).toFixed(1)}/${percentile(1).toFixed(1)}ms ` +
-        `draw avg/max:${avgDraw.toFixed(1)}/${cadence.maxDrawMs.toFixed(1)}ms${paced}`
-      ).catch(() => {});
+      if (debugEnabledRef.current) {
+        // Chromium-only heap counters: a falling "used" between lines marks a major GC.
+        const heap = (performance as Performance & { memory?: { usedJSHeapSize: number; totalJSHeapSize: number } }).memory;
+        const heapText = heap ? ` heap:${(heap.usedJSHeapSize / 1048576).toFixed(1)}/${(heap.totalJSHeapSize / 1048576).toFixed(1)}MB` : '';
+        window.debug?.logFromRenderer(
+          `[VideoCanvas] cadence frames:${cadence.frames} gaps:${cadence.indexGaps} reverse:${cadence.outOfOrder} ` +
+          `interval p50/p95/max:${percentile(0.5).toFixed(1)}/${percentile(0.95).toFixed(1)}/${percentile(1).toFixed(1)}ms ` +
+          `draw avg/max:${avgDraw.toFixed(1)}/${cadence.maxDrawMs.toFixed(1)}ms${paced}${heapText}`
+        ).catch(() => {});
+      }
       cadenceRef.current = {
         ...createFrameCadenceStats(),
         startedAt: frameAt,
@@ -449,6 +456,38 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       };
     }
   }, [flipY, flipX, checkRendererHealth]);
+
+  // Follow the debug logging setting. On Linux, while it is on, also log every
+  // renderer main-thread task over 50ms with its wall-clock time, so stalls can
+  // be told apart from GPU-process or main-process ones.
+  useEffect(() => {
+    const debug = window.debug;
+    if (!debug?.isEnabled) return;
+    let observer: PerformanceObserver | null = null;
+    const apply = (enabled: boolean) => {
+      debugEnabledRef.current = enabled;
+      if (enabled && pacedRef.current && !observer && PerformanceObserver.supportedEntryTypes?.includes('longtask')) {
+        observer = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            const at = new Date(performance.timeOrigin + entry.startTime).toISOString();
+            debug.logFromRenderer(`[VideoCanvas] longtask ${entry.duration.toFixed(0)}ms at ${at}`).catch(() => {});
+          }
+        });
+        observer.observe({ type: 'longtask' });
+      } else if (!enabled && observer) {
+        observer.disconnect();
+        observer = null;
+      }
+    };
+    let disposed = false;
+    debug.isEnabled().then((enabled) => { if (!disposed) apply(enabled); }).catch(() => {});
+    const unsubscribe = debug.onEnabledChanged?.((enabled) => apply(enabled));
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+      observer?.disconnect();
+    };
+  }, []);
 
   // Linux: show queued frames on a steady clock from the display refresh loop.
   useEffect(() => {

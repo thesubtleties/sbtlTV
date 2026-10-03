@@ -145,6 +145,8 @@ export interface DebugApi {
   getLogPath: () => Promise<StorageResult<string>>;
   logFromRenderer: (message: string) => Promise<StorageResult>;
   openLogFolder: () => Promise<StorageResult>;
+  isEnabled?: () => Promise<boolean>;
+  onEnabledChanged?: (callback: (enabled: boolean) => void) => () => void;
 }
 
 export interface UpdateInfo {

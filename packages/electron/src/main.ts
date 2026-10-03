@@ -11,6 +11,7 @@ import electronUpdater from 'electron-updater';
 import { selectChromiumGpuIdentity } from './gpu-selection.js';
 import { startDataHost, type DataHost } from './data/data-host.js';
 import { isTransientDecodeError } from './mpv-error-filter.js';
+import { LinuxPerfProbe } from './linux-perf-probe.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -160,6 +161,23 @@ process.on('uncaughtException', (error) => {
   }).catch(() => {});
 });
 let debugLoggingEnabled = false;
+// Linux in-window player diagnostics; runs only while debug logging is on.
+let perfProbe: LinuxPerfProbe | null = null;
+
+// Diagnostics that cost anything run only while debug logging is on: the
+// bridge's 2s stats line everywhere, the process/trace probe on Linux.
+function syncPlaybackDiagnostics(): void {
+  mpvBridge?.setDiagnosticsEnabled(debugLoggingEnabled);
+  const wantProbe = debugLoggingEnabled && process.platform === 'linux' && mpvBridge !== null;
+  if (wantProbe && !perfProbe) {
+    perfProbe = new LinuxPerfProbe((message) => debugLog(message, 'perf'));
+    perfProbe.start();
+  } else if (!wantProbe && perfProbe) {
+    perfProbe.stop();
+    perfProbe = null;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('debug-logging-changed', debugLoggingEnabled);
+}
 const DEBUG_LOG_MAX_SIZE = 10 * 1024 * 1024; // 10MB max log size
 
 function getDebugLogPath(): string {
@@ -228,6 +246,7 @@ function initDebugLogging(enabled: boolean): void {
     debugLogStream.end();
     debugLogStream = null;
   }
+  syncPlaybackDiagnostics();
 }
 
 function debugLog(message: string, category = 'app'): void {
@@ -424,6 +443,7 @@ function killMpv(): void {
       debugLog(`Error destroying native bridge: ${error instanceof Error ? error.message : error}`, 'mpv');
     }
     mpvBridge = null;
+    syncPlaybackDiagnostics();
     useNativeMpv = false;
   }
 
@@ -759,6 +779,7 @@ async function initNativeMpv(): Promise<boolean> {
 
     mpvBridge = bridge;
     useNativeMpv = true;
+    syncPlaybackDiagnostics();
 
     // Forward status updates to renderer
     bridge.onStatus((status) => {
@@ -780,6 +801,7 @@ async function initNativeMpv(): Promise<boolean> {
       if (status.width > 0 && decodeLoggedGeneration !== loadGeneration && bridge?.getProperty('hwdec-current') !== undefined) {
         decodeLoggedGeneration = loadGeneration;
         debugLog(`Decoding ${status.width}x${status.height} ${bridge.decodeSummary()}`, 'mpv');
+        perfProbe?.notePlaybackStarted();
       }
 
       // File loaded — execute pending resume seek (native path)
@@ -827,8 +849,9 @@ async function initNativeMpv(): Promise<boolean> {
       if (mpvBridge === bridge) void handleNativePipelineFailure(error);
     });
 
-    bridge.onDiagnostics((message) => {
+    bridge.onDiagnostics((message, maxSendMs) => {
       debugLog(message, 'mpv-texture');
+      perfProbe?.noteTransferWindow(maxSendMs);
     });
 
     console.log('[mpv] Native mpv-texture bridge initialized');
@@ -872,6 +895,7 @@ async function resetNativePlayback(): Promise<void> {
       }),
     ]);
     mpvBridge = null;
+    syncPlaybackDiagnostics();
     currentMedia = null;
     Object.assign(mpvState, { playing: false, position: 0, duration: 0, width: 0, height: 0 });
     isShuttingDown = false;
@@ -1474,6 +1498,8 @@ ipcMain.handle('storage-is-encryption-available', async () => {
 ipcMain.handle('debug-get-log-path', async () => {
   return { success: true, data: getDebugLogPath() };
 });
+
+ipcMain.handle('debug-is-enabled', () => debugLoggingEnabled);
 
 ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
   debugLog(message, 'renderer');
