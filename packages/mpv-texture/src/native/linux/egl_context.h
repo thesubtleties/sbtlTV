@@ -32,9 +32,16 @@ public:
     EGLDisplay display() const { return m_display; }
     gbm_device* gbmDevice() const { return m_gbmDevice; }
     // Open file descriptor for the selected DRM render node; -1 before
-    // initialization. Handed to libmpv so its VA-API interop can create a
-    // VADisplay without an X11 or Wayland connection.
+    // initialization. Owned by GBM/EGL (Mesa).
     int drmFd() const { return m_drmFd; }
+    // A second, independent open of the same render node for libmpv's VA-API
+    // interop. GEM buffer handles live in the namespace of one open file and
+    // are not reference counted, so if Mesa and the VA driver shared a single
+    // fd, destroying an imported EGLImage would close the VA surface's handle
+    // underneath the decoder (Mesa's iris_bufmgr.c: "Ensure that each
+    // library/bufmgr has its own device fd"). mpv's own DRM output and Kodi
+    // open a separate fd for the same reason. -1 if the open failed.
+    int vaRenderFd() const { return m_vaRenderFd; }
     // Whether eglCreateImageKHR accepts EGL_DMA_BUF_PLANEn_MODIFIER_* attributes.
     bool supportsDmaBufImportModifiers() const { return m_supportsDmaBufImportModifiers; }
     const std::string& renderNode() const { return m_renderNode; }
@@ -47,6 +54,7 @@ private:
     void destroyDevice();
 
     int m_drmFd = -1;
+    int m_vaRenderFd = -1;
     gbm_device* m_gbmDevice = nullptr;
     EGLDisplay m_display = EGL_NO_DISPLAY;
     EGLContext m_context = EGL_NO_CONTEXT;

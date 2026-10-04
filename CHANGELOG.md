@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Improved
+- **Linux: smoother in-window playback** - frames reach the window unevenly on slower machines, and drawing each one the moment it arrived showed every late frame as a hitch. The in-window player now keeps a few frames queued and shows them on a steady clock, about 130ms behind (audio is delayed to match, so lip sync is unchanged)
+- **macOS and Linux: less work on the video thread while playing** - the in-window player forwarded every position update from mpv to the interface, about 25 messages and interface refreshes per second on the same thread that receives and draws each video frame. Position updates are now capped at 10 per second, as the compatibility player already did; play, pause, mute, volume and stream changes are still immediate
+
+### Fixed
+- **macOS and Linux: a stall every two seconds in the in-window player** - the 0.11.0 decode diagnostics read four mpv properties synchronously from the app's main thread every two seconds, and that read can wait on the player's render loop. On the Linux tester's machine it cost a 150ms hitch and a dropped frame per tick. The values now arrive through mpv's change notifications and the read is instant
+- **macOS and Linux: widescreen SD channels played small with black bars on every side** - anamorphic streams (720x576 pixels shown at 16:9 or 16:11) were rendered into a texture of the pixel size, so the player letterboxed the picture once inside the texture and the window letterboxed it again. The render target now uses the display size
+- **Linux: hardware decoding on Intel produced green frames and fell back to a copy path** - libmpv's VA-API interop was given the same DRM file descriptor Mesa uses for the in-window renderer, so buffer handles clashed and every decoded surface was destroyed underneath the decoder. VA-API now gets its own descriptor, as mpv's and Kodi's DRM outputs do. This is also the most likely cause of the abort seen after a decoder fallback
+- **Linux: red error banners for recoverable decoder errors** - hardware decoder probing and the broken first pictures of a live stream were shown as errors ("Could not dynamically load CUDA", "co located POCs unavailable", "Mapping hardware decoded surface failed"). They recover on their own and now go to the debug log only
+- **Linux AppImage: Restart in Compatibility Mode did nothing** - the restart relaunched a path inside the AppImage mount, which is gone by the time the new process starts. It now relaunches the AppImage itself. The Settings restart button, which a tester could not get to work, is replaced by a note to quit and reopen
+- **Linux: F and F11 maximized instead of fullscreening** - with the in-window player the window now enters real fullscreen; the compatibility player keeps the previous behaviour
+
+### Added
+- **Linux: performance mode** - Settings > Security has a Performance mode checkbox for machines whose in-window player drops frames. It uses mpv's cheap scaling options (the "fast" profile) and removes the blur behind the guide and controls, which is recomputed for every video frame. The blur change is immediate; the video settings apply after quitting and reopening
+- **Linux: mpv stats overlay** - with the in-window player, I shows mpv's statistics (decoder, hwdec, dropped frames) on the video for a few seconds and Shift+I keeps them on screen
+
 ## [0.11.0] - 2026-09-25
 
 ### Changed

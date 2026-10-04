@@ -265,9 +265,34 @@ bool MpvContext::create(const MpvConfig& config) {
     mpvApi().setOptionString(m_mpv, "load-commands", "no");
     mpvApi().setOptionString(m_mpv, "load-positioning", "no");
     mpvApi().setOptionString(m_mpv, "load-select", "no");
-    mpvApi().setOptionString(m_mpv, "load-stats-overlay", "no");
+    mpvApi().setOptionString(m_mpv, "load-stats-overlay", config.statsOverlay ? "yes" : "no");
     mpvApi().setOptionString(m_mpv, "input-default-bindings", "no");
     mpvApi().setOptionString(m_mpv, "msg-level", "all=v");
+    if (config.performanceMode) {
+        // mpv's "fast" profile (0.37+), spelled out so older libmpv applies it
+        // too; an option this libmpv lacks is simply rejected. The 8-bit
+        // intermediate replaces rgba16f: our output texture is 8-bit anyway.
+        static const char* const kPerformanceOptions[][2] = {
+            {"scale", "bilinear"}, {"dscale", "bilinear"}, {"cscale", "bilinear"},
+            {"dither", "no"}, {"correct-downscaling", "no"}, {"linear-downscaling", "no"},
+            {"sigmoid-upscaling", "no"}, {"hdr-compute-peak", "no"}, {"fbo-format", "rgba8"},
+        };
+        for (const auto& option : kPerformanceOptions) {
+            const int result = mpvApi().setOptionString(m_mpv, option[0], option[1]);
+            if (config.debugLogging) {
+                std::cout << "[MpvContext] performance mode " << option[0] << "=" << option[1]
+                          << (result < 0 ? " (not supported)" : "") << std::endl;
+            }
+        }
+    }
+    if (config.softwareFallbackErrors > 0) {
+        // A live TS joined mid-GOP feeds the hardware decoder pictures with
+        // missing references; some drivers (Intel iHD) reject those where
+        // software would conceal. mpv's default gives up on the hwdec after 3
+        // such errors and settles on a copy path for the whole stream.
+        const std::string threshold = std::to_string(config.softwareFallbackErrors);
+        mpvApi().setOptionString(m_mpv, "vd-lavc-software-fallback", threshold.c_str());
+    }
 #ifdef __linux__
     // The PipeWire client library cannot safely cross Electron's FFmpeg
     // isolation boundary. PulseAudio remains available through PipeWire's
@@ -335,8 +360,9 @@ bool MpvContext::create(const MpvConfig& config) {
     // Our GL context is surfaceless GBM: no X11 or Wayland display for libmpv
     // to derive a VADisplay from. Without the render node fd, the VA-API
     // interop cannot initialise and hwdec=auto lands on a copy path or
-    // software decoding on Mesa drivers (AMD, Intel). The scanout fields stay
-    // unset; only render_fd is used for VA-API. mpv_render_context_create()
+    // software decoding on Mesa drivers (AMD, Intel). The fd must be a
+    // separate open from the one GBM/EGL uses (see LinuxEglContext::vaRenderFd).
+    // The scanout fields stay unset; only render_fd is used for VA-API. mpv_render_context_create()
     // copies the struct (libmpv_gpu.c keeps its own "drm_params_v2" copy), so
     // a local suffices; the fd it names belongs to g_linuxEglContext, which
     // destroy() tears down only after the render context is freed.
@@ -345,7 +371,7 @@ bool MpvContext::create(const MpvConfig& config) {
     drm_params.crtc_id = -1;
     drm_params.connector_id = -1;
     drm_params.atomic_request_ptr = nullptr;
-    drm_params.render_fd = g_linuxEglContext ? g_linuxEglContext->drmFd() : -1;
+    drm_params.render_fd = g_linuxEglContext ? g_linuxEglContext->vaRenderFd() : -1;
     if (config.debugLogging) {
         std::cout << "[MpvContext] DRM render fd for VA-API interop: " << drm_params.render_fd << std::endl;
     }
@@ -384,6 +410,18 @@ bool MpvContext::create(const MpvConfig& config) {
     mpvApi().observeProperty(m_mpv, 5, "duration", MPV_FORMAT_DOUBLE);
     mpvApi().observeProperty(m_mpv, 6, "width", MPV_FORMAT_INT64);
     mpvApi().observeProperty(m_mpv, 7, "height", MPV_FORMAT_INT64);
+    // Display size after aspect correction (an anamorphic 720x576 stream shows
+    // as 1047x576). The render target must use it, or mpv letterboxes inside a
+    // coded-size texture and the canvas letterboxes that texture again.
+    mpvApi().observeProperty(m_mpv, 8, "dwidth", MPV_FORMAT_INT64);
+    mpvApi().observeProperty(m_mpv, 9, "dheight", MPV_FORMAT_INT64);
+    // Diagnostics read every couple of seconds from the JS thread. Observed so
+    // the read never has to wait for mpv's core (with advanced control the core
+    // may be blocked on our render thread, and a synchronous read then stalls
+    // the JS thread for as long as that takes; 150ms per tick in the field).
+    for (const char* name : kCachedProperties) {
+        mpvApi().observeProperty(m_mpv, 0, name, MPV_FORMAT_STRING);
+    }
 
     // Start threads
     m_running = true;
@@ -542,8 +580,40 @@ MpvStatus MpvContext::getStatus() const {
     return m_status;
 }
 
+bool MpvContext::command(const std::vector<std::string>& args) {
+    if (!m_mpv || args.empty()) return false;
+    std::vector<const char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& arg : args) argv.push_back(arg.c_str());
+    argv.push_back(nullptr);
+    const int result = mpvApi().command(m_mpv, argv.data());
+    if (result < 0) {
+        std::cerr << "[MpvContext] command '" << args.front() << "' failed: "
+                  << mpvApi().errorString(result) << std::endl;
+    }
+    return result >= 0;
+}
+
+const char* const MpvContext::kCachedProperties[] = {
+    "hwdec-current", "video-codec", "frame-drop-count", "decoder-frame-drop-count"
+};
+
+bool MpvContext::isCachedProperty(const char* name) {
+    for (const char* cached : kCachedProperties) {
+        if (strcmp(cached, name) == 0) return true;
+    }
+    return false;
+}
+
 bool MpvContext::getPropertyString(const std::string& name, std::string& value) const {
     if (!m_mpv) return false;
+    if (isCachedProperty(name.c_str())) {
+        std::lock_guard<std::mutex> lock(m_statusMutex);
+        const auto it = m_propertyCache.find(name);
+        if (it == m_propertyCache.end()) return false;
+        value = it->second;
+        return true;
+    }
     char* raw = mpvApi().getPropertyString(m_mpv, name.c_str());
     if (!raw) return false;
     value = raw;
@@ -597,6 +667,20 @@ void MpvContext::handleEvent(mpv_event* event) {
     }
 }
 
+// Called with m_statusMutex held. The render target takes mpv's display size
+// (aspect-corrected) once both dimensions are known, else the coded size.
+// GL calls must happen on the render thread, so only a request is made here.
+void MpvContext::scheduleResize() {
+    const bool haveDisplay = m_displayWidth > 0 && m_displayHeight > 0;
+    const int width = haveDisplay ? m_displayWidth : m_status.width;
+    const int height = haveDisplay ? m_displayHeight : m_status.height;
+    if (width <= 0 || height <= 0) return;
+    m_pendingWidth = static_cast<uint32_t>(width);
+    m_pendingHeight = static_cast<uint32_t>(height);
+    m_needsResize = true;
+    m_renderCV.notify_one();
+}
+
 void MpvContext::handlePropertyChange(mpv_event_property* prop) {
     bool statusChanged = false;
 
@@ -622,28 +706,36 @@ void MpvContext::handlePropertyChange(mpv_event_property* prop) {
             int newWidth = static_cast<int>(*static_cast<int64_t*>(prop->data));
             if (newWidth > 0 && newWidth != m_status.width) {
                 m_status.width = newWidth;
-                // Signal render thread to resize (GL calls must happen there)
-                if (m_status.height > 0) {
-                    m_pendingWidth = static_cast<uint32_t>(m_status.width);
-                    m_pendingHeight = static_cast<uint32_t>(m_status.height);
-                    m_needsResize = true;
-                    m_renderCV.notify_one();  // Wake render thread for resize
-                }
+                scheduleResize();
             }
             statusChanged = true;
         } else if (strcmp(prop->name, "height") == 0 && prop->format == MPV_FORMAT_INT64) {
             int newHeight = static_cast<int>(*static_cast<int64_t*>(prop->data));
             if (newHeight > 0 && newHeight != m_status.height) {
                 m_status.height = newHeight;
-                // Signal render thread to resize (GL calls must happen there)
-                if (m_status.width > 0) {
-                    m_pendingWidth = static_cast<uint32_t>(m_status.width);
-                    m_pendingHeight = static_cast<uint32_t>(m_status.height);
-                    m_needsResize = true;
-                    m_renderCV.notify_one();  // Wake render thread for resize
-                }
+                scheduleResize();
             }
             statusChanged = true;
+        } else if (strcmp(prop->name, "dwidth") == 0 && prop->format == MPV_FORMAT_INT64) {
+            int newWidth = static_cast<int>(*static_cast<int64_t*>(prop->data));
+            if (newWidth > 0 && newWidth != m_displayWidth) {
+                m_displayWidth = newWidth;
+                scheduleResize();
+            }
+        } else if (strcmp(prop->name, "dheight") == 0 && prop->format == MPV_FORMAT_INT64) {
+            int newHeight = static_cast<int>(*static_cast<int64_t*>(prop->data));
+            if (newHeight > 0 && newHeight != m_displayHeight) {
+                m_displayHeight = newHeight;
+                scheduleResize();
+            }
+        } else if (isCachedProperty(prop->name)) {
+            // MPV_FORMAT_NONE means the property is unavailable right now
+            // (no decoder yet); drop the stale value so readers see "unknown".
+            if (prop->format == MPV_FORMAT_STRING && prop->data && *static_cast<char**>(prop->data)) {
+                m_propertyCache[prop->name] = *static_cast<char**>(prop->data);
+            } else {
+                m_propertyCache.erase(prop->name);
+            }
         }
     }
 

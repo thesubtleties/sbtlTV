@@ -44,6 +44,7 @@ export function Settings({ onClose }: SettingsProps) {
   // Security state
   const [allowLanSources, setAllowLanSources] = useState(false);
   const [linuxPlayerMode, setLinuxPlayerMode] = useState<'native' | 'compatibility'>('native');
+  const [linuxPerformanceMode, setLinuxPerformanceMode] = useState(false);
 
   // Debug state
   const [debugLoggingEnabled, setDebugLoggingEnabled] = useState(false);
@@ -129,6 +130,7 @@ export function Settings({ onClose }: SettingsProps) {
     // Load security settings
     setAllowLanSources(s.allowLanSources ?? false);
     setLinuxPlayerMode(s.linuxPlayerMode ?? 'native');
+    setLinuxPerformanceMode(s.linuxPerformanceMode === true);
 
     // Load debug settings
     setDebugLoggingEnabled(s.debugLoggingEnabled ?? false);
@@ -264,6 +266,8 @@ export function Settings({ onClose }: SettingsProps) {
             onAllowLanSourcesChange={setAllowLanSources}
             linuxPlayerMode={linuxPlayerMode}
             onLinuxPlayerModeChange={setLinuxPlayerMode}
+            linuxPerformanceMode={linuxPerformanceMode}
+            onLinuxPerformanceModeChange={setLinuxPerformanceMode}
           />
         );
       case 'debug':

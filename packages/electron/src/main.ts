@@ -10,6 +10,8 @@ import * as storage from './storage.js';
 import electronUpdater from 'electron-updater';
 import { selectChromiumGpuIdentity } from './gpu-selection.js';
 import { startDataHost, type DataHost } from './data/data-host.js';
+import { isTransientDecodeError } from './mpv-error-filter.js';
+import { LinuxPerfProbe } from './linux-perf-probe.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -59,6 +61,11 @@ const pendingRequests = new Map<number, { resolve: (data: unknown) => void; reje
 
 // Native mpv-texture state
 let useNativeMpv = false;
+// Linux: which player this launch settled on. Unlike useNativeMpv it never
+// flips back during a native reset, so window fullscreen wiring can rely on
+// it. True when the compatibility player was requested, or when native init
+// failed and external mpv was started instead.
+let linuxExternalPlayer = compatibilityModeRequested;
 let mpvBridge: MpvTextureBridgeType | null = null;
 
 // Track mpv state
@@ -124,6 +131,10 @@ const SOCKET_PATH = process.platform === 'win32'
 // Throttle status updates to renderer (max once per 100ms)
 let lastStatusUpdate = 0;
 const STATUS_THROTTLE_MS = 100;
+// Native path: the last status forwarded, so position-only ticks (which mpv
+// reports at frame rate) can be rate limited while pause, mute, volume,
+// duration and size changes still go out at once.
+let lastNativeStatusSent: { at: number; playing: boolean; muted: boolean; volume: number; duration: number; width: number; height: number } | null = null;
 
 // Debug logging infrastructure
 let debugLogStream: fs.WriteStream | null = null;
@@ -150,6 +161,23 @@ process.on('uncaughtException', (error) => {
   }).catch(() => {});
 });
 let debugLoggingEnabled = false;
+// Linux in-window player diagnostics; runs only while debug logging is on.
+let perfProbe: LinuxPerfProbe | null = null;
+
+// Diagnostics that cost anything run only while debug logging is on: the
+// bridge's 2s stats line everywhere, the process/trace probe on Linux.
+function syncPlaybackDiagnostics(): void {
+  mpvBridge?.setDiagnosticsEnabled(debugLoggingEnabled);
+  const wantProbe = debugLoggingEnabled && process.platform === 'linux' && mpvBridge !== null;
+  if (wantProbe && !perfProbe) {
+    perfProbe = new LinuxPerfProbe((message) => debugLog(message, 'perf'));
+    perfProbe.start();
+  } else if (!wantProbe && perfProbe) {
+    perfProbe.stop();
+    perfProbe = null;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('debug-logging-changed', debugLoggingEnabled);
+}
 const DEBUG_LOG_MAX_SIZE = 10 * 1024 * 1024; // 10MB max log size
 
 function getDebugLogPath(): string {
@@ -218,6 +246,7 @@ function initDebugLogging(enabled: boolean): void {
     debugLogStream.end();
     debugLogStream = null;
   }
+  syncPlaybackDiagnostics();
 }
 
 function debugLog(message: string, category = 'app'): void {
@@ -391,8 +420,13 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
     mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', true));
     mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('window-fullscreen-changed', false));
   } else if (process.platform === 'linux') {
-    mainWindow.on('maximize', () => mainWindow?.webContents.send('window-fullscreen-changed', true));
-    mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window-fullscreen-changed', false));
+    // In-window player: real fullscreen, so the OS events drive the state.
+    // Compatibility player: mpv plays in its own window and handles its own
+    // fullscreen; for this window, maximize is what "fullscreen" has meant.
+    mainWindow.on('enter-full-screen', () => { if (!linuxExternalPlayer) mainWindow?.webContents.send('window-fullscreen-changed', true); });
+    mainWindow.on('leave-full-screen', () => { if (!linuxExternalPlayer) mainWindow?.webContents.send('window-fullscreen-changed', false); });
+    mainWindow.on('maximize', () => { if (linuxExternalPlayer) mainWindow?.webContents.send('window-fullscreen-changed', true); });
+    mainWindow.on('unmaximize', () => { if (linuxExternalPlayer) mainWindow?.webContents.send('window-fullscreen-changed', false); });
   }
 }
 
@@ -409,6 +443,7 @@ function killMpv(): void {
       debugLog(`Error destroying native bridge: ${error instanceof Error ? error.message : error}`, 'mpv');
     }
     mpvBridge = null;
+    syncPlaybackDiagnostics();
     useNativeMpv = false;
   }
 
@@ -547,6 +582,7 @@ async function checkMpvAvailable(): Promise<boolean> {
 
 async function initMpv(): Promise<void> {
   if (!mainWindow) return;
+  if (process.platform === 'linux') linuxExternalPlayer = true;
 
   // Reset shutdown flag when starting
   isShuttingDown = false;
@@ -715,12 +751,22 @@ async function initNativeMpv(): Promise<boolean> {
       );
     }
     bridge = new MpvTextureBridgeClass();
+    const isLinux = process.platform === 'linux';
     const success = await bridge.initialize(mainWindow, {
       hwdec: 'auto',
       gpuVendorId: gpu.vendorId,
       gpuDeviceId: gpu.deviceId,
       debugLogging: debugLoggingEnabled,
       finishBeforeExport: process.env.SBTLTV_MPV_GL_FINISH === '1',
+      // Linux only: the stats overlay gives testers decode and drop numbers on
+      // the video (I key) without a terminal. mpv's software-fallback threshold
+      // is left at its default: on Intel iHD the zero-copy surfaces fail to
+      // decode at all (green frames), so a higher threshold only prolonged that
+      // before the working copy path took over (tested on 0.11.1 pre-release).
+      statsOverlay: isLinux,
+      // Linux performance mode (Settings > Security): cheaper mpv rendering for
+      // GPUs that cannot keep up with the in-window pipeline. Read per launch.
+      performanceMode: isLinux && storage.getSettings().linuxPerformanceMode === true,
     });
 
     if (!success) {
@@ -733,6 +779,7 @@ async function initNativeMpv(): Promise<boolean> {
 
     mpvBridge = bridge;
     useNativeMpv = true;
+    syncPlaybackDiagnostics();
 
     // Forward status updates to renderer
     bridge.onStatus((status) => {
@@ -749,9 +796,12 @@ async function initNativeMpv(): Promise<boolean> {
 
       // First frame of each load: record how it is being decoded so a "frame
       // drops on AMD" report can be told apart from a software-decode report.
-      if (status.width > 0 && decodeLoggedGeneration !== loadGeneration) {
+      // The previous stream's dimensions linger until the new decoder is up, so
+      // wait for hwdec-current to exist before logging the new stream's decode.
+      if (status.width > 0 && decodeLoggedGeneration !== loadGeneration && bridge?.getProperty('hwdec-current') !== undefined) {
         decodeLoggedGeneration = loadGeneration;
-        debugLog(`Decoding ${status.width}x${status.height} ${bridge?.decodeSummary() ?? 'hwdec:?'}`, 'mpv');
+        debugLog(`Decoding ${status.width}x${status.height} ${bridge.decodeSummary()}`, 'mpv');
+        perfProbe?.notePlaybackStarted();
       }
 
       // File loaded — execute pending resume seek (native path)
@@ -766,12 +816,32 @@ async function initNativeMpv(): Promise<boolean> {
         }
       }
 
-      sendToRenderer('mpv-status', status);
+      // mpv reports time-pos on every frame. Each forwarded status is an IPC
+      // message plus a React commit on the renderer thread that also has to
+      // receive and draw every video frame, so position-only ticks are capped
+      // at 10/s (the external path has the same cap); anything discrete goes
+      // out immediately.
+      const now = Date.now();
+      const last = lastNativeStatusSent;
+      const discreteChange = !last
+        || last.playing !== status.playing || last.muted !== status.muted || last.volume !== status.volume
+        || last.duration !== status.duration || last.width !== status.width || last.height !== status.height;
+      if (discreteChange || !last || now - last.at >= STATUS_THROTTLE_MS) {
+        lastNativeStatusSent = { at: now, playing: status.playing, muted: status.muted, volume: status.volume, duration: status.duration, width: status.width, height: status.height };
+        sendToRenderer('mpv-status', status);
+      }
     });
 
     // Forward errors to renderer
     bridge.onError((error) => {
       if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
+      // Linux only: hwdec probing and mid-GOP decode errors are logged by
+      // ffmpeg at error level but recover on their own; the debug log keeps
+      // them, the red banner does not.
+      if (process.platform === 'linux' && isTransientDecodeError(error)) {
+        debugLog(`mpv (not shown): ${error.trim()}`, 'mpv');
+        return;
+      }
       sendToRenderer('mpv-error', error);
     });
 
@@ -779,8 +849,9 @@ async function initNativeMpv(): Promise<boolean> {
       if (mpvBridge === bridge) void handleNativePipelineFailure(error);
     });
 
-    bridge.onDiagnostics((message) => {
+    bridge.onDiagnostics((message, maxSendMs) => {
       debugLog(message, 'mpv-texture');
+      perfProbe?.noteTransferWindow(maxSendMs);
     });
 
     console.log('[mpv] Native mpv-texture bridge initialized');
@@ -824,6 +895,7 @@ async function resetNativePlayback(): Promise<void> {
       }),
     ]);
     mpvBridge = null;
+    syncPlaybackDiagnostics();
     currentMedia = null;
     Object.assign(mpvState, { playing: false, position: 0, duration: 0, width: 0, height: 0 });
     isShuttingDown = false;
@@ -843,10 +915,25 @@ async function resetNativePlayback(): Promise<void> {
   }
 }
 
+// app.relaunch defaults to process.execPath, which for an AppImage is the
+// binary inside a mount that disappears when this process exits. Relaunch the
+// AppImage itself instead; elsewhere this is a plain relaunch.
+function relaunchApp(args: string[]): void {
+  const appImage = process.env.APPIMAGE;
+  if (appImage && !fs.existsSync(appImage)) {
+    // A stale variable (moved or deleted file) would make the relaunch fail
+    // silently after we exit; fall back to the default and say so.
+    debugLog(`APPIMAGE points at a missing file (${appImage}); relaunching the default path`, 'app');
+    app.relaunch({ args });
+    return;
+  }
+  app.relaunch(appImage ? { execPath: appImage, args } : { args });
+}
+
 function restartInCompatibilityMode(handoff: CompatibilityHandoff | null): void {
   if (handoff) saveCompatibilityHandoff(handoff);
   const relaunchArgs = process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG);
-  app.relaunch({ args: [...relaunchArgs, MPV_COMPATIBILITY_ARG] });
+  relaunchApp([...relaunchArgs, MPV_COMPATIBILITY_ARG]);
   // exit, not quit: a graceful quit tears the native bridge down, which joins
   // the render thread, and a wedged render thread is one reason we are here.
   // The data process gets its shutdown message (non-blocking) and the OS
@@ -1069,13 +1156,6 @@ ipcMain.handle('window-maximize', () => {
   }
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
-// Plain restart with the same arguments (the Linux player setting is read at launch).
-ipcMain.handle('app-relaunch', () => {
-  debugLog('Relaunch requested from Settings', 'app');
-  // Drop a per-launch compatibility flag so the saved setting decides the mode.
-  app.relaunch({ args: process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG) });
-  app.quit();
-});
 
 // Window resize for frameless windows
 ipcMain.handle('window-get-size', () => mainWindow?.getSize());
@@ -1102,11 +1182,26 @@ ipcMain.handle('window-set-fullscreen', () => {
   } else if (process.platform === 'darwin') {
     // macOS: opaque window + native mpv texture — true OS fullscreen + enter/leave events work.
     mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  } else if (!linuxExternalPlayer) {
+    // Linux in-window player: the video is in this window, so fullscreen it like macOS.
+    mainWindow.setFullScreen(!mainWindow.isFullScreen());
   } else {
-    // Linux: maximize is the working fullscreen equivalent for the frameless Electron window.
+    // Linux compatibility player: maximize is the working fullscreen equivalent for the
+    // frameless Electron window; mpv's own window handles its fullscreen.
     if (mainWindow.isMaximized()) mainWindow.unmaximize();
     else mainWindow.maximize();
   }
+});
+
+// Linux in-window player only: mpv's stats overlay (I shows it for a few
+// seconds, Shift+I keeps it up). Elsewhere this is a no-op.
+ipcMain.handle('mpv-toggle-stats', async (_event, persistent: boolean) => {
+  if (process.platform !== 'linux' || !useNativeMpv || !mpvBridge) {
+    return { error: 'Stats overlay is only available with the Linux in-window player' };
+  }
+  const shown = mpvBridge.command('script-binding', persistent ? 'stats/display-stats-toggle' : 'stats/display-stats');
+  if (!shown) debugLog('stats overlay command rejected; libmpv prints the reason on stderr', 'mpv');
+  return shown ? { success: true } : { error: 'mpv rejected the stats command' };
 });
 
 async function loadMedia(url: string, startPosition?: number): Promise<{ success?: boolean; error?: string }> {
@@ -1404,9 +1499,22 @@ ipcMain.handle('debug-get-log-path', async () => {
   return { success: true, data: getDebugLogPath() };
 });
 
+ipcMain.handle('debug-is-enabled', () => debugLoggingEnabled);
+
 ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
   debugLog(message, 'renderer');
   return { success: true };
+});
+
+// Linux frame pacing: the renderer shows frames a steady ~(queue depth) behind
+// arrival. Delay mpv's audio by the same amount so lip sync holds.
+ipcMain.on('shared-texture-presentation-delay', (_event, delayMs: unknown) => {
+  if (process.platform !== 'linux' || !useNativeMpv || !mpvBridge) return;
+  if (typeof delayMs !== 'number' || !Number.isFinite(delayMs)) return;
+  const seconds = Math.min(Math.max(delayMs, 0), 500) / 1000;
+  if (mpvBridge.command('set', 'audio-delay', seconds.toFixed(3))) {
+    debugLog(`Audio delayed ${Math.round(seconds * 1000)}ms to match paced video`, 'mpv');
+  }
 });
 
 // Renderer-side shared-texture failures (import or draw) feed the same

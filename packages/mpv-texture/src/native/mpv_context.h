@@ -9,6 +9,8 @@
 #include <mpv/render.h>
 #include <mpv/render_gl.h>
 #include <string>
+#include <vector>
+#include <map>
 #include <functional>
 #include <atomic>
 #include <thread>
@@ -45,6 +47,15 @@ struct MpvConfig {
     uint32_t gpuDeviceId = 0;
     bool debugLogging = false;
     bool finishBeforeExport = false;
+    // mpv's vd-lavc-software-fallback: consecutive hardware decode errors
+    // tolerated before mpv abandons the hwdec. 0 keeps mpv's default (3).
+    int softwareFallbackErrors = 0;
+    // Load mpv's built-in stats overlay script so "script-binding stats/..."
+    // commands can show decode and drop statistics on the video.
+    bool statsOverlay = false;
+    // Cheaper rendering: the options of mpv's "fast" profile, set one by one
+    // because the profile itself only exists from mpv 0.37.
+    bool performanceMode = false;
 };
 
 class MpvContext {
@@ -69,6 +80,8 @@ public:
     void seek(double position);
     void setVolume(double volume);
     void toggleMute();
+    // Run an mpv command (e.g. {"script-binding", "stats/display-stats"}).
+    bool command(const std::vector<std::string>& args);
 
     // Callbacks
     void setFrameCallback(FrameCallback callback);
@@ -81,9 +94,11 @@ public:
     // Get current status
     MpvStatus getStatus() const;
 
-    // Read any mpv property as a string ("hwdec-current", "video-codec",
-    // "frame-drop-count"). Returns false when mpv has no value for it; an
-    // empty string is a valid value. Synchronous round trip into mpv's core.
+    // Read an mpv property as a string. The properties in kCachedProperties
+    // are observed on the event thread and answered from a cache without
+    // touching mpv's core; anything else is a synchronous round trip that can
+    // block the caller while the core waits on the render thread. Returns
+    // false when mpv has no value; an empty string is a valid value.
     bool getPropertyString(const std::string& name, std::string& value) const;
 
 private:
@@ -91,6 +106,9 @@ private:
     void eventLoop();
     void handleEvent(mpv_event* event);
     void handlePropertyChange(mpv_event_property* prop);
+    void scheduleResize();
+    static const char* const kCachedProperties[4];
+    static bool isCachedProperty(const char* name);
 
     // Render thread
     void renderLoop();
@@ -129,6 +147,12 @@ private:
 
     // Current state
     MpvStatus m_status{};
+    // mpv's dwidth/dheight: display size after aspect correction; 0 until known
+    int m_displayWidth = 0;
+    int m_displayHeight = 0;
+    // Latest values of the observed diagnostic properties, keyed by name;
+    // absent while mpv reports the property unavailable. Guarded by m_statusMutex.
+    std::map<std::string, std::string> m_propertyCache;
     mutable std::mutex m_statusMutex;
 
     // Callbacks

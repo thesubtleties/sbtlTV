@@ -9,6 +9,8 @@ interface SecurityTabProps {
   onAllowLanSourcesChange: (enabled: boolean) => void;
   linuxPlayerMode: LinuxPlayerMode;
   onLinuxPlayerModeChange: (mode: LinuxPlayerMode) => void;
+  linuxPerformanceMode: boolean;
+  onLinuxPerformanceModeChange: (enabled: boolean) => void;
 }
 
 export function SecurityTab({
@@ -16,10 +18,12 @@ export function SecurityTab({
   onAllowLanSourcesChange,
   linuxPlayerMode,
   onLinuxPlayerModeChange,
+  linuxPerformanceMode,
+  onLinuxPerformanceModeChange,
 }: SecurityTabProps) {
   const updateSettings = useUpdateSettings();
   // The player mode is read once at launch. Ask main which player this
-  // process started with and offer a restart only while the saved value differs.
+  // process started with so the hint can say a restart is still pending.
   const [launchedPlayerMode, setLaunchedPlayerMode] = useState<LinuxPlayerMode | null>(null);
   useEffect(() => {
     if (!window.platform?.isLinux || !window.mpv) return;
@@ -36,6 +40,13 @@ export function SecurityTab({
     updateSettings({ allowLanSources: enabled });
     if (!window.storage) return;
     await window.storage.updateSettings({ allowLanSources: enabled });
+  }
+
+  async function handlePerformanceModeChange(enabled: boolean) {
+    onLinuxPerformanceModeChange(enabled);
+    updateSettings({ linuxPerformanceMode: enabled });
+    if (!window.storage) return;
+    await window.storage.updateSettings({ linuxPerformanceMode: enabled });
   }
 
   async function handlePlayerModeChange(mode: LinuxPlayerMode) {
@@ -80,19 +91,23 @@ export function SecurityTab({
             </label>
             <p className="form-hint" style={{ marginTop: '0.5rem' }}>
               {playerModeChanged
-                ? 'Takes effect after restarting sbtlTV.'
-                : 'Changing this takes effect after restarting sbtlTV.'}
+                ? 'Quit and reopen sbtlTV to switch players.'
+                : 'Changing this takes effect the next time sbtlTV starts.'}
             </p>
-            {playerModeChanged && (
-              <button
-                type="button"
-                className="sync-button"
-                style={{ marginTop: '0.5rem', padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}
-                onClick={() => window.electronWindow?.relaunch()}
-              >
-                Restart sbtlTV
-              </button>
-            )}
+
+            <label className="genre-checkbox" style={{ maxWidth: '320px', marginTop: '1rem' }}>
+              <input
+                type="checkbox"
+                checked={linuxPerformanceMode}
+                onChange={(e) => handlePerformanceModeChange(e.target.checked)}
+              />
+              <span className="genre-name">Performance mode</span>
+            </label>
+            <p className="form-hint" style={{ marginTop: '0.5rem' }}>
+              Only if the in-window player drops frames at normal quality. Uses simpler
+              video scaling and turns off the blur behind the guide and controls. The blur
+              changes right away; the video settings apply after you quit and reopen sbtlTV.
+            </p>
           </div>
         </div>
       )}

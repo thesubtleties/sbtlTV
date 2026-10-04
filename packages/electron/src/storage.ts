@@ -47,6 +47,7 @@ interface AppSettings {
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: 'compatibility' runs mpv in its own window (default 'native'); takes effect on restart
+  linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video (immediate); default false
 }
 
 export type { LinuxPlayerMode };
@@ -76,6 +77,7 @@ interface StoredSettings {
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: video player used at next launch
+  linuxPerformanceMode?: boolean;  // Linux only: cheaper rendering for slower GPUs
 }
 
 const store = new Store<StoreSchema>({
@@ -225,6 +227,7 @@ export function getSettings(): AppSettings {
   result.guideMorphEnabled = stored.guideMorphEnabled ?? true;
   result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
   result.linuxPlayerMode = normalizeLinuxPlayerMode(stored.linuxPlayerMode);
+  result.linuxPerformanceMode = stored.linuxPerformanceMode === true;
   return result;
 }
 
@@ -299,6 +302,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.linuxPlayerMode !== undefined) {
     updated.linuxPlayerMode = normalizeLinuxPlayerMode(settings.linuxPlayerMode);
+  }
+  if (settings.linuxPerformanceMode !== undefined) {
+    updated.linuxPerformanceMode = settings.linuxPerformanceMode === true;
   }
 
   store.set('settings', updated);

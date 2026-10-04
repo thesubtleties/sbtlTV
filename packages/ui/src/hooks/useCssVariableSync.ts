@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useCategoryBarWidth, useGuideOpacity } from '../stores/uiStore';
+import { useCategoryBarWidth, useGuideOpacity, useUIStore } from '../stores/uiStore';
 
 /**
  * Syncs Zustand guide appearance state to CSS custom properties on :root.
@@ -16,4 +16,10 @@ export function useCssVariableSync() {
   useEffect(() => {
     document.documentElement.style.setProperty('--guide-opacity', String(guideOpacity));
   }, [guideOpacity]);
+
+  // Linux performance mode: App.css drops every backdrop blur under this class.
+  const performanceMode = useUIStore((s) => s.settings.linuxPerformanceMode === true) && !!window.platform?.isLinux;
+  useEffect(() => {
+    document.documentElement.classList.toggle('performance-mode', performanceMode);
+  }, [performanceMode]);
 }

@@ -3,6 +3,7 @@ import type { StoredChannel } from '../db';
 import type { VodPlayInfo } from '../types/media';
 import { useCurrentProgram } from '../hooks/useChannels';
 import { useMatchup } from '../hooks/useMatchup';
+import { usePlaybackStore } from '../stores/playbackStore';
 import './NowPlayingBar.css';
 
 interface NowPlayingBarProps {
@@ -12,7 +13,6 @@ interface NowPlayingBarProps {
   muted: boolean;
   volume: number;
   mpvReady: boolean;
-  position: number;
   duration: number;
   isVod?: boolean;
   vodInfo?: VodPlayInfo | null;
@@ -50,7 +50,6 @@ export function NowPlayingBar({
   muted,
   volume,
   mpvReady,
-  position,
   duration,
   isVod,
   vodInfo,
@@ -68,6 +67,7 @@ export function NowPlayingBar({
   isFullscreen,
   onToggleFullscreen,
 }: NowPlayingBarProps) {
+  const position = usePlaybackStore((state) => state.position);
   const canControl = mpvReady && channel !== null;
   const currentProgram = useCurrentProgram(channel?.stream_id ?? null);
   const matchup = useMatchup(channel, currentProgram);

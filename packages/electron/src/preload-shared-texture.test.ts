@@ -69,8 +69,25 @@ function loadSandboxedPreload(): {
 }
 
 // Run the real canvas callback and preload together, with successful GPU draws.
-function mountVideoCanvas(api: SharedTextureApiStub): () => void {
+interface CanvasHarnessOptions {
+  /** Mount with window.platform.isLinux (frame pacing path) */
+  linux?: boolean;
+  /** Called by the canvas's requestAnimationFrame */
+  onAnimationFrame?: (callback: (now: number) => void) => void;
+  /** Counts drawArrays calls */
+  draws?: { count: number };
+}
+
+function transpile(relativePath: string): string {
+  const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
+  return transpileModule(source, {
+    compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX },
+  }).outputText;
+}
+
+function mountVideoCanvas(api: SharedTextureApiStub, options: CanvasHarnessOptions = {}): () => void {
   const effects: Array<() => void | (() => void)> = [];
+  const draws = options.draws ?? { count: 0 };
   const gl = {
     createShader: () => ({}), shaderSource() {}, compileShader() {},
     getShaderParameter: () => true, deleteShader() {},
@@ -81,21 +98,26 @@ function mountVideoCanvas(api: SharedTextureApiStub): () => void {
     bindBuffer() {}, bufferData() {}, deleteBuffer() {}, getAttribLocation: () => 0,
     enableVertexAttribArray() {}, vertexAttribPointer() {}, createTexture: () => ({}),
     bindTexture() {}, texParameteri() {}, deleteTexture() {}, texImage2D() {},
-    useProgram() {}, uniform1i() {}, drawArrays() {}, flush() {},
+    useProgram() {}, uniform1i() {}, drawArrays() { draws.count++; }, flush() {}, viewport() {},
   };
   const canvas = {
     width: 16, height: 16, getContext: () => gl,
     addEventListener() {}, removeEventListener() {},
   };
-  const source = readFileSync(new URL('../../ui/src/components/VideoCanvas.tsx', import.meta.url), 'utf8');
-  const compiled = transpileModule(source, {
-    compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX },
-  }).outputText;
+  const compiled = transpile('../../ui/src/components/VideoCanvas.tsx');
+  const pacerExports: Record<string, unknown> = {};
+  vm.runInNewContext(transpile('../../ui/src/hooks/framePacer.ts'), { exports: pacerExports });
+  const perfMarksExports: Record<string, unknown> = {};
+  vm.runInNewContext(transpile('../../ui/src/utils/perfMarks.ts'), { exports: perfMarksExports, performance });
   const exports: Record<string, unknown> = {};
   vm.runInNewContext(compiled, {
     exports, console, performance, setTimeout, clearTimeout,
-    window: { sharedTexture: api },
+    requestAnimationFrame: (callback: (now: number) => void) => { options.onAnimationFrame?.(callback); return 1; },
+    cancelAnimationFrame() {},
+    window: { sharedTexture: api, platform: options.linux ? { isLinux: true } : undefined },
     require(specifier: string) {
+      if (specifier === '../hooks/framePacer') return pacerExports;
+      if (specifier === '../utils/perfMarks') return perfMarksExports;
       if (specifier === 'react') return {
         useRef: (current: unknown) => ({ current }),
         useCallback: (callback: unknown) => callback,
@@ -170,6 +192,36 @@ test('successful canvas draws clear intermittent preload import errors', async (
     assert.deepEqual(sentChannels, Array.from({ length: 5 }, () => [
       'shared-texture-frame-error', 'shared-texture-frame-ok',
     ]).flat());
+  } finally {
+    unmount();
+  }
+});
+
+test('Linux paces frames: each is released on arrival and drawn from the refresh loop', async () => {
+  const { api, receiver } = loadSandboxedPreload();
+  let tick: ((now: number) => void) | null = null;
+  const draws = { count: 0 };
+  const unmount = mountVideoCanvas(api, {
+    linux: true,
+    draws,
+    onAnimationFrame: (callback) => { tick = callback; },
+  });
+  let closedFrames = 0;
+  try {
+    for (let index = 0; index < 6; index++) {
+      await receiver({ importedSharedTexture: {
+        getVideoFrame: () => ({ codedWidth: 16, codedHeight: 16, close: () => { closedFrames++; } }) as VideoFrame,
+        release() {},
+      } }, { generation: 0, index });
+    }
+    // Released at once (the DMA-BUF slot goes back to mpv), not drawn yet.
+    assert.equal(closedFrames, 6);
+    assert.equal(draws.count, 0);
+    assert.ok(tick, 'the canvas runs a refresh loop on Linux');
+    const now = performance.now();
+    for (let refresh = 0; refresh < 30; refresh++) (tick as (now: number) => void)(now + refresh * (1000 / 60));
+    assert.ok(draws.count >= 4, `expected paced draws, got ${draws.count}`);
+    assert.ok(draws.count <= 6);
   } finally {
     unmount();
   }

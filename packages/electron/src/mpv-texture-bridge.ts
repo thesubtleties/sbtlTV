@@ -41,7 +41,9 @@ export class MpvTextureBridge {
   private statusCallback?: (status: MpvStatus) => void;
   private errorCallback?: (error: string) => void;
   private pipelineFailureCallback?: (error: string) => void;
-  private diagnosticsCallback?: (message: string) => void;
+  private diagnosticsCallback?: (message: string, maxSendMs: number) => void;
+  // The 2s stats line is only built when someone reads it (debug logging).
+  private diagnosticsEnabled = false;
   private consecutiveErrors = 0;
   // A timed-out transfer usually means the renderer's main thread is busy (a
   // large library sync, for example) and it recovers on its own. Escalate only
@@ -131,12 +133,7 @@ export class MpvTextureBridge {
       this.statsInterval = setInterval(() => {
         this.checkFrameStarvation();
         if (this.stats.received === 0) return;
-        const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
-        const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
-        const avgRelease = this.stats.releaseCount > 0 ? (this.stats.releaseMs / this.stats.releaseCount).toFixed(1) : '?';
-        const message = `[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}/${this.stats.maxSendMs.toFixed(1)}ms release:${avgRelease}/${this.stats.maxReleaseMs.toFixed(1)}ms | ${this.decodeSummary()}`;
-        console.log(message);
-        this.diagnosticsCallback?.(message);
+        if (this.diagnosticsEnabled) this.reportStats();
         this.stats = {
           received: 0,
           dropped: 0,
@@ -158,6 +155,15 @@ export class MpvTextureBridge {
       console.error('[MpvTextureBridge] Failed to initialize:', error);
       return false;
     }
+  }
+
+  private reportStats(): void {
+    const avgImport = this.stats.sendCount > 0 ? (this.stats.importMs / this.stats.sendCount).toFixed(1) : '?';
+    const avgSend = this.stats.sendCount > 0 ? (this.stats.sendMs / this.stats.sendCount).toFixed(1) : '?';
+    const avgRelease = this.stats.releaseCount > 0 ? (this.stats.releaseMs / this.stats.releaseCount).toFixed(1) : '?';
+    const message = `[MpvTextureBridge] sent:${this.stats.sent}/2s drop:${this.stats.dropped} mpv:${this.stats.received} err:${this.stats.errors} | import:${avgImport}ms send:${avgSend}/${this.stats.maxSendMs.toFixed(1)}ms release:${avgRelease}/${this.stats.maxReleaseMs.toFixed(1)}ms | ${this.decodeSummary()}`;
+    console.log(message);
+    this.diagnosticsCallback?.(message, this.stats.maxSendMs);
   }
 
   /**
@@ -369,6 +375,13 @@ export class MpvTextureBridge {
   }
 
   /**
+   * Run an mpv command (false when unavailable or rejected)
+   */
+  command(...args: string[]): boolean {
+    return this.mpv?.command(...args) ?? false;
+  }
+
+  /**
    * Read an mpv property as a string (undefined when mpv has no value).
    * Synchronous round trip into mpv's core on the main thread: never expose
    * it over IPC, and stick to decoder-level properties; some VO properties
@@ -413,8 +426,12 @@ export class MpvTextureBridge {
     this.pipelineFailureCallback = callback;
   }
 
-  onDiagnostics(callback: (message: string) => void): void {
+  onDiagnostics(callback: (message: string, maxSendMs: number) => void): void {
     this.diagnosticsCallback = callback;
+  }
+
+  setDiagnosticsEnabled(enabled: boolean): void {
+    this.diagnosticsEnabled = enabled;
   }
 
   /** Why initialize() returned false, for the fallback dialog and debug log. */
