@@ -107,6 +107,8 @@ function mountVideoCanvas(api: SharedTextureApiStub, options: CanvasHarnessOptio
   const compiled = transpile('../../ui/src/components/VideoCanvas.tsx');
   const pacerExports: Record<string, unknown> = {};
   vm.runInNewContext(transpile('../../ui/src/hooks/framePacer.ts'), { exports: pacerExports });
+  const perfMarksExports: Record<string, unknown> = {};
+  vm.runInNewContext(transpile('../../ui/src/utils/perfMarks.ts'), { exports: perfMarksExports, performance });
   const exports: Record<string, unknown> = {};
   vm.runInNewContext(compiled, {
     exports, console, performance, setTimeout, clearTimeout,
@@ -115,6 +117,7 @@ function mountVideoCanvas(api: SharedTextureApiStub, options: CanvasHarnessOptio
     window: { sharedTexture: api, platform: options.linux ? { isLinux: true } : undefined },
     require(specifier: string) {
       if (specifier === '../hooks/framePacer') return pacerExports;
+      if (specifier === '../utils/perfMarks') return perfMarksExports;
       if (specifier === 'react') return {
         useRef: (current: unknown) => ({ current }),
         useCallback: (callback: unknown) => callback,

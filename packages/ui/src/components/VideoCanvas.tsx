@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
+import { perfMeasure, perfStart, setPerfMarksEnabled } from '../utils/perfMarks';
 import { FramePacer } from '../hooks/framePacer';
 
 interface VideoCanvasProps {
@@ -336,7 +337,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
   }, [visible, cancelRestorationTimer, checkRendererHealth]);
 
   // Handle frame - render immediately
-  const handleFrame = useCallback((videoFrame: VideoFrame, index: number) => {
+  const handleFrameInner = useCallback((videoFrame: VideoFrame, index: number) => {
     const canvas = canvasRef.current;
     const glState = glStateRef.current;
 
@@ -457,6 +458,16 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     }
   }, [flipY, flipX, checkRendererHealth]);
 
+  // Debug builds time each frame hand-off for the trace (no-op otherwise).
+  const handleFrame = useCallback((videoFrame: VideoFrame, index: number) => {
+    const perfAt = perfStart();
+    try {
+      handleFrameInner(videoFrame, index);
+    } finally {
+      perfMeasure('sbtl:frame', perfAt);
+    }
+  }, [handleFrameInner]);
+
   // Follow the debug logging setting. On Linux, while it is on, also log every
   // renderer main-thread task over 50ms with its wall-clock time, so stalls can
   // be told apart from GPU-process or main-process ones.
@@ -466,6 +477,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     let observer: PerformanceObserver | null = null;
     const apply = (enabled: boolean) => {
       debugEnabledRef.current = enabled;
+      setPerfMarksEnabled(enabled && pacedRef.current);
       if (enabled && pacedRef.current && !observer && PerformanceObserver.supportedEntryTypes?.includes('longtask')) {
         observer = new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) {

@@ -32,8 +32,10 @@ const TRACE_CATEGORIES = [
   'v8',
   'electron',
   'disabled-by-default-v8.gc',
-  'disabled-by-default-gpu.service',
-  'disabled-by-default-gpu.decoder',
+  // Names the JavaScript behind each renderer task, plus our performance.measure spans.
+  'devtools.timeline',
+  'disabled-by-default-devtools.timeline',
+  'blink.user_timing',
 ];
 
 interface ProcStat {

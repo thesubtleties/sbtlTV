@@ -22,6 +22,8 @@ import { updateWatchProgress, getResumePosition } from './hooks/useWatchProgress
 import { mergedEpisodesForSeries } from './hooks/useContinueWatching';
 import { buildNextEpisodePlayInfo } from './services/continue-watching/next-episode.playinfo';
 import { UpNextOverlay } from './components/UpNextOverlay';
+import { usePlaybackStore } from './stores/playbackStore';
+import { perfMeasure, perfStart } from './utils/perfMarks';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -123,7 +125,8 @@ function App() {
   const [playing, setPlaying] = useState(false);
   const [volume, setVolume] = useState(100);
   const [muted, setMuted] = useState(false);
-  const [position, setPosition] = useState(0);
+  // Position lives in playbackStore so its 10/s updates don't re-render App.
+  const setPosition = usePlaybackStore.getState().setPosition;
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
@@ -188,10 +191,10 @@ function App() {
   useEffect(() => { isFullscreenRef.current = isFullscreen; }, [isFullscreen]);
   // Playback keys (seek, volume) read live state from a ref because the key
   // handler is registered once on mount.
-  const playbackRef = useRef({ position: 0, duration: 0, volume: 100, activeView: 'none' as View, categoriesOpen: false });
+  const playbackRef = useRef({ duration: 0, volume: 100, activeView: 'none' as View, categoriesOpen: false });
   useEffect(() => {
-    playbackRef.current = { position, duration, volume, activeView, categoriesOpen };
-  }, [position, duration, volume, activeView, categoriesOpen]);
+    playbackRef.current = { duration, volume, activeView, categoriesOpen };
+  }, [duration, volume, activeView, categoriesOpen]);
   // Linux only: true when mpv runs in its own window (compatibility player), where
   // that window owns fullscreen and the default mpv key bindings. State drives the
   // on-screen button; the ref serves the mount-once key handler.
@@ -230,6 +233,12 @@ function App() {
     });
 
     window.mpv.onStatus((status: MpvStatus) => {
+      const perfAt = perfStart();
+      handleStatus(status);
+      perfMeasure('sbtl:status', perfAt);
+    });
+
+    function handleStatus(status: MpvStatus) {
       if (status.playing !== undefined) setPlaying(status.playing);
       // Skip volume updates while user is dragging the slider
       if (status.volume !== undefined && !volumeDraggingRef.current) {
@@ -282,7 +291,7 @@ function App() {
           triggerUpNextRef.current(cur);
         }
       }
-    });
+    }
 
     window.mpv.onError((err) => {
       console.error('mpv error:', err);
@@ -380,7 +389,7 @@ function App() {
         seasonNum: info.seasonNum,
         episodeNum: info.episodeNum,
         name: info.title + (info.episodeInfo ? ` ${info.episodeInfo}` : ''),
-        position,
+        position: usePlaybackStore.getState().position,
         duration,
         sourceId: info.sourceId,
       });
@@ -406,10 +415,16 @@ function App() {
     setTimeout(() => { seekingRef.current = false; }, 200);
   };
 
+  // Stable callbacks for the memoized guide; the ref always calls the latest handler.
+  const handlePlayChannelRef = useRef<(channel: StoredChannel) => void>(() => {});
+  const playChannelFromGuide = useCallback((channel: StoredChannel) => handlePlayChannelRef.current(channel), []);
+  const closeActiveView = useCallback(() => setActiveView('none'), []);
+
   // Play a channel
   const handlePlayChannel = (channel: StoredChannel) => {
     handleLoadStream(channel);
   };
+  handlePlayChannelRef.current = handlePlayChannel;
 
   // Play VOD content (movies/series)
   const handlePlayVod = useCallback(async (info: VodPlayInfo) => {
@@ -609,7 +624,7 @@ function App() {
         case 'ArrowDown': {
           // mpv's seek keys; resolveSeek returns null while the guide or a library
           // view is open (they own the arrows) or for live streams (no duration).
-          const target = resolveSeek(e.key, playbackRef.current);
+          const target = resolveSeek(e.key, { ...playbackRef.current, position: usePlaybackStore.getState().position });
           if (target === null) break;
           e.preventDefault();
           handleSeek(target);
@@ -733,7 +748,6 @@ function App() {
         muted={muted}
         volume={volume}
         mpvReady={mpvReady}
-        position={position}
         duration={duration}
         isVod={currentChannel?.stream_id === 'vod'}
         vodInfo={vodInfo}
@@ -787,8 +801,8 @@ function App() {
         visible={activeView === 'guide'}
         categoryStripOpen={categoriesOpen}
         sidebarExpanded={sidebarExpanded}
-        onPlayChannel={handlePlayChannel}
-        onClose={() => setActiveView('none')}
+        onPlayChannel={playChannelFromGuide}
+        onClose={closeActiveView}
         scrollTopNonce={channelScrollNonce}
       />
 
