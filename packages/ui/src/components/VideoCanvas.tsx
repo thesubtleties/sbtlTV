@@ -529,6 +529,14 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       }
       if (shownSlotRef.current) freeSlotsRef.current.push(shownSlotRef.current);
       shownSlotRef.current = slot;
+      // First picture of a stream: delay the audio by the expected steady lag
+      // (about targetDepth - 0.5 frames) at once, rather than in steps as the
+      // measured lag settles; the 2s measurement then corrects only real drift.
+      if (reportedDelayRef.current === 0) {
+        const expected = (pacerRef.current.targetDepth - 0.5) * pacerRef.current.intervalMs;
+        reportedDelayRef.current = expected;
+        window.sharedTexture?.reportPresentationDelay?.(expected);
+      }
       const present = presentStatsRef.current;
       if (present.lastAt > 0) present.intervals.push(now - present.lastAt);
       present.lastAt = now;

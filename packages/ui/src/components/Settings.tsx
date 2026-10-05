@@ -11,6 +11,7 @@ import { MoviesTab } from './settings/MoviesTab';
 import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
+import { VideoPlayerTab } from './settings/VideoPlayerTab';
 import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
 import './Settings.css';
@@ -264,6 +265,11 @@ export function Settings({ onClose }: SettingsProps) {
           <SecurityTab
             allowLanSources={allowLanSources}
             onAllowLanSourcesChange={setAllowLanSources}
+          />
+        );
+      case 'player':
+        return (
+          <VideoPlayerTab
             linuxPlayerMode={linuxPlayerMode}
             onLinuxPlayerModeChange={setLinuxPlayerMode}
             linuxPerformanceMode={linuxPerformanceMode}

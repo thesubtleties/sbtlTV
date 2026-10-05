@@ -9,6 +9,7 @@ export type SettingsTabId =
   | 'movies'
   | 'series'
   | 'posterdb'
+  | 'player'
   | 'security'
   | 'debug'
   | 'about';
@@ -44,6 +45,7 @@ const SETTINGS_CATEGORIES: SettingsCategory[] = [
   {
     label: 'System',
     tabs: [
+      { id: 'player', label: 'Video Player' },
       { id: 'security', label: 'Security' },
       { id: 'debug', label: 'Debug' },
       { id: 'about', label: 'About' },
@@ -79,6 +81,10 @@ export function SettingsSidebar({
             }
             // Hide Priority tab if only one source
             if (tab.id === 'priority' && !hasMultipleSources) {
+              return null;
+            }
+            // The player settings exist only on Linux
+            if (tab.id === 'player' && !window.platform?.isLinux) {
               return null;
             }
 

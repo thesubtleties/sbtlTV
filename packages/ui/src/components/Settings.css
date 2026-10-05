@@ -885,6 +885,16 @@
   min-height: 0;
 }
 
+/* Tabs with stacked sections: natural flow so sections scroll instead of
+   being squeezed into the panel height and drawn over each other. */
+.settings-tab-scroll {
+  height: auto;
+}
+
+.settings-tab-scroll .settings-section {
+  flex: none;
+}
+
 /* EPG tab: natural flow so content scrolls instead of stretching */
 .epg-tab-scroll {
   height: auto;

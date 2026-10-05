@@ -733,6 +733,8 @@ async function initMpv(): Promise<void> {
   }
 }
 
+const NVIDIA_VENDOR_ID = 0x10de;
+
 /**
  * Initialize native mpv-texture bridge for GPU-accelerated playback
  * Returns true if successful, false if should fall back to external mpv
@@ -752,19 +754,24 @@ async function initNativeMpv(): Promise<boolean> {
     }
     bridge = new MpvTextureBridgeClass();
     const isLinux = process.platform === 'linux';
+    // NVIDIA's proprietary driver does not make the importer wait for GL work
+    // on a shared DMA-BUF (Mesa does), so Chromium could sample a slot mpv was
+    // still drawing: brief black frames. Wait for the frame to finish there.
+    const finishBeforeExport = process.env.SBTLTV_MPV_GL_FINISH === '1' || (isLinux && gpu.vendorId === NVIDIA_VENDOR_ID);
+    if (finishBeforeExport) debugLog('mpv frames finish before export (glFinish)', 'mpv');
     const success = await bridge.initialize(mainWindow, {
       hwdec: 'auto',
       gpuVendorId: gpu.vendorId,
       gpuDeviceId: gpu.deviceId,
       debugLogging: debugLoggingEnabled,
-      finishBeforeExport: process.env.SBTLTV_MPV_GL_FINISH === '1',
+      finishBeforeExport,
       // Linux only: the stats overlay gives testers decode and drop numbers on
       // the video (I key) without a terminal. mpv's software-fallback threshold
       // is left at its default: on Intel iHD the zero-copy surfaces fail to
       // decode at all (green frames), so a higher threshold only prolonged that
       // before the working copy path took over (tested on 0.11.1 pre-release).
       statsOverlay: isLinux,
-      // Linux performance mode (Settings > Security): cheaper mpv rendering for
+      // Linux performance mode (Settings > Video Player): cheaper mpv rendering for
       // GPUs that cannot keep up with the in-window pipeline. Read per launch.
       performanceMode: isLinux && storage.getSettings().linuxPerformanceMode === true,
     });
