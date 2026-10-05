@@ -21,7 +21,8 @@ interface SharedTextureFrameMetadata {
 /**
  * MpvTextureBridge - Integrates mpv-texture with Electron's sharedTexture API
  */
-const SKIP_TRANSFER = process.platform === 'linux' && process.env.SBTLTV_SKIP_TRANSFER === '1';
+// globalThis: the bridge tests load this module in a sandbox without process.
+const SKIP_TRANSFER = globalThis.process?.platform === 'linux' && globalThis.process.env.SBTLTV_SKIP_TRANSFER === '1';
 
 export class MpvTextureBridge {
   private mpv: MpvTexture | null = null;
