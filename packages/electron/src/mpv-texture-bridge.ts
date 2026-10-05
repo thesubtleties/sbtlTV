@@ -23,6 +23,7 @@ interface SharedTextureFrameMetadata {
  */
 // globalThis: the bridge tests load this module in a sandbox without process.
 const SKIP_TRANSFER = globalThis.process?.platform === 'linux' && globalThis.process.env.SBTLTV_SKIP_TRANSFER === '1';
+const SKIP_SEND = globalThis.process?.platform === 'linux' && globalThis.process.env.SBTLTV_SKIP_SEND === '1';
 
 export class MpvTextureBridge {
   private mpv: MpvTexture | null = null;
@@ -265,6 +266,10 @@ export class MpvTextureBridge {
       });
       this.outstandingTextureReferences++;
       releaseManagedByElectron = textureInfo.kind === 'nativePixmap';
+      // Memory bisection (Linux test runs only): import, then release at once
+      // without sending; finally{} drops the reference and Electron's release
+      // callback hands the buffer back to mpv. The window stays black.
+      if (SKIP_SEND) return;
 
       const t1 = performance.now();
 
