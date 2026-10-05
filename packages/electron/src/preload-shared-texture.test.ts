@@ -109,6 +109,8 @@ function mountVideoCanvas(api: SharedTextureApiStub, options: CanvasHarnessOptio
   vm.runInNewContext(transpile('../../ui/src/hooks/framePacer.ts'), { exports: pacerExports });
   const perfMarksExports: Record<string, unknown> = {};
   vm.runInNewContext(transpile('../../ui/src/utils/perfMarks.ts'), { exports: perfMarksExports, performance });
+  const audioDelayExports: Record<string, unknown> = {};
+  vm.runInNewContext(transpile('../../ui/src/hooks/audioDelaySync.ts'), { exports: audioDelayExports });
   const exports: Record<string, unknown> = {};
   vm.runInNewContext(compiled, {
     exports, console, performance, setTimeout, clearTimeout,
@@ -118,6 +120,7 @@ function mountVideoCanvas(api: SharedTextureApiStub, options: CanvasHarnessOptio
     require(specifier: string) {
       if (specifier === '../hooks/framePacer') return pacerExports;
       if (specifier === '../utils/perfMarks') return perfMarksExports;
+      if (specifier === '../hooks/audioDelaySync') return audioDelayExports;
       if (specifier === 'react') return {
         useRef: (current: unknown) => ({ current }),
         useCallback: (callback: unknown) => callback,

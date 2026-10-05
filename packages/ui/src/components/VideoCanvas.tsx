@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { perfMeasure, perfStart, setPerfMarksEnabled } from '../utils/perfMarks';
+import { createAudioDelayState, nextAudioDelay, type AudioDelayState } from '../hooks/audioDelaySync';
 import { FramePacer } from '../hooks/framePacer';
 
 interface VideoCanvasProps {
@@ -279,7 +280,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
   const freeSlotsRef = useRef<PacedSlot[]>([]);
   const shownSlotRef = useRef<PacedSlot | null>(null);
   const presentStatsRef = useRef<PresentStats>(createPresentStats());
-  const reportedDelayRef = useRef(0);
+  const audioDelayRef = useRef<AudioDelayState>(createAudioDelayState());
   const flipRef = useRef({ flipY, flipX });
   flipRef.current = { flipY, flipX };
   // The 2s cadence line is only built and sent while debug logging is on.
@@ -291,7 +292,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     if (shownSlotRef.current) freeSlotsRef.current.push(shownSlotRef.current);
     shownSlotRef.current = null;
     presentStatsRef.current = createPresentStats();
-    reportedDelayRef.current = 0;
+    audioDelayRef.current = createAudioDelayState();
   }, []);
 
   // Forget every paced slot (context lost or destroyed; textures die with it).
@@ -433,11 +434,9 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
         pacer.skipped = 0;
         presentStatsRef.current = { ...createPresentStats(), lastAt: present.lastAt };
         // Tell main how far behind arrival the picture is, so mpv can delay the
-        // audio by the same amount. Only when it moved noticeably.
-        if (present.delayCount >= 10 && Math.abs(delay - reportedDelayRef.current) > 15) {
-          reportedDelayRef.current = delay;
-          window.sharedTexture?.reportPresentationDelay?.(delay);
-        }
+        // audio by the same amount: once per stream, then only sustained changes.
+        const audioDelay = nextAudioDelay(audioDelayRef.current, delay, present.delayCount);
+        if (audioDelay !== null) window.sharedTexture?.reportPresentationDelay?.(audioDelay);
       }
       if (debugEnabledRef.current) {
         // Chromium-only heap counters: a falling "used" between lines marks a major GC.
@@ -529,14 +528,6 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
       }
       if (shownSlotRef.current) freeSlotsRef.current.push(shownSlotRef.current);
       shownSlotRef.current = slot;
-      // First picture of a stream: delay the audio by the expected steady lag
-      // (about targetDepth - 0.5 frames) at once, rather than in steps as the
-      // measured lag settles; the 2s measurement then corrects only real drift.
-      if (reportedDelayRef.current === 0) {
-        const expected = (pacerRef.current.targetDepth - 0.5) * pacerRef.current.intervalMs;
-        reportedDelayRef.current = expected;
-        window.sharedTexture?.reportPresentationDelay?.(expected);
-      }
       const present = presentStatsRef.current;
       if (present.lastAt > 0) present.intervals.push(now - present.lastAt);
       present.lastAt = now;
