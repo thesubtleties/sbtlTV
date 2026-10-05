@@ -3,14 +3,22 @@
 // Every 2s: CPU, memory, open fds and threads for each Electron process; the
 // busiest processes on the whole machine (to catch the X server, compositor
 // or anything else); total CPU, average CPU clock and Intel GPU clock; the
-// main thread's worst event loop delay. Main-process GC pauses are logged as
-// they happen. A Chromium trace runs in a ring buffer and is saved to the log
-// folder a few seconds after the first transfer stall, so the GPU process,
-// renderer and GC activity around a stall can be read in a trace viewer.
+// main thread's worst event loop delay; a breakdown of main-process memory
+// (V8 heap, external, global handles, anonymous/file/shared RSS). Main-process
+// GC pauses are logged as they happen.
+//
+// Opt-in extras for a test run (environment variables):
+// - SBTLTV_TRACE=1: a Chromium trace runs in a ring buffer and is saved to the
+//   log folder a few seconds after the first transfer stall (or at 5 minutes).
+//   Heavy: the file is a few hundred MB and saving it pins a core for seconds.
+// - SBTLTV_FORCE_GC=<seconds>: force a full main-process GC on that interval
+//   and log memory before and after, to tell uncollected garbage from a leak.
 import { app, contentTracing } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { constants, monitorEventLoopDelay, PerformanceObserver } from 'node:perf_hooks';
+import v8 from 'node:v8';
+import vm from 'node:vm';
 
 type Log = (message: string) => void;
 
@@ -24,6 +32,8 @@ const STALL_SEND_MS = 120;
 const TRACE_TAIL_MS = 8000;
 const TRACE_FALLBACK_AFTER_MS = 5 * 60_000;
 const TRACE_BUFFER_KB = 64 * 1024;
+const TRACE_ENABLED = process.env.SBTLTV_TRACE === '1';
+const FORCE_GC_SECONDS = Number(process.env.SBTLTV_FORCE_GC) || 0;
 const TRACE_CATEGORIES = [
   'toplevel',
   'gpu',
@@ -104,6 +114,29 @@ function findGpuFreqPath(): string | null {
   return null;
 }
 
+function readRssBreakdown(): string {
+  try {
+    const status = fs.readFileSync('/proc/self/status', 'utf8');
+    const field = (name: string) => {
+      const match = status.match(new RegExp(`^${name}:\\s+(\\d+) kB`, 'm'));
+      return match ? Math.round(Number(match[1]) / 1024) : '?';
+    };
+    return `rssAnon:${field('RssAnon')} rssFile:${field('RssFile')} rssShmem:${field('RssShmem')}`;
+  } catch {
+    return 'rss:?';
+  }
+}
+
+const toMb = (bytes: number) => (bytes / 1048576).toFixed(1);
+
+/** Main-process memory: where the bytes are (V8 heap vs native vs mapped). */
+function mainMemorySummary(): string {
+  const usage = process.memoryUsage();
+  const heap = v8.getHeapStatistics() as v8.HeapInfo & { used_global_handles_size?: number };
+  const handles = heap.used_global_handles_size !== undefined ? ` globalHandles:${toMb(heap.used_global_handles_size)}` : '';
+  return `heap:${toMb(usage.heapUsed)}/${toMb(usage.heapTotal)} external:${toMb(usage.external)} arrayBuffers:${toMb(usage.arrayBuffers)}${handles} ${readRssBreakdown()} (MB)`;
+}
+
 function gcKindName(kind: number | undefined): string {
   switch (kind) {
     case constants.NODE_PERFORMANCE_GC_MAJOR: return 'major';
@@ -126,6 +159,7 @@ export class LinuxPerfProbe {
   private tracing = false;
   private traceSaved = false;
   private traceStopTimer: ReturnType<typeof setTimeout> | null = null;
+  private forceGcTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly log: Log) {}
 
@@ -154,12 +188,30 @@ export class LinuxPerfProbe {
     this.gcObserver.observe({ entryTypes: ['gc'] });
 
     this.timer = setInterval(() => this.tick(), TICK_MS);
-    this.log(`[perf] probe started (gpu clock ${this.gpuFreqPath ?? 'unavailable'})`);
+    this.log(`[perf] probe started (gpu clock ${this.gpuFreqPath ?? 'unavailable'}; trace ${TRACE_ENABLED ? 'on' : 'off'}; forced GC ${FORCE_GC_SECONDS > 0 ? `every ${FORCE_GC_SECONDS}s` : 'off'})`);
+
+    if (FORCE_GC_SECONDS > 0) {
+      v8.setFlagsFromString('--expose-gc');
+      const gc = vm.runInNewContext('gc') as (() => void) | undefined;
+      if (typeof gc === 'function') {
+        this.forceGcTimer = setInterval(() => {
+          const before = mainMemorySummary();
+          const startedAt = performance.now();
+          gc();
+          const ms = performance.now() - startedAt;
+          this.log(`[perf] forced gc ${ms.toFixed(0)}ms | before ${before} | after ${mainMemorySummary()}`);
+        }, FORCE_GC_SECONDS * 1000);
+      } else {
+        this.log('[perf] forced gc unavailable');
+      }
+    }
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.forceGcTimer) clearInterval(this.forceGcTimer);
+    this.forceGcTimer = null;
     this.gcObserver?.disconnect();
     this.gcObserver = null;
     this.loopDelay?.disable();
@@ -174,7 +226,7 @@ export class LinuxPerfProbe {
     if (!this.timer || this.playbackStartedAt > 0) return;
     this.playbackStartedAt = Date.now();
     this.log('[perf] playback session started');
-    if (this.traceSaved || this.tracing) return;
+    if (!TRACE_ENABLED || this.traceSaved || this.tracing) return;
     contentTracing.startRecording({
       included_categories: TRACE_CATEGORIES,
       recording_mode: 'record-continuously',
@@ -244,6 +296,7 @@ export class LinuxPerfProbe {
       parts.push(`${name}[${metric.pid}] cpu:${metric.cpu.percentCPUUsage.toFixed(0)}% mem:${Math.round(metric.memory.workingSetSize / 1024)}MB fds:${fds ?? '?'} thr:${stat?.threads ?? '?'}`);
     }
     this.log(`[perf]${since} procs ${parts.join(' | ')}`);
+    this.log(`[perf]${since} main memory ${mainMemorySummary()}`);
 
     // Whole machine: busiest processes over the window, total CPU, clocks.
     const current = this.sampleSystemProcesses();
