@@ -21,6 +21,8 @@ interface SharedTextureFrameMetadata {
 /**
  * MpvTextureBridge - Integrates mpv-texture with Electron's sharedTexture API
  */
+const SKIP_TRANSFER = process.platform === 'linux' && process.env.SBTLTV_SKIP_TRANSFER === '1';
+
 export class MpvTextureBridge {
   private mpv: MpvTexture | null = null;
   private window: BrowserWindow | null = null;
@@ -179,6 +181,12 @@ export class MpvTextureBridge {
     }
 
     this.stats.received++;
+    // Memory bisection (Linux test runs only): hand each frame straight back
+    // to mpv without importing it into Chromium. The window stays black.
+    if (SKIP_TRANSFER) {
+      this.releaseFrame(textureInfo);
+      return;
+    }
     const frame = { textureInfo, generation: this.frameGeneration } satisfies QueuedFrame;
 
     if (this.activeSends >= this.maxConcurrentSends) {
