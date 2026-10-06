@@ -109,4 +109,28 @@ describe('FramePacer', () => {
     expect(pacer.reset()).toEqual([3, 4, 5]);
     expect(pacer.depth).toBe(0);
   });
+
+  it('starts a 60 fps stream at its own rate, without skipping frames', () => {
+    const { pacer, underrunTimes } = simulate(steady(180, 1000 / 60));
+    expect(pacer.intervalMs).toBeGreaterThan(15);
+    expect(pacer.intervalMs).toBeLessThan(18.5);
+    expect(pacer.skipped).toBe(0);
+    expect(underrunTimes).toEqual([]);
+  });
+
+  it('measures each stream afresh after reset', () => {
+    const pacer = new FramePacer<number>();
+    for (let i = 0; i < 60; i++) pacer.push(i, i * (1000 / 60));
+    pacer.reset();
+    expect(pacer.intervalMs).toBe(40);
+    for (let i = 0; i < 4; i++) pacer.push(i, 1000 + i * 40);
+    expect(pacer.intervalMs).toBeCloseTo(40, 5);
+  });
+
+  it('shows a lone frame (a seek while paused) once it has waited longer than a full queue', () => {
+    const pacer = new FramePacer<number>();
+    pacer.push(7, 1000);
+    expect(pacer.tick(1050, REFRESH)).toBeNull(); // still priming
+    expect(pacer.tick(1000 + 4 * 40 + 1, REFRESH)).toBe(7);
+  });
 });

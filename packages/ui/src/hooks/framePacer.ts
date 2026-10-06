@@ -12,7 +12,14 @@
  *
  * Latency is set by queue depth, not by elapsed time: a frame waits behind the
  * frames ahead of it, so a stall does not accumulate delay. After an underrun
- * the pacer re-primes to targetDepth before presenting again.
+ * the pacer re-primes to targetDepth before presenting again, unless the
+ * source goes quiet first (a seek or frame step while paused delivers a single
+ * frame): a frame that has waited longer than a full queue would take is shown
+ * anyway.
+ *
+ * The frame interval is measured from arrivals. While priming after a reset
+ * it is the plain mean of the arrival gaps, so a 50 or 60 fps stream does not
+ * start out paced at the 25 fps default; once presenting it follows slowly.
  */
 
 export interface FramePacerOptions {
@@ -32,14 +39,20 @@ export class FramePacer<T> {
   underruns = 0;
   skipped = 0;
 
-  private queue: T[] = [];
+  private readonly initialIntervalMs: number;
+  private queue: { item: T; at: number }[] = [];
   private nextDueAt: number | null = null;
   private lastArrivalAt: number | null = null;
+  /** False until the first present after a reset; arrival gaps until then seed intervalMs */
+  private started = false;
+  private primeGapSum = 0;
+  private primeGapCount = 0;
 
   constructor(options: FramePacerOptions = {}) {
     this.targetDepth = Math.max(1, options.targetDepth ?? 4);
     this.maxDepth = Math.max(this.targetDepth, options.maxDepth ?? 6);
-    this.intervalMs = options.initialIntervalMs ?? 40;
+    this.initialIntervalMs = options.initialIntervalMs ?? 40;
+    this.intervalMs = this.initialIntervalMs;
   }
 
   get depth(): number {
@@ -52,17 +65,25 @@ export class FramePacer<T> {
    */
   push(item: T, now: number): T[] {
     if (this.lastArrivalAt !== null) {
-      // Late frames are followed by early ones, so clamp before averaging to
-      // keep one stall from skewing the rate.
       const delta = now - this.lastArrivalAt;
-      const clamped = Math.min(Math.max(delta, this.intervalMs * 0.5), this.intervalMs * 2);
-      this.intervalMs += (clamped - this.intervalMs) * 0.05;
+      if (!this.started) {
+        // Priming: no estimate yet worth keeping, take the mean gap (bounded to
+        // 10-100 fps so a burst or a hiccup cannot produce something absurd).
+        this.primeGapSum += Math.min(Math.max(delta, 10), 100);
+        this.primeGapCount++;
+        this.intervalMs = this.primeGapSum / this.primeGapCount;
+      } else {
+        // Late frames are followed by early ones, so clamp before averaging to
+        // keep one stall from skewing the rate.
+        const clamped = Math.min(Math.max(delta, this.intervalMs * 0.5), this.intervalMs * 2);
+        this.intervalMs += (clamped - this.intervalMs) * 0.05;
+      }
     }
     this.lastArrivalAt = now;
-    this.queue.push(item);
+    this.queue.push({ item, at: now });
     const evicted: T[] = [];
     while (this.queue.length > this.maxDepth) {
-      evicted.push(this.queue.shift() as T);
+      evicted.push((this.queue.shift() as { item: T }).item);
       this.skipped++;
     }
     return evicted;
@@ -70,9 +91,9 @@ export class FramePacer<T> {
 
   /** Remove the oldest queued frame (to reuse its resources); counts as a skip. */
   dropOldest(): T | undefined {
-    const item = this.queue.shift();
-    if (item !== undefined) this.skipped++;
-    return item;
+    const entry = this.queue.shift();
+    if (entry !== undefined) this.skipped++;
+    return entry?.item;
   }
 
   /**
@@ -81,18 +102,25 @@ export class FramePacer<T> {
    */
   tick(now: number, refreshMs: number): T | null {
     if (this.nextDueAt === null) {
-      if (this.queue.length < this.targetDepth) return null;
+      const oldest = this.queue[0];
+      if (oldest === undefined) return null;
+      // Prime to targetDepth, but do not hold frames forever when the source
+      // has gone quiet (paused seek, frame step, the last frames of a stream).
+      const waitedTooLong = now - oldest.at > this.targetDepth * this.intervalMs;
+      if (this.queue.length < this.targetDepth && !waitedTooLong) return null;
       this.nextDueAt = now;
+      this.started = true;
     }
     // Present on the refresh closest to the due time.
     if (now + refreshMs / 2 < this.nextDueAt) return null;
 
-    const item = this.queue.shift();
-    if (item === undefined) {
+    const entry = this.queue.shift();
+    if (entry === undefined) {
       this.underruns++;
       this.nextDueAt = null;
       return null;
     }
+    const item = entry.item;
 
     let next = this.nextDueAt + this.intervalMs;
     // Above the steady depth (targetDepth - 1 after a present): present a little
@@ -107,10 +135,14 @@ export class FramePacer<T> {
 
   /** Drop everything (stream change, context loss). Returns queued frames to release. */
   reset(): T[] {
-    const items = this.queue;
+    const items = this.queue.map((entry) => entry.item);
     this.queue = [];
     this.nextDueAt = null;
     this.lastArrivalAt = null;
+    this.intervalMs = this.initialIntervalMs;
+    this.started = false;
+    this.primeGapSum = 0;
+    this.primeGapCount = 0;
     return items;
   }
 }

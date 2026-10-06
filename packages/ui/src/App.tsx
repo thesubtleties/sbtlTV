@@ -591,6 +591,9 @@ function App() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
         return;
       }
+      // Leave Ctrl/Alt/Cmd combinations to the system and Chromium (Ctrl+F,
+      // Cmd+M, Ctrl+Shift+I...); Shift alone is part of some bindings (Shift+I).
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
 
       switch (e.key) {
         case ' ':

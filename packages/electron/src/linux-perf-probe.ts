@@ -187,7 +187,15 @@ export class LinuxPerfProbe {
     });
     this.gcObserver.observe({ entryTypes: ['gc'] });
 
-    this.timer = setInterval(() => this.tick(), TICK_MS);
+    this.timer = setInterval(() => {
+      // Diagnostics must never take the app down (an uncaught throw here
+      // would raise an error dialog every two seconds).
+      try {
+        this.tick();
+      } catch (error) {
+        this.log(`[perf] tick failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }, TICK_MS);
     this.log(`[perf] probe started (gpu clock ${this.gpuFreqPath ?? 'unavailable'}; trace ${TRACE_ENABLED ? 'on' : 'off'}; forced GC ${FORCE_GC_SECONDS > 0 ? `every ${FORCE_GC_SECONDS}s` : 'off'})`);
 
     if (FORCE_GC_SECONDS > 0) {
@@ -233,6 +241,12 @@ export class LinuxPerfProbe {
       trace_buffer_size_in_kb: TRACE_BUFFER_KB,
     }).then(() => {
       this.tracing = true;
+      // Stopped while the recording was starting: save it now rather than
+      // leaving Chromium tracing with nothing left to stop it.
+      if (!this.timer) {
+        void this.saveTrace('probe stopped');
+        return;
+      }
       this.log(`[perf] trace recording (ring buffer ${TRACE_BUFFER_KB / 1024}MB)`);
     }).catch((error: unknown) => {
       this.log(`[perf] trace start failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -259,6 +273,9 @@ export class LinuxPerfProbe {
     const target = path.join(app.getPath('logs'), `sbtltv-trace-${stamp}.json`);
     try {
       const written = await contentTracing.stopRecording(target);
+      // Also on the terminal: when debug logging was just switched off, the
+      // log file is already closed by the time the save completes.
+      console.log(`[perf] trace saved (${reason}): ${written}`);
       this.log(`[perf] trace saved (${reason}): ${written}`);
     } catch (error) {
       this.log(`[perf] trace save failed: ${error instanceof Error ? error.message : String(error)}`);

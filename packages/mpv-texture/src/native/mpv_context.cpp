@@ -728,6 +728,14 @@ void MpvContext::handlePropertyChange(mpv_event_property* prop) {
                 m_displayHeight = newHeight;
                 scheduleResize();
             }
+        } else if ((strcmp(prop->name, "dwidth") == 0 || strcmp(prop->name, "dheight") == 0)
+                   && prop->format == MPV_FORMAT_NONE) {
+            // The video was unloaded (end of file, stream change). Forget the
+            // display size so the next stream's first resize uses its own coded
+            // size until both of its display dimensions are known, rather than
+            // the previous stream's.
+            m_displayWidth = 0;
+            m_displayHeight = 0;
         } else if (isCachedProperty(prop->name)) {
             // MPV_FORMAT_NONE means the property is unavailable right now
             // (no decoder yet); drop the stale value so readers see "unknown".
@@ -807,7 +815,10 @@ void MpvContext::renderLoop() {
         }
 
         // Handle texture resize on render thread (GL context is current here)
-        if (m_needsResize && m_textureShare) {
+        // Clear the request before reading the size: a resize scheduled while
+        // this one runs sets the flag again and is handled on the next pass,
+        // instead of being wiped by a later clear.
+        if (m_textureShare && m_needsResize.exchange(false)) {
             uint32_t newWidth = m_pendingWidth.load();
             uint32_t newHeight = m_pendingHeight.load();
             if (newWidth > 0 && newHeight > 0) {
@@ -816,7 +827,6 @@ void MpvContext::renderLoop() {
                 }
                 m_textureShare->resizeTexture(newWidth, newHeight);
             }
-            m_needsResize = false;
         }
 
         // Check if we can render

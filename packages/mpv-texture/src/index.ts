@@ -137,7 +137,7 @@ export interface MpvConfig {
   gpuDeviceId?: number;
   /** Emit native GPU selection and DMA-BUF diagnostics */
   debugLogging?: boolean;
-  /** Block for GPU completion before exporting each frame (diagnostic only) */
+  /** Block for GPU completion before exporting each frame. Needed where the importer does not wait on the GL work (NVIDIA on Linux, enabled automatically there by main) */
   finishBeforeExport?: boolean;
   /** Consecutive hardware decode errors tolerated before mpv drops the hwdec (mpv default 3) */
   softwareFallbackErrors?: number;

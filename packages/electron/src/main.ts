@@ -12,6 +12,7 @@ import { selectChromiumGpuIdentity } from './gpu-selection.js';
 import { startDataHost, type DataHost } from './data/data-host.js';
 import { isTransientDecodeError } from './mpv-error-filter.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
+import { StatusThrottle } from './status-throttle.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -128,13 +129,22 @@ const SOCKET_PATH = process.platform === 'win32'
   ? `\\\\.\\pipe\\mpv-socket-${process.pid}`
   : `/tmp/mpv-socket-${process.pid}`;
 
-// Throttle status updates to renderer (max once per 100ms)
-let lastStatusUpdate = 0;
+// Status updates to the renderer: position-only ticks (mpv reports them at
+// frame rate) at most once per 100ms, the latest held-back tick always sent;
+// pause, mute, volume, duration and size changes at once. One throttle per
+// path (native bridge, external mpv socket).
 const STATUS_THROTTLE_MS = 100;
-// Native path: the last status forwarded, so position-only ticks (which mpv
-// reports at frame rate) can be rate limited while pause, mute, volume,
-// duration and size changes still go out at once.
-let lastNativeStatusSent: { at: number; playing: boolean; muted: boolean; volume: number; duration: number; width: number; height: number } | null = null;
+interface ThrottledStatus { playing: boolean; muted: boolean; volume: number; duration: number; width?: number; height?: number }
+const isDiscreteStatusChange = (previous: ThrottledStatus, next: ThrottledStatus) =>
+  previous.playing !== next.playing || previous.muted !== next.muted || previous.volume !== next.volume
+  || previous.duration !== next.duration || previous.width !== next.width || previous.height !== next.height;
+type NativeMpvStatus = Parameters<Parameters<MpvTextureBridgeType['onStatus']>[0]>[0];
+let nativeStatusThrottle: StatusThrottle<NativeMpvStatus> | null = null;
+const externalStatusThrottle = new StatusThrottle<typeof mpvState>(
+  (status) => sendToRenderer('mpv-status', status),
+  isDiscreteStatusChange,
+  STATUS_THROTTLE_MS,
+);
 
 // Debug logging infrastructure
 let debugLogStream: fs.WriteStream | null = null;
@@ -443,6 +453,7 @@ function killMpv(): void {
       debugLog(`Error destroying native bridge: ${error instanceof Error ? error.message : error}`, 'mpv');
     }
     mpvBridge = null;
+    nativeStatusThrottle?.reset();
     syncPlaybackDiagnostics();
     useNativeMpv = false;
   }
@@ -789,6 +800,13 @@ async function initNativeMpv(): Promise<boolean> {
     syncPlaybackDiagnostics();
 
     // Forward status updates to renderer
+    nativeStatusThrottle?.reset();
+    const throttle = new StatusThrottle<NativeMpvStatus>(
+      (status) => { if (!nativeRecoveryInProgress && mpvBridge === bridge) sendToRenderer('mpv-status', status); },
+      isDiscreteStatusChange,
+      STATUS_THROTTLE_MS,
+    );
+    nativeStatusThrottle = throttle;
     bridge.onStatus((status) => {
       if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
       // Sync local state for getStatus calls
@@ -824,19 +842,9 @@ async function initNativeMpv(): Promise<boolean> {
       }
 
       // mpv reports time-pos on every frame. Each forwarded status is an IPC
-      // message plus a React commit on the renderer thread that also has to
-      // receive and draw every video frame, so position-only ticks are capped
-      // at 10/s (the external path has the same cap); anything discrete goes
-      // out immediately.
-      const now = Date.now();
-      const last = lastNativeStatusSent;
-      const discreteChange = !last
-        || last.playing !== status.playing || last.muted !== status.muted || last.volume !== status.volume
-        || last.duration !== status.duration || last.width !== status.width || last.height !== status.height;
-      if (discreteChange || !last || now - last.at >= STATUS_THROTTLE_MS) {
-        lastNativeStatusSent = { at: now, playing: status.playing, muted: status.muted, volume: status.volume, duration: status.duration, width: status.width, height: status.height };
-        sendToRenderer('mpv-status', status);
-      }
+      // message plus work on the renderer thread that also has to receive and
+      // draw every video frame, so position-only ticks are capped at 10/s.
+      throttle.push(status);
     });
 
     // Forward errors to renderer
@@ -902,6 +910,7 @@ async function resetNativePlayback(): Promise<void> {
       }),
     ]);
     mpvBridge = null;
+    nativeStatusThrottle?.reset();
     syncPlaybackDiagnostics();
     currentMedia = null;
     Object.assign(mpvState, { playing: false, position: 0, duration: 0, width: 0, height: 0 });
@@ -1106,12 +1115,9 @@ function handleMpvMessage(msg: MpvMessage): void {
         break;
     }
 
-    // Throttle updates to renderer
-    const now = Date.now();
-    if (now - lastStatusUpdate > STATUS_THROTTLE_MS) {
-      lastStatusUpdate = now;
-      sendToRenderer('mpv-status', mpvState);
-    }
+    // Throttle updates to renderer. A copy: mpvState keeps changing while a
+    // held-back update waits.
+    externalStatusThrottle.push({ ...mpvState });
   }
 
   // Handle request responses
