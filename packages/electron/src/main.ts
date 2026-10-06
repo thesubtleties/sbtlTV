@@ -823,7 +823,7 @@ async function initNativeMpv(): Promise<boolean> {
       // drops on AMD" report can be told apart from a software-decode report.
       // The previous stream's dimensions linger until the new decoder is up, so
       // wait for hwdec-current to exist before logging the new stream's decode.
-      if (status.width > 0 && decodeLoggedGeneration !== loadGeneration && bridge?.getProperty('hwdec-current') !== undefined) {
+      if (status.width > 0 && status.height > 0 && decodeLoggedGeneration !== loadGeneration && bridge?.getProperty('hwdec-current') !== undefined) {
         decodeLoggedGeneration = loadGeneration;
         debugLog(`Decoding ${status.width}x${status.height} ${bridge.decodeSummary()}`, 'mpv');
         perfProbe?.notePlaybackStarted();

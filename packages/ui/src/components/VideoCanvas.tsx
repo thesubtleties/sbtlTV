@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { perfMeasure, perfStart, setPerfMarksEnabled } from '../utils/perfMarks';
-import { createAudioDelayState, nextAudioDelay, type AudioDelayState } from '../hooks/audioDelaySync';
+import { createAudioDelayState, isCleanWindow, nextAudioDelay, type AudioDelayState } from '../hooks/audioDelaySync';
 import { FramePacer } from '../hooks/framePacer';
 
 interface VideoCanvasProps {
@@ -293,6 +293,11 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     shownSlotRef.current = null;
     presentStatsRef.current = createPresentStats();
     audioDelayRef.current = createAudioDelayState();
+    // Start the new stream's measurements clean (the old stream's last frames
+    // draining would otherwise show up as underruns and a huge hold).
+    pacerRef.current.underruns = 0;
+    pacerRef.current.skipped = 0;
+    cadenceRef.current = createFrameCadenceStats();
   }, []);
 
   // Forget every paced slot (context lost or destroyed; textures die with it).
@@ -430,12 +435,14 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
         const pacer = pacerRef.current;
         paced = ` | shown:${present.delayCount} interval p50/p95/max:${shownAt(0.5).toFixed(1)}/${shownAt(0.95).toFixed(1)}/${shownAt(1).toFixed(1)}ms ` +
           `delay:${delay.toFixed(0)}ms depth:${pacer.depth} underruns:${pacer.underruns} skipped:${pacer.skipped}`;
+        const clean = isCleanWindow({ underruns: pacer.underruns, skipped: pacer.skipped, maxShownMs: shownAt(1), intervalMs: pacer.intervalMs });
         pacer.underruns = 0;
         pacer.skipped = 0;
         presentStatsRef.current = { ...createPresentStats(), lastAt: present.lastAt };
         // Tell main how far behind arrival the picture is, so mpv can delay the
-        // audio by the same amount: once per stream, then only sustained changes.
-        const audioDelay = nextAudioDelay(audioDelayRef.current, delay, present.delayCount);
+        // audio by the same amount: once per stream, then only sustained
+        // changes, and only from windows of steady playback.
+        const audioDelay = clean ? nextAudioDelay(audioDelayRef.current, delay, present.delayCount) : null;
         if (audioDelay !== null) window.sharedTexture?.reportPresentationDelay?.(audioDelay);
       }
       if (debugEnabledRef.current) {

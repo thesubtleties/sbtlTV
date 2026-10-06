@@ -15,7 +15,9 @@
  * the pacer re-primes to targetDepth before presenting again, unless the
  * source goes quiet first (a seek or frame step while paused delivers a single
  * frame): a frame that has waited longer than a full queue would take is shown
- * anyway.
+ * anyway. That fallback applies only once the stream has started; the first
+ * picture of a stream always waits for a full queue, because decoders often
+ * deliver one frame and then pause briefly while they warm up.
  *
  * The frame interval is measured from arrivals. While priming after a reset
  * it is the plain mean of the arrival gaps, so a 50 or 60 fps stream does not
@@ -106,7 +108,7 @@ export class FramePacer<T> {
       if (oldest === undefined) return null;
       // Prime to targetDepth, but do not hold frames forever when the source
       // has gone quiet (paused seek, frame step, the last frames of a stream).
-      const waitedTooLong = now - oldest.at > this.targetDepth * this.intervalMs;
+      const waitedTooLong = this.started && now - oldest.at > this.targetDepth * this.intervalMs;
       if (this.queue.length < this.targetDepth && !waitedTooLong) return null;
       this.nextDueAt = now;
       this.started = true;

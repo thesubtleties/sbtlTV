@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createAudioDelayState, nextAudioDelay } from './audioDelaySync';
+import { createAudioDelayState, isCleanWindow, nextAudioDelay } from './audioDelaySync';
 
 describe('nextAudioDelay', () => {
   it('sets the first delay from the first full window, at any frame rate', () => {
@@ -40,5 +40,18 @@ describe('nextAudioDelay', () => {
     expect(nextAudioDelay(state, 40, 100)).toBeNull();
     expect(state.reported).toBe(100);
     expect(state.candidate).toBe(40);
+  });
+});
+
+describe('isCleanWindow', () => {
+  it('accepts steady 25 and 60 fps windows on a 60 Hz display', () => {
+    expect(isCleanWindow({ underruns: 0, skipped: 0, maxShownMs: 66.7, intervalMs: 40 })).toBe(true);
+    expect(isCleanWindow({ underruns: 0, skipped: 0, maxShownMs: 23, intervalMs: 16.7 })).toBe(true);
+  });
+
+  it('rejects startup bursts, pauses, seeks and stalls', () => {
+    expect(isCleanWindow({ underruns: 0, skipped: 5, maxShownMs: 46, intervalMs: 41.7 })).toBe(false); // burst
+    expect(isCleanWindow({ underruns: 1, skipped: 0, maxShownMs: 46, intervalMs: 41.7 })).toBe(false); // pause
+    expect(isCleanWindow({ underruns: 0, skipped: 0, maxShownMs: 4395, intervalMs: 41.7 })).toBe(false); // resume
   });
 });

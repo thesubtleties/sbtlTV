@@ -52,3 +52,13 @@ export function nextAudioDelay(state: AudioDelayState, windowDelayMs: number, sa
   state.candidate = windowDelayMs;
   return null;
 }
+
+/**
+ * Whether a measurement window reflects steady playback. Windows with an
+ * underrun, a skipped frame, or a frame held far longer than the frame
+ * interval (startup burst, pause, seek, stall) measure the event rather than
+ * the pacing lag, so they must not move the audio delay.
+ */
+export function isCleanWindow(stats: { underruns: number; skipped: number; maxShownMs: number; intervalMs: number }): boolean {
+  return stats.underruns === 0 && stats.skipped === 0 && stats.maxShownMs <= stats.intervalMs * 3;
+}

@@ -129,8 +129,19 @@ describe('FramePacer', () => {
 
   it('shows a lone frame (a seek while paused) once it has waited longer than a full queue', () => {
     const pacer = new FramePacer<number>();
+    for (let i = 0; i < 4; i++) pacer.push(i, i * 40);
+    // Playback pauses: the refresh loop keeps ticking until the queue runs dry.
+    for (let now = 120; pacer.underruns === 0; now += REFRESH) pacer.tick(now, REFRESH);
     pacer.push(7, 1000);
-    expect(pacer.tick(1050, REFRESH)).toBeNull(); // still priming
-    expect(pacer.tick(1000 + 4 * 40 + 1, REFRESH)).toBe(7);
+    expect(pacer.tick(1050, REFRESH)).toBeNull(); // re-priming
+    expect(pacer.tick(1000 + pacer.targetDepth * pacer.intervalMs + 1, REFRESH)).toBe(7);
+  });
+
+  it('still waits for a full queue before the first picture of a stream', () => {
+    const pacer = new FramePacer<number>();
+    pacer.push(0, 0); // decoder warm-up: one frame, then a pause
+    expect(pacer.tick(400, REFRESH)).toBeNull();
+    for (let i = 1; i < 4; i++) pacer.push(i, 400 + i * 40);
+    expect(pacer.tick(520, REFRESH)).toBe(0);
   });
 });
