@@ -410,6 +410,12 @@ bool MpvContext::create(const MpvConfig& config) {
     mpvApi().observeProperty(m_mpv, 5, "duration", MPV_FORMAT_DOUBLE);
     mpvApi().observeProperty(m_mpv, 6, "width", MPV_FORMAT_INT64);
     mpvApi().observeProperty(m_mpv, 7, "height", MPV_FORMAT_INT64);
+#ifdef __linux__
+    // Linux only for now: on macOS these observers coincided with a
+    // VideoToolbox crash on channel changes (decoder session torn down while a
+    // frame was in flight) that 0.11.0 never showed, so macOS keeps 0.11.0's
+    // behaviour until that is understood.
+    //
     // Display size after aspect correction (an anamorphic 720x576 stream shows
     // as 1047x576). The render target must use it, or mpv letterboxes inside a
     // coded-size texture and the canvas letterboxes that texture again.
@@ -422,6 +428,7 @@ bool MpvContext::create(const MpvConfig& config) {
     for (const char* name : kCachedProperties) {
         mpvApi().observeProperty(m_mpv, 0, name, MPV_FORMAT_STRING);
     }
+#endif
 
     // Start threads
     m_running = true;
@@ -607,6 +614,7 @@ bool MpvContext::isCachedProperty(const char* name) {
 
 bool MpvContext::getPropertyString(const std::string& name, std::string& value) const {
     if (!m_mpv) return false;
+#ifdef __linux__
     if (isCachedProperty(name.c_str())) {
         std::lock_guard<std::mutex> lock(m_statusMutex);
         const auto it = m_propertyCache.find(name);
@@ -614,6 +622,7 @@ bool MpvContext::getPropertyString(const std::string& name, std::string& value) 
         value = it->second;
         return true;
     }
+#endif
     char* raw = mpvApi().getPropertyString(m_mpv, name.c_str());
     if (!raw) return false;
     value = raw;
@@ -815,10 +824,16 @@ void MpvContext::renderLoop() {
         }
 
         // Handle texture resize on render thread (GL context is current here)
+#ifdef __linux__
         // Clear the request before reading the size: a resize scheduled while
         // this one runs sets the flag again and is handled on the next pass,
-        // instead of being wiped by a later clear.
-        if (m_textureShare && m_needsResize.exchange(false)) {
+        // instead of being wiped by a later clear. (Linux only for now; macOS
+        // keeps 0.11.0's handling, see the observers in create().)
+        const bool resizeRequested = m_textureShare && m_needsResize.exchange(false);
+#else
+        const bool resizeRequested = m_needsResize && m_textureShare;
+#endif
+        if (resizeRequested) {
             uint32_t newWidth = m_pendingWidth.load();
             uint32_t newHeight = m_pendingHeight.load();
             if (newWidth > 0 && newHeight > 0) {
@@ -827,6 +842,9 @@ void MpvContext::renderLoop() {
                 }
                 m_textureShare->resizeTexture(newWidth, newHeight);
             }
+#ifndef __linux__
+            m_needsResize = false;
+#endif
         }
 
         // Check if we can render

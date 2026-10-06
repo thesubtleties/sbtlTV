@@ -17,8 +17,8 @@ All notable changes to this project will be documented in this file.
 - **Fewer status messages from the in-window player on macOS and Linux** - mpv reports the position on every frame; it now reaches the interface at most 10 times per second, as with the compatibility player. Play, pause, mute, volume and stream changes are still immediate
 
 ### Fixed
-- **A stall every two seconds in the in-window player on macOS and Linux** - the 0.11.0 decode diagnostics read four mpv properties synchronously from the app's main thread every two seconds, and that read can wait on the player's render loop (a 150ms hitch and a dropped frame per tick on the Linux tester's machine). The values now arrive through mpv's change notifications
-- **Widescreen SD channels played small with black bars on every side (macOS and Linux)** - anamorphic streams (720x576 pixels shown at 16:9 or 16:11) were rendered at their pixel size, so the picture was letterboxed twice. The render target now uses the display size, and a size change that arrives while the player is resizing is no longer lost
+- **A stall every two seconds in the in-window player on macOS and Linux** - the 0.11.0 decode diagnostics read four mpv properties synchronously from the app's main thread every two seconds, and that read can wait on the player's render loop (a 150ms hitch and a dropped frame per tick on the Linux tester's machine). On Linux the values now arrive through mpv's change notifications; on macOS they are only read while debug logging is on
+- **Widescreen SD channels played small with black bars on every side on Linux** - anamorphic streams (720x576 pixels shown at 16:9 or 16:11) were rendered at their pixel size, so the picture was letterboxed twice. The render target now uses the display size, and a size change that arrives while the player is resizing is no longer lost
 - **Play/pause state and time display could go stale** - status updates arriving within 100ms of the previous one were dropped. With the compatibility player (and on Windows) that included pause, mute and volume changes, so the play button could show the wrong state; with the in-window player a seek while paused could leave the old time showing. The latest update is now always delivered
 - **Ctrl, Alt and Cmd shortcuts also triggered player keys** - Ctrl+F toggled fullscreen, Ctrl+P paused and Cmd+M also muted. Player keys now ignore those combinations (Shift+I is unchanged)
 - **Green frames with Intel hardware decoding on Linux** - libmpv's VA-API interop was given the same DRM file descriptor Mesa uses for the in-window renderer, so buffer handles clashed and decoded surfaces were destroyed underneath the decoder, with a fallback to a copy path. VA-API now gets its own descriptor, as mpv's and Kodi's DRM outputs do. This is also the most likely cause of the abort seen after a decoder fallback
@@ -27,6 +27,10 @@ All notable changes to this project will be documented in this file.
 - **Settings controls that ignored the mouse on Linux** - the player options shared a page with Network Security, and the two sections were squeezed into the panel height and drawn over each other, so clicks landed on the wrong one. Settings pages with several sections now scroll instead of overlapping
 - **Restart in Compatibility Mode did nothing in the Linux AppImage** - the restart relaunched a path inside the AppImage mount, which is gone by the time the new process starts. It now relaunches the AppImage itself
 - **Fullscreen on Linux** - 0.11.0 listed F and F11 as fullscreening the window, but with the in-window player they only maximized it. They now enter real fullscreen; the compatibility player is unchanged
+
+### Known issues
+- **Memory use grows during in-window playback (macOS and Linux)** - Electron's per-frame shared-texture hand-off leaks native memory in the main process, roughly 1.5-3 GB per hour at 60 fps. Present since the in-window player arrived; quitting and reopening sbtlTV frees it. A rework of the frame hand-off is planned
+- **Widescreen SD channels still play small on macOS** - the Linux fix above is held back on macOS while a VideoToolbox crash seen during channel changes with that build is investigated
 
 ## [0.11.0] - 2026-09-25
 
