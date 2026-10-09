@@ -180,3 +180,30 @@ test('openDatabase recovers a corrupt file that has stale WAL and shm siblings',
   assert.ok(!files.includes('data.sqlite-wal') || existsSync(p));
   assert.ok(existsSync(p));
 });
+
+test('entries the provider sent without a name are stored instead of failing the whole sync', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const noName = null as unknown as string;
+  replaceVod(db, 's1', {
+    categories: [{ category_id: 's1_x', name: noName, type: 'movie' }],
+    movies: [
+      { stream_id: 's1_m9', source_id: 's1', name: noName, title: 'Heat', stream_icon: '', category_ids: [], direct_url: 'http://x/m9' },
+      { stream_id: 's1_m10', source_id: 's1', name: noName, stream_icon: '', category_ids: [], direct_url: 'http://x/m10' },
+    ],
+    series: [{ series_id: 's1_sr9', source_id: 's1', name: noName, cover: '', category_ids: [] }],
+  });
+  assert.equal((db.prepare("select name from vod_movies where stream_id='s1_m9'").get() as { name: string }).name, 'Heat');
+  assert.equal((db.prepare("select name from vod_movies where stream_id='s1_m10'").get() as { name: string }).name, '');
+  assert.equal(count(db, "select count(*) c from vod_series where series_id='s1_sr9'"), 1);
+  replaceChannels(db, 's1', {
+    categories: [{ category_id: 's1_c9', source_id: 's1', category_name: noName }],
+    channels: [{ stream_id: 's1_41', source_id: 's1', name: noName, stream_icon: '', epg_channel_id: '', category_ids: [], direct_url: 'http://x/41' }],
+  });
+  assert.equal(count(db, "select count(*) c from channels where stream_id='s1_41'"), 1);
+  // A numeric name (some panels send 24, not "24") is kept as text, as before.
+  replaceChannels(db, 's1', {
+    categories: [],
+    channels: [{ stream_id: 's1_42', source_id: 's1', name: 24 as unknown as string, stream_icon: '', epg_channel_id: '', category_ids: [], direct_url: 'http://x/42' }],
+  });
+  assert.equal((db.prepare("select name from channels where stream_id='s1_42'").get() as { name: string }).name, '24');
+});
