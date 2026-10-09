@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
+import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
 import { useFavoriteChannels } from '../hooks/useFavorites';
@@ -20,7 +20,7 @@ interface ChannelPanelProps {
   scrollTopNonce?: number;
 }
 
-export function ChannelPanel({
+function ChannelPanelImpl({
   categoryId,
   visible,
   categoryStripOpen,
@@ -373,3 +373,7 @@ export function ChannelPanel({
     </div>
   );
 }
+
+// Mounted (hidden) for the whole session; memo keeps App's playback-state
+// changes from re-rendering the guide.
+export const ChannelPanel = memo(ChannelPanelImpl);

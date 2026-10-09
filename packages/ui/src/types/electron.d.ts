@@ -38,6 +38,8 @@ export interface MpvApi {
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
   getMode: () => Promise<MpvModeInfo>;
+  /** Linux in-window player: show mpv's stats overlay (persistent keeps it on screen) */
+  toggleStats: (persistent: boolean) => Promise<MpvResult>;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
@@ -53,7 +55,6 @@ export interface ElectronWindowApi {
   setFullscreen: () => Promise<void>;
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => void;
   removeFullscreenListener: () => void;
-  relaunch: () => Promise<void>;
 }
 
 export interface StorageResult<T = void> {
@@ -86,6 +87,7 @@ export interface AppSettings {
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a noticeable wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
+  linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video
 }
 
 export interface Source {
@@ -143,6 +145,8 @@ export interface DebugApi {
   getLogPath: () => Promise<StorageResult<string>>;
   logFromRenderer: (message: string) => Promise<StorageResult>;
   openLogFolder: () => Promise<StorageResult>;
+  isEnabled?: () => Promise<boolean>;
+  onEnabledChanged?: (callback: (enabled: boolean) => void) => () => void;
 }
 
 export interface UpdateInfo {
@@ -179,6 +183,8 @@ export interface SharedTextureApi {
   removeClearListener: () => void;
   /** Report whether the renderer could draw the latest frame; errors escalate in main */
   reportDrawResult: (ok: boolean, message?: string) => void;
+  /** Linux frame pacing: how far (ms) the shown picture trails frame arrival */
+  reportPresentationDelay?: (delayMs: number) => void;
   /** Report a renderer failure that requires native playback recovery. */
   reportPipelineFailure: (message: string) => void;
   /** Whether sharedTexture API is available (native mpv mode) */

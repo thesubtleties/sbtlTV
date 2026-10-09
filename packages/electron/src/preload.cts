@@ -40,6 +40,8 @@ export interface MpvApi {
   seek: (seconds: number) => Promise<MpvResult>;
   getStatus: () => Promise<MpvStatus>;
   getMode: () => Promise<MpvModeInfo>;
+  /** Linux in-window player: show mpv's stats overlay (persistent keeps it on screen) */
+  toggleStats: (persistent: boolean) => Promise<MpvResult>;
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
@@ -55,7 +57,6 @@ export interface ElectronWindowApi {
   setFullscreen: () => Promise<void>;
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => void;
   removeFullscreenListener: () => void;
-  relaunch: () => Promise<void>;
 }
 
 export interface StorageResult<T = void> {
@@ -103,6 +104,8 @@ export interface DebugApi {
   getLogPath: () => Promise<StorageResult<string>>;
   logFromRenderer: (message: string) => Promise<StorageResult>;
   openLogFolder: () => Promise<StorageResult>;
+  isEnabled: () => Promise<boolean>;
+  onEnabledChanged: (callback: (enabled: boolean) => void) => () => void;
 }
 
 export interface PlatformApi {
@@ -133,7 +136,6 @@ contextBridge.exposeInMainWorld('electronWindow', {
     // callback + ipcRenderer.removeListener so this cleanup doesn't clobber the other subscriber.
     ipcRenderer.removeAllListeners('window-fullscreen-changed');
   },
-  relaunch: () => ipcRenderer.invoke('app-relaunch'),
 } satisfies ElectronWindowApi);
 
 // Expose mpv API to the renderer process
@@ -146,6 +148,7 @@ contextBridge.exposeInMainWorld('mpv', {
   stop: () => ipcRenderer.invoke('mpv-stop'),
   setVolume: (volume: number) => ipcRenderer.invoke('mpv-volume', volume),
   toggleMute: () => ipcRenderer.invoke('mpv-toggle-mute'),
+  toggleStats: (persistent: boolean) => ipcRenderer.invoke('mpv-toggle-stats', persistent),
   seek: (seconds: number) => ipcRenderer.invoke('mpv-seek', seconds),
   getStatus: () => ipcRenderer.invoke('mpv-get-status'),
   getMode: () => ipcRenderer.invoke('mpv-get-mode'),
@@ -218,6 +221,12 @@ contextBridge.exposeInMainWorld('debug', {
   getLogPath: () => ipcRenderer.invoke('debug-get-log-path'),
   logFromRenderer: (message: string) => ipcRenderer.invoke('debug-log-renderer', message),
   openLogFolder: () => ipcRenderer.invoke('debug-open-log-folder'),
+  isEnabled: () => ipcRenderer.invoke('debug-is-enabled'),
+  onEnabledChanged: (callback: (enabled: boolean) => void) => {
+    const listener = (_event: IpcRendererEvent, enabled: boolean) => callback(enabled);
+    ipcRenderer.on('debug-logging-changed', listener);
+    return () => { ipcRenderer.removeListener('debug-logging-changed', listener); };
+  },
 } satisfies DebugApi);
 
 // Expose auto-updater API (types defined in electron.d.ts)
@@ -254,6 +263,8 @@ export interface SharedTextureApi {
   /** Report whether the renderer could draw the latest frame; errors escalate in main. */
   reportDrawResult: (ok: boolean, message?: string) => void;
   reportPipelineFailure: (message: string) => void;
+  /** Linux frame pacing: how far (ms) the shown picture trails frame arrival */
+  reportPresentationDelay: (delayMs: number) => void;
   isAvailable: boolean;
 }
 
@@ -383,6 +394,9 @@ contextBridge.exposeInMainWorld('sharedTexture', {
   },
   reportPipelineFailure: (message: string) => {
     if (typeof message === 'string') ipcRenderer.send('shared-texture-pipeline-failure', message);
+  },
+  reportPresentationDelay: (delayMs: number) => {
+    if (typeof delayMs === 'number' && Number.isFinite(delayMs)) ipcRenderer.send('shared-texture-presentation-delay', delayMs);
   },
   isAvailable: sharedTextureAvailable,
 } satisfies SharedTextureApi);
