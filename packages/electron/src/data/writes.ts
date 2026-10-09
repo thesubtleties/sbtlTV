@@ -22,6 +22,12 @@ function tx<T>(db: DatabaseSync, fn: () => T): T {
 const j = (ids: readonly string[]) => JSON.stringify(ids);
 const b = (v: boolean | undefined) => (v ? 1 : 0);
 
+// Providers occasionally send an entry without a name (Xtream returns null).
+// Every name column is NOT NULL, so one such row used to abort the whole sync,
+// retried and failed every few minutes; store it with an empty name instead.
+const named = (...candidates: Array<string | null | undefined>): string =>
+  candidates.find((value): value is string => typeof value === 'string') ?? '';
+
 export function replaceChannels(db: DatabaseSync, sourceId: string, input: { categories: Category[]; channels: Channel[]; epgUrl?: string }): DataTable[] {
   return tx(db, () => {
     db.prepare(`delete from channel_categories where stream_id in (select stream_id from channels where source_id = ?)`).run(sourceId);
@@ -29,11 +35,11 @@ export function replaceChannels(db: DatabaseSync, sourceId: string, input: { cat
     db.prepare(`delete from channels where source_id = ?`).run(sourceId);
     db.prepare(`delete from categories where source_id = ?`).run(sourceId);
     const insCat = db.prepare(`insert into categories(category_id, source_id, name, position) values (?, ?, ?, ?)`);
-    for (const c of input.categories) insCat.run(c.category_id, sourceId, c.category_name, c.position ?? null);
+    for (const c of input.categories) insCat.run(c.category_id, sourceId, named(c.category_name), c.position ?? null);
     const insCh = db.prepare(`insert into channels(stream_id, source_id, name, channel_num, stream_icon, epg_channel_id, direct_url, tv_archive, tv_archive_days, is_adult) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const insLink = db.prepare(`insert or ignore into channel_categories(stream_id, category_id) values (?, ?)`);
     for (const ch of input.channels) {
-      insCh.run(ch.stream_id, sourceId, ch.name, ch.channel_num ?? null, ch.stream_icon ?? '', ch.epg_channel_id ?? '', ch.direct_url, b(ch.tv_archive), (ch as { tv_archive_days?: number }).tv_archive_days ?? null, b(ch.is_adult));
+      insCh.run(ch.stream_id, sourceId, named(ch.name), ch.channel_num ?? null, ch.stream_icon ?? '', ch.epg_channel_id ?? '', ch.direct_url, b(ch.tv_archive), (ch as { tv_archive_days?: number }).tv_archive_days ?? null, b(ch.is_adult));
       for (const cat of ch.category_ids) insLink.run(ch.stream_id, cat);
     }
     db.prepare(`
@@ -84,7 +90,7 @@ export function replaceVod(db: DatabaseSync, sourceId: string, input: { movies: 
         rating = coalesce(nullif(excluded.rating, ''), vod_movies.rating),
         tmdb_id = coalesce(vod_movies.tmdb_id, excluded.tmdb_id)`);
     const now = Date.now();
-    for (const m of input.movies) upM.run(m.stream_id, sourceId, m.name, m.title ?? null, m.year ?? null, m.stream_icon ?? '', m.direct_url, m.plot ?? null, m.cast ?? null, m.director ?? null, m.genre ?? null, m.release_date ?? null, m.duration ?? null, m.rating ?? null, m.tmdb_id ?? null, now);
+    for (const m of input.movies) upM.run(m.stream_id, sourceId, named(m.name, m.title), m.title ?? null, m.year ?? null, m.stream_icon ?? '', m.direct_url, m.plot ?? null, m.cast ?? null, m.director ?? null, m.genre ?? null, m.release_date ?? null, m.duration ?? null, m.rating ?? null, m.tmdb_id ?? null, now);
     db.prepare(`delete from vod_movies where source_id = ? and stream_id not in (select value from json_each(?))`).run(sourceId, j(input.movies.map((m) => m.stream_id)));
 
     const upS = db.prepare(`
@@ -95,7 +101,7 @@ export function replaceVod(db: DatabaseSync, sourceId: string, input: { movies: 
         genre = coalesce(nullif(excluded.genre, ''), vod_series.genre), release_date = coalesce(nullif(excluded.release_date, ''), vod_series.release_date),
         rating = coalesce(nullif(excluded.rating, ''), vod_series.rating),
         tmdb_id = coalesce(vod_series.tmdb_id, excluded.tmdb_id)`);
-    for (const s of input.series) upS.run(s.series_id, sourceId, s.name, s.title ?? null, s.year ?? null, s.cover ?? '', s.plot ?? null, s.cast ?? null, s.genre ?? null, s.release_date ?? null, s.rating ?? null, s.tmdb_id ?? null, now);
+    for (const s of input.series) upS.run(s.series_id, sourceId, named(s.name, s.title), s.title ?? null, s.year ?? null, s.cover ?? '', s.plot ?? null, s.cast ?? null, s.genre ?? null, s.release_date ?? null, s.rating ?? null, s.tmdb_id ?? null, now);
     const keepSeries = j(input.series.map((s) => s.series_id));
     db.prepare(`delete from vod_episodes where series_id in (select series_id from vod_series where source_id = ? and series_id not in (select value from json_each(?)))`).run(sourceId, keepSeries);
     db.prepare(`delete from vod_series where source_id = ? and series_id not in (select value from json_each(?))`).run(sourceId, keepSeries);
@@ -106,7 +112,7 @@ export function replaceVod(db: DatabaseSync, sourceId: string, input: { movies: 
 
     db.prepare(`delete from vod_categories where source_id = ?`).run(sourceId);
     const insC = db.prepare(`insert into vod_categories(source_id, category_id, name, type) values (?, ?, ?, ?)`);
-    for (const c of input.categories) insC.run(sourceId, c.category_id, c.name, c.type);
+    for (const c of input.categories) insC.run(sourceId, c.category_id, named(c.name), c.type);
 
     db.prepare(`
       insert into sources_meta(source_id, last_vod_sync, movie_count, series_count) values (?, ?, ?, ?)
