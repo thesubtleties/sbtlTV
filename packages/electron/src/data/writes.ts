@@ -25,8 +25,12 @@ const b = (v: boolean | undefined) => (v ? 1 : 0);
 // Providers occasionally send an entry without a name (Xtream returns null).
 // Every name column is NOT NULL, so one such row used to abort the whole sync,
 // retried and failed every few minutes; store it with an empty name instead.
-const named = (...candidates: Array<string | null | undefined>): string =>
-  candidates.find((value): value is string => typeof value === 'string') ?? '';
+// Any value the provider did send is kept as text (some panels send numeric
+// names such as 24, which SQLite used to store as '24').
+const named = (...candidates: Array<string | number | null | undefined>): string => {
+  const value = candidates.find((candidate) => candidate !== null && candidate !== undefined);
+  return value === undefined ? '' : String(value);
+};
 
 export function replaceChannels(db: DatabaseSync, sourceId: string, input: { categories: Category[]; channels: Channel[]; epgUrl?: string }): DataTable[] {
   return tx(db, () => {

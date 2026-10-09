@@ -200,4 +200,10 @@ test('entries the provider sent without a name are stored instead of failing the
     channels: [{ stream_id: 's1_41', source_id: 's1', name: noName, stream_icon: '', epg_channel_id: '', category_ids: [], direct_url: 'http://x/41' }],
   });
   assert.equal(count(db, "select count(*) c from channels where stream_id='s1_41'"), 1);
+  // A numeric name (some panels send 24, not "24") is kept as text, as before.
+  replaceChannels(db, 's1', {
+    categories: [],
+    channels: [{ stream_id: 's1_42', source_id: 's1', name: 24 as unknown as string, stream_icon: '', epg_channel_id: '', category_ids: [], direct_url: 'http://x/42' }],
+  });
+  assert.equal((db.prepare("select name from channels where stream_id='s1_42'").get() as { name: string }).name, '24');
 });
