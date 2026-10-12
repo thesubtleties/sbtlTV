@@ -226,6 +226,11 @@ function App() {
     }
 
     refreshPlayerMode();
+    // mpv-ready is sent once, when main finishes setting up the player. A
+    // window that loads after that (a reload) asks instead.
+    window.mpv.getMode()
+      .then((info) => { if (info.settled) setMpvReady(true); })
+      .catch((err) => debugLog(`getMode failed: ${err instanceof Error ? err.message : err}`, 'mpv'));
     window.mpv.onReady((ready) => {
       console.log('mpv ready:', ready);
       setMpvReady(ready);
