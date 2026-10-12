@@ -26,7 +26,9 @@
   left: 0;
   right: 0;
   height: 32px;
+  /* Same tint and blur as the guide, so the two read as one sheet when the guide is up */
   background: color-mix(in srgb, var(--overlay-base) calc(var(--guide-opacity, 0.95) * 100%), transparent);
+  backdrop-filter: blur(20px);
   display: flex;
   align-items: center;
   justify-content: space-between;
