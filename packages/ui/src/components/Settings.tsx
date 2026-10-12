@@ -14,6 +14,7 @@ import { SecurityTab } from './settings/SecurityTab';
 import { VideoPlayerTab } from './settings/VideoPlayerTab';
 import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
+import { AppearanceTab } from './settings/AppearanceTab';
 import './Settings.css';
 
 interface SettingsProps {
@@ -267,6 +268,8 @@ export function Settings({ onClose }: SettingsProps) {
             onAllowLanSourcesChange={setAllowLanSources}
           />
         );
+      case 'appearance':
+        return <AppearanceTab />;
       case 'player':
         return (
           <VideoPlayerTab

@@ -9,6 +9,7 @@ export type SettingsTabId =
   | 'movies'
   | 'series'
   | 'posterdb'
+  | 'appearance'
   | 'player'
   | 'security'
   | 'debug'
@@ -45,6 +46,7 @@ const SETTINGS_CATEGORIES: SettingsCategory[] = [
   {
     label: 'System',
     tabs: [
+      { id: 'appearance', label: 'Appearance' },
       { id: 'player', label: 'Video Player' },
       { id: 'security', label: 'Security' },
       { id: 'debug', label: 'Debug' },

@@ -172,6 +172,20 @@ contextBridge.exposeInMainWorld('mpv', {
   },
 } satisfies MpvApi);
 
+// Colors the desktop provides, for Settings > Appearance
+interface DesktopColors {
+  accent: string | null;
+  caelestia: Record<string, string> | null;
+}
+contextBridge.exposeInMainWorld('appearance', {
+  getDesktopColors: (): Promise<DesktopColors> => ipcRenderer.invoke('appearance-get-desktop-colors'),
+  onDesktopColorsChanged: (callback: (colors: DesktopColors) => void) => {
+    const listener = (_event: IpcRendererEvent, colors: DesktopColors) => callback(colors);
+    ipcRenderer.on('appearance-desktop-colors', listener);
+    return () => { ipcRenderer.removeListener('appearance-desktop-colors', listener); };
+  },
+});
+
 // Expose storage API for sources and settings
 contextBridge.exposeInMainWorld('storage', {
   getSources: () => ipcRenderer.invoke('storage-get-sources'),

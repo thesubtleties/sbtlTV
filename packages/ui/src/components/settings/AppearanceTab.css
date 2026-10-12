@@ -1,0 +1,135 @@
+/* Appearance tab, in shtl's settings style: a title column with help that
+   explains the current choice, segmented controls, palette tiles. */
+
+.appearance-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 22px 20px;
+  height: auto;
+}
+
+.opt-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 200px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.opt-row__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.opt-row__help {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.opt-row__note {
+  display: block;
+  margin-top: 10px;
+  color: var(--faint);
+}
+
+/* Segmented control */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  height: 34px;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.seg__item {
+  min-width: 92px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+
+.seg__item:hover {
+  background: var(--fill-2);
+}
+
+.seg__item--on,
+.seg__item--on:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Palette tiles: each drawn in its own colors, with a swatch strip */
+.palette-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.palette-tile {
+  position: relative;
+  height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.1s ease, filter 0.1s ease;
+}
+
+.palette-tile:hover {
+  border-color: var(--edge-2);
+  filter: brightness(1.12);
+}
+
+.palette-tile--on,
+.palette-tile--on:hover {
+  background: var(--accent-soft);
+  border: 2px solid var(--accent);
+  padding: 8px 9px;
+  color: var(--accent);
+  font-weight: 600;
+  filter: none;
+}
+
+.palette-tile__label {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette-tile__swatch {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 9px;
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.palette-tile--on .palette-tile__swatch {
+  left: 9px;
+  right: 9px;
+  bottom: 8px;
+}
+
+.palette-tile__swatch span {
+  flex: 1;
+}
