@@ -234,8 +234,8 @@ export function EpgTab({
           logos instead of the channel icon. Scores are never shown.
         </p>
 
-        <div className="tmdb-form" style={{ marginTop: '1rem' }}>
-          <label className="genre-checkbox" style={{ maxWidth: '320px' }}>
+        <div className="epg-option">
+          <label className="genre-checkbox">
             <input
               type="checkbox"
               checked={sportsMatchupEnabled}
@@ -243,7 +243,7 @@ export function EpgTab({
             />
             <span className="genre-name">Show team logos for live games</span>
           </label>
-          <p className="form-hint" style={{ marginTop: '0.5rem' }}>
+          <p className="form-hint">
             Matched from the program guide for NFL, NBA, MLB, NHL, and college football/basketball.
             Shows nothing when a game can't be confidently identified.
           </p>
@@ -256,8 +256,8 @@ export function EpgTab({
           <h3>Loading</h3>
         </div>
 
-        <div className="tmdb-form" style={{ marginTop: '1rem' }}>
-          <label className="genre-checkbox" style={{ maxWidth: '320px' }}>
+        <div className="epg-option">
+          <label className="genre-checkbox">
             <input
               type="checkbox"
               checked={guideMorphEnabled}
@@ -265,7 +265,7 @@ export function EpgTab({
             />
             <span className="genre-name">Animate programs into place</span>
           </label>
-          <p className="form-hint" style={{ marginTop: '0.5rem' }}>
+          <p className="form-hint">
             When guide rows take a moment to load, their titles fade in and slide into position.
             Off, they simply fade in.
           </p>

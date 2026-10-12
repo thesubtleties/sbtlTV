@@ -217,9 +217,11 @@
   scroll-behavior: smooth;
 }
 
-/* Scrollbar */
+/* Scrollbar: appears while the list is hovered, a wide grab area drawn thin
+   (the transparent border), and a minimum thumb length so it stays usable
+   with thousands of channels. */
 .guide-channels::-webkit-scrollbar {
-  width: 6px;
+  width: 12px;
 }
 
 .guide-channels::-webkit-scrollbar-track {
@@ -227,12 +229,21 @@
 }
 
 .guide-channels::-webkit-scrollbar-thumb {
-  background: var(--fill-3);
-  border-radius: 3px;
+  min-height: 48px;
+  background: transparent;
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 6px;
 }
 
-.guide-channels::-webkit-scrollbar-thumb:hover {
-  background: var(--fill-5);
+.guide-channels:hover::-webkit-scrollbar-thumb {
+  background-color: var(--fill-5);
+}
+
+.guide-channels::-webkit-scrollbar-thumb:hover,
+.guide-channels::-webkit-scrollbar-thumb:active {
+  background-color: var(--accent-strong);
+  border-width: 2px;
 }
 
 /* Channel Row */

@@ -902,6 +902,31 @@
 
 .epg-tab-scroll .settings-section {
   flex: none;
+  padding: 18px 20px;
+}
+
+/* Sections read as groups: a hairline between them, not extra space. */
+.epg-tab-scroll .settings-section + .settings-section {
+  border-top: 1px solid var(--line-faint);
+}
+
+.epg-tab-scroll .section-header {
+  margin-bottom: 10px;
+}
+
+.epg-tab-scroll .section-description {
+  margin-bottom: 12px;
+}
+
+/* A checkbox option sized to its label, its hint just under it. */
+.epg-option .genre-checkbox {
+  display: inline-flex;
+  padding-right: 16px;
+}
+
+.epg-option .form-hint {
+  margin-top: 6px;
+  max-width: 560px;
 }
 
 @keyframes fadeIn {

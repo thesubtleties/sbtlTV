@@ -52,6 +52,14 @@
   color-scheme: dark;
 }
 
+/* Form controls do not inherit the page font by default. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
 :root[data-typeface='system'] {
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-condensed: var(--font-sans);
