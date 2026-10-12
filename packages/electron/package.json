@@ -1,6 +1,6 @@
 {
   "name": "@sbtltv/electron",
-  "version": "0.11.1",
+  "version": "0.11.2-test",
   "description": "Desktop IPTV player with mpv",
   "homepage": "https://github.com/thesubtleties/sbtlTV",
   "author": {
