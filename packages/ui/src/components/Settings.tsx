@@ -303,7 +303,8 @@ export function Settings({ onClose }: SettingsProps) {
       <div className="settings-panel settings-panel--sidebar">
         <div className="settings-header">
           <h2>Settings</h2>
-          <button className="close-btn" onClick={onClose}>✕</button>
+          <span className="settings-header__hint">Saved as you go · Esc closes</span>
+          <button className="close-btn" onClick={onClose} aria-label="Close settings">✕</button>
         </div>
 
         {/* Encryption Warning */}

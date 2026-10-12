@@ -1,4 +1,5 @@
 import { useUpdateSettings } from '../../stores/uiStore';
+import { OnOff, OptionRow, Section, SettingsTab } from './ui';
 
 interface SecurityTabProps {
   allowLanSources: boolean;
@@ -19,37 +20,25 @@ export function SecurityTab({
   }
 
   return (
-    <div className="settings-tab-content settings-tab-scroll">
-      <div className="settings-section">
-        <div className="section-header">
-          <h3>Network Security</h3>
-        </div>
-
-        <p className="section-description">
-          By default, sbtlTV blocks requests to local network addresses to prevent
-          malicious playlists from probing your internal network (SSRF protection).
-        </p>
-
-        <div className="tmdb-form" style={{ marginTop: '1rem' }}>
-          <label className="genre-checkbox" style={{ maxWidth: '320px' }}>
-            <input
-              type="checkbox"
-              checked={allowLanSources}
-              onChange={(e) => handleAllowLanChange(e.target.checked)}
-            />
-            <span className="genre-name">Allow LAN sources</span>
-          </label>
-          <p className="form-hint" style={{ marginTop: '0.5rem' }}>
-            Enable this if your IPTV provider runs on your local network
-            (e.g., Plex, Jellyfin, or a NAS). Only enable if you trust your playlist sources.
-          </p>
-        </div>
-      </div>
-
-      <p className="settings-disclaimer">
-        Blocked addresses: localhost, 127.x.x.x, 10.x.x.x, 172.16-31.x.x, 192.168.x.x,
-        and cloud metadata endpoints (169.254.x.x).
-      </p>
-    </div>
+    <SettingsTab>
+      <Section
+        title="Network"
+        description="By default sbtlTV blocks requests to local network addresses, so a malicious playlist cannot probe your internal network (SSRF protection)."
+      >
+        <OptionRow
+          title="LAN sources"
+          help={allowLanSources
+            ? 'Requests to your local network are allowed. Keep this only for playlists you trust.'
+            : 'Blocked: localhost, 127.x.x.x, 10.x.x.x, 172.16-31.x.x, 192.168.x.x, and cloud metadata endpoints (169.254.x.x). Allow this if your provider runs on your network (Plex, Jellyfin, a NAS).'}
+        >
+          <OnOff
+            value={allowLanSources}
+            offLabel="Blocked"
+            onLabel="Allowed"
+            onChange={(enabled) => void handleAllowLanChange(enabled)}
+          />
+        </OptionRow>
+      </Section>
+    </SettingsTab>
   );
 }

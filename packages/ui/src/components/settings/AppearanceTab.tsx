@@ -1,8 +1,8 @@
-import type { ReactNode } from 'react';
 import { useUIStore, useUpdateSettings } from '../../stores/uiStore';
 import { useDesktopColors } from '../../hooks/useCssVariableSync';
 import { PALETTES, PALETTE_ORDER, type PaletteRoles } from '../../styles/palettes';
 import type { Appearance, PaletteId } from '../../types/electron';
+import { OptionRow, Segmented, SettingsTab } from './ui';
 import './AppearanceTab.css';
 
 const DEFAULT_APPEARANCE: Appearance = { palette: 'sbtl', typeface: 'fira', accent: 'palette' };
@@ -12,42 +12,6 @@ const TYPEFACES: { id: Appearance['typeface']; label: string; help: string }[] =
   { id: 'mono', label: 'Mono', help: 'JetBrains Mono everywhere, for a terminal look.' },
   { id: 'system', label: 'System', help: "Your system's interface font." },
 ];
-
-/** A setting: title and what the current choice means on the left, the control on the right. */
-function OptionRow({ title, help, children }: { title: string; help: ReactNode; children: ReactNode }) {
-  return (
-    <div className="opt-row">
-      <div className="opt-row__label">
-        <div className="opt-row__title">{title}</div>
-        <div className="opt-row__help">{help}</div>
-      </div>
-      <div className="opt-row__control">{children}</div>
-    </div>
-  );
-}
-
-function Segmented<T extends string>({ value, options, onChange }: {
-  value: T;
-  options: { id: T; label: string }[];
-  onChange: (id: T) => void;
-}) {
-  return (
-    <div className="seg" role="radiogroup">
-      {options.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          role="radio"
-          aria-checked={value === option.id}
-          className={`seg__item${value === option.id ? ' seg__item--on' : ''}`}
-          onClick={() => onChange(option.id)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function PaletteTile({ label, roles, selected, onSelect }: {
   label: string;
@@ -90,7 +54,7 @@ export function AppearanceTab() {
   const caelestiaMissing = appearance.palette === 'caelestia' && desktop && !desktop.caelestia;
 
   return (
-    <div className="settings-tab-content appearance-tab">
+    <SettingsTab className="appearance-tab">
       <OptionRow
         title="Colors"
         help={
@@ -151,6 +115,6 @@ export function AppearanceTab() {
           onChange={(typeface) => save({ typeface })}
         />
       </OptionRow>
-    </div>
+    </SettingsTab>
   );
 }

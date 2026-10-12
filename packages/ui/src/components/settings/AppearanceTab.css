@@ -1,73 +1,13 @@
-/* Appearance tab, in shtl's settings style: a title column with help that
-   explains the current choice, segmented controls, palette tiles. */
+/* Appearance tab: palette tiles (rows and controls come from ui.css). */
 
 .appearance-tab {
-  display: flex;
-  flex-direction: column;
   gap: 26px;
-  padding: 22px 20px;
-  height: auto;
-}
-
-.opt-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 200px) 1fr;
-  gap: 24px;
-  align-items: start;
-}
-
-.opt-row__title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text);
-}
-
-.opt-row__help {
-  margin-top: 4px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--muted);
 }
 
 .opt-row__note {
   display: block;
   margin-top: 10px;
   color: var(--faint);
-}
-
-/* Segmented control */
-.seg {
-  display: inline-flex;
-  gap: 2px;
-  height: 34px;
-  padding: 2px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-}
-
-.seg__item {
-  min-width: 92px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 13px;
-  cursor: pointer;
-  transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
-}
-
-.seg__item:hover {
-  background: var(--fill-2);
-}
-
-.seg__item--on,
-.seg__item--on:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
 }
 
 /* Palette tiles: each drawn in its own colors, with a swatch strip */
