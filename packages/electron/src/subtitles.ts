@@ -3,6 +3,8 @@
 // runs under node:test. mpv draws the subtitles in both players; main only
 // configures it and tells the renderer which tracks exist.
 
+import path from 'node:path';
+
 export type SubtitleSize = 'small' | 'medium' | 'large';
 export type SubtitleStyle = 'outline' | 'box' | 'shadow';
 export interface SubtitleSettings {
@@ -121,4 +123,11 @@ export class TrackReadSchedule {
     this.lastRead = now;
     if (tracks.length > 0) this.done = true;
   }
+}
+
+/** Folder of bundled TTFs for mpv's sub-fonts-dir (extraResources when packaged). */
+export function subtitleFontsDir(opts: { isPackaged: boolean; resourcesPath: string; dirname: string }): string {
+  return opts.isPackaged
+    ? path.join(opts.resourcesPath, 'sub-fonts')
+    : path.join(opts.dirname, '..', 'assets', 'sub-fonts');
 }

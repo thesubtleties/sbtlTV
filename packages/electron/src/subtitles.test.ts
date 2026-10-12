@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   normalizeSubtitleSettings, parseSubtitleTracks, subtitleStyleOptions,
-  loadResetOptions, SUBTITLE_BASE_OPTIONS, TrackReadSchedule,
+  loadResetOptions, SUBTITLE_BASE_OPTIONS, TrackReadSchedule, subtitleFontsDir,
 } from './subtitles.js';
 
 test('settings default to off, medium, outline', () => {
@@ -99,4 +99,9 @@ test('gives up after maxReads, and reset re-arms it', () => {
   assert.equal(s.shouldRead(10_000, true), false);
   s.reset();
   assert.equal(s.shouldRead(10_000, true), true);
+});
+
+test('subtitle fonts live in resources when packaged, in assets when not', () => {
+  assert.equal(subtitleFontsDir({ isPackaged: true, resourcesPath: '/opt/sbtlTV/resources', dirname: '/x/dist' }), '/opt/sbtlTV/resources/sub-fonts');
+  assert.equal(subtitleFontsDir({ isPackaged: false, resourcesPath: '/r', dirname: '/repo/packages/electron/dist' }), '/repo/packages/electron/assets/sub-fonts');
 });

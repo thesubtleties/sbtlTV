@@ -15,6 +15,7 @@ npmRebuild: false
 files:
   - dist/**/*
   - assets/**/*
+  - "!assets/sub-fonts/**"
   - "!**/*.ts"
   - "!**/*.test.js"
   - "!**/*.test.js.map"
@@ -34,6 +35,11 @@ extraResources:
   # Bundle the UI dist folder
   - from: ../ui/dist
     to: ui
+    filter:
+      - "**/*"
+  # Subtitle fonts for mpv's libass (read from disk, so outside app.asar)
+  - from: assets/sub-fonts
+    to: sub-fonts
     filter:
       - "**/*"
 
