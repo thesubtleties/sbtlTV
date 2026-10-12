@@ -149,12 +149,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 40px;
+  height: 38px;
   padding: 0 20px;
   font-size: 14px;
   font-weight: 600;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease, filter 0.12s ease;
 }
@@ -188,16 +188,16 @@
 }
 
 .hero__btn--secondary {
-  background: color-mix(in srgb, var(--overlay-base) 45%, transparent);
+  background: var(--fill-4);
   color: var(--text);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-color: var(--edge);
+  border-color: var(--line);
 }
 
 .hero__btn--secondary:hover {
-  background: color-mix(in srgb, var(--overlay-base) 60%, transparent);
-  border-color: var(--edge-2);
+  background: var(--fill-5);
+  border-color: var(--line-2);
 }
 
 /* Navigation indicators */

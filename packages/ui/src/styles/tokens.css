@@ -48,6 +48,12 @@
   --warning-soft: color-mix(in srgb, var(--warning) 15%, transparent);
   --rating: #f5c518;
 
+  /* Corners: firm, not bubbly (one place to tune the whole app) */
+  --r-control: 6px;
+  --r-inner: 4px;
+  --r-card: 6px;
+  --r-panel: 10px;
+
   /* Type */
   --font-sans: 'Fira Sans', system-ui, sans-serif;
   --font-condensed: 'Fira Sans Condensed', var(--font-sans);

@@ -53,7 +53,7 @@
   width: 36px;
   height: 36px;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: var(--r-control);
   background: var(--fill-2);
   flex-shrink: 0;
 }
@@ -222,7 +222,7 @@
   color: var(--text);
   padding: 4px 8px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--r-inner);
   font-family: var(--font-condensed);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -267,7 +267,7 @@
   height: 34px;
   background: var(--fill-1);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   color: var(--text-2);
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.12s ease;

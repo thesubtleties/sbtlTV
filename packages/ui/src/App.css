@@ -172,7 +172,7 @@
   right: 40px;
   background: rgba(0, 0, 0, 0.85);
   padding: 20px 30px;
-  border-radius: 8px;
+  border-radius: var(--r-control);
   border-left: 4px solid var(--accent);
   animation: slideIn 0.2s ease-out;
 }

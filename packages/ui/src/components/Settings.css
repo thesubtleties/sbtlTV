@@ -16,7 +16,7 @@
   background: color-mix(in srgb, var(--card) 95%, transparent);
   backdrop-filter: blur(20px);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--r-panel);
   width: 92%;
   max-width: 600px;
   height: 78vh;
@@ -101,7 +101,7 @@
   color: var(--muted);
   font-size: 1rem;
   cursor: pointer;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   transition: all 0.15s ease;
 }
 
@@ -117,7 +117,7 @@
   border-left: 3px solid var(--warning);
   padding: 12px 16px;
   margin: 14px 18px 0;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -297,7 +297,7 @@
   padding: 12px 14px;
   background: var(--fill-1);
   border: 1px solid var(--line-faint);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   margin-bottom: 8px;
   transition: background-color 0.1s ease, border-color 0.1s ease;
 }
@@ -411,7 +411,7 @@
   position: absolute;
   inset: 0;
   background: var(--fill-4);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   transition: background 0.2s ease;
 }
 
@@ -555,7 +555,7 @@
   background: color-mix(in srgb, var(--card) 98%, transparent);
   border: 1px solid var(--line);
   padding: 24px;
-  border-radius: 14px;
+  border-radius: var(--r-panel);
   width: 90%;
   max-width: 440px;
   max-height: 85vh;
@@ -597,7 +597,7 @@
   height: 36px;
   padding: 0 11px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   background: var(--bg);
   color: var(--text);
   font-size: 13px;

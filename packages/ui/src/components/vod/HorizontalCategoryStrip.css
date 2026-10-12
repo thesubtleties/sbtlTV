@@ -21,7 +21,7 @@
   padding: 6px 12px 6px 8px;
   border: none;
   background: var(--fill-2);
-  border-radius: 8px;
+  border-radius: var(--r-control);
   color: var(--text-2);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
@@ -89,7 +89,7 @@
   flex-shrink: 0;
   width: 28px;
   height: 28px;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   border: none;
   background: transparent;
   color: var(--muted);
@@ -197,7 +197,7 @@
   color: var(--text-3);
   background: var(--fill-1);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   white-space: nowrap;
@@ -234,7 +234,7 @@
   box-sizing: border-box;
   background: var(--fill-2);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   min-width: 180px;
   max-width: 280px;
   transition: background 0.15s ease, border-color 0.15s ease;

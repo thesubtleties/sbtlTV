@@ -81,7 +81,7 @@
   color: var(--text);
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid var(--line-2);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   cursor: pointer;
   backdrop-filter: blur(8px);
   transition: all 0.15s ease;
@@ -106,7 +106,7 @@
   color: var(--text);
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid var(--line-2);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   cursor: pointer;
   backdrop-filter: blur(8px);
   transition: all 0.15s ease;
@@ -142,7 +142,7 @@
   align-self: flex-start;
   width: 200px;
   position: relative;
-  border-radius: 8px;
+  border-radius: var(--r-control);
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
@@ -195,7 +195,7 @@
   align-items: center;
   justify-content: center;
   background: var(--surface);
-  border-radius: 8px;
+  border-radius: var(--r-control);
   font-size: 3rem;
   font-weight: 600;
   color: var(--faint);
@@ -280,12 +280,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 42px;
+  height: 38px;
   padding: 0 22px;
   font-size: 14px;
   font-weight: 600;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease, filter 0.12s ease;
 }
@@ -314,16 +314,16 @@
 }
 
 .movie-detail__btn--secondary {
-  background: color-mix(in srgb, var(--overlay-base) 45%, transparent);
+  background: var(--fill-4);
   color: var(--text);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-color: var(--edge);
+  border-color: var(--line);
 }
 
 .movie-detail__btn--secondary:hover {
-  background: color-mix(in srgb, var(--overlay-base) 60%, transparent);
-  border-color: var(--edge-2);
+  background: var(--fill-5);
+  border-color: var(--line-2);
 }
 
 .movie-detail__btn--secondary.active {
@@ -385,7 +385,7 @@
   color: var(--text-2);
   background: var(--fill-3);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   cursor: pointer;
   transition: all 0.15s ease;
 }

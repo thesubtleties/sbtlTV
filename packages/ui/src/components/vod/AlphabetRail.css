@@ -72,7 +72,7 @@
   font-weight: 600;
   color: var(--text);
   background: var(--fill-4);
-  border-radius: 8px;
+  border-radius: var(--r-control);
   backdrop-filter: blur(12px);
   pointer-events: none;
   animation: magnifier-pop 100ms ease-out;

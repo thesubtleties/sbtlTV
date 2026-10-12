@@ -58,7 +58,7 @@
   margin: 8px 10px 4px;
   background: var(--fill-2);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 
@@ -163,7 +163,7 @@
   justify-content: space-between;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-control);
   background: transparent;
   color: var(--text-2);
   cursor: pointer;

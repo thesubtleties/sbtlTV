@@ -22,7 +22,7 @@
   min-width: 240px;
   max-width: 360px;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--r-panel);
   background: var(--surface);
   border: 1px solid var(--line);
   color: var(--text);

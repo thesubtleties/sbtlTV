@@ -86,14 +86,14 @@
   padding: 2px;
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
 }
 
 .st-seg__item {
   min-width: 92px;
   padding: 0 14px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--r-inner);
   background: transparent;
   color: var(--text-2);
   font-size: 13px;
@@ -133,7 +133,7 @@
   min-width: 88px;
   padding: 0 14px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   background: var(--bg);
   color: var(--text);
   font-size: 13px;
@@ -182,7 +182,7 @@
   max-width: 360px;
   padding: 0 11px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   background: var(--bg);
   color: var(--text);
   font-size: 13px;
@@ -226,7 +226,7 @@
   max-width: 100%;
   padding: 8px 11px;
   border: 1px solid var(--line-faint);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   background: var(--bg);
   color: var(--text-2);
   font-family: var(--font-mono);
@@ -325,7 +325,7 @@
   height: 24px;
   padding: 0 9px;
   border: 1px solid var(--accent-line);
-  border-radius: 7px;
+  border-radius: var(--r-inner);
   background: var(--accent-soft);
   color: var(--accent);
   font-size: 12px;
@@ -343,7 +343,7 @@
   height: 34px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   background: var(--fill-1);
   color: var(--text-2);
   font-size: 13px;
@@ -376,7 +376,7 @@
   height: 28px;
   min-width: 0;
   padding: 0 11px;
-  border-radius: 8px;
+  border-radius: var(--r-control);
   font-size: 12px;
 }
 

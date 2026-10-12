@@ -42,7 +42,7 @@
 .carousel__nav-btn {
   width: 32px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   background: var(--fill-3);
   border: 1px solid var(--line);
   cursor: pointer;
@@ -116,7 +116,7 @@
 /* Loading skeletons */
 .media-card-skeleton {
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: var(--r-control);
   background: linear-gradient(
     90deg,
     var(--surface) 25%,

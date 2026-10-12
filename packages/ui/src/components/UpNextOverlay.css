@@ -8,7 +8,7 @@
 .up-next__card {
   background: color-mix(in srgb, var(--bg) 92%, transparent);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--r-panel);
   padding: 14px 16px;
   min-width: 240px;
   color: var(--text);
@@ -42,7 +42,7 @@
   flex: 1;
   height: 32px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   border: 1px solid var(--line);
   cursor: pointer;
   font-size: 13px;

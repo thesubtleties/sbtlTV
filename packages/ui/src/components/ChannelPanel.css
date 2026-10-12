@@ -110,7 +110,7 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
@@ -127,7 +127,7 @@
   background: var(--accent-soft);
   color: var(--accent);
   cursor: pointer;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   font-size: 13px;
   font-weight: 600;
   transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
@@ -155,7 +155,7 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  border-radius: 9px;
+  border-radius: var(--r-control);
   transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
@@ -301,7 +301,7 @@
 .guide-channel-logo {
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: var(--r-control);
   overflow: hidden;
   background: var(--fill-2);
   display: flex;
@@ -437,7 +437,7 @@
 .guide-search-input {
   background: var(--fill-2);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   color: var(--text);
   font-size: 13px;
   height: 30px;

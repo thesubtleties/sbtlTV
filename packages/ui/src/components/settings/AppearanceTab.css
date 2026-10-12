@@ -23,7 +23,7 @@
   height: 58px;
   padding: 9px 10px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-control);
   text-align: left;
   font-size: 13px;
   font-weight: 500;
