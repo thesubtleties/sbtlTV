@@ -64,19 +64,33 @@
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+.window-controls svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.window-controls .close svg {
+  shape-rendering: geometricPrecision;
+}
+
 .window-controls button:hover {
   background: var(--fill-3);
 }
 
+/* The palette's own red; the dark bg tone reads better on it than fg in every palette */
 .window-controls button.close:hover {
-  background: #e81123;
+  background: var(--danger);
+  color: var(--bg);
 }
 
 /* Video layer - mpv renders BEHIND this via --wid embedding */
