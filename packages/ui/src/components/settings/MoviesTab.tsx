@@ -15,8 +15,8 @@ export function MoviesTab(props: MoviesTabProps) {
       useGenres={useMovieGenres}
       useMultipleByGenre={useMultipleMoviesByGenre}
       settingsKey="movieGenresEnabled"
-      title="Movie Genre Carousels"
-      description="Select which genres to show as carousels on the Movies home page. Each selected genre will appear as a Netflix-style row."
+      title="Genre rows"
+      description="Which genres get a row on the Movies home page."
     />
   );
 }

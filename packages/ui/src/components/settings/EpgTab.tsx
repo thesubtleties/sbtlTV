@@ -2,6 +2,7 @@ import { useUpdateSettings } from '../../stores/uiStore';
 import { data } from '../../data/client';
 import { useToast } from '../../hooks/useToast';
 import { debugLog } from '../../utils/debugLog';
+import { OnOff, OptionRow, Section, Segmented, SettingsTab, Slider } from './ui';
 
 interface EpgTabProps {
   channelSortOrder: 'alphabetical' | 'number';
@@ -116,161 +117,91 @@ export function EpgTab({
   }
 
   return (
-    <div className="settings-tab-content epg-tab-scroll">
-      <div className="settings-section">
-        <div className="section-header">
-          <h3>Channel Display</h3>
-        </div>
-
-        <p className="section-description">
-          Configure how channels are sorted in the guide.
-        </p>
-
-        <div className="form-group inline">
-          <label>Sort Order</label>
-          <select
+    <SettingsTab>
+      <Section title="Channels" description="How channels and categories are ordered in the guide.">
+        <OptionRow
+          title="Channel order"
+          help={channelSortOrder === 'number'
+            ? "Your provider's channel numbers (Xtream num or M3U tvg-chno). Channels without a number come last, alphabetically."
+            : 'Alphabetical, A to Z.'}
+        >
+          <Segmented
             value={channelSortOrder}
-            onChange={(e) => handleSortOrderChange(e.target.value as 'alphabetical' | 'number')}
-          >
-            <option value="alphabetical">Alphabetical (A-Z)</option>
-            <option value="number">Channel Number</option>
-          </select>
-        </div>
-
-        <p className="form-hint">
-          "Channel Number" uses the order from your provider (Xtream num or M3U tvg-chno).
-          Channels without a number will appear at the end, sorted alphabetically.
-        </p>
-
-        <div className="form-group inline">
-          <label>Category Order</label>
-          <select
+            options={[{ id: 'alphabetical', label: 'A to Z' }, { id: 'number', label: 'Number' }]}
+            onChange={(order) => void handleSortOrderChange(order)}
+          />
+        </OptionRow>
+        <OptionRow
+          title="Category order"
+          help={categorySortOrder === 'provider'
+            ? "Your source's own arrangement, so the folders your provider put on top stay on top. With several sources, the highest-priority one sets the layout."
+            : 'Alphabetical, A to Z.'}
+        >
+          <Segmented
             value={categorySortOrder}
-            onChange={(e) => handleCategorySortOrderChange(e.target.value as 'alphabetical' | 'provider')}
-          >
-            <option value="alphabetical">Alphabetical (A-Z)</option>
-            <option value="provider">Provider Order</option>
-          </select>
-        </div>
+            options={[{ id: 'alphabetical', label: 'A to Z' }, { id: 'provider', label: 'Provider' }]}
+            onChange={(order) => void handleCategorySortOrderChange(order)}
+          />
+        </OptionRow>
+      </Section>
 
-        <p className="form-hint">
-          "Provider Order" keeps the category arrangement from your source, so the
-          folders your provider curated at the top stay on top. With multiple sources,
-          your highest-priority source defines the layout.
-        </p>
-      </div>
-
-      <div className="settings-section">
-        <div className="section-header">
-          <h3>Guide Appearance</h3>
-        </div>
-
-        <p className="section-description">
-          Adjust the category sidebar width, channel column width, and background opacity of the guide overlay.
-        </p>
-
-        <div className="form-group">
-          <label>Category Width</label>
-          <input
-            type="range"
-            className="settings-slider"
+      <Section title="Guide layout" description="Sizes and background of the guide over the video.">
+        <OptionRow title="Category width" help="The category column on the left.">
+          <Slider
             min={120}
             max={400}
             step={10}
             value={categoryBarWidth}
-            onChange={(e) => handleWidthChange(Number(e.target.value))}
-            aria-label="Category sidebar width"
+            onChange={(width) => void handleWidthChange(width)}
+            format={(value) => `${value} px`}
+            label="Category sidebar width"
           />
-          <div className="slider-labels">
-            <span>Narrow</span>
-            <span>Wide</span>
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label>Channel Column Width</label>
-          <input
-            type="range"
-            className="settings-slider"
+        </OptionRow>
+        <OptionRow title="Channel column" help="The channel names and logos beside the programs.">
+          <Slider
             min={220}
             max={520}
             step={10}
             value={channelColumnWidth}
-            onChange={(e) => handleChannelWidthChange(Number(e.target.value))}
-            aria-label="Channel column width"
+            onChange={(width) => void handleChannelWidthChange(width)}
+            format={(value) => `${value} px`}
+            label="Channel column width"
           />
-          <div className="slider-labels">
-            <span>Narrow</span>
-            <span>Wide</span>
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label>Background Opacity</label>
-          <input
-            type="range"
-            className="settings-slider"
+        </OptionRow>
+        <OptionRow title="Background" help="How much of the video shows through the guide. Lower is more see-through.">
+          <Slider
             min={50}
             max={100}
             step={5}
             value={Math.round(guideOpacity * 100)}
-            onChange={(e) => handleOpacityChange(Number(e.target.value))}
-            aria-label="Guide background opacity"
+            onChange={(pct) => void handleOpacityChange(pct)}
+            format={(value) => `${value}%`}
+            label="Guide background opacity"
           />
-          <div className="slider-labels">
-            <span>Light</span>
-            <span>Dark</span>
-          </div>
-        </div>
-      </div>
+        </OptionRow>
+      </Section>
 
-      <div className="settings-section">
-        <div className="section-header">
-          <h3>Sports</h3>
-        </div>
+      <Section title="Sports">
+        <OptionRow
+          title="Team logos"
+          help={sportsMatchupEnabled
+            ? "On a live channel showing a recognized game, the bar shows both teams' logos instead of the channel icon. Matched from the guide for NFL, NBA, MLB, NHL and college football and basketball; scores are never shown."
+            : 'The bar always shows the channel icon.'}
+        >
+          <OnOff value={sportsMatchupEnabled} onChange={(enabled) => void handleSportsMatchupChange(enabled)} />
+        </OptionRow>
+      </Section>
 
-        <p className="section-description">
-          When you're on a live channel showing a recognized game, the bar shows the two team
-          logos instead of the channel icon. Scores are never shown.
-        </p>
-
-        <div className="epg-option">
-          <label className="genre-checkbox">
-            <input
-              type="checkbox"
-              checked={sportsMatchupEnabled}
-              onChange={(e) => handleSportsMatchupChange(e.target.checked)}
-            />
-            <span className="genre-name">Show team logos for live games</span>
-          </label>
-          <p className="form-hint">
-            Matched from the program guide for NFL, NBA, MLB, NHL, and college football/basketball.
-            Shows nothing when a game can't be confidently identified.
-          </p>
-        </div>
-
-      </div>
-
-      <div className="settings-section">
-        <div className="section-header">
-          <h3>Loading</h3>
-        </div>
-
-        <div className="epg-option">
-          <label className="genre-checkbox">
-            <input
-              type="checkbox"
-              checked={guideMorphEnabled}
-              onChange={(e) => handleGuideMorphChange(e.target.checked)}
-            />
-            <span className="genre-name">Animate programs into place</span>
-          </label>
-          <p className="form-hint">
-            When guide rows take a moment to load, their titles fade in and slide into position.
-            Off, they simply fade in.
-          </p>
-        </div>
-      </div>
-    </div>
+      <Section title="Loading">
+        <OptionRow
+          title="Animate programs"
+          help={guideMorphEnabled
+            ? 'When guide rows take a moment to load, their titles fade in and slide into position.'
+            : 'Program titles simply fade in.'}
+        >
+          <OnOff value={guideMorphEnabled} onChange={(enabled) => void handleGuideMorphChange(enabled)} />
+        </OptionRow>
+      </Section>
+    </SettingsTab>
   );
 }

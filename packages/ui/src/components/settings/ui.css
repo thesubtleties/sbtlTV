@@ -114,6 +114,11 @@
   font-weight: 600;
 }
 
+.st-seg--compact .st-seg__item {
+  min-width: 0;
+  padding: 0 11px;
+}
+
 .st-seg--disabled {
   opacity: 0.4;
 }
@@ -213,4 +218,155 @@
 
 .st-hint a:hover {
   text-decoration: underline;
+}
+
+/* A path or other technical value */
+.st-code {
+  display: block;
+  max-width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--line-faint);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.st-row__help a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.st-row__help a:hover {
+  text-decoration: underline;
+}
+
+/* An action with an inline confirmation */
+.st-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.st-confirm__question {
+  margin-right: 4px;
+  font-size: 13px;
+  color: var(--warning);
+}
+
+/* Slider with a value readout */
+.st-slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 380px;
+  height: 34px;
+}
+
+.st-slider input[type='range'] {
+  flex: 1;
+  height: 4px;
+  margin: 0;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--fill), var(--fill-4) var(--fill));
+  appearance: none;
+  cursor: pointer;
+}
+
+.st-slider input[type='range']::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--card);
+  appearance: none;
+  transition: transform 0.1s ease;
+}
+
+.st-slider input[type='range']:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+
+.st-slider input[type='range']:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 6px;
+}
+
+.st-slider__value {
+  min-width: 56px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+.st-keyfield {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 440px;
+}
+
+.st-keyfield .st-input {
+  flex: 1;
+}
+
+/* Small status pill, e.g. a subscription tier */
+.st-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--accent-line);
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Toggle chips (e.g. genres) */
+.st-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.st-chip {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--fill-1);
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.st-chip:hover:not(:disabled) {
+  background: var(--fill-2);
+  border-color: var(--edge);
+}
+
+.st-chip--on,
+.st-chip--on:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.st-chip:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
