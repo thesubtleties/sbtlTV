@@ -854,10 +854,10 @@ async function initNativeMpv(): Promise<boolean> {
     // Forward errors to renderer
     bridge.onError((error) => {
       if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
-      // Linux only: hwdec probing and mid-GOP decode errors are logged by
-      // ffmpeg at error level but recover on their own; the debug log keeps
+      // hwdec probing, mid-GOP decode errors and skipped file metadata are
+      // logged at error level but do not stop playback; the debug log keeps
       // them, the red banner does not.
-      if (process.platform === 'linux' && isTransientDecodeError(error)) {
+      if (isTransientDecodeError(error)) {
         debugLog(`mpv (not shown): ${error.trim()}`, 'mpv');
         return;
       }
