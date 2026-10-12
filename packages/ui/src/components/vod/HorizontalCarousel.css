@@ -86,7 +86,7 @@
 
 .carousel__track {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   /* Room for the hover scale(1.05) and its glow, which the scroll container would
      otherwise clip (a horizontal scroller cannot let content spill vertically). The
      row's bottom spacing lives here, inside the scroller, for the same reason. */
