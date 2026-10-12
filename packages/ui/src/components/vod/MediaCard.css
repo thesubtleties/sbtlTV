@@ -174,17 +174,14 @@
   border: none;
   border-radius: 0;
   background: none;
-  color: color-mix(in srgb, var(--fg) 90%, transparent);
+  /* The Play button's color, so empty hearts carry a little of the palette
+     (near-white in sbtl) */
+  color: var(--button);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  /* A tight dark halo hugging the outline, so it reads on bright posters
-     without a dark wash behind it */
-  filter: drop-shadow(0 0 0.5px rgba(0, 0, 0, 0.9))
-         drop-shadow(0 0 1px rgba(0, 0, 0, 0.85))
-         drop-shadow(0 0 4px rgba(0, 0, 0, 0.5));
   transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1),
               color 200ms cubic-bezier(0.2, 0, 0, 1),
               filter 200ms cubic-bezier(0.2, 0, 0, 1),
@@ -192,8 +189,29 @@
 }
 
 .media-card__heart svg {
-  width: 20px;
-  height: 20px;
+  width: 25px;
+  height: 25px;
+}
+
+/* Outline heart: a heart-shaped piece of the play button's glass (the same
+   10% tint and blur over a slight black), outline on top. No filter on the
+   button itself: a filter would stop the blur seeing the poster behind. */
+.media-card__heart:not(.media-card__heart--active)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(var(--fill-3), var(--fill-3)), rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z'/%3E%3C/svg%3E");
+  -webkit-mask-size: 25px 25px;
+  mask-size: 25px 25px;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 
 .media-card:hover .media-card__heart,
@@ -217,8 +235,8 @@
   background: var(--heart-base);
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z'/%3E%3C/svg%3E");
-  -webkit-mask-size: 20px 20px;
-  mask-size: 20px 20px;
+  -webkit-mask-size: 25px 25px;
+  mask-size: 25px 25px;
   -webkit-mask-position: center;
   mask-position: center;
   -webkit-mask-repeat: no-repeat;
@@ -228,9 +246,6 @@
 
 .media-card__heart:hover {
   transform: scale(1.15);
-  filter: drop-shadow(0 0 0.5px rgba(0, 0, 0, 0.95))
-         drop-shadow(0 0 2px rgba(0, 0, 0, 0.9))
-         drop-shadow(0 0 5px rgba(0, 0, 0, 0.6));
 }
 
 .media-card__heart--active:hover {
@@ -291,8 +306,8 @@
   background: rgba(0, 0, 0, 0.5);
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7l16 0'/%3E%3Cpath d='M10 11l0 6'/%3E%3Cpath d='M14 11l0 6'/%3E%3Cpath d='M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12'/%3E%3Cpath d='M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7l16 0'/%3E%3Cpath d='M10 11l0 6'/%3E%3Cpath d='M14 11l0 6'/%3E%3Cpath d='M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12'/%3E%3Cpath d='M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3'/%3E%3C/svg%3E");
-  -webkit-mask-size: 22px 22px;
-  mask-size: 22px 22px;
+  -webkit-mask-size: 25px 25px;
+  mask-size: 25px 25px;
   -webkit-mask-position: center;
   mask-position: center;
   -webkit-mask-repeat: no-repeat;
