@@ -6,13 +6,30 @@
   border-radius: 9px;
   overflow: hidden;
   background: var(--card);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   flex-shrink: 0;
 }
 
-/* Keyboard focus only; the mouse gets the poster zoom below */
+/* Hover: the card grows a little, lifted by a soft glow in the accent */
+.media-card:hover,
+.media-card:focus-visible {
+  transform: scale(1.05);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.45),
+    0 0 22px color-mix(in srgb, var(--accent) 22%, transparent);
+  z-index: 10;
+}
+
 .media-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-card:hover,
+  .media-card:focus-visible {
+    transform: none;
+  }
 }
 
 /* Size variants */
@@ -43,20 +60,7 @@
   height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.2, 0, 0, 1);
-}
-
-/* Hover: the poster eases in a little inside its frame */
-.media-card:hover .media-card__poster img,
-.media-card:focus-visible .media-card__poster img {
-  transform: scale(1.05);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .media-card:hover .media-card__poster img,
-  .media-card:focus-visible .media-card__poster img {
-    transform: none;
-  }
+  transition: opacity 0.3s ease;
 }
 
 .media-card__poster img.loaded {
