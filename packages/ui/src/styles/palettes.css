@@ -35,3 +35,10 @@
   --overlay-base: var(--bg);
   --progress: color-mix(in srgb, var(--accent) 80%, transparent);
 }
+
+/* Outside the house palettes (sbtl, Mocha, Pi stay black), overlays take the
+   palette's card tone, like the empty play area, so the guide and bars read as
+   the theme rather than black. */
+:root[data-palette]:not([data-palette='sbtl']):not([data-palette='mocha']):not([data-palette='pi']) {
+  --overlay-base: var(--card);
+}
