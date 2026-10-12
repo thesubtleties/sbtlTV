@@ -14,6 +14,7 @@ import { isTransientDecodeError } from './mpv-error-filter.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
+import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitles.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -637,6 +638,8 @@ async function initMpv(): Promise<void> {
       '--no-terminal',
       '--hwdec=auto',
       '--vo=gpu',
+      ...SUBTITLE_BASE_OPTIONS.map(([name, value]) => `--${name}=${value}`),
+      `--sub-fonts-dir=${subtitleFontsPath()}`,
     ];
 
     // Get native window handle for --wid embedding
@@ -799,6 +802,8 @@ async function initNativeMpv(): Promise<boolean> {
     mpvBridge = bridge;
     useNativeMpv = true;
     syncPlaybackDiagnostics();
+    setMpvOptions([...SUBTITLE_BASE_OPTIONS, ['sub-fonts-dir', subtitleFontsPath()]], 'native init');
+    applySubtitleStyle('native init');
 
     // Forward status updates to renderer
     nativeStatusThrottle?.reset();
@@ -843,6 +848,20 @@ async function initNativeMpv(): Promise<boolean> {
         } else {
           pendingResume = null; // stale, discard
         }
+      }
+
+      // Subtitle tracks for this load: read track-list only on the schedule
+      // (after the video is up, retried briefly until a subtitle track exists),
+      // never per status. It is a synchronous call into mpv on this thread.
+      if (trackReadGeneration !== loadGeneration) {
+        trackReadGeneration = loadGeneration;
+        trackReadSchedule.reset();
+      }
+      const now = Date.now();
+      if (trackReadSchedule.shouldRead(now, status.width > 0 && status.height > 0)) {
+        const tracks = parseSubtitleTracks(bridge?.getProperty('track-list'));
+        trackReadSchedule.record(now, tracks);
+        sendSubtitleTracks(tracks);
       }
 
       // mpv reports time-pos on every frame. Each forwarded status is an IPC
@@ -1040,6 +1059,8 @@ async function connectToMpvSocket(): Promise<void> {
       sendMpvCommand('observe_property', [3, 'mute']);
       sendMpvCommand('observe_property', [4, 'time-pos']);
       sendMpvCommand('observe_property', [5, 'duration']);
+      sendMpvCommand('observe_property', [6, 'track-list']);
+      applySubtitleStyle('external mpv connected');
 
       resolve();
     });
@@ -1117,6 +1138,10 @@ function handleMpvMessage(msg: MpvMessage): void {
           }
         }
         break;
+      case 'track-list':
+        // Pushed by mpv on every change (file loaded, CC track created); no polling.
+        sendSubtitleTracks(parseSubtitleTracks(msg.data));
+        break;
     }
 
     // Throttle updates to renderer. A copy: mpvState keeps changing while a
@@ -1161,6 +1186,40 @@ function sendToRenderer(channel: string, data: unknown): void {
   if (mainWindow && mainWindow.webContents) {
     mainWindow.webContents.send(channel, data);
   }
+}
+
+/** Set mpv options on whichever player is running. Failures are logged, never thrown. */
+function setMpvOptions(options: Array<[string, string]>, why: string): void {
+  if (useNativeMpv && mpvBridge) {
+    for (const [name, value] of options) {
+      if (!mpvBridge.command('set', name, value)) debugLog(`subtitles: mpv rejected ${name}=${value} (${why})`, 'mpv');
+    }
+    return;
+  }
+  if (!mpvSocket) return;
+  for (const [name, value] of options) {
+    sendMpvCommand('set_property', [name, value]).catch((err) => {
+      debugLog(`subtitles: set ${name} failed (${why}): ${err instanceof Error ? err.message : err}`, 'mpv');
+    });
+  }
+}
+
+function subtitleFontsPath(): string {
+  return subtitleFontsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, dirname: __dirname });
+}
+
+/** Subtitle look from settings (size, style, font follows the app typeface). */
+function applySubtitleStyle(why: string): void {
+  const settings = storage.getSettings();
+  setMpvOptions(subtitleStyleOptions(settings.subtitles!, settings.appearance?.typeface ?? 'fira'), why);
+}
+
+// In-window player: when to read track-list for the current load (see TrackReadSchedule).
+const trackReadSchedule = new TrackReadSchedule();
+let trackReadGeneration = -1;
+
+function sendSubtitleTracks(tracks: ReturnType<typeof parseSubtitleTracks>): void {
+  sendToRenderer('subtitle-tracks', { generation: loadGeneration, tracks });
 }
 
 // IPC Handlers - Window controls
@@ -1221,6 +1280,19 @@ ipcMain.handle('mpv-toggle-stats', async (_event, persistent: boolean) => {
   return shown ? { success: true } : { error: 'mpv rejected the stats command' };
 });
 
+ipcMain.handle('subtitle-set-track', async (_event, id: unknown) => {
+  const value = typeof id === 'number' && Number.isInteger(id) && id > 0 ? String(id) : 'no';
+  setMpvOptions([['sid', value]], 'set track');
+  return { success: true };
+});
+
+ipcMain.handle('subtitle-set-delay', async (_event, seconds: unknown) => {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return { error: 'Invalid delay' };
+  const clamped = Math.min(Math.max(seconds, -60), 60);
+  setMpvOptions([['sub-delay', clamped.toFixed(3)]], 'set delay');
+  return { success: true };
+});
+
 async function loadMedia(url: string, startPosition?: number): Promise<{ success?: boolean; error?: string }> {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge && !mpvBridge.isInitialized()) {
@@ -1235,6 +1307,11 @@ async function loadMedia(url: string, startPosition?: number): Promise<{ success
   // Generation counter ensures stale seeks from previous loads are discarded.
   loadGeneration++;
   pendingResume = resumeAt > 0 ? { position: resumeAt, generation: loadGeneration } : null;
+
+  // mpv keeps sid and sub-delay across loadfile: start every stream with no
+  // subtitle and no offset; the renderer picks the track and restores a delay.
+  setMpvOptions(loadResetOptions(), 'load');
+  sendSubtitleTracks([]);
 
   // Route to native bridge if available — plain loadfile, no options string
   // (start= option is unreliable across mpv versions; seek-on-duration is used instead)
@@ -1496,6 +1573,9 @@ ipcMain.handle('storage-get-settings', async () => {
 ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<typeof storage.updateSettings>[0]) => {
   try {
     storage.updateSettings(settings);
+    if (settings.subtitles !== undefined || settings.appearance !== undefined) {
+      applySubtitleStyle('settings changed');
+    }
     // Update debug logging if that setting changed
     if (settings.debugLoggingEnabled !== undefined) {
       initDebugLogging(settings.debugLoggingEnabled);

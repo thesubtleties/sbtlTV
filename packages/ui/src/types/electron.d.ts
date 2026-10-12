@@ -46,6 +46,29 @@ export interface MpvApi {
   removeAllListeners: () => void;
 }
 
+export interface SubtitleTrack {
+  id: number;
+  lang: string | null;
+  title: string | null;
+  codec: string;
+  /** EIA-608 closed captions carried in the video (live TV) */
+  isCc: boolean;
+}
+
+export interface SubtitleTracksUpdate {
+  /** main's load counter; a new value means a new stream started */
+  generation: number;
+  tracks: SubtitleTrack[];
+}
+
+export interface SubtitlesApi {
+  /** null turns subtitles off */
+  setTrack: (id: number | null) => Promise<MpvResult>;
+  setDelay: (seconds: number) => Promise<MpvResult>;
+  /** Returns an unsubscribe function */
+  onTracks: (callback: (update: SubtitleTracksUpdate) => void) => () => void;
+}
+
 export interface ElectronWindowApi {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
@@ -227,6 +250,7 @@ declare global {
   interface Window {
     data?: DataApi;
     mpv?: MpvApi;
+    subtitles?: SubtitlesApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
     appearance?: AppearanceApi;

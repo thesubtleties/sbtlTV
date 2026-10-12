@@ -180,6 +180,19 @@ contextBridge.exposeInMainWorld('mpv', {
   },
 } satisfies MpvApi);
 
+// Subtitles: mpv's subtitle tracks for the current stream, and the choice back
+interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean }
+interface SubtitleTracksUpdate { generation: number; tracks: SubtitleTrack[] }
+contextBridge.exposeInMainWorld('subtitles', {
+  setTrack: (id: number | null) => ipcRenderer.invoke('subtitle-set-track', id),
+  setDelay: (seconds: number) => ipcRenderer.invoke('subtitle-set-delay', seconds),
+  onTracks: (callback: (update: SubtitleTracksUpdate) => void) => {
+    const listener = (_event: IpcRendererEvent, data: SubtitleTracksUpdate) => callback(data);
+    ipcRenderer.on('subtitle-tracks', listener);
+    return () => { ipcRenderer.removeListener('subtitle-tracks', listener); };
+  },
+});
+
 // Colors the desktop provides, for Settings > Appearance
 interface DesktopColors {
   accent: string | null;
