@@ -60,7 +60,13 @@
   height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.3s ease, filter 0.2s ease;
+}
+
+/* Hover lifts the poster rather than dimming it */
+.media-card:hover .media-card__poster img,
+.media-card:focus-visible .media-card__poster img {
+  filter: brightness(1.08) saturate(1.06);
 }
 
 .media-card__poster img.loaded {
@@ -117,7 +123,10 @@
 
 .media-card:hover .media-card__overlay,
 .media-card:focus-visible .media-card__overlay {
-  background: rgba(0, 0, 0, 0.5);
+  /* The old hover darkness, kept only as a circle under the play icon
+     (44px, its size) so the icon reads on bright posters while the rest
+     of the poster stays at full brightness. */
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.3) 21.5px, transparent 22px);
 }
 
 .media-card__play-icon {
