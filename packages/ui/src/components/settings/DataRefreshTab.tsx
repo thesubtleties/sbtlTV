@@ -116,7 +116,7 @@ export function DataRefreshTab({
             </button>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <span style={{ color: '#ff9900', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--warning)', fontSize: '0.85rem' }}>
                 Delete all cached data?
               </span>
               <div style={{ display: 'flex', gap: '0.5rem' }}>

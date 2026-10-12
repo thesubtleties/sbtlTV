@@ -1,0 +1,80 @@
+/*
+ * Color palettes. Every palette sets the same roles; tokens.css derives the
+ * rest. sbtl is the default (today's look); the others are shtl's dark
+ * palettes, from each scheme's official colors.
+ *
+ * overlay-base is what the guide and other panels over video are tinted with,
+ * at the guide opacity. progress is the watched-progress bar.
+ */
+
+:root,
+:root[data-palette='sbtl'] {
+  --bg: #0d0d0d;
+  --card: #141414;
+  --surface: #1a1a1a;
+  --line: rgba(255, 255, 255, 0.1);
+  --edge: rgba(255, 255, 255, 0.2);
+  --fg: #ffffff;
+  --muted: rgba(255, 255, 255, 0.5);
+  --accent: #00d4ff;
+  --on-accent: #0d0d0d;
+  --danger: #ef4444;
+  --teal: #22c55e;
+  --overlay-base: #000000;
+  --progress: rgba(229, 9, 20, 0.65);
+}
+
+:root[data-palette='catppuccin'] {
+  --bg: #11111b; --card: #1e1e2e; --surface: #313244; --line: #45475a; --edge: #585b70;
+  --fg: #cdd6f4; --muted: #9399b2; --accent: #cba6f7; --on-accent: #11111b;
+  --danger: #f38ba8; --teal: #94e2d5;
+}
+
+:root[data-palette='tokyonight'] {
+  --bg: #16161e; --card: #1a1b26; --surface: #292e42; --line: #3b4261; --edge: #545c7e;
+  --fg: #c0caf5; --muted: #737aa2; --accent: #7aa2f7; --on-accent: #16161e;
+  --danger: #f7768e; --teal: #73daca;
+}
+
+:root[data-palette='kanagawa'] {
+  --bg: #16161d; --card: #1f1f28; --surface: #2a2a37; --line: #363646; --edge: #54546d;
+  --fg: #dcd7ba; --muted: #938aa9; --accent: #7e9cd8; --on-accent: #1f1f28;
+  --danger: #e46876; --teal: #7aa89f;
+}
+
+:root[data-palette='gruvbox'] {
+  --bg: #1d2021; --card: #282828; --surface: #3c3836; --line: #504945; --edge: #665c54;
+  --fg: #ebdbb2; --muted: #a89984; --accent: #fabd2f; --on-accent: #282828;
+  --danger: #fb4934; --teal: #8ec07c;
+}
+
+:root[data-palette='nord'] {
+  --bg: #242933; --card: #2e3440; --surface: #3b4252; --line: #434c5e; --edge: #4c566a;
+  --fg: #eceff4; --muted: #9aa3b5; --accent: #88c0d0; --on-accent: #2e3440;
+  --danger: #bf616a; --teal: #a3be8c;
+}
+
+:root[data-palette='rosepine'] {
+  --bg: #191724; --card: #1f1d2e; --surface: #26233a; --line: #403d52; --edge: #524f67;
+  --fg: #e0def4; --muted: #908caa; --accent: #ebbcba; --on-accent: #191724;
+  --danger: #eb6f92; --teal: #9ccfd8;
+}
+
+:root[data-palette='everforest'] {
+  --bg: #1e2326; --card: #272e33; --surface: #2e383c; --line: #374145; --edge: #414b50;
+  --fg: #d3c6aa; --muted: #9da9a0; --accent: #a7c080; --on-accent: #1e2326;
+  --danger: #e67e80; --teal: #83c092;
+}
+
+:root[data-palette='dracula'] {
+  --bg: #191a21; --card: #282a36; --surface: #343746; --line: #44475a; --edge: #565970;
+  --fg: #f8f8f2; --muted: #a4abcc; --accent: #bd93f9; --on-accent: #191a21;
+  --danger: #ff5555; --teal: #8be9fd;
+}
+
+/* Palettes other than sbtl tint overlays with their own background and show
+   progress in their accent. */
+:root[data-palette]:not([data-palette='sbtl']) {
+  --overlay-base: var(--bg);
+  --progress: color-mix(in srgb, var(--accent) 80%, transparent);
+}

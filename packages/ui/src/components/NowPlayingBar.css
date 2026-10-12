@@ -4,9 +4,9 @@
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(10, 10, 10, 0.92);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
   backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--line);
   padding: 10px 16px;
   display: flex;
   flex-direction: column;
@@ -54,7 +54,7 @@
   height: 36px;
   object-fit: contain;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--fill-2);
   flex-shrink: 0;
 }
 
@@ -69,7 +69,7 @@
 .npb-channel-name {
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -79,7 +79,7 @@
 .npb-program-title {
   font-size: 0.78rem;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -88,13 +88,13 @@
 
 .npb-no-program {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--faint);
   font-style: italic;
 }
 
 .npb-vod-year {
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 /* Soft vertical divider with faded top/bottom */
@@ -105,8 +105,8 @@
   background: linear-gradient(
     to bottom,
     transparent 0%,
-    rgba(255, 255, 255, 0.2) 20%,
-    rgba(255, 255, 255, 0.2) 80%,
+    var(--fill-5) 20%,
+    var(--fill-5) 80%,
     transparent 100%
   );
 }
@@ -121,7 +121,7 @@
 
 .npb-program-desc {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -147,14 +147,14 @@
 .npb-progress-bar {
   flex: 1;
   height: 3px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .npb-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #00d4ff, #00a8cc);
+  background: linear-gradient(90deg, var(--accent), var(--accent-edge));
   border-radius: 2px;
   transition: width 0.5s ease;
 }
@@ -166,7 +166,7 @@
 
 .npb-time-elapsed {
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-3);
   white-space: nowrap;
   min-width: 50px;
   text-align: left;
@@ -195,7 +195,7 @@
   top: 50%;
   width: 12px;
   height: 12px;
-  background: white;
+  background: var(--text);
   border-radius: 50%;
   transform: translate(-50%, -50%) scale(0);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
@@ -217,8 +217,8 @@
   position: absolute;
   bottom: calc(100% + 8px);
   transform: translateX(-50%);
-  background: rgba(20, 20, 20, 0.95);
-  color: white;
+  background: color-mix(in srgb, var(--card) 95%, transparent);
+  color: var(--text);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 0.7rem;
@@ -235,12 +235,12 @@
   left: 50%;
   transform: translateX(-50%);
   border: 5px solid transparent;
-  border-top-color: rgba(20, 20, 20, 0.95);
+  border-top-color: color-mix(in srgb, var(--card) 95%, transparent);
 }
 
 .npb-time-remaining {
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   white-space: nowrap;
   min-width: 65px;
   text-align: right;
@@ -261,17 +261,17 @@
   justify-content: center;
   width: 34px;
   height: 34px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
+  border: 1px solid var(--line);
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-2);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .npb-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--fill-4);
+  border-color: var(--edge);
 }
 
 .npb-btn:active:not(:disabled) {
@@ -301,7 +301,7 @@
   height: 3px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--fill-4);
   border-radius: 2px;
   cursor: pointer;
 }
@@ -311,7 +311,7 @@
   appearance: none;
   width: 10px;
   height: 10px;
-  background: white;
+  background: var(--text);
   border-radius: 50%;
   cursor: pointer;
   transition: transform 0.1s ease;
@@ -324,7 +324,7 @@
 .npb-volume-slider::-moz-range-thumb {
   width: 10px;
   height: 10px;
-  background: white;
+  background: var(--text);
   border: none;
   border-radius: 50%;
   cursor: pointer;
@@ -337,7 +337,7 @@
 
 .npb-volume-value {
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   min-width: 22px;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -353,7 +353,7 @@
 
 .npb-empty-state span {
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--faint);
   font-style: italic;
 }
 

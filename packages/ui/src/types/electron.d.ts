@@ -63,8 +63,16 @@ export interface StorageResult<T = void> {
   data?: T;
 }
 
+export type PaletteId = 'sbtl' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula';
+export type Typeface = 'fira' | 'mono' | 'system';
+export interface Appearance {
+  palette: PaletteId;
+  typeface: Typeface;
+}
+
 export interface AppSettings {
   theme: 'dark' | 'light';
+  appearance?: Appearance;  // Palette and typeface (default sbtl / fira)
   lastSourceId?: string;
   tmdbApiKey?: string;
   vodRefreshHours?: number;  // 0 = manual only, default 24

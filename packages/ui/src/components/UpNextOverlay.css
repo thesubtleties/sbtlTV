@@ -6,12 +6,12 @@
 }
 
 .up-next__card {
-  background: rgba(15, 15, 18, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 14px 16px;
   min-width: 240px;
-  color: #fff;
+  color: var(--text);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
@@ -49,11 +49,11 @@
 }
 
 .up-next__cancel {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--fill-4);
+  color: var(--text);
 }
 
 .up-next__play {
-  background: #fff;
-  color: #111;
+  background: var(--text);
+  color: var(--bg);
 }

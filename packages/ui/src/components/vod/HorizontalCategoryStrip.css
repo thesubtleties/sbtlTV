@@ -20,16 +20,16 @@
   gap: 8px;
   padding: 6px 12px 6px 8px;
   border: none;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--fill-2);
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-2);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
 .h-category-strip__back:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--fill-4);
+  color: var(--text);
 }
 
 .h-category-strip__back-arrow {
@@ -62,7 +62,7 @@
   height: 28px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -77,11 +77,11 @@
 }
 
 .h-category-strip__home:hover {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-2);
 }
 
 .h-category-strip__home.active {
-  color: #fff;
+  color: var(--text);
 }
 
 /* Arrow buttons - positioned outside scroll area */
@@ -92,7 +92,7 @@
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -113,8 +113,8 @@
 }
 
 .h-category-strip__arrow:hover {
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-2);
+  background: var(--fill-3);
 }
 
 .h-category-strip__arrow:active {
@@ -144,13 +144,13 @@
 
 .h-category-strip__scroll-wrapper::before {
   left: 0;
-  background: linear-gradient(to right, #0d0d0d, transparent);
+  background: linear-gradient(to right, var(--bg), transparent);
   opacity: 0;
 }
 
 .h-category-strip__scroll-wrapper::after {
   right: 0;
-  background: linear-gradient(to left, #0d0d0d, transparent);
+  background: linear-gradient(to left, var(--bg), transparent);
   opacity: 0;
 }
 
@@ -193,9 +193,9 @@
   padding: 7px 14px;
   font-size: 0.8125rem;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--line);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -203,15 +203,15 @@
 }
 
 .h-category-strip__pill:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--fill-2);
+  color: var(--text-2);
+  border-color: var(--edge);
 }
 
 .h-category-strip__pill.active {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.25);
+  background: var(--fill-4);
+  color: var(--text);
+  border-color: var(--edge);
 }
 
 /* Search input - unified header only */
@@ -221,8 +221,8 @@
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--fill-2);
+  border: 1px solid var(--line);
   border-radius: 8px;
   min-width: 180px;
   max-width: 280px;
@@ -230,15 +230,15 @@
 }
 
 .h-category-strip__search:focus-within {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--fill-3);
+  border-color: var(--edge);
 }
 
 .h-category-strip__search svg {
   flex-shrink: 0;
   width: 16px;
   height: 16px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .h-category-strip__search input {
@@ -246,13 +246,13 @@
   min-width: 0;
   border: none;
   background: transparent;
-  color: #fff;
+  color: var(--text);
   font-size: 0.875rem;
   outline: none;
 }
 
 .h-category-strip__search input::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
 }
 
 .h-category-strip__search-clear {
@@ -262,7 +262,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -271,7 +271,7 @@
 }
 
 .h-category-strip__search-clear:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-2);
 }
 
 .h-category-strip__search-clear svg {

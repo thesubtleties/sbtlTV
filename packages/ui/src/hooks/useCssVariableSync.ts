@@ -17,6 +17,16 @@ export function useCssVariableSync() {
     document.documentElement.style.setProperty('--guide-opacity', String(guideOpacity));
   }, [guideOpacity]);
 
+  // Palette and typeface: palettes.css and tokens.css key off these attributes.
+  const palette = useUIStore((s) => s.settings.appearance?.palette ?? 'sbtl');
+  const typeface = useUIStore((s) => s.settings.appearance?.typeface ?? 'fira');
+  useEffect(() => {
+    document.documentElement.dataset.palette = palette;
+  }, [palette]);
+  useEffect(() => {
+    document.documentElement.dataset.typeface = typeface;
+  }, [typeface]);
+
   // Linux performance mode: App.css drops every backdrop blur under this class.
   const performanceMode = useUIStore((s) => s.settings.linuxPerformanceMode === true) && !!window.platform?.isLinux;
   useEffect(() => {

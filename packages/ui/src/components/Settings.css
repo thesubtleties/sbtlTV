@@ -13,9 +13,9 @@
 }
 
 .settings-panel {
-  background: rgba(20, 20, 20, 0.95);
+  background: color-mix(in srgb, var(--card) 95%, transparent);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line);
   border-radius: 8px;
   width: 90%;
   max-width: 600px;
@@ -48,7 +48,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  scrollbar-color: var(--fill-3) transparent;
 }
 
 .settings-content::-webkit-scrollbar {
@@ -60,12 +60,12 @@
 }
 
 .settings-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
   border-radius: 3px;
 }
 
 .settings-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--fill-5);
 }
 
 .settings-header {
@@ -73,7 +73,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--line);
 }
 
 .settings-header h2 {
@@ -82,7 +82,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-2);
 }
 
 .close-btn {
@@ -92,8 +92,8 @@
   width: 28px;
   height: 28px;
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--line);
+  color: var(--muted);
   font-size: 1rem;
   cursor: pointer;
   border-radius: 4px;
@@ -101,15 +101,15 @@
 }
 
 .close-btn:hover {
-  border-color: rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.05);
-  color: white;
+  border-color: var(--edge);
+  background: var(--fill-2);
+  color: var(--text);
 }
 
 /* Encryption Warning */
 .encryption-warning {
-  background: rgba(255, 153, 0, 0.1);
-  border-left: 3px solid #ff9900;
+  background: var(--warning-soft);
+  border-left: 3px solid var(--warning);
   padding: 12px 16px;
   margin: 16px;
   border-radius: 4px;
@@ -145,7 +145,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .tier-badge {
@@ -153,8 +153,8 @@
   font-weight: 500;
   padding: 3px 8px;
   border-radius: 4px;
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
+  background: var(--accent-soft);
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
@@ -166,8 +166,8 @@
 
 .sync-btn {
   background: transparent;
-  color: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-3);
+  border: 1px solid var(--line-2);
   padding: 6px 12px;
   border-radius: 4px;
   font-size: 0.8rem;
@@ -177,9 +177,9 @@
 }
 
 .sync-btn:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.05);
-  color: white;
+  border-color: var(--edge-2);
+  background: var(--fill-2);
+  color: var(--text);
 }
 
 .sync-btn:disabled {
@@ -188,20 +188,20 @@
 }
 
 .sync-btn.danger {
-  color: #ff6b6b;
-  border-color: rgba(255, 107, 107, 0.4);
+  color: var(--danger);
+  border-color: var(--danger-line);
 }
 
 .sync-btn.danger:hover:not(:disabled) {
-  background: rgba(255, 107, 107, 0.15);
-  border-color: rgba(255, 107, 107, 0.6);
-  color: #ff6b6b;
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+  color: var(--danger);
 }
 
 .add-btn {
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
-  border: 1px solid rgba(0, 212, 255, 0.4);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent-line);
   padding: 6px 12px;
   border-radius: 4px;
   font-size: 0.8rem;
@@ -211,8 +211,8 @@
 }
 
 .add-btn:hover {
-  background: rgba(0, 212, 255, 0.25);
-  border-color: rgba(0, 212, 255, 0.6);
+  background: var(--accent-line);
+  border-color: var(--accent-strong);
 }
 
 /* Sync Status */
@@ -228,35 +228,35 @@
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--fill-1);
   border-radius: 4px;
   font-size: 0.8rem;
 }
 
 .sync-status-item.success {
-  border-left: 2px solid #2ecc71;
+  border-left: 2px solid var(--success);
 }
 
 .sync-status-item.error {
-  border-left: 2px solid #e74c3c;
+  border-left: 2px solid var(--danger);
 }
 
 .status-name {
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-2);
 }
 
 .status-count {
-  color: #2ecc71;
+  color: var(--success);
 }
 
 .status-error {
-  color: #e74c3c;
+  color: var(--danger);
   flex: 1;
 }
 
 .status-time {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--faint);
   font-size: 0.7rem;
   margin-left: auto;
 }
@@ -265,7 +265,7 @@
 .empty-state {
   text-align: center;
   padding: 40px 20px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
 }
 
 .empty-state p {
@@ -290,16 +290,16 @@
   display: flex;
   flex-direction: column;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--fill-1);
+  border: 1px solid var(--line-faint);
   border-radius: 4px;
   margin-bottom: 6px;
   transition: all 0.15s ease;
 }
 
 .source-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--fill-2);
+  border-color: var(--line);
 }
 
 .source-row {
@@ -325,7 +325,7 @@
 .source-name {
   font-weight: 500;
   font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-2);
 }
 
 .source-type {
@@ -333,26 +333,26 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fill-3);
   padding: 2px 6px;
   border-radius: 3px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .source-stats {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
 }
 
 .source-synced {
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--faint);
   margin-left: auto;
 }
 
 .source-error {
   font-size: 0.75rem;
-  color: #e74c3c;
+  color: var(--danger);
 }
 
 .source-actions {
@@ -362,8 +362,8 @@
 
 .source-actions button {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--line);
+  color: var(--text-3);
   padding: 4px 10px;
   border-radius: 4px;
   cursor: pointer;
@@ -372,20 +372,20 @@
 }
 
 .source-actions button:hover {
-  border-color: rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.05);
-  color: white;
+  border-color: var(--edge);
+  background: var(--fill-2);
+  color: var(--text);
 }
 
 .source-actions button.delete {
-  color: rgba(255, 100, 100, 0.8);
-  border-color: rgba(255, 100, 100, 0.2);
+  color: var(--danger);
+  border-color: var(--danger-soft);
 }
 
 .source-actions button.delete:hover {
-  background: rgba(255, 100, 100, 0.1);
-  border-color: rgba(255, 100, 100, 0.4);
-  color: #ff6464;
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+  color: var(--danger);
 }
 
 /* Source toggle switch */
@@ -407,7 +407,7 @@
 .toggle-slider {
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--fill-4);
   border-radius: 9px;
   transition: background 0.2s ease;
 }
@@ -419,18 +419,18 @@
   height: 14px;
   left: 2px;
   top: 2px;
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--muted);
   border-radius: 50%;
   transition: transform 0.2s ease, background 0.2s ease;
 }
 
 .source-toggle input:checked + .toggle-slider {
-  background: rgba(76, 175, 80, 0.5);
+  background: var(--success-line);
 }
 
 .source-toggle input:checked + .toggle-slider::before {
   transform: translateX(14px);
-  background: #4caf50;
+  background: var(--success);
 }
 
 /* Disabled source */
@@ -440,7 +440,7 @@
 
 .source-item.disabled .source-name {
   text-decoration: line-through;
-  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-decoration-color: var(--faint);
 }
 
 /* Source Priority Section */
@@ -451,7 +451,7 @@
 .priority-list-section h4 {
   font-size: 0.8rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
   margin: 0 0 4px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -459,7 +459,7 @@
 
 .priority-description {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
   margin: 0 0 8px;
 }
 
@@ -474,8 +474,8 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--fill-1);
+  border: 1px solid var(--line-faint);
   border-radius: 4px;
   cursor: grab;
   user-select: none;
@@ -483,18 +483,18 @@
 }
 
 .priority-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--fill-2);
+  border-color: var(--line);
 }
 
 .priority-item.dragging {
   opacity: 0.5;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--fill-3);
+  border-color: var(--edge);
 }
 
 .priority-grip {
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--faint);
   font-size: 0.9rem;
   line-height: 1;
   flex-shrink: 0;
@@ -502,17 +502,17 @@
 
 .priority-name {
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-2);
   flex: 1;
 }
 
 .priority-type {
   font-size: 0.6rem;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fill-3);
   padding: 2px 5px;
   border-radius: 3px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
 }
 
 .priority-item.disabled {
@@ -520,7 +520,7 @@
 }
 
 .priority-item.disabled .priority-name {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 /* Source Form Overlay */
@@ -539,13 +539,13 @@
   padding: 24px;
   box-sizing: border-box;
   /* Portal renders outside app root - need to reapply base styles */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: white;
+  font-family: var(--font-sans);
+  color: var(--text);
 }
 
 .source-form {
-  background: rgba(20, 20, 20, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--card) 98%, transparent);
+  border: 1px solid var(--line);
   padding: 24px;
   border-radius: 8px;
   width: 90%;
@@ -558,18 +558,18 @@
   margin: 0 0 20px 0;
   font-size: 1rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-2);
 }
 
 .form-error,
 .sync-error {
-  background: rgba(255, 68, 68, 0.1);
-  border-left: 3px solid #ff4444;
+  background: var(--danger-soft);
+  border-left: 3px solid var(--danger);
   padding: 10px 14px;
   border-radius: 4px;
   margin-bottom: 16px;
   font-size: 0.85rem;
-  color: #ff6464;
+  color: var(--danger);
 }
 
 .form-group {
@@ -583,16 +583,16 @@
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .form-group input {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.03);
-  color: white;
+  background: var(--fill-1);
+  color: var(--text);
   font-size: 0.9rem;
   box-sizing: border-box;
   transition: all 0.15s ease;
@@ -600,12 +600,12 @@
 
 .form-group input:focus {
   outline: none;
-  border-color: rgba(0, 212, 255, 0.5);
-  background: rgba(0, 212, 255, 0.03);
+  border-color: var(--accent-strong);
+  background: var(--accent-faint);
 }
 
 .form-group input::placeholder {
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--faint);
 }
 
 /* Type Selector */
@@ -617,10 +617,10 @@
 .type-selector button {
   flex: 1;
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line);
   border-radius: 4px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 500;
@@ -628,24 +628,24 @@
 }
 
 .type-selector button:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.7);
+  border-color: var(--edge);
+  color: var(--text-3);
 }
 
 .type-selector button.active {
-  border-color: rgba(0, 212, 255, 0.5);
-  background: rgba(0, 212, 255, 0.1);
-  color: #00d4ff;
+  border-color: var(--accent-strong);
+  background: var(--accent-faint);
+  color: var(--accent);
 }
 
 /* Inline Warning */
 .inline-warning {
-  background: rgba(255, 153, 0, 0.1);
-  border-left: 3px solid #ff9900;
+  background: var(--warning-soft);
+  border-left: 3px solid var(--warning);
   padding: 8px 12px;
   border-radius: 4px;
   font-size: 0.8rem;
-  color: #ff9900;
+  color: var(--warning);
   margin-bottom: 16px;
 }
 
@@ -659,10 +659,10 @@
 .cancel-btn {
   flex: 1;
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line);
   border-radius: 4px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
   cursor: pointer;
   font-size: 0.85rem;
   font-weight: 500;
@@ -670,17 +670,17 @@
 }
 
 .cancel-btn:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.8);
+  border-color: var(--edge);
+  color: var(--text-2);
 }
 
 .save-btn {
   flex: 1;
   padding: 10px;
-  border: 1px solid rgba(0, 212, 255, 0.4);
+  border: 1px solid var(--accent-line);
   border-radius: 4px;
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
+  background: var(--accent-soft);
+  color: var(--accent);
   cursor: pointer;
   font-size: 0.85rem;
   font-weight: 600;
@@ -688,13 +688,13 @@
 }
 
 .save-btn:hover {
-  background: rgba(0, 212, 255, 0.25);
-  border-color: rgba(0, 212, 255, 0.6);
+  background: var(--accent-line);
+  border-color: var(--accent-strong);
 }
 
 /* TMDB Section */
 .section-description {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
   font-size: 0.85rem;
   line-height: 1.5;
   margin: 0 0 16px 0;
@@ -722,10 +722,10 @@
 .form-group.inline select,
 .form-group select {
   padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--fill-1);
+  color: var(--text-2);
   font-size: 0.85rem;
   min-width: 160px;
 }
@@ -733,22 +733,22 @@
 .form-group.inline select:focus,
 .form-group select:focus {
   outline: none;
-  border-color: rgba(0, 212, 255, 0.5);
+  border-color: var(--accent-strong);
 }
 
 .form-group.inline select option,
 .form-group select option {
-  background: #1a1a1a;
-  color: #fff;
+  background: var(--surface);
+  color: var(--text);
   padding: 8px 12px;
 }
 
 .form-group.inline button {
   padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--edge);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--fill-3);
+  color: var(--text-2);
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 500;
@@ -757,7 +757,7 @@
 }
 
 .form-group.inline button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--fill-4);
 }
 
 .form-group.inline button:disabled {
@@ -766,20 +766,20 @@
 }
 
 .form-group.inline button.success {
-  border-color: rgba(34, 197, 94, 0.5);
-  background: rgba(34, 197, 94, 0.2);
-  color: #22c55e;
+  border-color: var(--success-line);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .form-group.inline button.error {
-  border-color: rgba(239, 68, 68, 0.5);
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .form-hint {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
   margin: 8px 0 0 0;
 }
 
@@ -790,7 +790,7 @@
 }
 
 .form-hint a {
-  color: #00d4ff;
+  color: var(--accent);
   text-decoration: none;
 }
 
@@ -800,7 +800,7 @@
 
 /* TMDB link in description */
 .section-description .tmdb-link {
-  color: #00d4ff;
+  color: var(--accent);
   text-decoration: none;
 }
 
@@ -813,7 +813,7 @@
   display: flex;
   gap: 2px;
   padding: 0 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--line);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -827,7 +827,7 @@
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
@@ -836,13 +836,13 @@
 }
 
 .settings-tab:hover {
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-2);
+  background: var(--fill-1);
 }
 
 .settings-tab.active {
-  color: #00d4ff;
-  border-bottom-color: #00d4ff;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 /* Tab Panel */
@@ -863,12 +863,12 @@
 }
 
 .settings-tab-panel::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
   border-radius: 3px;
 }
 
 .settings-tab-panel::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--fill-5);
 }
 
 .settings-tab-content {
@@ -924,14 +924,14 @@
 .genre-count {
   margin-left: auto;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
 }
 
 .genre-grid-container {
   flex: 1;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  scrollbar-color: var(--fill-3) transparent;
   margin-top: 8px;
 }
 
@@ -944,12 +944,12 @@
 }
 
 .genre-grid-container::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
   border-radius: 3px;
 }
 
 .genre-grid-container::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--fill-5);
 }
 
 .genre-grid {
@@ -963,34 +963,34 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--fill-1);
+  border: 1px solid var(--line-faint);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .genre-checkbox:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--fill-2);
+  border-color: var(--line);
 }
 
 .genre-checkbox input[type='checkbox'] {
   width: 16px;
   height: 16px;
-  accent-color: #00d4ff;
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
 .genre-name {
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-2);
 }
 
 .genre-item-count {
   margin-left: 4px;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .genre-checkbox--disabled {
@@ -999,8 +999,8 @@
 }
 
 .genre-checkbox--disabled:hover {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: var(--fill-1);
+  border-color: var(--line-faint);
 }
 
 .genre-checkbox--disabled input[type='checkbox'] {
@@ -1011,7 +1011,7 @@
 .loading-state {
   text-align: center;
   padding: 40px 20px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -1031,14 +1031,14 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background: rgba(255, 153, 0, 0.2);
-  color: #ff9900;
+  background: var(--warning-soft);
+  color: var(--warning);
   padding: 3px 8px;
   border-radius: 3px;
 }
 
 .disabled-link {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--faint);
 }
 
 .form-hint.disabled {
@@ -1048,16 +1048,16 @@
 .feature-preview {
   margin-top: 24px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--fill-1);
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line-faint);
 }
 
 .feature-preview h4 {
   margin: 0 0 12px 0;
   font-size: 0.8rem;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
 }
 
 .feature-preview ul {
@@ -1067,7 +1067,7 @@
 
 .feature-preview li {
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   margin-bottom: 6px;
 }
 
@@ -1084,10 +1084,10 @@
 
 .refresh-settings select {
   padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.03);
-  color: white;
+  background: var(--fill-1);
+  color: var(--text);
   font-size: 0.85rem;
   cursor: pointer;
   min-width: 160px;
@@ -1095,12 +1095,12 @@
 
 .refresh-settings select:focus {
   outline: none;
-  border-color: rgba(0, 212, 255, 0.5);
+  border-color: var(--accent-strong);
 }
 
 .refresh-settings select option {
-  background: #1a1a1a;
-  color: #fff;
+  background: var(--surface);
+  color: var(--text);
   padding: 8px 12px;
 }
 
@@ -1109,12 +1109,12 @@
   margin-top: auto;
   padding: 16px 12px 0;
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
   text-align: center;
 }
 
 .settings-disclaimer a {
-  color: #00d4ff;
+  color: var(--accent);
   text-decoration: none;
 }
 
@@ -1126,7 +1126,7 @@
 .epg-settings {
   margin-top: 8px;
   padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--line-faint);
 }
 
 .checkbox-label {
@@ -1135,7 +1135,7 @@
   gap: 10px;
   cursor: pointer;
   font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-2);
   text-transform: none;
   letter-spacing: normal;
   font-weight: 400;
@@ -1144,7 +1144,7 @@
 .checkbox-label input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: #00d4ff;
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
@@ -1152,7 +1152,7 @@
   display: block;
   margin-top: 6px;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
   font-weight: 400;
   text-transform: none;
   letter-spacing: normal;
@@ -1171,12 +1171,12 @@
   content: '';
   flex: 1;
   height: 1px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
 }
 
 .or-divider span {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
   text-transform: uppercase;
 }
 
@@ -1184,19 +1184,19 @@
 .import-btn {
   width: 100%;
   padding: 10px;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border: 1px dashed var(--edge);
   border-radius: 4px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
   cursor: pointer;
   font-size: 0.85rem;
   transition: all 0.15s ease;
 }
 
 .import-btn:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  background: rgba(0, 212, 255, 0.05);
-  color: #00d4ff;
+  border-color: var(--accent-line);
+  background: var(--accent-faint);
+  color: var(--accent);
 }
 
 /* Import Summary */
@@ -1204,11 +1204,11 @@
   display: flex;
   gap: 16px;
   padding: 12px;
-  background: rgba(0, 212, 255, 0.08);
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  background: var(--accent-faint);
+  border: 1px solid var(--accent-soft);
   border-radius: 4px;
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-2);
 }
 
 .import-info .import-summary span {
@@ -1220,18 +1220,18 @@
 .change-file-btn {
   margin-top: 8px;
   padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line);
   border-radius: 4px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   cursor: pointer;
   font-size: 0.75rem;
   transition: all 0.15s ease;
 }
 
 .change-file-btn:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.8);
+  border-color: var(--edge);
+  color: var(--text-2);
 }
 
 /* Settings Slider (Guide Appearance) */
@@ -1240,7 +1240,7 @@
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--fill-4);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
@@ -1252,7 +1252,7 @@
   appearance: none;
   width: 14px;
   height: 14px;
-  background: white;
+  background: var(--text);
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -1266,7 +1266,7 @@
 .settings-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  background: white;
+  background: var(--text);
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -1276,7 +1276,7 @@
   display: flex;
   justify-content: space-between;
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--faint);
   margin-top: 2px;
 }
 

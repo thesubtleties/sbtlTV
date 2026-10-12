@@ -4,7 +4,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: #0d0d0d;
+  background: var(--bg);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -35,7 +35,7 @@
   align-items: center;
   gap: 24px;
   padding: 16px 48px;
-  background: #0d0d0d;
+  background: var(--bg);
 }
 
 .vod-page__close {
@@ -44,7 +44,7 @@
   border-radius: 8px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -53,8 +53,8 @@
 }
 
 .vod-page__close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  background: var(--fill-3);
 }
 
 .vod-page__close svg {
@@ -65,7 +65,7 @@
 .vod-page__title {
   font-size: 1.375rem;
   font-weight: 500;
-  color: #fff;
+  color: var(--text);
   margin: 0;
   letter-spacing: -0.01em;
 }
@@ -78,22 +78,22 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--fill-2);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px 14px;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .vod-page__search:focus-within {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--fill-3);
+  border-color: var(--line-2);
 }
 
 .vod-page__search svg {
   width: 16px;
   height: 16px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
   flex-shrink: 0;
 }
 
@@ -101,14 +101,14 @@
   flex: 1;
   background: none;
   border: none;
-  color: #fff;
+  color: var(--text);
   font-size: 0.875rem;
   font-weight: 400;
   outline: none;
 }
 
 .vod-page__search input::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--faint);
 }
 
 .vod-page__search button {
@@ -116,7 +116,7 @@
   border: none;
   padding: 2px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--faint);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -124,7 +124,7 @@
 }
 
 .vod-page__search button:hover {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-2);
 }
 
 .vod-page__search button svg {
@@ -154,9 +154,9 @@
   padding: 7px 14px;
   font-size: 0.8125rem;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--line);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -164,15 +164,15 @@
 }
 
 .vod-page__category:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--fill-2);
+  color: var(--text-2);
+  border-color: var(--edge);
 }
 
 .vod-page__category.active {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.25);
+  background: var(--fill-4);
+  color: var(--text);
+  border-color: var(--edge);
 }
 
 /* Main content */
@@ -181,7 +181,7 @@
   min-height: 0; /* Important: allows flex child to shrink below content size */
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  scrollbar-color: var(--fill-3) transparent;
 }
 
 .vod-page__content::-webkit-scrollbar {
@@ -193,12 +193,12 @@
 }
 
 .vod-page__content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
   border-radius: 3px;
 }
 
 .vod-page__content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--fill-5);
 }
 
 .vod-page__carousels {

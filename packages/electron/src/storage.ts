@@ -48,9 +48,23 @@ interface AppSettings {
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: 'compatibility' runs mpv in its own window (default 'native'); takes effect on restart
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video (immediate); default false
+  appearance?: Appearance;  // Palette and typeface (default sbtl / fira)
 }
 
 export type { LinuxPlayerMode };
+
+export const PALETTES = ['sbtl', 'catppuccin', 'tokyonight', 'kanagawa', 'gruvbox', 'nord', 'rosepine', 'everforest', 'dracula'] as const;
+export const TYPEFACES = ['fira', 'mono', 'system'] as const;
+export interface Appearance {
+  palette: (typeof PALETTES)[number];
+  typeface: (typeof TYPEFACES)[number];
+}
+
+function normalizeAppearance(value: Partial<Appearance> | undefined): Appearance {
+  const palette = PALETTES.find(p => p === value?.palette) ?? 'sbtl';
+  const typeface = TYPEFACES.find(t => t === value?.typeface) ?? 'fira';
+  return { palette, typeface };
+}
 
 // Internal storage format (encrypted)
 interface StoredSettings {
@@ -78,6 +92,7 @@ interface StoredSettings {
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: video player used at next launch
   linuxPerformanceMode?: boolean;  // Linux only: cheaper rendering for slower GPUs
+  appearance?: Appearance;
 }
 
 const store = new Store<StoreSchema>({
@@ -228,6 +243,7 @@ export function getSettings(): AppSettings {
   result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
   result.linuxPlayerMode = normalizeLinuxPlayerMode(stored.linuxPlayerMode);
   result.linuxPerformanceMode = stored.linuxPerformanceMode === true;
+  result.appearance = normalizeAppearance(stored.appearance);
   return result;
 }
 
@@ -247,6 +263,7 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   const updated: StoredSettings = { ...current };
 
   if (settings.theme !== undefined) updated.theme = settings.theme;
+  if (settings.appearance !== undefined) updated.appearance = normalizeAppearance(settings.appearance);
   if (settings.lastSourceId !== undefined) updated.lastSourceId = settings.lastSourceId;
   if (settings.tmdbApiKey !== undefined) {
     updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;

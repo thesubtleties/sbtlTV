@@ -2,13 +2,13 @@
   width: 140px;
   min-width: 140px;
   background: rgba(0, 0, 0, 0.3);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--line-faint);
   padding: 0.75rem 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  scrollbar-color: var(--fill-3) transparent;
 }
 
 .settings-sidebar::-webkit-scrollbar {
@@ -20,12 +20,12 @@
 }
 
 .settings-sidebar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
   border-radius: 3px;
 }
 
 .settings-sidebar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--fill-5);
 }
 
 .settings-category {
@@ -42,7 +42,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--faint);
 }
 
 .settings-nav-item {
@@ -52,21 +52,21 @@
   background: none;
   border: none;
   text-align: left;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
   font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .settings-nav-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--fill-2);
+  color: var(--text-2);
 }
 
 .settings-nav-item.active {
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
+  background: var(--accent-soft);
+  color: var(--accent);
   font-weight: 500;
-  border-left: 2px solid #00d4ff;
+  border-left: 2px solid var(--accent);
   padding-left: calc(0.875rem - 2px);
 }
