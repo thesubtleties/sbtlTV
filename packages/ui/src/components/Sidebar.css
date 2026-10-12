@@ -21,9 +21,11 @@
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(10px);
-  border-radius: 0 12px 12px 0;
+  background: color-mix(in srgb, var(--overlay-base) 72%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line-faint);
+  border-left: none;
+  border-radius: 0 14px 14px 0;
   padding: 8px;
   gap: 4px;
   overflow: hidden; /* Prevent highlight from bleeding out */
@@ -33,24 +35,30 @@
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 12px;
-  border: none;
+  padding: 11px;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--text-3);
   cursor: pointer;
-  border-radius: 8px;
-  transition: all 0.2s ease;
+  border-radius: 9px;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   white-space: nowrap;
 }
 
 .nav-item:hover {
-  background: var(--fill-3);
+  background: var(--fill-2);
   color: var(--text);
 }
 
 .nav-item.active {
   background: var(--accent-soft);
+  border-color: var(--accent-line);
   color: var(--accent);
+}
+
+.nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .nav-icon {
@@ -63,7 +71,7 @@
 }
 
 .nav-label {
-  font-size: 0.9rem;
+  font-size: 14px;
   font-weight: 500;
   opacity: 0;
   width: 0;

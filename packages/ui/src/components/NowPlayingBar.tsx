@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useState, useRef, useCallback } from 'react';
+import { type ChangeEvent, type CSSProperties, useEffect, useState, useRef, useCallback } from 'react';
 import type { StoredChannel } from '../db';
 import type { VodPlayInfo } from '../types/media';
 import { useCurrentProgram } from '../hooks/useChannels';
@@ -322,7 +322,7 @@ export function NowPlayingBar({
             {/* Playback controls */}
             <div className="npb-controls">
               <button
-                className="npb-btn"
+                className="npb-btn npb-btn--primary"
                 onClick={onTogglePlay}
                 disabled={!canControl}
                 title={playing ? 'Pause (Space)' : 'Play (Space)'}
@@ -375,6 +375,7 @@ export function NowPlayingBar({
                 min="0"
                 max="100"
                 value={volume}
+                style={{ '--volume': `${volume}%` } as CSSProperties}
                 onChange={onVolumeChange}
                 onMouseDown={onVolumeDragStart}
                 onMouseUp={onVolumeDragEnd}

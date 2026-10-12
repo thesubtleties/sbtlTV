@@ -1,14 +1,14 @@
 /* Individual program block in the EPG grid */
 .program-block {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
+  top: 5px;
+  bottom: 5px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   padding: 4px 10px;
   background: var(--fill-1);
-  border-radius: 4px;
+  border-radius: 6px;
   border-left: 2px solid transparent;
   cursor: pointer;
   overflow: hidden;
@@ -21,14 +21,14 @@
   background: var(--fill-3);
 }
 
-/* Current program (contains "now") */
+/* Current program (contains "now"): the guide's one accent moment */
 .program-block.current {
-  background: var(--accent-faint);
+  background: var(--accent-soft);
   border-left-color: var(--accent);
 }
 
 .program-block.current:hover {
-  background: var(--accent-soft);
+  background: var(--accent-line);
 }
 
 /* Empty state (no EPG data) */
@@ -82,7 +82,7 @@
 }
 
 .program-block.morph.current {
-  background: var(--accent-faint);
+  background: var(--accent-soft);
   border-left-color: var(--accent);
 }
 
@@ -130,7 +130,9 @@
 
 /* Program title */
 .program-block-title {
-  font-size: 0.85rem;
+  font-family: var(--font-condensed);
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
@@ -144,7 +146,8 @@
 
 /* Program description (shown when block is wide enough) */
 .program-block-desc {
-  font-size: 0.75rem;
+  font-family: var(--font-condensed);
+  font-size: 12.5px;
   color: var(--faint);
   white-space: nowrap;
   overflow: hidden;

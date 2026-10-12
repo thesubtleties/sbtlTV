@@ -81,7 +81,7 @@
 }
 
 .h-category-strip__home.active {
-  color: var(--text);
+  color: var(--accent);
 }
 
 /* Arrow buttons - positioned outside scroll area */
@@ -89,7 +89,7 @@
   flex-shrink: 0;
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: 9px;
   border: none;
   background: transparent;
   color: var(--muted);
@@ -190,28 +190,37 @@
 /* Category pills - refined, modern */
 .h-category-strip__pill {
   flex-shrink: 0;
-  padding: 7px 14px;
-  font-size: 0.8125rem;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-3);
-  background: transparent;
+  background: var(--fill-1);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 9px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   white-space: nowrap;
 }
 
 .h-category-strip__pill:hover {
   background: var(--fill-2);
-  color: var(--text-2);
+  color: var(--text);
   border-color: var(--edge);
 }
 
 .h-category-strip__pill.active {
-  background: var(--fill-4);
-  color: var(--text);
-  border-color: var(--edge);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-line);
+  font-weight: 600;
+}
+
+.h-category-strip__pill:focus-visible,
+.h-category-strip__home:focus-visible,
+.h-category-strip__back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* Search input - unified header only */
@@ -220,18 +229,20 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  height: 32px;
+  padding: 0 12px;
+  box-sizing: border-box;
   background: var(--fill-2);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 9px;
   min-width: 180px;
   max-width: 280px;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .h-category-strip__search:focus-within {
-  background: var(--fill-3);
-  border-color: var(--edge);
+  background: var(--fill-1);
+  border-color: var(--accent);
 }
 
 .h-category-strip__search svg {
@@ -247,7 +258,7 @@
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 0.875rem;
+  font-size: 13px;
   outline: none;
 }
 

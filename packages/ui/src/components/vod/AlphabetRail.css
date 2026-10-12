@@ -32,7 +32,7 @@
   padding: 0;
   cursor: pointer;
   transition: all 100ms ease;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .alphabet-rail__letter:hover:not(:disabled) {

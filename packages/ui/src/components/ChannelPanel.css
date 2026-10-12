@@ -56,7 +56,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 24px 7px;
+  padding: 8px 20px 8px 24px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
@@ -68,21 +68,23 @@
 }
 
 .guide-current-time {
-  font-size: 1.4rem;
-  font-weight: 300;
+  font-size: 22px;
+  font-weight: 500;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
 
 .guide-category {
-  font-size: 1rem;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--text);
 }
 
 .guide-channel-count {
-  font-size: 0.85rem;
+  font-family: var(--font-condensed);
+  font-size: 13px;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .guide-header-right {
@@ -102,14 +104,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: 1px solid var(--line);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.15s ease;
+  border-radius: 9px;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
 .guide-nav-btn:hover {
@@ -119,17 +121,16 @@
 }
 
 .guide-now-btn {
-  padding: 4px 12px;
+  height: 30px;
+  padding: 0 14px;
   border: 1px solid var(--accent-line);
   background: var(--accent-soft);
   color: var(--accent);
   cursor: pointer;
-  border-radius: 4px;
-  font-size: 0.75rem;
+  border-radius: 9px;
+  font-size: 13px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  transition: all 0.15s ease;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
 .guide-now-btn:hover:not(:disabled) {
@@ -148,14 +149,22 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: 1px solid var(--line);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.15s ease;
+  border-radius: 9px;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.guide-nav-btn:focus-visible,
+.guide-now-btn:focus-visible,
+.guide-close:focus-visible,
+.guide-channel-info:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .guide-close:hover {
@@ -171,7 +180,7 @@
   height: 32px;
   border-bottom: 1px solid var(--line-faint);
   flex-shrink: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--fill-1);
 }
 
 .guide-time-header-spacer {
@@ -190,7 +199,8 @@
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 0.8rem;
+  font-family: var(--font-condensed);
+  font-size: 13px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -280,7 +290,8 @@
 }
 
 .guide-channel-number {
-  font-size: 0.75rem;
+  font-family: var(--font-condensed);
+  font-size: 12px;
   color: var(--faint);
   min-width: 14px;
   text-align: center;
@@ -290,7 +301,7 @@
 .guide-channel-logo {
   width: 36px;
   height: 36px;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--fill-2);
   display: flex;
@@ -312,7 +323,8 @@
 }
 
 .guide-channel-name {
-  font-size: 0.9rem;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
@@ -425,11 +437,12 @@
 .guide-search-input {
   background: var(--fill-2);
   border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--text-2);
-  font-size: 0.8rem;
-  padding: 4px 28px;
-  width: 180px;
+  border-radius: 9px;
+  color: var(--text);
+  font-size: 13px;
+  height: 30px;
+  padding: 0 28px;
+  width: 200px;
   outline: none;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
@@ -439,8 +452,8 @@
 }
 
 .guide-search-input:focus {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
+  border-color: var(--accent);
+  background: var(--fill-1);
 }
 
 .guide-search-clear {

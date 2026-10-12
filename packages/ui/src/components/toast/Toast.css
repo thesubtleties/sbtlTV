@@ -22,9 +22,9 @@
   min-width: 240px;
   max-width: 360px;
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--surface);
-  border: 1px solid var(--line-faint);
+  border: 1px solid var(--line);
   color: var(--text);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
   animation: toastSlideIn 0.25s ease-out;
