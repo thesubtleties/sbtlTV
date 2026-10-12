@@ -283,41 +283,41 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: none;
   background: none;
   cursor: pointer;
-  /* Translucent white icon on top — a see-through highlight that reads on dark posters. */
-  color: var(--muted);
+  /* Same set as the heart: the Play button's color over a trash-shaped
+     piece of the play button's glass. No filter here, so the blur works. */
+  color: var(--button);
   opacity: 0;
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.45))
-         drop-shadow(0 0 1px rgba(0, 0, 0, 0.65));
   transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1),
               transform 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-/* Dark base underneath — frames the white icon so it reads on light posters. */
 .media-card__remove::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7l16 0'/%3E%3Cpath d='M10 11l0 6'/%3E%3Cpath d='M14 11l0 6'/%3E%3Cpath d='M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12'/%3E%3Cpath d='M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7l16 0'/%3E%3Cpath d='M10 11l0 6'/%3E%3Cpath d='M14 11l0 6'/%3E%3Cpath d='M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12'/%3E%3Cpath d='M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3'/%3E%3C/svg%3E");
-  -webkit-mask-size: 25px 25px;
-  mask-size: 25px 25px;
+  z-index: -1;
+  background: linear-gradient(var(--fill-3), var(--fill-3)), rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3.5 6h17v2h-17z'/%3E%3Cpath d='M8.2 7V4a1.8 1.8 0 0 1 1.8 -1.8h4a1.8 1.8 0 0 1 1.8 1.8v3h-1.8v-3h-4v3z'/%3E%3Cpath d='M4.9 7.5h14.2l-1.05 12.1a2.6 2.6 0 0 1 -2.6 2.4h-6.9a2.6 2.6 0 0 1 -2.6 -2.4z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3.5 6h17v2h-17z'/%3E%3Cpath d='M8.2 7V4a1.8 1.8 0 0 1 1.8 -1.8h4a1.8 1.8 0 0 1 1.8 1.8v3h-1.8v-3h-4v3z'/%3E%3Cpath d='M4.9 7.5h14.2l-1.05 12.1a2.6 2.6 0 0 1 -2.6 2.4h-6.9a2.6 2.6 0 0 1 -2.6 -2.4z'/%3E%3C/svg%3E");
+  -webkit-mask-size: 23px 23px;
+  mask-size: 23px 23px;
   -webkit-mask-position: center;
   mask-position: center;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
-  z-index: -1;
 }
 
 .media-card__remove svg {
-  width: 20px;
-  height: 20px;
+  width: 23px;
+  height: 23px;
 }
 
 .media-card:hover .media-card__remove,
