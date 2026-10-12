@@ -8,9 +8,10 @@
   position: relative;
 }
 
-/* On: only the icon lights up, and stays lit on hover (the bar's hover resets color) */
-.cc__btn--on,
-.cc__btn--on:hover:not(:disabled) {
+/* On: only the icon lights up, in the accent the time track fills with, and
+   stays lit on hover. Two classes so .npb-btn (loaded later) does not win. */
+.npb-btn.cc__btn--on,
+.npb-btn.cc__btn--on:hover:not(:disabled) {
   color: var(--accent);
 }
 
