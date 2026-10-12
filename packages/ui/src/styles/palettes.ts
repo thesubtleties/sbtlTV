@@ -42,7 +42,7 @@ const HEART_SOURCE: Partial<Record<string, string>> = {
   nord: '#bf616a', rosepine: '#eb6f92', everforest: '#e67e80', dracula: '#ff79c6',
 };
 
-export type BuiltInPaletteId = 'sbtl' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula';
+export type BuiltInPaletteId = 'sbtl' | 'mocha' | 'pi' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula';
 
 export const PALETTES: Record<BuiltInPaletteId, { label: string; roles: PaletteRoles }> = {
   sbtl: { label: 'sbtl', roles: {
@@ -50,6 +50,19 @@ export const PALETTES: Record<BuiltInPaletteId, { label: string; roles: PaletteR
     fg: '#ffffff', muted: 'rgba(255, 255, 255, 0.5)', accent: '#00d4ff', onAccent: '#0d0d0d', danger: '#ef4444', teal: '#22c55e',
     button: 'rgba(255, 255, 255, 0.85)', onButton: '#0d0d0d',
     heart: 'rgba(220, 60, 60, 0.8)', heartBase: 'rgb(255, 180, 180)', heartHover: 'rgba(200, 50, 50, 0.85)' } },
+  // Mocha: a black cat with bright green eyes, and a Halloween cat
+  // (pumpkin-orange hearts).
+  mocha: { label: 'Mocha', roles: {
+    bg: '#0b0a0d', card: '#141218', surface: '#1e1b23', line: '#2d2833', edge: '#3f3846',
+    fg: '#ebe6dc', muted: '#8f8798', accent: '#5fe38a', onAccent: '#0b0a0d', danger: '#ff5c5c', teal: '#b48cf2',
+    button: '#ebe6dc', onButton: '#0b0a0d',
+    heart: 'color-mix(in srgb, #ff7a2f 85%, transparent)', heartBase: '#ffd2b0', heartHover: 'color-mix(in srgb, #e05f16 90%, transparent)' } },
+  // Pi: a Russian Blue, silver blue-grey with yellow-green eyes.
+  pi: { label: 'Pi', roles: {
+    bg: '#14181d', card: '#1b2027', surface: '#252b33', line: '#333a44', edge: '#465059',
+    fg: '#e2e8ef', muted: '#8f9aa7', accent: '#cddd86', onAccent: '#14181d', danger: '#e66a6a', teal: '#8db3d6',
+    button: '#d3dbe4', onButton: '#14181d',
+    heart: 'color-mix(in srgb, #d98aab 85%, transparent)', heartBase: '#f6d6e4', heartHover: 'color-mix(in srgb, #bd6c8e 90%, transparent)' } },
   catppuccin: { label: 'Catppuccin', roles: {
     bg: '#11111b', card: '#1e1e2e', surface: '#313244', line: '#45475a', edge: '#585b70',
     fg: '#cdd6f4', muted: '#9399b2', accent: '#cba6f7', onAccent: '#11111b', danger: '#f38ba8', teal: '#94e2d5',
