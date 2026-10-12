@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import path from 'node:path';
 import {
   normalizeSubtitleSettings, parseSubtitleTracks, subtitleStyleOptions,
   loadResetOptions, SUBTITLE_BASE_OPTIONS, TrackReadSchedule, subtitleFontsDir, judgeCaptionText, CaptionCheck,
@@ -99,8 +100,9 @@ test('gives up after maxReads, and reset re-arms it', () => {
 });
 
 test('subtitle fonts live in resources when packaged, in assets when not', () => {
-  assert.equal(subtitleFontsDir({ isPackaged: true, resourcesPath: '/opt/sbtlTV/resources', dirname: '/x/dist' }), '/opt/sbtlTV/resources/sub-fonts');
-  assert.equal(subtitleFontsDir({ isPackaged: false, resourcesPath: '/r', dirname: '/repo/packages/electron/dist' }), '/repo/packages/electron/assets/sub-fonts');
+  // path.join: Windows CI joins with backslashes
+  assert.equal(subtitleFontsDir({ isPackaged: true, resourcesPath: '/opt/sbtlTV/resources', dirname: '/x/dist' }), path.join('/opt/sbtlTV/resources', 'sub-fonts'));
+  assert.equal(subtitleFontsDir({ isPackaged: false, resourcesPath: '/r', dirname: '/repo/packages/electron/dist' }), path.join('/repo/packages/electron', 'assets', 'sub-fonts'));
 });
 
 // Texts seen on 12 US channels (2026-10-12 sample): field-2/XDS junk vs real captions.
