@@ -149,14 +149,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 38px;
-  padding: 0 20px;
-  font-size: 14px;
+  padding: 10px 20px;
+  font-size: 0.825rem;
   font-weight: 600;
-  border: 1px solid transparent;
-  border-radius: var(--r-control);
+  border: none;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease, filter 0.12s ease;
+  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .hero__btn:focus-visible {
@@ -175,29 +174,30 @@
 }
 
 .hero__btn--primary {
-  background: var(--accent-glass);
-  border-color: var(--accent-strong);
-  color: var(--text);
+  background: var(--button);
+  color: var(--on-button);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
 
 .hero__btn--primary:hover {
-  background: var(--accent-glass-hover);
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--button) 90%, var(--fg));
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .hero__btn--secondary {
-  background: var(--fill-4);
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
   color: var(--text);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-color: var(--line);
+  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
 .hero__btn--secondary:hover {
-  background: var(--fill-5);
-  border-color: var(--line-2);
+  background: color-mix(in srgb, var(--fg) 18%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 15%, transparent);
+  transform: translateY(-1px);
 }
 
 /* Navigation indicators */

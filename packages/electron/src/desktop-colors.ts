@@ -24,6 +24,8 @@ export interface PaletteRoles {
   onAccent: string;
   danger: string;
   teal: string;
+  button: string;
+  onButton: string;
 }
 
 export interface DesktopColors {
@@ -38,6 +40,7 @@ const SBTL: PaletteRoles = {
   bg: '#0d0d0d', card: '#141414', surface: '#1a1a1a', line: 'rgba(255, 255, 255, 0.1)',
   edge: 'rgba(255, 255, 255, 0.2)', fg: '#ffffff', muted: 'rgba(255, 255, 255, 0.5)',
   accent: '#00d4ff', onAccent: '#0d0d0d', danger: '#ef4444', teal: '#22c55e',
+  button: 'rgba(255, 255, 255, 0.85)', onButton: '#0d0d0d',
 };
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -99,6 +102,11 @@ export function paletteFromCaelestia(colours: Record<string, string>): PaletteRo
   if (error && contrast(error, palette.card) >= 3) palette.danger = error;
   const tertiary = c('tertiary');
   if (tertiary && contrast(tertiary, palette.card) >= 3) palette.teal = tertiary;
+  // Caelestia's Play button follows its accent, like the pastel palettes.
+  if (palette.accent !== SBTL.accent) {
+    palette.button = palette.accent;
+    palette.onButton = palette.onAccent;
+  }
   return palette;
 }
 

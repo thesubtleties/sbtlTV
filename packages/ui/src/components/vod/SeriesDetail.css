@@ -256,14 +256,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 38px;
-  padding: 0 22px;
-  font-size: 14px;
+  padding: 10px 24px;
+  font-size: 0.9rem;
   font-weight: 600;
-  border: 1px solid transparent;
-  border-radius: var(--r-control);
+  border: none;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease, filter 0.12s ease;
+  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .series-detail__btn:focus-visible {
@@ -272,16 +271,17 @@
 }
 
 .series-detail__btn--secondary {
-  background: var(--fill-4);
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
   color: var(--text);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-color: var(--line);
+  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
 .series-detail__btn--secondary:hover {
-  background: var(--fill-5);
-  border-color: var(--line-2);
+  background: color-mix(in srgb, var(--fg) 18%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 15%, transparent);
+  transform: translateY(-1px);
 }
 
 .series-detail__btn--secondary.active {

@@ -20,6 +20,8 @@
   --on-accent: #0d0d0d;
   --danger: #ef4444;
   --teal: #22c55e;
+  --button: rgba(255, 255, 255, 0.85);
+  --on-button: #0d0d0d;
   --overlay-base: #000000;
   --progress: rgba(229, 9, 20, 0.65);
 }
