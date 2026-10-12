@@ -472,7 +472,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             data={carouselRows}
             context={homeVirtuosoContext}
             overscan={200}
-            fixedItemHeight={386}
+            fixedItemHeight={394}
             computeItemKey={(_, row) => row.key}
             components={homeVirtuosoComponents}
             itemContent={CarouselRowContent}

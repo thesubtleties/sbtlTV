@@ -8,8 +8,8 @@ interface Props {
   onRemove: (item: ContinueItem) => void;
 }
 
-// Reuses the REAL carousel BEM classes (.carousel is height:366px — the exact box every other
-// home row renders, so Virtuoso's fixedItemHeight={386} slot stays consistent). Nav arrows/fades
+// Reuses the REAL carousel BEM classes (.carousel is height:374px — the exact box every other
+// home row renders, so Virtuoso's fixedItemHeight={394} slot stays consistent). Nav arrows/fades
 // are omitted (native horizontal scroll); add later for full parity if desired.
 export function ContinueWatchingRow({ items, onPlay, onRemove }: Props) {
   if (items.length === 0) return null;

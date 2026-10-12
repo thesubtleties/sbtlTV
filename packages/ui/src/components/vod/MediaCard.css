@@ -15,8 +15,8 @@
 .media-card:focus-visible {
   transform: scale(1.05);
   box-shadow:
-    0 10px 26px rgba(0, 0, 0, 0.45),
-    0 0 22px color-mix(in srgb, var(--accent) 22%, transparent);
+    0 6px 16px rgba(0, 0, 0, 0.45),
+    0 0 16px color-mix(in srgb, var(--accent) 26%, transparent);
   z-index: 10;
 }
 
