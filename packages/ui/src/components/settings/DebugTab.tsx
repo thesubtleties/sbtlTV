@@ -47,7 +47,7 @@ export function DebugTab({
         description="Verbose logs help diagnose video playback, network and application problems. They are written to a file you can share when reporting a bug."
       >
         <OptionRow
-          title="Debug logging"
+          title="Logging"
           help={debugLoggingEnabled
             ? 'Detailed logs from mpv, the window and the main process are being written. This may slightly affect performance.'
             : 'Only basic logging. Turn this on before reproducing a problem you want to report.'}

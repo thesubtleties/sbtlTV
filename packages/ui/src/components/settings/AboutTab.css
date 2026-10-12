@@ -38,13 +38,8 @@
 }
 
 .about-tab__update-btn {
-  padding: 8px 20px;
+  padding: 0 20px;
   flex: none;
-}
-
-.about-tab__update-btn--restart {
-  background: var(--accent);
-  color: var(--text);
 }
 
 .about-tab__status {
@@ -58,8 +53,12 @@
 }
 
 .about-tab__auto-update {
-  margin-top: 0.25rem;
-  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-2);
 }
 
 .about-tab__footer {

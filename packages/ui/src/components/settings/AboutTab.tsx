@@ -3,6 +3,7 @@ import { Logo } from '../Logo';
 import { SbtlMark } from '../SbtlMark';
 import { useUIStore, useUpdateSettings, useUpdaterState, useSetUpdaterState } from '../../stores/uiStore';
 import { debugLog } from '../../utils/debugLog';
+import { OnOff } from './ui';
 import './AboutTab.css';
 
 interface AboutTabProps {
@@ -100,28 +101,28 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
     switch (updaterState.phase) {
       case 'checking':
         return (
-          <button className="save-btn about-tab__update-btn" disabled>
-            Checking...
+          <button className="st-btn about-tab__update-btn" disabled>
+            Checking…
           </button>
         );
       case 'downloading':
         return (
-          <button className="save-btn about-tab__update-btn" disabled>
-            Downloading v{updaterState.version}... {updaterState.percent}%
+          <button className="st-btn about-tab__update-btn" disabled>
+            Downloading v{updaterState.version}… {updaterState.percent}%
           </button>
         );
       case 'ready':
         return (
-          <button className="save-btn about-tab__update-btn about-tab__update-btn--restart" onClick={handleInstall}>
-            Restart to Update
+          <button className="st-btn st-btn--primary about-tab__update-btn" onClick={handleInstall}>
+            Restart to update
           </button>
         );
       case 'idle':
       case 'up-to-date':
       case 'error':
         return (
-          <button className="save-btn about-tab__update-btn" onClick={handleCheckForUpdates}>
-            Check for Updates
+          <button className="st-btn about-tab__update-btn" onClick={handleCheckForUpdates}>
+            Check for updates
           </button>
         );
     }
@@ -161,12 +162,12 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
                 href="https://github.com/thesubtleties/sbtlTV/releases"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="save-btn about-tab__update-btn"
-                style={{ textDecoration: 'none', textAlign: 'center' }}
+                className="st-btn about-tab__update-btn"
+                style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
               >
-                View Releases on GitHub
+                View releases on GitHub
               </a>
-              <p className="form-hint about-tab__status-text">
+              <p className="st-hint about-tab__status-text">
                 Auto-updates are not available for this build.
               </p>
             </>
@@ -175,19 +176,15 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
               {renderUpdateButton()}
               <div className="about-tab__status">
                 {statusText && (
-                  <p className="form-hint about-tab__status-text">
+                  <p className="st-hint about-tab__status-text">
                     {statusText}
                   </p>
                 )}
               </div>
-              <label className="genre-checkbox about-tab__auto-update">
-                <input
-                  type="checkbox"
-                  checked={autoUpdateEnabled}
-                  onChange={(e) => handleAutoUpdateChange(e.target.checked)}
-                />
-                <span className="genre-name">Check for updates automatically</span>
-              </label>
+              <div className="about-tab__auto-update">
+                <span>Check for updates automatically</span>
+                <OnOff value={autoUpdateEnabled} onChange={(enabled) => void handleAutoUpdateChange(enabled)} />
+              </div>
             </>
           )}
         </div>
