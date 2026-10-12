@@ -289,7 +289,7 @@
 }
 
 .series-detail__btn--secondary.active svg {
-  color: var(--danger);
+  color: var(--heart);
 }
 
 /* Episodes section */

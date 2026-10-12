@@ -44,7 +44,7 @@ export function useCssVariableSync() {
       ? desktop?.caelestia ?? PALETTES.sbtl.roles
       : PALETTES[palette].roles;
     const systemAccent = accent === 'system' ? desktop?.accent : null;
-    applyPaletteRoles(systemAccent ? { ...roles, accent: systemAccent, onAccent: readableOn(systemAccent) } : roles);
+    applyPaletteRoles(systemAccent ? { ...roles, accent: systemAccent, onAccent: readableOn(systemAccent) } : roles, palette);
     document.documentElement.dataset.palette = palette;
   }, [palette, accent, desktop]);
   useEffect(() => {

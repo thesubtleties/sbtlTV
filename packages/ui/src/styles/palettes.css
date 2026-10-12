@@ -22,6 +22,9 @@
   --teal: #22c55e;
   --button: rgba(255, 255, 255, 0.85);
   --on-button: #0d0d0d;
+  --heart: rgba(220, 60, 60, 0.8);
+  --heart-base: rgb(255, 180, 180);
+  --heart-hover: rgba(200, 50, 50, 0.85);
   --overlay-base: #000000;
   --progress: rgba(229, 9, 20, 0.65);
 }

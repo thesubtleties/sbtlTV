@@ -20,7 +20,27 @@ export interface PaletteRoles {
   /** Primary buttons on the Movies/Series pages (Play) and their text */
   button: string;
   onButton: string;
+  /** Favorite/watchlist hearts: the filled heart (semi-transparent), the pale
+      layer under it that keeps it readable on any poster, and its hover.
+      Derived from `danger` when a palette does not set them. */
+  heart?: string;
+  heartBase?: string;
+  heartHover?: string;
 }
+
+/** Heart tones from one red or pink, matching sbtl's two-layer original. */
+function heartTones(hex: string): Pick<PaletteRoles, 'heart' | 'heartBase' | 'heartHover'> {
+  return {
+    heart: `color-mix(in srgb, ${hex} 80%, transparent)`,
+    heartBase: `color-mix(in srgb, ${hex} 40%, white)`,
+    heartHover: `color-mix(in srgb, color-mix(in srgb, ${hex} 85%, black) 85%, transparent)`,
+  };
+}
+
+const HEART_SOURCE: Partial<Record<string, string>> = {
+  catppuccin: '#f38ba8', tokyonight: '#f7768e', kanagawa: '#e46876', gruvbox: '#fb4934',
+  nord: '#bf616a', rosepine: '#eb6f92', everforest: '#e67e80', dracula: '#ff79c6',
+};
 
 export type BuiltInPaletteId = 'sbtl' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula';
 
@@ -28,7 +48,8 @@ export const PALETTES: Record<BuiltInPaletteId, { label: string; roles: PaletteR
   sbtl: { label: 'sbtl', roles: {
     bg: '#0d0d0d', card: '#141414', surface: '#1a1a1a', line: 'rgba(255, 255, 255, 0.1)', edge: 'rgba(255, 255, 255, 0.2)',
     fg: '#ffffff', muted: 'rgba(255, 255, 255, 0.5)', accent: '#00d4ff', onAccent: '#0d0d0d', danger: '#ef4444', teal: '#22c55e',
-    button: 'rgba(255, 255, 255, 0.85)', onButton: '#0d0d0d' } },
+    button: 'rgba(255, 255, 255, 0.85)', onButton: '#0d0d0d',
+    heart: 'rgba(220, 60, 60, 0.8)', heartBase: 'rgb(255, 180, 180)', heartHover: 'rgba(200, 50, 50, 0.85)' } },
   catppuccin: { label: 'Catppuccin', roles: {
     bg: '#11111b', card: '#1e1e2e', surface: '#313244', line: '#45475a', edge: '#585b70',
     fg: '#cdd6f4', muted: '#9399b2', accent: '#cba6f7', onAccent: '#11111b', danger: '#f38ba8', teal: '#94e2d5',
@@ -69,13 +90,16 @@ const CSS_NAMES: Record<keyof PaletteRoles, string> = {
   bg: '--bg', card: '--card', surface: '--surface', line: '--line', edge: '--edge', fg: '--fg',
   muted: '--muted', accent: '--accent', onAccent: '--on-accent', danger: '--danger', teal: '--teal',
   button: '--button', onButton: '--on-button',
+  heart: '--heart', heartBase: '--heart-base', heartHover: '--heart-hover',
 };
 
 /** Set the palette roles on the root element (inline, above palettes.css). */
-export function applyPaletteRoles(roles: PaletteRoles): void {
+export function applyPaletteRoles(roles: PaletteRoles, paletteId?: string): void {
   const style = document.documentElement.style;
+  const full: PaletteRoles = { ...heartTones(HEART_SOURCE[paletteId ?? ''] ?? roles.danger), ...roles };
   for (const [role, name] of Object.entries(CSS_NAMES)) {
-    style.setProperty(name, roles[role as keyof PaletteRoles]);
+    const value = full[role as keyof PaletteRoles];
+    if (value) style.setProperty(name, value);
   }
 }
 
