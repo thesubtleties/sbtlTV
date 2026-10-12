@@ -279,15 +279,16 @@
   color: var(--text);
 }
 
-.npb-btn--primary,
-.npb-btn--primary:hover:not(:disabled) {
-  background: var(--accent);
-  border-color: var(--accent-edge);
-  color: var(--on-accent);
+.npb-btn--primary {
+  background: var(--accent-glass);
+  border-color: var(--accent-strong);
+  color: var(--text);
 }
 
 .npb-btn--primary:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--accent-glass-hover);
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 .npb-btn:focus-visible {

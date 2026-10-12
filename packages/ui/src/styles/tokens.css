@@ -32,6 +32,10 @@
   --accent-line: color-mix(in srgb, var(--accent) 35%, transparent);
   --accent-strong: color-mix(in srgb, var(--accent) 55%, transparent);
   --accent-edge: color-mix(in srgb, var(--accent) 77%, black);
+  /* Glass accent button: accent-tinted, translucent over a blur, light text.
+     Calmer than a solid fill with saturated accents (cyan, gruvbox yellow). */
+  --accent-glass: color-mix(in srgb, var(--accent) 26%, color-mix(in srgb, var(--overlay-base) 55%, transparent));
+  --accent-glass-hover: color-mix(in srgb, var(--accent) 38%, color-mix(in srgb, var(--overlay-base) 55%, transparent));
 
   /* Status */
   --danger-soft: color-mix(in srgb, var(--danger) 16%, transparent);

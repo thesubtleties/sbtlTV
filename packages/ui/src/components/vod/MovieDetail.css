@@ -301,13 +301,16 @@
 }
 
 .movie-detail__btn--primary {
-  background: var(--accent);
-  border-color: var(--accent-edge);
-  color: var(--on-accent);
+  background: var(--accent-glass);
+  border-color: var(--accent-strong);
+  color: var(--text);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .movie-detail__btn--primary:hover {
-  filter: brightness(1.08);
+  background: var(--accent-glass-hover);
+  border-color: var(--accent);
 }
 
 .movie-detail__btn--secondary {
