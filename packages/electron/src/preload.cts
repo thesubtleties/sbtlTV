@@ -16,6 +16,8 @@ export interface MpvStatus {
 export interface MpvResult {
   success?: boolean;
   error?: string;
+  /** mpv-load only: the load's generation, which tags its subtitle updates */
+  generation?: number;
 }
 
 export interface MpvModeInfo {
@@ -182,14 +184,21 @@ contextBridge.exposeInMainWorld('mpv', {
 
 // Subtitles: mpv's subtitle tracks for the current stream, and the choice back
 interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean }
-interface SubtitleTracksUpdate { generation: number; tracks: SubtitleTrack[] }
+interface SubtitleTracksUpdate { generation: number; tracks: SubtitleTrack[]; duration: number }
+interface CcStateUpdate { generation: number; state: 'checking' | 'ok' | 'unreadable' }
 contextBridge.exposeInMainWorld('subtitles', {
-  setTrack: (id: number | null) => ipcRenderer.invoke('subtitle-set-track', id),
-  setDelay: (seconds: number) => ipcRenderer.invoke('subtitle-set-delay', seconds),
+  setTrack: (generation: number, id: number | null, visible: boolean) => ipcRenderer.invoke('subtitle-set-track', generation, id, visible),
+  setVisible: (generation: number, visible: boolean) => ipcRenderer.invoke('subtitle-set-visible', generation, visible),
+  setDelay: (generation: number, seconds: number) => ipcRenderer.invoke('subtitle-set-delay', generation, seconds),
   onTracks: (callback: (update: SubtitleTracksUpdate) => void) => {
     const listener = (_event: IpcRendererEvent, data: SubtitleTracksUpdate) => callback(data);
     ipcRenderer.on('subtitle-tracks', listener);
     return () => { ipcRenderer.removeListener('subtitle-tracks', listener); };
+  },
+  onCcState: (callback: (update: CcStateUpdate) => void) => {
+    const listener = (_event: IpcRendererEvent, data: CcStateUpdate) => callback(data);
+    ipcRenderer.on('subtitle-cc-state', listener);
+    return () => { ipcRenderer.removeListener('subtitle-cc-state', listener); };
   },
 });
 

@@ -14,7 +14,7 @@ import { isTransientDecodeError } from './mpv-error-filter.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
-import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitles.js';
+import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, CaptionCheck, type SubtitleTrack } from './subtitles.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -861,7 +861,8 @@ async function initNativeMpv(): Promise<boolean> {
       if (trackReadSchedule.shouldRead(now, status.width > 0 && status.height > 0)) {
         const tracks = parseSubtitleTracks(bridge?.getProperty('track-list'));
         trackReadSchedule.record(now, tracks);
-        sendSubtitleTracks(tracks);
+        // Read with the tracks: the status duration can still be the previous file's.
+        sendSubtitleTracks(tracks, Number(bridge?.getProperty('duration')) || 0);
       }
 
       // mpv reports time-pos on every frame. Each forwarded status is an IPC
@@ -1124,6 +1125,8 @@ function handleMpvMessage(msg: MpvMessage): void {
         break;
       case 'duration':
         mpvState.duration = (msg.data as number) ?? 0;
+        // The renderer restores a saved subtitle delay once the duration is known.
+        if (mpvState.duration > 0 && lastSubtitleTracks.length > 0) sendSubtitleTracks(lastSubtitleTracks, mpvState.duration);
         // File loaded — execute pending resume seek (socket path)
         if (pendingResume && mpvState.duration > 0) {
           const { position, generation } = pendingResume;
@@ -1140,7 +1143,7 @@ function handleMpvMessage(msg: MpvMessage): void {
         break;
       case 'track-list':
         // Pushed by mpv on every change (file loaded, CC track created); no polling.
-        sendSubtitleTracks(parseSubtitleTracks(msg.data));
+        sendSubtitleTracks(parseSubtitleTracks(msg.data), mpvState.duration);
         break;
     }
 
@@ -1218,8 +1221,79 @@ function applySubtitleStyle(why: string): void {
 const trackReadSchedule = new TrackReadSchedule();
 let trackReadGeneration = -1;
 
-function sendSubtitleTracks(tracks: ReturnType<typeof parseSubtitleTracks>): void {
-  sendToRenderer('subtitle-tracks', { generation: loadGeneration, tracks });
+let lastSubtitleTracks: SubtitleTrack[] = [];
+
+/** Tracks of the current load, tagged with its generation and (when known) the file's duration. */
+function sendSubtitleTracks(tracks: SubtitleTrack[], duration = 0): void {
+  lastSubtitleTracks = tracks;
+  sendToRenderer('subtitle-tracks', { generation: loadGeneration, tracks, duration: duration > 0 ? duration : 0 });
+}
+
+// Live captions (EIA-608): ffmpeg's decoder picks a caption field on its own and
+// on most channels it is a coin flip whether it lands on the captions or the
+// station data (XDS) beside them. While a CC track is selected, read the first
+// lines (hidden), restart the decoder on junk, and give up after 8 restarts.
+// Bounded: it stops at the first verdict or after CC_CHECK_LIMIT_MS.
+const CC_CHECK_INTERVAL_MS = 400;
+const CC_CHECK_LIMIT_MS = 60_000;
+interface CcCheckRun { generation: number; trackId: number; check: CaptionCheck; timer: NodeJS.Timeout; startedAt: number }
+let ccCheck: CcCheckRun | null = null;
+let ccCheckedKey: string | null = null;  // `${generation}:${trackId}` already checked this load
+let ccUnreadable = false;  // that check gave up: keep the junk off screen for this load
+let subtitleVisibleWanted = true;
+
+function stopCcCheck(): void {
+  if (ccCheck) clearInterval(ccCheck.timer);
+  ccCheck = null;
+}
+
+async function readSubText(): Promise<string> {
+  if (useNativeMpv && mpvBridge) return mpvBridge.getProperty('sub-text') ?? '';
+  if (!mpvSocket) return '';
+  try {
+    const value = await sendMpvCommand('get_property', ['sub-text']);
+    return typeof value === 'string' ? value : '';
+  } catch {
+    return '';  // no subtitle line on screen right now
+  }
+}
+
+function sendCcState(generation: number, state: 'checking' | 'ok' | 'unreadable'): void {
+  sendToRenderer('subtitle-cc-state', { generation, state });
+}
+
+function startCcCheck(generation: number, trackId: number): void {
+  stopCcCheck();
+  setMpvOptions([['sub-visibility', 'no'], ['sid', String(trackId)]], 'cc check start');
+  sendCcState(generation, 'checking');
+  let busy = false;
+  const run: CcCheckRun = {
+    generation, trackId, check: new CaptionCheck(8), startedAt: Date.now(),
+    timer: setInterval(() => {
+      if (busy) return;
+      busy = true;
+      void readSubText().then((text) => {
+        if (ccCheck !== run || generation !== loadGeneration) return;
+        const action = Date.now() - run.startedAt > CC_CHECK_LIMIT_MS ? 'ok' : run.check.observe(text.trim());
+        if (action === 'retry') {
+          debugLog(`captions: station data instead of captions, restarting the decoder (${run.check.retries}/8)`, 'mpv');
+          setMpvOptions([['sid', 'no'], ['sid', String(trackId)]], 'cc retry');
+        } else if (action === 'ok') {
+          debugLog(`captions: readable after ${run.check.retries} restart(s)`, 'mpv');
+          stopCcCheck();
+          setMpvOptions([['sub-visibility', subtitleVisibleWanted ? 'yes' : 'no']], 'cc ok');
+          sendCcState(generation, 'ok');
+        } else if (action === 'unreadable') {
+          debugLog('captions: still station data after 8 restarts; turning them off for this channel', 'mpv');
+          stopCcCheck();
+          ccUnreadable = true;
+          setMpvOptions([['sid', 'no']], 'cc unreadable');
+          sendCcState(generation, 'unreadable');
+        }
+      }).finally(() => { busy = false; });
+    }, CC_CHECK_INTERVAL_MS),
+  };
+  ccCheck = run;
 }
 
 // IPC Handlers - Window controls
@@ -1280,20 +1354,53 @@ ipcMain.handle('mpv-toggle-stats', async (_event, persistent: boolean) => {
   return shown ? { success: true } : { error: 'mpv rejected the stats command' };
 });
 
-ipcMain.handle('subtitle-set-track', async (_event, id: unknown) => {
-  const value = typeof id === 'number' && Number.isInteger(id) && id > 0 ? String(id) : 'no';
-  setMpvOptions([['sid', value]], 'set track');
+// Subtitle controls carry the load generation they were decided for; a late
+// call for a previous stream must not change the one now playing.
+const isCurrentGeneration = (generation: unknown) => generation === loadGeneration;
+
+ipcMain.handle('subtitle-set-track', async (_event, generation: unknown, id: unknown, visible: unknown) => {
+  if (!isCurrentGeneration(generation)) return { error: 'Stale subtitle request' };
+  subtitleVisibleWanted = visible !== false;
+  const track = typeof id === 'number' ? lastSubtitleTracks.find((t) => t.id === id) : undefined;
+  if (!track) {
+    stopCcCheck();
+    setMpvOptions([['sid', 'no']], 'set track');
+    return { success: true };
+  }
+  if (track.isCc) {
+    const key = `${generation}:${track.id}`;
+    if (ccCheckedKey === key) {
+      // Already checked (or being checked) for this load: just apply the wanted visibility.
+      if (!ccCheck && !ccUnreadable) setMpvOptions([['sub-visibility', subtitleVisibleWanted ? 'yes' : 'no'], ['sid', String(track.id)]], 'set track');
+    } else {
+      ccCheckedKey = key;
+      ccUnreadable = false;
+      startCcCheck(generation as number, track.id);
+    }
+    return { success: true };
+  }
+  stopCcCheck();
+  setMpvOptions([['sub-visibility', subtitleVisibleWanted ? 'yes' : 'no'], ['sid', String(track.id)]], 'set track');
   return { success: true };
 });
 
-ipcMain.handle('subtitle-set-delay', async (_event, seconds: unknown) => {
+ipcMain.handle('subtitle-set-visible', async (_event, generation: unknown, visible: unknown) => {
+  if (!isCurrentGeneration(generation)) return { error: 'Stale subtitle request' };
+  subtitleVisibleWanted = visible === true;
+  // While live captions are being checked they stay hidden; the check applies this when it ends.
+  if (!ccCheck) setMpvOptions([['sub-visibility', subtitleVisibleWanted ? 'yes' : 'no']], 'set visible');
+  return { success: true };
+});
+
+ipcMain.handle('subtitle-set-delay', async (_event, generation: unknown, seconds: unknown) => {
+  if (!isCurrentGeneration(generation)) return { error: 'Stale subtitle request' };
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return { error: 'Invalid delay' };
   const clamped = Math.min(Math.max(seconds, -60), 60);
   setMpvOptions([['sub-delay', clamped.toFixed(3)]], 'set delay');
   return { success: true };
 });
 
-async function loadMedia(url: string, startPosition?: number): Promise<{ success?: boolean; error?: string }> {
+async function loadMedia(url: string, startPosition?: number): Promise<{ success?: boolean; error?: string; generation?: number }> {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge && !mpvBridge.isInitialized()) {
     void handleNativePipelineFailure('Reset native playback before selecting another channel');
@@ -1310,6 +1417,8 @@ async function loadMedia(url: string, startPosition?: number): Promise<{ success
 
   // mpv keeps sid and sub-delay across loadfile: start every stream with no
   // subtitle and no offset; the renderer picks the track and restores a delay.
+  stopCcCheck();
+  subtitleVisibleWanted = true;
   setMpvOptions(loadResetOptions(), 'load');
   sendSubtitleTracks([]);
 
@@ -1320,7 +1429,7 @@ async function loadMedia(url: string, startPosition?: number): Promise<{ success
       await mpvBridge.load(url, '');
       mpvBridge.play(); // ensure playback — pause can persist across loads after a prior EOF
       debugLog('mpv-load SUCCESS (native)', 'mpv');
-      return { success: true };
+      return { success: true, generation: loadGeneration };
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unknown error';
       debugLog(`mpv-load FAILED (native): ${errMsg}`, 'mpv');
@@ -1340,7 +1449,7 @@ async function loadMedia(url: string, startPosition?: number): Promise<{ success
     // (e.g. autoplaying the next episode), so loadfile alone would load the new file paused.
     await sendMpvCommand('set_property', ['pause', false]);
     debugLog('mpv-load SUCCESS', 'mpv');
-    return { success: true };
+    return { success: true, generation: loadGeneration };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
     debugLog(`mpv-load FAILED: ${errMsg}`, 'mpv');
@@ -1482,6 +1591,7 @@ ipcMain.handle('mpv-stop', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   debugLog('mpv-stop called', 'mpv');
   pendingResume = null;
+  stopCcCheck();
   currentMedia = null;
   if (useNativeMpv && mpvBridge) {
     try {

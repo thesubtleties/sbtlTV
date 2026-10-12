@@ -66,9 +66,9 @@ export const SUBTITLE_BASE_OPTIONS: Array<[string, string]> = [
   ['sid', 'no'],
 ];
 
-/** mpv keeps the selected track and sub-delay across loadfile; reset both before each load. */
+/** mpv keeps the selected track, sub-delay and visibility across loadfile; reset them before each load. */
 export function loadResetOptions(): Array<[string, string]> {
-  return [['sid', 'no'], ['sub-delay', '0']];
+  return [['sid', 'no'], ['sub-delay', '0'], ['sub-visibility', 'yes']];
 }
 
 const FONT_SIZE: Record<SubtitleSize, string> = { small: '38', medium: '46', large: '56' };
@@ -130,4 +130,82 @@ export function subtitleFontsDir(opts: { isPackaged: boolean; resourcesPath: str
   return opts.isPackaged
     ? path.join(opts.resourcesPath, 'sub-fonts')
     : path.join(opts.dirname, '..', 'assets', 'sub-fonts');
+}
+
+/**
+ * Is this live caption text real captions or the station data (XDS) that
+ * ffmpeg's 608 decoder shows when its "auto" field choice locks onto field 2?
+ * XDS comes out as the network or show name glued to stray bytes ("H@ABC
+ * NetworkGMA 3H@", "HDDateline DaytimeHD") or short repeating pieces
+ * ("HEHEHE", "CNNCNN", "HGTEHCHG"). Tuned on a 12-channel sample (2026-10-12).
+ */
+export function judgeCaptionText(text: string): 'ok' | 'junk' | 'unknown' {
+  if (text.includes('@')) return 'junk';
+  const letters = text.replace(/[^\p{L}]/gu, '');
+  if (letters.length < 6) return 'unknown';
+  if (/\p{Ll}\p{Lu}{2}|\p{Lu}{3,}\p{Ll}/u.test(text)) return 'junk';  // case glued mid-word: "NetworkGMA", "HDDateline"
+  for (const token of text.split(/\s+/)) {
+    const word = token.replace(/[^\p{L}]/gu, '');
+    if (word.length < 6) continue;
+    if (isRepeatedUnit(word)) return 'junk';
+    if (word === word.toUpperCase() && hasRepeatedBigram(word) && vowelRatio(word) < 0.25) return 'junk';
+  }
+  return 'ok';
+}
+
+function isRepeatedUnit(word: string): boolean {
+  for (let unit = 1; unit <= 3; unit++) {
+    const piece = word.slice(0, unit);
+    if (piece.repeat(Math.ceil(word.length / unit)).startsWith(word)) return true;
+  }
+  return false;
+}
+
+function hasRepeatedBigram(word: string): boolean {
+  const seen = new Set<string>();
+  for (let i = 0; i + 2 <= word.length; i++) {
+    const pair = word.slice(i, i + 2);
+    if (seen.has(pair)) return true;
+    seen.add(pair);
+  }
+  return false;
+}
+
+function vowelRatio(word: string): number {
+  return (word.match(/[AEIOUYaeiouy]/g)?.length ?? 0) / word.length;
+}
+
+/**
+ * Live captions are checked in their first lines: real text ends the check,
+ * station-data junk asks for a decoder restart (a fresh "auto" field choice,
+ * about a coin flip on most channels), and after maxRetries the captions are
+ * declared unreadable. Never second-guesses captions once they looked real.
+ */
+export class CaptionCheck {
+  state: 'checking' | 'ok' | 'unreadable' = 'checking';
+  retries = 0;
+  private ignore: string | null = null;
+
+  constructor(private readonly maxRetries = 8) {}
+
+  observe(text: string): 'none' | 'ok' | 'retry' | 'unreadable' {
+    if (this.state !== 'checking') return 'none';
+    if (this.ignore !== null) {
+      if (text === this.ignore) return 'none';  // the junk lingering until the restarted decoder clears it
+      this.ignore = null;
+    }
+    const verdict = judgeCaptionText(text);
+    if (verdict === 'ok') {
+      this.state = 'ok';
+      return 'ok';
+    }
+    if (verdict !== 'junk') return 'none';
+    if (this.retries >= this.maxRetries) {
+      this.state = 'unreadable';
+      return 'unreadable';
+    }
+    this.retries++;
+    this.ignore = text;
+    return 'retry';
+  }
 }

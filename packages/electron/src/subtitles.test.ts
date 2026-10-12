@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   normalizeSubtitleSettings, parseSubtitleTracks, subtitleStyleOptions,
-  loadResetOptions, SUBTITLE_BASE_OPTIONS, TrackReadSchedule, subtitleFontsDir,
+  loadResetOptions, SUBTITLE_BASE_OPTIONS, TrackReadSchedule, subtitleFontsDir, judgeCaptionText, CaptionCheck,
 } from './subtitles.js';
 
 test('settings default to off, medium, outline', () => {
@@ -50,9 +50,6 @@ test('base options turn on CC tracks and stop sidecar searches', () => {
   assert.deepEqual(SUBTITLE_BASE_OPTIONS, [['sub-create-cc-track', 'yes'], ['sub-auto', 'no'], ['sid', 'no']]);
 });
 
-test('loadResetOptions resets track and delay', () => {
-  assert.deepEqual(loadResetOptions(), [['sid', 'no'], ['sub-delay', '0']]);
-});
 
 test('style options: medium outline in Fira', () => {
   const opts = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'medium', style: 'outline' }, 'fira'));
@@ -104,4 +101,59 @@ test('gives up after maxReads, and reset re-arms it', () => {
 test('subtitle fonts live in resources when packaged, in assets when not', () => {
   assert.equal(subtitleFontsDir({ isPackaged: true, resourcesPath: '/opt/sbtlTV/resources', dirname: '/x/dist' }), '/opt/sbtlTV/resources/sub-fonts');
   assert.equal(subtitleFontsDir({ isPackaged: false, resourcesPath: '/r', dirname: '/repo/packages/electron/dist' }), '/repo/packages/electron/assets/sub-fonts');
+});
+
+// Texts seen on 12 US channels (2026-10-12 sample): field-2/XDS junk vs real captions.
+const JUNK = [
+  'CNNPACN', 'CNNCNN', 'H@ABC NetworkGMA 3H@', 'kH@GMA 3  H@ABC Network', 'A 3H@  ABC NetworkH@', 'HEHEHEHEHEHEHE',
+  'HDDateline DaytimeHD', 'HGTEHCHG', 'H@PA', 'H@The StoryFox', 'H@', 'H@H@H@H@', 'HCHCHCHCHCHCHCHC',
+];
+const REAL = [
+  '>> / CLEARLY DIFFERENT.', 'COVERED?  / >> YOU HAVE YO', 'ACCIDENT INSURANCE. BU', 'REALLY GREAT. THEY  / COME',
+  'A SKIRT OR DRESS UNDERNEATH, TO', 'Which I did / very much.', 'I did. Yeah.', 'could find no connection /     and no evidence',
+  'After speaking / with the FBI, they', 'It‘s that time of year when', 'with a mother-in-law suite.', 'to come up',
+  'Meanwhile, back at the house,', 'Hilary has updates / for Dana', 'CAN’T PUT A /', 'O  /  SUPPRESS DISSENT',
+  'I don’t know. / I don’t know.', 't know what / could’ve d', 'Were they off-islanders?', '. / Can we go now?',
+  'FACTORS, / AS WELL AS P', 'NG PUSHED OUT A', 'SENTIMENT, UNCERTAINTY', 'THE / POTENTIAL STOCK R',
+  'I need to navigate this /        new city.', 'We have a big stack /    of obstacles.', 'Hold on, just hold /  on for a second.',
+  'I’m 10-83, give me some units.', 'STRENGTH AND MISSISSIPPI', 'HA HA HA HA',
+];
+
+test('caption judge: every sampled junk text is junk', () => {
+  for (const t of JUNK) assert.equal(judgeCaptionText(t), 'junk', t);
+});
+
+test('caption judge: every sampled real caption is ok', () => {
+  for (const t of REAL) assert.equal(judgeCaptionText(t), 'ok', t);
+});
+
+test('caption judge: too little text is unknown', () => {
+  for (const t of ['', 'C', 'CO', 'CN', 'CNN', 'HE', 'CNNCN']) assert.equal(judgeCaptionText(t), 'unknown', t);
+});
+
+test('caption check: ok ends the check', () => {
+  const c = new CaptionCheck(8);
+  assert.equal(c.observe('CO'), 'none');
+  assert.equal(c.observe('COVERED?'), 'ok');
+  assert.equal(c.state, 'ok');
+  assert.equal(c.observe('HEHEHEHEHE'), 'none');  // never second-guesses after ok
+});
+
+test('caption check: junk retries, then ok', () => {
+  const c = new CaptionCheck(8);
+  assert.equal(c.observe('HEHEHEHE'), 'retry');
+  assert.equal(c.observe('HEHEHEHE'), 'none');     // the old text lingering after the restart is ignored
+  assert.equal(c.observe('Which I did'), 'ok');
+  assert.equal(c.retries, 1);
+});
+
+test('caption check: gives up after the retry budget', () => {
+  const c = new CaptionCheck(8);
+  for (let i = 0; i < 8; i++) { assert.equal(c.observe('H@'), 'retry'); c.observe(''); }
+  assert.equal(c.observe('H@'), 'unreadable');
+  assert.equal(c.state, 'unreadable');
+});
+
+test('loadResetOptions also shows subtitles again', () => {
+  assert.deepEqual(loadResetOptions(), [['sid', 'no'], ['sub-delay', '0'], ['sub-visibility', 'yes']]);
 });
