@@ -14,6 +14,8 @@ export interface MpvStatus {
 export interface MpvResult {
   success?: boolean;
   error?: string;
+  /** mpv-load only: the load's generation, which tags its subtitle updates */
+  generation?: number;
 }
 
 export interface MpvModeInfo {
@@ -59,14 +61,22 @@ export interface SubtitleTracksUpdate {
   /** main's load counter; a new value means a new stream started */
   generation: number;
   tracks: SubtitleTrack[];
+  /** The file's duration when main knows it for this load, else 0 */
+  duration: number;
 }
 
+/** Live captions: main checks the first lines and hides station-data junk */
+export type CcState = 'checking' | 'ok' | 'unreadable';
+
 export interface SubtitlesApi {
-  /** null turns subtitles off */
-  setTrack: (id: number | null) => Promise<MpvResult>;
-  setDelay: (seconds: number) => Promise<MpvResult>;
+  /** Calls carry the load generation they were decided for; main ignores stale ones. null turns subtitles off. */
+  setTrack: (generation: number, id: number | null, visible: boolean) => Promise<MpvResult>;
+  /** Show or hide without restarting the decoder (live captions keep decoding) */
+  setVisible: (generation: number, visible: boolean) => Promise<MpvResult>;
+  setDelay: (generation: number, seconds: number) => Promise<MpvResult>;
   /** Returns an unsubscribe function */
   onTracks: (callback: (update: SubtitleTracksUpdate) => void) => () => void;
+  onCcState: (callback: (update: { generation: number; state: CcState }) => void) => () => void;
 }
 
 export interface ElectronWindowApi {

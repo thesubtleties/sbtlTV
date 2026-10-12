@@ -59,24 +59,35 @@ export async function updateWatchProgress(opts: {
     id = movieProgressId(opts.streamId);
   }
 
-  await db.watchProgress.put({
-    id,
-    type: opts.type,
-    tmdb_id: opts.tmdbId,
-    stream_id: opts.streamId,
-    series_tmdb_id: opts.seriesTmdbId,
-    series_stream_id: opts.seriesStreamId,
-    season_num: opts.seasonNum,
-    episode_num: opts.episodeNum,
-    position: opts.position,
-    duration: opts.duration,
-    progress,
-    completed,
-    name: opts.name,
-    updated_at: new Date(),
-    source_id: opts.sourceId,
-    // put() replaces the whole record, so the delay rides along with every save
-    ...(opts.subDelay ? { sub_delay: opts.subDelay, sub_delay_stream_id: opts.streamId } : {}),
+  // put() replaces the whole record. A save that has not decided the subtitle
+  // delay yet (undefined: the play started and the saved delay is not restored
+  // yet) keeps the stored one; a number (0 clears) replaces it.
+  await db.transaction('rw', db.watchProgress, async () => {
+    let delayFields: Pick<StoredWatchProgress, 'sub_delay' | 'sub_delay_stream_id'> = {};
+    if (opts.subDelay === undefined) {
+      const prev = await db.watchProgress.get(id);
+      if (prev?.sub_delay) delayFields = { sub_delay: prev.sub_delay, sub_delay_stream_id: prev.sub_delay_stream_id };
+    } else if (opts.subDelay !== 0) {
+      delayFields = { sub_delay: opts.subDelay, sub_delay_stream_id: opts.streamId };
+    }
+    await db.watchProgress.put({
+      id,
+      type: opts.type,
+      tmdb_id: opts.tmdbId,
+      stream_id: opts.streamId,
+      series_tmdb_id: opts.seriesTmdbId,
+      series_stream_id: opts.seriesStreamId,
+      season_num: opts.seasonNum,
+      episode_num: opts.episodeNum,
+      position: opts.position,
+      duration: opts.duration,
+      progress,
+      completed,
+      name: opts.name,
+      updated_at: new Date(),
+      source_id: opts.sourceId,
+      ...delayFields,
+    });
   });
 }
 
@@ -127,16 +138,18 @@ export async function getResumePosition(type: 'movie' | 'episode', opts: Progres
   return entry.position;
 }
 
-/** A saved subtitle delay applies only to the same copy of an unfinished item. */
-export function resolveSavedDelay(entry: StoredWatchProgress | undefined, streamId: string | undefined, durationSec: number): number {
-  if (!entry || !streamId || entry.completed || !entry.sub_delay) return 0;
-  if (entry.sub_delay_stream_id !== streamId) return 0;
-  if (!(durationSec > 0) || Math.abs(entry.duration - durationSec) > 5) return 0;
-  return entry.sub_delay;
-}
-
-export async function getSavedSubtitleDelay(type: 'movie' | 'episode', opts: ProgressLookup, durationSec: number): Promise<number> {
-  return resolveSavedDelay(await findProgressEntry(type, opts), opts.streamId, durationSec);
+/**
+ * The subtitle delay saved for this exact copy of an unfinished item, with the
+ * duration it was saved at (the player checks that against the file it opens).
+ * Movies look up this copy's own record first: with two copies of a movie the
+ * TMDB lookup can return the other copy's record.
+ */
+export async function getSubtitleDelayCandidate(type: 'movie' | 'episode', opts: ProgressLookup): Promise<{ delay: number; duration: number } | null> {
+  if (!opts.streamId) return null;
+  const own = type === 'movie' ? await db.watchProgress.get(movieProgressId(opts.streamId)) : undefined;
+  const entry = own ?? await findProgressEntry(type, opts);
+  if (!entry || entry.completed || !entry.sub_delay || entry.sub_delay_stream_id !== opts.streamId) return null;
+  return { delay: entry.sub_delay, duration: entry.duration };
 }
 
 const EMPTY_PROGRESS_MAP = new Map<string, number>();

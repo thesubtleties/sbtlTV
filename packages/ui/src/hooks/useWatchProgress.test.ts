@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { db } from '../db';
-import { updateWatchProgress, getResumePosition, getSavedSubtitleDelay, resolveSavedDelay } from './useWatchProgress';
+import { updateWatchProgress, getResumePosition, getSubtitleDelayCandidate } from './useWatchProgress';
 
 beforeEach(async () => { await db.watchProgress.clear(); });
 
@@ -41,9 +41,9 @@ describe('#68 non-TMDB episode progress', () => {
 describe('subtitle delay with watch progress', () => {
   const movie = { type: 'movie' as const, streamId: 'm-1', tmdbId: 550, position: 600, duration: 7200, sourceId: 's1' };
 
-  it('restores the delay for the same stream and duration', async () => {
+  it('offers the delay saved on the same stream, with its duration', async () => {
     await updateWatchProgress({ ...movie, subDelay: 0.4 });
-    expect(await getSavedSubtitleDelay('movie', { streamId: 'm-1', tmdbId: 550 }, 7201)).toBe(0.4);
+    expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toEqual({ delay: 0.4, duration: 7200 });
   });
 
   it('keeps the delay through later progress saves', async () => {
@@ -54,30 +54,47 @@ describe('subtitle delay with watch progress', () => {
     expect(rec?.position).toBe(900);
   });
 
-  it('ignores a delay saved on another stream', async () => {
-    await updateWatchProgress({ ...movie, subDelay: 0.4 });
-    // same TMDB movie, different source's copy
-    expect(await getSavedSubtitleDelay('movie', { streamId: 'm-2', tmdbId: 550 }, 7200)).toBe(0);
-  });
-
-  it('ignores a delay when the duration no longer matches', async () => {
-    await updateWatchProgress({ ...movie, subDelay: 0.4 });
-    expect(await getSavedSubtitleDelay('movie', { streamId: 'm-1', tmdbId: 550 }, 7300)).toBe(0);
-  });
-
-  it('a finished item starts at 0', async () => {
-    await updateWatchProgress({ ...movie, position: 7000, subDelay: 0.4 });  // 97% -> completed
-    expect(await getSavedSubtitleDelay('movie', { streamId: 'm-1', tmdbId: 550 }, 7200)).toBe(0);
-  });
-
   it('a zero delay is not stored', async () => {
     await updateWatchProgress({ ...movie, subDelay: 0 });
     const rec = await db.watchProgress.get('movie_m-1');
     expect(rec?.sub_delay).toBeUndefined();
   });
 
-  it('resolveSavedDelay needs a record and a stream id', () => {
-    expect(resolveSavedDelay(undefined, 'm-1', 100)).toBe(0);
-    expect(resolveSavedDelay({ id: 'x', type: 'movie', position: 10, duration: 100, progress: 10, completed: false, updated_at: new Date(), sub_delay: 1, sub_delay_stream_id: 'm-1' }, undefined, 100)).toBe(0);
+  it('episodes find their delay through the series key', async () => {
+    const ep = { type: 'episode' as const, streamId: 'ep-9', sourceId: 'src1', seriesStreamId: 'S42', seasonNum: 2, episodeNum: 5, position: 700, duration: 2000 };
+    await updateWatchProgress({ ...ep, subDelay: -0.3 });
+    expect(await getSubtitleDelayCandidate('episode', { streamId: 'ep-9', sourceId: 'src1', seriesStreamId: 'S42', seasonNum: 2, episodeNum: 5 }))
+      .toEqual({ delay: -0.3, duration: 2000 });
+  });
+});
+
+describe('subtitle delay survives the next play (review C1)', () => {
+  const movie = { type: 'movie' as const, streamId: 'm-1', tmdbId: 550, position: 600, duration: 7200, sourceId: 's1' };
+
+  it('a save that has not resolved the delay yet keeps the saved one', async () => {
+    await updateWatchProgress({ ...movie, subDelay: 0.4 });
+    // replay: the first progress save lands before the restore, with no delay decided
+    await updateWatchProgress({ ...movie, position: 610 });
+    const candidate = await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 });
+    expect(candidate).toEqual({ delay: 0.4, duration: 7200 });
+  });
+
+  it('an explicit 0 clears the saved delay', async () => {
+    await updateWatchProgress({ ...movie, subDelay: 0.4 });
+    await updateWatchProgress({ ...movie, subDelay: 0 });
+    expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toBeNull();
+  });
+
+  it('prefers this copy\'s record over another copy of the same movie (review M4)', async () => {
+    await updateWatchProgress({ ...movie, streamId: 'm-2', subDelay: 1.0 });
+    await updateWatchProgress({ ...movie, subDelay: 0.4 });
+    expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toEqual({ delay: 0.4, duration: 7200 });
+  });
+
+  it('no candidate for a finished item or another copy', async () => {
+    await updateWatchProgress({ ...movie, streamId: 'm-2', subDelay: 1.0 });
+    expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toBeNull();
+    await updateWatchProgress({ ...movie, position: 7000, subDelay: 0.4 });
+    expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toBeNull();
   });
 });

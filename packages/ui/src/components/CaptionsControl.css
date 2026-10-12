@@ -8,7 +8,9 @@
   position: relative;
 }
 
-.cc__btn--on {
+/* On: only the icon lights up, and stays lit on hover (the bar's hover resets color) */
+.cc__btn--on,
+.cc__btn--on:hover:not(:disabled) {
   color: var(--accent);
 }
 

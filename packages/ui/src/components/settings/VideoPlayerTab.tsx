@@ -60,7 +60,7 @@ export function VideoPlayerTab({
     <SettingsTab>
       <Section
         title="Subtitles"
-        description="Captions on live TV and subtitles on movies and series, where the stream has them. The CC button in the player bar (or C) turns them on or off until you quit sbtlTV; right-click it for tracks and timing."
+        description="Captions on live TV and subtitles on movies and series, where the stream has them. The CC button in the player bar (or V) turns them on or off until you quit sbtlTV; right-click it for tracks and timing."
       >
         <OptionRow title="Live captions" help={subtitles.liveDefault ? 'Captions start on for every channel that carries them.' : 'Channels start without captions.'}>
           <OnOff value={subtitles.liveDefault} onChange={(v) => void updateSubtitles({ liveDefault: v })} />

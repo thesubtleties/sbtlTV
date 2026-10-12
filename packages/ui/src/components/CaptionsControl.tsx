@@ -10,16 +10,21 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
   const tracks = useSubtitleStore((s) => s.tracks);
   const selectedId = useSubtitleStore((s) => s.selectedId);
   const delay = useSubtitleStore((s) => s.delay);
+  const visible = useSubtitleStore((s) => s.visible);
+  const ccState = useSubtitleStore((s) => s.ccState);
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const none = tracks.length === 0;
-  const on = selectedId !== null;
+  const unreadable = kind === 'live' && ccState === 'unreadable';
+  const none = tracks.length === 0 || unreadable;
+  // Live captions stay selected (decoding) while hidden; on = shown
+  const on = !none && (kind === 'live' ? visible : selectedId !== null);
 
   useEffect(() => {
     if (!menuOpen) return;
     const close = (e: MouseEvent) => { if (!rootRef.current?.contains(e.target as Node)) setMenuOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
+    // Esc closes only the menu: stop it before App's window handler exits fullscreen or closes panels
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setMenuOpen(false); } };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', esc);
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
@@ -31,9 +36,11 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
     if (kind) useSubtitleStore.getState().toggle(systemLocale());
   };
 
-  const title = none
-    ? 'No captions in this stream'
-    : `${on ? 'Captions on' : 'Captions off'} (C) · right-click for tracks and delay`;
+  const title = unreadable
+    ? "This channel's captions can't be read"
+    : none
+      ? (kind === 'vod' ? 'No subtitles in this file' : 'No captions on this channel')
+      : `${on ? 'Captions on' : 'Captions off'} (V) · right-click for tracks and delay`;
 
   return (
     <div className="cc" ref={rootRef}>
@@ -64,8 +71,8 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
           <button className={`cc__item${!on ? ' cc__item--active' : ''}`} role="menuitemradio" aria-checked={!on}
             onClick={() => useSubtitleStore.getState().selectTrack(null)}>Off</button>
           {tracks.map((t) => (
-            <button key={t.id} className={`cc__item${selectedId === t.id ? ' cc__item--active' : ''}`} role="menuitemradio"
-              aria-checked={selectedId === t.id} onClick={() => useSubtitleStore.getState().selectTrack(t.id)}>
+            <button key={t.id} className={`cc__item${on && selectedId === t.id ? ' cc__item--active' : ''}`} role="menuitemradio"
+              aria-checked={on && selectedId === t.id} onClick={() => useSubtitleStore.getState().selectTrack(t.id)}>
               {trackLabel(t)}
             </button>
           ))}
