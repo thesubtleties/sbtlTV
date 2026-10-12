@@ -4,6 +4,7 @@ import type { VodPlayInfo } from '../types/media';
 import { useCurrentProgram } from '../hooks/useChannels';
 import { useMatchup } from '../hooks/useMatchup';
 import { usePlaybackStore } from '../stores/playbackStore';
+import { CaptionsControl } from './CaptionsControl';
 import './NowPlayingBar.css';
 
 interface NowPlayingBarProps {
@@ -361,6 +362,7 @@ export function NowPlayingBar({
 
             {/* Volume controls */}
             <div className="npb-volume">
+              <CaptionsControl disabled={!canControl} />
               <button
                 className="npb-btn npb-volume-btn"
                 onClick={onToggleMute}
