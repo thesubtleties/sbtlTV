@@ -85,10 +85,6 @@ export function SettingsSidebar({
             if (tab.id === 'priority' && !hasMultipleSources) {
               return null;
             }
-            // The player settings exist only on Linux
-            if (tab.id === 'player' && !window.platform?.isLinux) {
-              return null;
-            }
 
             return (
               <button
