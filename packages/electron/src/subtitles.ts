@@ -150,6 +150,10 @@ export function judgeCaptionText(text: string): 'ok' | 'junk' | 'unknown' {
     if (isRepeatedUnit(word)) return 'junk';
     if (word === word.toUpperCase() && hasRepeatedBigram(word) && vowelRatio(word) < 0.25) return 'junk';
   }
+  // Real captions are words with spaces. One glued run of letters ("CNNCPA",
+  // the start of "CNNCPASNNCNN") proves nothing, unless it is a finished word ("COVERED?").
+  const words = text.split(/\s+/).filter((t) => /\p{L}/u.test(t));
+  if (words.length < 2 && !/\p{L}{4,}[.?!,]$/u.test(text.trim())) return 'unknown';
   return 'ok';
 }
 
@@ -175,6 +179,9 @@ function vowelRatio(word: string): number {
   return (word.match(/[AEIOUYaeiouy]/g)?.length ?? 0) / word.length;
 }
 
+/** A fragment of station data can look like a word for a moment; this many different real lines confirm. */
+const CONFIRM_LINES = 3;
+
 /**
  * Live captions are checked in their first lines: real text ends the check,
  * station-data junk asks for a decoder restart (a fresh "auto" field choice,
@@ -185,6 +192,8 @@ export class CaptionCheck {
   state: 'checking' | 'ok' | 'unreadable' = 'checking';
   retries = 0;
   private ignore: string | null = null;
+  private lastText: string | null = null;
+  private realLines = 0;  // different real-looking lines in a row; CONFIRM_LINES confirms the captions
 
   constructor(private readonly maxRetries = 8) {}
 
@@ -194,12 +203,16 @@ export class CaptionCheck {
       if (text === this.ignore) return 'none';  // the junk lingering until the restarted decoder clears it
       this.ignore = null;
     }
+    if (text === this.lastText) return 'none';  // read every few hundred ms; only changes count
+    this.lastText = text;
     const verdict = judgeCaptionText(text);
     if (verdict === 'ok') {
+      if (++this.realLines < CONFIRM_LINES) return 'none';
       this.state = 'ok';
       return 'ok';
     }
     if (verdict !== 'junk') return 'none';
+    this.realLines = 0;
     if (this.retries >= this.maxRetries) {
       this.state = 'unreadable';
       return 'unreadable';

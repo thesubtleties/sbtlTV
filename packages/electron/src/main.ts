@@ -1233,10 +1233,13 @@ function sendSubtitleTracks(tracks: SubtitleTrack[], duration = 0): void {
 // on most channels it is a coin flip whether it lands on the captions or the
 // station data (XDS) beside them. While a CC track is selected, read the first
 // lines (hidden), restart the decoder on junk, and give up after 8 restarts.
-// Bounded: it stops at the first verdict or after CC_CHECK_LIMIT_MS.
+// Captions are only shown once confirmed. It stops at the verdict; a channel
+// that sends no captions for a while (an ad break) is checked less often
+// after CC_CHECK_FAST_MS rather than shown unchecked.
 const CC_CHECK_INTERVAL_MS = 400;
-const CC_CHECK_LIMIT_MS = 60_000;
-interface CcCheckRun { generation: number; trackId: number; check: CaptionCheck; timer: NodeJS.Timeout; startedAt: number }
+const CC_CHECK_SLOW_INTERVAL_MS = 2000;
+const CC_CHECK_FAST_MS = 60_000;
+interface CcCheckRun { generation: number; trackId: number; check: CaptionCheck; timer: NodeJS.Timeout; startedAt: number; lastRead: number }
 let ccCheck: CcCheckRun | null = null;
 let ccCheckedKey: string | null = null;  // `${generation}:${trackId}` already checked this load
 let ccUnreadable = false;  // that check gave up: keep the junk off screen for this load
@@ -1268,13 +1271,16 @@ function startCcCheck(generation: number, trackId: number): void {
   sendCcState(generation, 'checking');
   let busy = false;
   const run: CcCheckRun = {
-    generation, trackId, check: new CaptionCheck(8), startedAt: Date.now(),
+    generation, trackId, check: new CaptionCheck(8), startedAt: Date.now(), lastRead: 0,
     timer: setInterval(() => {
-      if (busy) return;
+      const now = Date.now();
+      const interval = now - run.startedAt > CC_CHECK_FAST_MS ? CC_CHECK_SLOW_INTERVAL_MS : CC_CHECK_INTERVAL_MS;
+      if (busy || now - run.lastRead < interval) return;
       busy = true;
+      run.lastRead = now;
       void readSubText().then((text) => {
         if (ccCheck !== run || generation !== loadGeneration) return;
-        const action = Date.now() - run.startedAt > CC_CHECK_LIMIT_MS ? 'ok' : run.check.observe(text.trim());
+        const action = run.check.observe(text.trim());
         if (action === 'retry') {
           debugLog(`captions: station data instead of captions, restarting the decoder (${run.check.retries}/8)`, 'mpv');
           setMpvOptions([['sid', 'no'], ['sid', String(trackId)]], 'cc retry');

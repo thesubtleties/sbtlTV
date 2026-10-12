@@ -131,19 +131,36 @@ test('caption judge: too little text is unknown', () => {
   for (const t of ['', 'C', 'CO', 'CN', 'CNN', 'HE', 'CNNCN']) assert.equal(judgeCaptionText(t), 'unknown', t);
 });
 
-test('caption check: ok ends the check', () => {
+test('caption judge: a glued run of letters is never real on its own (CNN International, 2026-10-12)', () => {
+  for (const t of ['CNNCPA', 'CNNCPAS', 'CNNCPASN']) assert.equal(judgeCaptionText(t), 'unknown', t);
+  assert.equal(judgeCaptionText('CNNCPASNNCNN'), 'junk');
+  assert.equal(judgeCaptionText('COVERED?'), 'ok');  // one word, but a finished one
+});
+
+test('caption check: three different real lines confirm the captions', () => {
   const c = new CaptionCheck(8);
   assert.equal(c.observe('CO'), 'none');
-  assert.equal(c.observe('COVERED?'), 'ok');
+  assert.equal(c.observe('COVERED?'), 'none');
+  assert.equal(c.observe('COVERED?'), 'none');           // the same line again does not count
+  assert.equal(c.observe('COVERED? / >> YOU HAVE'), 'none');
+  assert.equal(c.observe('COVERED? / >> YOU HAVE YOUR'), 'ok');
   assert.equal(c.state, 'ok');
-  assert.equal(c.observe('HEHEHEHEHE'), 'none');  // never second-guesses after ok
+  assert.equal(c.observe('HEHEHEHEHE'), 'none');         // never second-guesses after that
+});
+
+test('caption check: junk before confirmation still restarts', () => {
+  const c = new CaptionCheck(8);
+  for (const t of ['CN', 'CNNC', 'CNNCPA', 'CNNCPAS', 'CNNCPASN']) assert.equal(c.observe(t), 'none', t);
+  assert.equal(c.observe('CNNCPASNNCNN'), 'retry');
 });
 
 test('caption check: junk retries, then ok', () => {
   const c = new CaptionCheck(8);
   assert.equal(c.observe('HEHEHEHE'), 'retry');
   assert.equal(c.observe('HEHEHEHE'), 'none');     // the old text lingering after the restart is ignored
-  assert.equal(c.observe('Which I did'), 'ok');
+  assert.equal(c.observe('Which I did'), 'none');
+  assert.equal(c.observe('Which I did / very'), 'none');
+  assert.equal(c.observe('Which I did / very much.'), 'ok');
   assert.equal(c.retries, 1);
 });
 
