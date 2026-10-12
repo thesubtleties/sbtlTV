@@ -223,14 +223,14 @@
   padding: 0;
   cursor: pointer;
   position: relative;
-  background: var(--fill-4);
+  background: color-mix(in srgb, var(--button) 26%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   transition: background 300ms ease, transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .hero__nav-dot:hover {
-  background: var(--faint);
+  background: color-mix(in srgb, var(--button) 45%, transparent);
 }
 
 /* Active dot becomes transparent — slider sits behind it */
@@ -272,7 +272,7 @@
   pointer-events: none;
   overflow: hidden;
   /* Frosted glass base */
-  background: var(--fill-4);
+  background: color-mix(in srgb, var(--button) 26%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: none;
@@ -294,7 +294,7 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: var(--muted);
+  background: color-mix(in srgb, var(--button) 70%, transparent);
   transform-origin: left center;
   animation: hero-nav-fill var(--hero-rotate-interval, 8s) linear forwards;
 }
