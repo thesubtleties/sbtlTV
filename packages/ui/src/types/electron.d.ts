@@ -82,6 +82,13 @@ export interface AppearanceApi {
   onDesktopColorsChanged: (callback: (colors: DesktopColors) => void) => () => void;
 }
 
+export interface SubtitleSettings {
+  liveDefault: boolean;
+  vodDefault: boolean;
+  size: 'small' | 'medium' | 'large';
+  style: 'outline' | 'box' | 'shadow';
+}
+
 export interface AppSettings {
   theme: 'dark' | 'light';
   appearance?: Appearance;  // Palette and typeface (default sbtl / fira)
@@ -108,6 +115,7 @@ export interface AppSettings {
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video
+  subtitles?: SubtitleSettings;  // Caption defaults (live / movies & series) and subtitle look
 }
 
 export interface Source {

@@ -65,10 +65,18 @@ export interface StorageResult<T = void> {
   data?: T;
 }
 
+export interface SubtitleSettings {
+  liveDefault: boolean;
+  vodDefault: boolean;
+  size: 'small' | 'medium' | 'large';
+  style: 'outline' | 'box' | 'shadow';
+}
+
 export interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   autoUpdateEnabled?: boolean;
+  subtitles?: SubtitleSettings;
 }
 
 export interface M3UImportResult {
