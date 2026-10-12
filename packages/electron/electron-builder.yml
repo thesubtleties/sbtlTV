@@ -16,6 +16,7 @@ files:
   - dist/**/*
   - assets/**/*
   - "!assets/sub-fonts/**"
+  - "!assets/sub-fonts-licenses/**"
   - "!**/*.ts"
   - "!**/*.test.js"
   - "!**/*.test.js.map"
@@ -40,6 +41,11 @@ extraResources:
   # Subtitle fonts for mpv's libass (read from disk, so outside app.asar)
   - from: assets/sub-fonts
     to: sub-fonts
+    filter:
+      - "**/*"
+  # Their OFL licences, beside the fonts (libass would try to load them as fonts if they were inside)
+  - from: assets/sub-fonts-licenses
+    to: sub-fonts-licenses
     filter:
       - "**/*"
 
