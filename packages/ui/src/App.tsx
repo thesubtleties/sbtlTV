@@ -94,7 +94,7 @@ async function tryLoadWithFallbacks(
   debugLog(`Attempting to load: ${primaryUrl} (isLive: ${isLive})${startPosition ? ` resume@${startPosition}s` : ''}`);
 
   // Try primary URL first
-  const result = await mpv.load(primaryUrl, startPosition);
+  const result = await mpv.load(primaryUrl, startPosition, isLive);
   if (!result.error) {
     debugLog(`Primary URL loaded successfully`);
     return { success: true, url: primaryUrl, generation: result.generation };
@@ -106,7 +106,7 @@ async function tryLoadWithFallbacks(
   debugLog(`Trying ${fallbacks.length} fallback URLs...`);
   for (const fallbackUrl of fallbacks) {
     debugLog(`Trying fallback: ${fallbackUrl}`);
-    const fallbackResult = await mpv.load(fallbackUrl, startPosition);
+    const fallbackResult = await mpv.load(fallbackUrl, startPosition, isLive);
     if (!fallbackResult.error) {
       debugLog(`Fallback succeeded: ${fallbackUrl}`);
       return { success: true, url: fallbackUrl, generation: fallbackResult.generation };
@@ -326,7 +326,24 @@ function App() {
       setError(err);
     });
 
+    // Stall recovery in main: a quiet toast while it reloads, the store and the
+    // delay-save bookkeeping follow the reloaded load, one plain message if it gives up.
+    const offRecovery = window.mpv.onStreamRecovery((update) => {
+      if (update.state === 'reconnecting') {
+        useToastStore.getState().addToast({ kind: 'info', title: 'Reconnecting…', message: 'The stream stopped; trying again.', duration: 4000 });
+      } else if (update.state === 'reloaded') {
+        const store = useSubtitleStore.getState();
+        if (store.kind) store.rebindLoad(update.generation, subtitleDefaults()[store.kind], systemLocale());
+        if (loadInfoRef.current) loadInfoRef.current = { ...loadInfoRef.current, generation: update.generation };
+      } else {
+        setError(update.live
+          ? 'This channel stopped responding. Try it again in a moment, or pick another channel.'
+          : 'This stopped loading. Try playing it again.');
+      }
+    });
+
     return () => {
+      offRecovery();
       window.mpv?.removeAllListeners();
     };
   }, []);

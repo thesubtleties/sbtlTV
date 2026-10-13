@@ -14,6 +14,7 @@ import { isTransientDecodeError } from './mpv-error-filter.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
+import { StallWatchdog, STREAM_RECONNECT_OPTIONS } from './stream-health.js';
 import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, CaptionCheck, type SubtitleTrack } from './subtitles.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
@@ -102,7 +103,12 @@ let pendingResume: { position: number; generation: number } | null = null;
 let loadGeneration = 0;
 // Load generation whose first decoded frame has already been logged.
 let decodeLoggedGeneration = -1;
-let currentMedia: { url: string; startPosition: number } | null = null;
+let currentMedia: { url: string; startPosition: number; live: boolean } | null = null;
+// Stall recovery (stream-health.ts): the user's own pause, so mpv pausing at
+// the end of a stream is not mistaken for it, and the watchdog of the current load.
+let userPaused = false;
+let stallWatchdog: StallWatchdog | null = null;
+let stallReloadInFlight = false;
 let pipelineFailurePromptOpen = false;
 let nativeRecoveryInProgress = false;
 
@@ -638,6 +644,7 @@ async function initMpv(): Promise<void> {
       '--no-terminal',
       '--hwdec=auto',
       '--vo=gpu',
+      `--stream-lavf-o=${STREAM_RECONNECT_OPTIONS}`,
       ...SUBTITLE_BASE_OPTIONS.map(([name, value]) => `--${name}=${value}`),
       `--sub-fonts-dir=${subtitleFontsPath()}`,
     ];
@@ -708,7 +715,7 @@ async function initMpv(): Promise<void> {
     mpvProcess.on('error', (error: Error) => {
       debugLog(`Process error: ${error.message}`, 'mpv');
       console.error('[mpv] Process error:', error.message);
-      sendToRenderer('mpv-error', error.message);
+      reportMpvError(error.message);
     });
 
     mpvProcess.on('exit', (code) => {
@@ -725,7 +732,7 @@ async function initMpv(): Promise<void> {
       // Auto-restart if not intentionally shutting down
       if (!isShuttingDown && mainWindow) {
         console.log('[mpv] Unexpected exit, restarting in 1 second...');
-        sendToRenderer('mpv-error', 'mpv crashed, restarting...');
+        reportMpvError('mpv crashed, restarting...');
         setTimeout(() => {
           if (!isShuttingDown && mainWindow) {
             initMpv();
@@ -744,7 +751,7 @@ async function initMpv(): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[mpv] Failed to initialize:', message);
-    sendToRenderer('mpv-error', message);
+    reportMpvError(message);
   }
 }
 
@@ -802,7 +809,7 @@ async function initNativeMpv(): Promise<boolean> {
     mpvBridge = bridge;
     useNativeMpv = true;
     syncPlaybackDiagnostics();
-    setMpvOptions([...SUBTITLE_BASE_OPTIONS, ['sub-fonts-dir', subtitleFontsPath()]], 'native init');
+    setMpvOptions([['stream-lavf-o', STREAM_RECONNECT_OPTIONS], ...SUBTITLE_BASE_OPTIONS, ['sub-fonts-dir', subtitleFontsPath()]], 'native init');
     applySubtitleStyle('native init');
 
     // Forward status updates to renderer
@@ -881,7 +888,7 @@ async function initNativeMpv(): Promise<boolean> {
         debugLog(`mpv (not shown): ${error.trim()}`, 'mpv');
         return;
       }
-      sendToRenderer('mpv-error', error);
+      reportMpvError(error);
     });
 
     bridge.onPipelineFailure((error) => {
@@ -937,6 +944,7 @@ async function resetNativePlayback(): Promise<void> {
     nativeStatusThrottle?.reset();
     syncPlaybackDiagnostics();
     currentMedia = null;
+    stallWatchdog = null;
     Object.assign(mpvState, { playing: false, position: 0, duration: 0, width: 0, height: 0 });
     isShuttingDown = false;
     await createWindow(bounds);
@@ -1009,7 +1017,7 @@ async function handleNativePipelineFailure(error: string): Promise<void> {
       return;
     }
     if (!isLinux && result.response !== 0) {
-      sendToRenderer('mpv-error', error);
+      reportMpvError(error);
       return;
     }
     await resetNativePlayback();
@@ -1189,6 +1197,12 @@ function sendToRenderer(channel: string, data: unknown): void {
   if (mainWindow && mainWindow.webContents) {
     mainWindow.webContents.send(channel, data);
   }
+}
+
+/** A red banner in the app; its text goes to the debug log too, so reports can be matched. */
+function reportMpvError(message: string): void {
+  debugLog(`banner: ${message.trim()}`, 'mpv');
+  sendToRenderer('mpv-error', message);
 }
 
 /** Set mpv options on whichever player is running. Failures are logged, never thrown. */
@@ -1406,14 +1420,16 @@ ipcMain.handle('subtitle-set-delay', async (_event, generation: unknown, seconds
   return { success: true };
 });
 
-async function loadMedia(url: string, startPosition?: number): Promise<{ success?: boolean; error?: string; generation?: number }> {
+async function loadMedia(url: string, startPosition?: number, live = false, recovery = false): Promise<{ success?: boolean; error?: string; generation?: number }> {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge && !mpvBridge.isInitialized()) {
     void handleNativePipelineFailure('Reset native playback before selecting another channel');
     return { error: 'Native playback must be reset' };
   }
   const resumeAt = startPosition && startPosition > 0 ? Math.floor(startPosition) : 0;
-  currentMedia = { url, startPosition: resumeAt };
+  currentMedia = { url, startPosition: resumeAt, live };
+  userPaused = false;
+  if (!recovery) stallWatchdog = new StallWatchdog({ live });
   debugLog(`mpv-load called${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
 
   // Set pending resume — will seek when duration property arrives (file loaded).
@@ -1464,12 +1480,36 @@ async function loadMedia(url: string, startPosition?: number): Promise<{ success
 }
 
 // IPC Handlers - mpv control
-ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number) => {
-  return loadMedia(url, startPosition);
+ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number, live?: unknown) => {
+  return loadMedia(url, startPosition, live === true);
 });
+
+// Once a second: a stream that stopped moving without the user pausing it is
+// reloaded (at its position for movies), up to 3 times, then reported once.
+async function checkStreamHealth(): Promise<void> {
+  const media = currentMedia;
+  if (!stallWatchdog || !media || stallReloadInFlight || nativeRecoveryInProgress || pipelineFailurePromptOpen) return;
+  const action = stallWatchdog.observe({ now: Date.now(), position: mpvState.position, userPaused, duration: mpvState.duration });
+  if (action === 'reload') {
+    stallReloadInFlight = true;
+    debugLog(`Stream stalled at ${mpvState.position.toFixed(1)}s; reloading (${stallWatchdog.reloads}/3)`, 'mpv');
+    sendToRenderer('stream-recovery', { state: 'reconnecting', attempt: stallWatchdog.reloads });
+    try {
+      const result = await loadMedia(media.url, media.live ? undefined : mpvState.position, media.live, true);
+      if (result.generation !== undefined) sendToRenderer('stream-recovery', { state: 'reloaded', generation: result.generation });
+    } finally {
+      stallReloadInFlight = false;
+    }
+  } else if (action === 'give-up') {
+    debugLog('Stream still stalled after 3 reloads; giving up', 'mpv');
+    sendToRenderer('stream-recovery', { state: 'failed', live: media.live });
+  }
+}
+setInterval(() => { void checkStreamHealth(); }, 1000).unref();
 
 ipcMain.handle('mpv-play', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
+  userPaused = false;
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.play();
@@ -1490,6 +1530,7 @@ ipcMain.handle('mpv-play', async () => {
 
 ipcMain.handle('mpv-pause', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
+  userPaused = true;
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.pause();
@@ -1510,6 +1551,7 @@ ipcMain.handle('mpv-pause', async () => {
 
 ipcMain.handle('mpv-toggle-pause', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
+  userPaused = mpvState.playing;  // playing now: this pauses
   if (useNativeMpv && mpvBridge) {
     try {
       const status = mpvBridge.getStatus();
@@ -1598,6 +1640,7 @@ ipcMain.handle('mpv-stop', async () => {
   debugLog('mpv-stop called', 'mpv');
   pendingResume = null;
   stopCcCheck();
+  stallWatchdog = null;
   currentMedia = null;
   if (useNativeMpv && mpvBridge) {
     try {
@@ -2055,7 +2098,7 @@ app.whenReady().then(async () => {
 
   if (compatibilityHandoff) {
     const result = await loadMedia(compatibilityHandoff.url, compatibilityHandoff.position);
-    if (result.error) sendToRenderer('mpv-error', 'Could not restore playback after compatibility restart.');
+    if (result.error) reportMpvError('Could not restore playback after compatibility restart.');
   }
 
   // Auto-updater (packaged builds with native update support:

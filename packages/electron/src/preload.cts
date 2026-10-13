@@ -31,8 +31,14 @@ export interface MpvModeInfo {
   launchPlayerMode?: 'native' | 'compatibility' | null;
 }
 
+type StreamRecoveryUpdate =
+  | { state: 'reconnecting'; attempt: number }
+  | { state: 'reloaded'; generation: number }
+  | { state: 'failed'; live: boolean };
+
 export interface MpvApi {
-  load: (url: string, startPosition?: number) => Promise<MpvResult>;
+  /** live: a live channel (the stall watchdog reloads it from the live edge, not a position) */
+  load: (url: string, startPosition?: number, live?: boolean) => Promise<MpvResult>;
   play: () => Promise<MpvResult>;
   pause: () => Promise<MpvResult>;
   togglePause: () => Promise<MpvResult>;
@@ -47,6 +53,8 @@ export interface MpvApi {
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
+  /** Stall recovery: reconnecting (toast), reloaded (a new load generation), failed (give up) */
+  onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => () => void;
   removeAllListeners: () => void;
 }
 
@@ -151,7 +159,7 @@ contextBridge.exposeInMainWorld('electronWindow', {
 // Expose mpv API to the renderer process
 contextBridge.exposeInMainWorld('mpv', {
   // Control functions
-  load: (url: string, startPosition?: number) => ipcRenderer.invoke('mpv-load', url, startPosition),
+  load: (url: string, startPosition?: number, live?: boolean) => ipcRenderer.invoke('mpv-load', url, startPosition, live),
   play: () => ipcRenderer.invoke('mpv-play'),
   pause: () => ipcRenderer.invoke('mpv-pause'),
   togglePause: () => ipcRenderer.invoke('mpv-toggle-pause'),
@@ -172,6 +180,11 @@ contextBridge.exposeInMainWorld('mpv', {
   },
   onError: (callback: (error: string) => void) => {
     ipcRenderer.on('mpv-error', (_event: IpcRendererEvent, data: string) => callback(data));
+  },
+  onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => {
+    const listener = (_event: IpcRendererEvent, data: StreamRecoveryUpdate) => callback(data);
+    ipcRenderer.on('stream-recovery', listener);
+    return () => { ipcRenderer.removeListener('stream-recovery', listener); };
   },
 
   // Cleanup

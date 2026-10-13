@@ -20,6 +20,10 @@ const TRANSIENT_PATTERNS = [
   // ffmpeg's H.264 parser (logged with no context name) when a live stream is
   // joined mid-picture: the next whole picture decodes normally.
   /^ffmpeg: NULL: missing picture in access unit with size \d+/,
+  // A provider closing the connection mid-stream: ffmpeg reconnects (live,
+  // stream-health.ts) or re-requests from the byte offset (movies). If that
+  // fails, the stall watchdog reloads and finally shows its own message.
+  /^ffmpeg: http: (Stream ends prematurely at \d+|Will reconnect at \d+)/,
   // Hardware decode of a broken first picture; mpv recovers or falls back.
   /^ffmpeg\/video: \w+: Failed to end picture decode issue/,
   /^vd: Error while decoding frame/,

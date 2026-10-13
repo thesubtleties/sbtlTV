@@ -29,8 +29,14 @@ export interface MpvModeInfo {
   launchPlayerMode?: 'native' | 'compatibility' | null;
 }
 
+export type StreamRecoveryUpdate =
+  | { state: 'reconnecting'; attempt: number }
+  | { state: 'reloaded'; generation: number }
+  | { state: 'failed'; live: boolean };
+
 export interface MpvApi {
-  load: (url: string, startPosition?: number) => Promise<MpvResult>;
+  /** live: a live channel (the stall watchdog reloads it from the live edge, not a position) */
+  load: (url: string, startPosition?: number, live?: boolean) => Promise<MpvResult>;
   play: () => Promise<MpvResult>;
   pause: () => Promise<MpvResult>;
   togglePause: () => Promise<MpvResult>;
@@ -45,6 +51,8 @@ export interface MpvApi {
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
+  /** Stall recovery: reconnecting (toast), reloaded (a new load generation), failed (give up) */
+  onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => () => void;
   removeAllListeners: () => void;
 }
 

@@ -44,6 +44,8 @@ interface SubtitleData {
 
 interface SubtitleActions {
   bindLoad: (generation: number, kind: SubtitleKind, defaultOn: boolean, locale: string, pendingDelay: PendingDelay | null) => void;
+  /** Main reloaded the same stream (stall recovery): follow it to the new load, keeping choices and delay */
+  rebindLoad: (generation: number, defaultOn: boolean, locale: string) => void;
   receiveTracks: (update: SubtitleTracksUpdate, defaultOn: boolean, locale: string) => void;
   receiveCcState: (update: { generation: number; state: CcState }) => void;
   toggle: (locale: string) => void;
@@ -122,6 +124,14 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
         generation, kind, tracks: [], selectedId: null, visible: false, ccState: null, delay: 0,
         delayResolved: pendingDelay === null, pendingDelay, waiting: null,
       });
+      if (waiting?.generation === generation) apply(waiting, defaultOn, locale);
+    },
+
+    rebindLoad: (generation, defaultOn, locale) => {
+      const { waiting, kind, delay } = get();
+      if (!kind) return;
+      set({ generation, tracks: [], selectedId: null, visible: false, ccState: null, waiting: null });
+      if (delay !== 0) send.delay(delay);  // main reset sub-delay with the reload
       if (waiting?.generation === generation) apply(waiting, defaultOn, locale);
     },
 

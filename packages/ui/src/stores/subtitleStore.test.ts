@@ -145,3 +145,28 @@ describe('saved delay', () => {
     expect(s().delay).toBe(0);
   });
 });
+
+describe('automatic reload of the same stream', () => {
+  it('keeps the session choice and the delay on the reloaded load', () => {
+    s().bindLoad(1, 'vod', true, 'en-US', null);
+    s().receiveTracks({ generation: 1, tracks: [eng], duration: 100 }, true, 'en-US');
+    s().nudgeDelay(0.3);
+    setDelay.mockClear(); setTrack.mockClear();
+    s().rebindLoad(2, true, 'en-US');
+    expect(s().generation).toBe(2);
+    expect(s().kind).toBe('vod');
+    expect(s().delay).toBe(0.3);
+    expect(setDelay).toHaveBeenLastCalledWith(2, 0.3);   // main reset sub-delay with the reload
+    s().receiveTracks({ generation: 2, tracks: [eng], duration: 100 }, true, 'en-US');
+    expect(setTrack).toHaveBeenLastCalledWith(2, 1, true);
+  });
+
+  it('live captions come back shown if they were shown', () => {
+    s().bindLoad(1, 'live', false, 'en-US', null);
+    s().receiveTracks({ generation: 1, tracks: [cc], duration: 0 }, false, 'en-US');
+    s().toggle('en-US');                                   // shown
+    s().receiveTracks({ generation: 2, tracks: [cc], duration: 0 }, false, 'en-US');  // arrives before the rebind
+    s().rebindLoad(2, false, 'en-US');
+    expect(setTrack).toHaveBeenLastCalledWith(2, 1, true);
+  });
+});
