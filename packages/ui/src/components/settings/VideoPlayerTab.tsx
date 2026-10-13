@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useUIStore, useUpdateSettings } from '../../stores/uiStore';
+import { useSubtitleStore } from '../../stores/subtitleStore';
+import { systemLocale } from '../../hooks/useSubtitleController';
 import type { SubtitleSettings } from '../../types/electron';
 import { debugLog } from '../../utils/debugLog';
 import { OnOff, OptionRow, Section, Segmented, SettingsTab } from './ui';
@@ -26,6 +28,9 @@ export function VideoPlayerTab({
   async function updateSubtitles(patch: Partial<SubtitleSettings>) {
     const next = { ...subtitles, ...patch };
     updateSettings({ subtitles: next });
+    // A new language applies to what is playing now: a movie's subtitles switch
+    // track here; main re-checks live captions for the new language.
+    if (patch.language !== undefined) useSubtitleStore.getState().repickVodTrack(systemLocale());
     if (!window.storage) return;
     await window.storage.updateSettings({ subtitles: next });
   }

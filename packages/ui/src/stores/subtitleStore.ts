@@ -52,6 +52,8 @@ interface SubtitleActions {
   receiveCcState: (update: { generation: number; state: CcState; language: 'en' | 'es' | 'fr' | null }) => void;
   toggle: (locale: string) => void;
   selectTrack: (id: number | null) => void;
+  /** The subtitle language setting changed: a movie or episode with subtitles on switches to that language's track */
+  repickVodTrack: (locale: string) => void;
   nudgeDelay: (delta: number) => void;
   setDelay: (seconds: number) => void;
   clear: () => void;
@@ -171,6 +173,15 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
         return;
       }
       set({ selectedId: id, sessionOn: { ...sessionOn, vod: id !== null } });
+      send.track(id, true);
+    },
+
+    repickVodTrack: (locale) => {
+      const { kind, tracks, selectedId } = get();
+      if (kind !== 'vod' || selectedId === null) return;
+      const id = pickSubtitleTrack(tracks, 'vod', locale);
+      if (id === null || id === selectedId) return;
+      set({ selectedId: id });
       send.track(id, true);
     },
 

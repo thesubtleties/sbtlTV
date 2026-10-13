@@ -1271,6 +1271,16 @@ interface CcCheckRun { generation: number; trackId: number; check: CaptionCheck;
 let ccCheck: CcCheckRun | null = null;
 let ccCheckedKey: string | null = null;  // `${generation}:${trackId}` already checked this load
 let ccUnreadable = false;  // that check gave up: keep the junk off screen for this load
+let ccSelected: { generation: number; trackId: number } | null = null;  // the live CC track selected for the current load
+
+/** The caption language setting changed: check the selected live CC track again for the new language (the stream keeps playing). */
+function recheckCaptionsForLanguage(): void {
+  if (!ccSelected || ccSelected.generation !== loadGeneration) return;
+  debugLog('captions: language setting changed, checking the captions again', 'mpv');
+  ccUnreadable = false;
+  ccCheckedKey = `${ccSelected.generation}:${ccSelected.trackId}`;
+  startCcCheck(ccSelected.generation, ccSelected.trackId);
+}
 let subtitleVisibleWanted = true;
 
 function stopCcCheck(): void {
@@ -1406,9 +1416,11 @@ ipcMain.handle('subtitle-set-track', async (_event, generation: unknown, id: unk
   const track = typeof id === 'number' ? lastSubtitleTracks.find((t) => t.id === id) : undefined;
   if (!track) {
     stopCcCheck();
+    ccSelected = null;
     setMpvOptions([['sid', 'no']], 'set track');
     return { success: true };
   }
+  ccSelected = track.isCc ? { generation: generation as number, trackId: track.id } : null;
   if (track.isCc) {
     const key = `${generation}:${track.id}`;
     if (ccCheckedKey === key) {
@@ -1463,6 +1475,7 @@ async function loadMedia(url: string, startPosition?: number, live = false, reco
   // mpv keeps sid and sub-delay across loadfile: start every stream with no
   // subtitle and no offset; the renderer picks the track and restores a delay.
   stopCcCheck();
+  ccSelected = null;
   subtitleVisibleWanted = true;
   setMpvOptions(loadResetOptions(), 'load');
   sendSubtitleTracks([]);
@@ -1754,9 +1767,13 @@ ipcMain.handle('storage-get-settings', async () => {
 
 ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<typeof storage.updateSettings>[0]) => {
   try {
+    const previousLanguage = storage.getSettings().subtitles?.language;
     storage.updateSettings(settings);
     if (settings.subtitles !== undefined || settings.appearance !== undefined) {
       applySubtitleStyle('settings changed');
+    }
+    if (settings.subtitles !== undefined && storage.getSettings().subtitles?.language !== previousLanguage) {
+      recheckCaptionsForLanguage();
     }
     // Update debug logging if that setting changed
     if (settings.debugLoggingEnabled !== undefined) {

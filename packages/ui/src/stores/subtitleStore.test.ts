@@ -182,3 +182,25 @@ describe('captions only in another language', () => {
     expect(setVisible).toHaveBeenLastCalledWith(1, true);
   });
 });
+
+describe('changing the subtitle language while a movie plays', () => {
+  const spa: SubtitleTrack = { id: 2, lang: 'spa', title: null, codec: 'subrip', isCc: false };
+
+  it('switches to the track in the new language', () => {
+    s().bindLoad(1, 'vod', true, 'en-US', null);
+    s().receiveTracks({ generation: 1, tracks: [eng, spa], duration: 100 }, true, 'en-US');
+    expect(s().selectedId).toBe(1);
+    s().repickVodTrack('es');
+    expect(s().selectedId).toBe(2);
+    expect(setTrack).toHaveBeenLastCalledWith(1, 2, true);
+  });
+
+  it('leaves subtitles that are off, off', () => {
+    s().bindLoad(1, 'vod', false, 'en-US', null);
+    s().receiveTracks({ generation: 1, tracks: [eng, spa], duration: 100 }, false, 'en-US');
+    setTrack.mockClear();
+    s().repickVodTrack('es');
+    expect(s().selectedId).toBeNull();
+    expect(setTrack).not.toHaveBeenCalled();
+  });
+});
