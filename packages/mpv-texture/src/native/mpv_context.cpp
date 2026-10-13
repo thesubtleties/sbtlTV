@@ -713,10 +713,8 @@ void MpvContext::handlePropertyChange(mpv_event_property* prop) {
             statusChanged = true;
         } else if ((strcmp(prop->name, "time-pos") == 0 || strcmp(prop->name, "duration") == 0)
                    && prop->format == MPV_FORMAT_NONE) {
-            // Unavailable: the file is changing. Report 0 rather than the
-            // previous file's value, which the app took for the new file's
-            // (it saved the old duration and position 0 over a resume point,
-            // and the resume seek fired before the new file had loaded).
+            // Unavailable: the file is changing. Report 0, not the previous
+            // file's value, which the app would take for the new file's.
             // Status numbers only; the render size (width/height) is untouched.
             if (strcmp(prop->name, "time-pos") == 0) m_status.position = 0;
             else m_status.duration = 0;

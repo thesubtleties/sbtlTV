@@ -24,11 +24,13 @@ export interface CaptionSessionIo {
 
 // Live captions (EIA-608): ffmpeg's decoder picks a caption field on its own and
 // on most channels it is a coin flip whether it lands on the captions or the
-// station data (XDS) beside them. While a CC track is selected, read the first
-// lines (hidden), restart the decoder on junk, and give up after 8 restarts.
-// Captions are only shown once confirmed. It stops at the verdict; a channel
-// that sends no captions for a while (an ad break) is checked less often
-// after CC_CHECK_FAST_MS rather than shown unchecked.
+// station data (XDS) or other-language captions beside them. While a CC track
+// is selected, read the first lines (hidden) and restart the decoder on junk or
+// on the language not wanted, up to CC_MAX_RETRIES restarts (as many again when
+// only the other language came through and the check goes back for it; see
+// CaptionCheck). Captions are only shown once confirmed. The check ends at its
+// verdict; while nothing comes through (an ad break) it reads every
+// CC_CHECK_SLOW_INTERVAL_MS after CC_CHECK_FAST_MS instead of showing captions unchecked.
 const CC_CHECK_INTERVAL_MS = 400;
 const CC_CHECK_SLOW_INTERVAL_MS = 2000;
 const CC_CHECK_FAST_MS = 60_000;
@@ -41,7 +43,7 @@ export class CaptionSession {
   tracks: SubtitleTrack[] = [];
   private visibleWanted = true;
   private run: CcCheckRun | null = null;
-  private checkedKey: string | null = null;  // `${generation}:${trackId}` already checked this load
+  private checkedKey: string | null = null;  // `${generation}:${trackId}` checked (or being checked): selecting it again only applies visibility
   private unreadable = false;  // that check gave up: keep the junk off screen for this load
   private selected: { generation: number; trackId: number } | null = null;  // the live CC track selected for the current load
 

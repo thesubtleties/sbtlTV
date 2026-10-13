@@ -15,7 +15,7 @@ import { redactUrls } from './log-redact.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
-import { STREAM_BASE_OPTIONS } from './stream-health.js';
+import { STREAM_BASE_OPTIONS, STALL_MAX_RELOADS } from './stream-health.js';
 import { StreamSession, parseCompatibilityHandoff, type StreamLoadRequest, type CompatibilityHandoff } from './stream-session.js';
 import { CaptionSession } from './caption-session.js';
 import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
@@ -875,7 +875,7 @@ async function initNativeMpv(): Promise<boolean> {
       if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
       // hwdec probing, mid-GOP decode errors and skipped file metadata are
       // logged at error level but do not stop playback; the debug log keeps
-      // them, the red banner does not.
+      // them, the error card does not.
       if (isTransientDecodeError(error)) {
         debugLog(`mpv (not shown): ${error.trim()}`, 'mpv');
         return;
@@ -1414,7 +1414,7 @@ ipcMain.handle('mpv-load', async (_event, url: unknown, options: unknown) => {
 });
 
 // Once a second: a stream that stopped moving without anyone pausing it is
-// reloaded (at its position for movies), up to 3 times, then reported once.
+// reloaded (at its position for movies), up to STALL_MAX_RELOADS times, then reported once.
 async function checkStreamHealth(): Promise<void> {
   const media = stream.media;
   const watchdog = stream.watchdog;
@@ -1426,7 +1426,7 @@ async function checkStreamHealth(): Promise<void> {
   });
   if (action === 'reload') {
     stream.reloadInFlight = true;
-    debugLog(`Stream stalled at ${mpvState.position.toFixed(1)}s; reloading (${watchdog.reloads}/3)`, 'mpv');
+    debugLog(`Stream stalled at ${mpvState.position.toFixed(1)}s; reloading (${watchdog.reloads}/${STALL_MAX_RELOADS})`, 'mpv');
     sendToRenderer('stream-recovery', { state: 'reconnecting', attempt: watchdog.reloads });
     try {
       const request = stream.reloadRequest(mpvState.position);
@@ -1436,7 +1436,7 @@ async function checkStreamHealth(): Promise<void> {
       stream.reloadInFlight = false;
     }
   } else if (action === 'give-up') {
-    debugLog(`Stream still stalled after 3 reloads; giving up${stream.lastHeldError ? ` (last mpv error: ${JSON.stringify(stream.lastHeldError)})` : ''}`, 'mpv');
+    debugLog(`Stream still stalled after ${STALL_MAX_RELOADS} reloads; giving up${stream.lastHeldError ? ` (last mpv error: ${JSON.stringify(stream.lastHeldError)})` : ''}`, 'mpv');
     sendToRenderer('stream-recovery', { state: 'failed', live: media.live });
   }
 }

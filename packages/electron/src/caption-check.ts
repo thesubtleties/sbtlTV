@@ -29,8 +29,9 @@ export function judgeCaptionText(text: string): 'ok' | 'junk' | 'unknown' {
 }
 
 function isRepeatedUnit(word: string): boolean {
-  // Short pieces ("HEHEHE", "CNNCNN"), or a station name looping
-  // ("9NEWSKUSA9NEWSKUSA9NEWS") at least two and a half times over.
+  // A piece of up to 3 letters repeated over the whole word ("HEHEHE",
+  // "CNNCNN"), or a longer one (a station name) looping at least two and a
+  // half times over ("9NEWSKUSA9NEWSKUSA9NEWS").
   for (let unit = 1; unit <= 12; unit++) {
     if (unit > 3 && word.length < unit * 2.5) break;
     const piece = word.slice(0, unit);
@@ -54,8 +55,9 @@ function vowelRatio(word: string): number {
 }
 
 // Words that mark English, Spanish or French captions (US/Canadian broadcast
-// captions are one of the three). Words the languages share ("de", "la", "que",
-// "en", "un", "no") count for both; accents and ñ ¿ ¡ tip the balance.
+// captions are one of the three). A word in two lists ("de", "la", "que", "en",
+// "un") counts for both. Then ñ ¿ ¡ and á í ó ú add to Spanish, è à ù â ê î ô û ç œ
+// to French; é, common to both, adds to neither.
 const LANGUAGE_WORDS: Record<CaptionLanguage, Set<string>> = {
   en: new Set(['the', 'and', 'you', 'to', 'of', 'is', 'that', 'it', 'in', 'for', 'this', 'what', 'we', 'have', 'i', "i'm", "i'll", "don't", "it's", "that's", "you're", 'my', 'with', 'be', 'are', 'was', 'not', 'but', 'on', 'your', 'from', 'his', 'her', 'they', 'all', 'just', 'if', 'about', 'there', 'he', 'she', 'can', 'will', 'so', 'do', 'at', 'an', 'or']),
   es: new Set(['que', 'de', 'el', 'la', 'los', 'las', 'y', 'en', 'es', 'por', 'con', 'para', 'una', 'un', 'lo', 'se', 'del', 'está', 'esta', 'pero', 'más', 'su', 'al', 'como', 'mi', 'te', 'tu', 'estoy', 'son', 'ya', 'nada', 'tienen', 'hora', 'muy', 'sí', 'qué', 'yo', 'eso', 'este', 'hay']),
@@ -77,16 +79,21 @@ export function detectCaptionLanguage(text: string): CaptionLanguage | 'unknown'
   return top >= 3 && top >= 2 * second ? best : 'unknown';
 }
 
-/** A fragment of station data can look like a word for a moment; this many different real lines confirm. */
+/** A fragment of station data can look like a word for a moment: this many different real-looking lines in a row (since the decoder last started) confirm. */
 const CONFIRM_LINES = 3;
 /** With a language wanted, short lines that do not say which language they are in are read on up to this many. */
 const LANGUAGE_LINES = 8;
 
 /**
- * Live captions are checked in their first lines: real text ends the check,
- * station-data junk asks for a decoder restart (a fresh "auto" field choice,
- * about a coin flip on most channels), and after maxRetries the captions are
- * declared unreadable. Never second-guesses captions once they looked real.
+ * Live captions are checked in their first lines. Junk (station data) asks for
+ * a decoder restart (a fresh "auto" field choice, about a coin flip on most
+ * channels). Real lines confirm the captions, after CONFIRM_LINES, or with a
+ * language preferred, once they read as it (or as nothing in particular after
+ * LANGUAGE_LINES); real lines in the other language ask for a restart too.
+ * When maxRetries runs out: if the other language came through, the budget is
+ * spent once more on taking any real captions (acceptAny) and those are shown
+ * as other-language; otherwise the captions are unreadable. The verdict is
+ * final for the load.
  */
 export class CaptionCheck {
   state: 'checking' | 'ok' | 'other-language' | 'unreadable' = 'checking';

@@ -13,8 +13,13 @@ const span = (from: number, count: number, tick: (t: number) => Omit<Tick, 't'>)
   Array.from({ length: count }, (_, i) => ({ t: from + i, ...tick(from + i) }));
 const reloadsIn = (actions: string[]) => actions.filter((a) => a === 'reload').length;
 
-test('ffmpeg reconnects cut HTTP streams, live included', () => {
-  assert.equal(STREAM_RECONNECT_OPTIONS, 'reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4');
+test('ffmpeg reconnects cut HTTP streams, live included, but never at a movie\'s real end', () => {
+  const options = new Map(STREAM_RECONNECT_OPTIONS.split(',').map((o) => o.split('=') as [string, string]));
+  assert.equal(options.get('reconnect'), '1');
+  assert.equal(options.get('reconnect_streamed'), '1');           // live streams are not seekable
+  assert.equal(options.get('reconnect_on_network_error'), '1');
+  assert.ok(Number(options.get('reconnect_delay_max')) <= 15);    // inside the watchdog's 15s
+  assert.ok(!options.has('reconnect_at_eof'));                    // would loop a movie at its end
 });
 
 test('a playing stream is left alone', () => {

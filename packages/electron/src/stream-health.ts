@@ -35,6 +35,9 @@ export interface StallSample {
   eof: boolean;
 }
 
+/** Reloads before the watchdog gives up and says so */
+export const STALL_MAX_RELOADS = 3;
+
 /** A movie stopping at its end within this much of its duration has ended (files often end a little short). */
 const VOD_END_SLACK_S = 120;
 
@@ -66,7 +69,7 @@ export class StallWatchdog {
     this.live = opts.live;
     this.stallMs = opts.stallMs ?? 15_000;
     this.openGraceMs = opts.openGraceMs ?? (opts.live ? this.stallMs : 45_000);
-    this.maxReloads = opts.maxReloads ?? 3;
+    this.maxReloads = opts.maxReloads ?? STALL_MAX_RELOADS;
     this.recoveredAfterMs = opts.recoveredAfterMs ?? 30_000;
   }
 
@@ -118,10 +121,10 @@ export class StallWatchdog {
 
 /**
  * After a loadfile, mpv keeps reporting the previous file's position and
- * duration until it unloads it (half a second in a 2026-10-12 trace: CNN's
- * 20s / 35s arrived after Obsession was chosen, and were saved as Obsession's
- * progress). Hold both at 0 until the unload shows (both unavailable, which
- * reads as 0), or for at most UNLOAD_WAIT_MS if it never does.
+ * duration until it unloads it (about half a second). Hold both at 0 until the
+ * unload shows (both unavailable, which reads as 0), or for at most
+ * UNLOAD_WAIT_MS if it never does; otherwise the previous file's numbers pass
+ * as the new one's (a live channel's position saved as a movie's progress).
  */
 const UNLOAD_WAIT_MS = 3000;
 

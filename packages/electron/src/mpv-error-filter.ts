@@ -10,10 +10,11 @@
  * log line still reaches stderr from the addon regardless.
  */
 
-// Specific messages only, never whole subsystems: a broad "vd:" or
-// "ffmpeg/video:" match would also hide a decoder that cannot open at all
-// (black screen with sound), which the frame-starvation watchdog does not
-// catch because no video size is ever reported.
+// Specific messages, not whole subsystems: a broad "vd:" or "ffmpeg/video:"
+// match would also hide a decoder that cannot open at all (black screen with
+// sound), which the frame-starvation watchdog does not catch because no video
+// size is ever reported. The one exception is the hardware interop probe
+// modules below, matched by prefix: they only log while mpv tries them.
 const TRANSIENT_PATTERNS = [
   // Joining a live stream between keyframes (seen in the field).
   /^ffmpeg\/video: \w+: (non-existing [PS]PS \d+ referenced|no frame!|co located POCs unavailable|mmco: unref short failure|number of reference frames .* exceeds max|decode_slice_header error|error while decoding MB|concealing \d+)/,
