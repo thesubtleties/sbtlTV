@@ -2,11 +2,12 @@
  * Subtitle state for the current stream. Like playbackStore, kept out of App
  * state so track updates re-render only the CC control.
  *
- * Everything is tied to a load: main tags its track updates with the load's
- * generation, App binds the generation mpv-load returned (with what it is:
- * live or vod, and any saved delay), and every call back to main carries it,
- * so nothing decided for one stream can land on the next. Updates that arrive
- * before App binds their load wait for it.
+ * Everything is tied to a load: main announces each load it starts
+ * (media-loaded) and tags its track updates with the load's generation, App
+ * binds the announced generation (with what it is: live or vod, and any saved
+ * delay), and every call back to main carries it, so nothing decided for one
+ * stream can land on the next. Updates that arrive before App binds their load
+ * wait for it; an announcement older than the bound load is ignored.
  *
  * Live captions are TV-style: the CC track is selected as the channel starts
  * and the button only shows or hides it, so the decoder is already in step
@@ -124,6 +125,7 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
 
     bindLoad: (generation, kind, defaultOn, locale, pendingDelay) => {
       const { waiting } = get();
+      if (generation < get().generation) return;
       set({
         generation, kind, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, delay: 0,
         delayResolved: pendingDelay === null, pendingDelay, waiting: null,
@@ -133,7 +135,7 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
 
     rebindLoad: (generation, defaultOn, locale) => {
       const { waiting, kind, delay } = get();
-      if (!kind) return;
+      if (!kind || generation < get().generation) return;
       set({ generation, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, waiting: null });
       if (delay !== 0) send.delay(delay);  // main reset sub-delay with the reload
       if (waiting?.generation === generation) apply(waiting, defaultOn, locale);

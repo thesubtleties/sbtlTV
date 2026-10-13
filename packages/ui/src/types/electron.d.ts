@@ -14,8 +14,15 @@ export interface MpvStatus {
 export interface MpvResult {
   success?: boolean;
   error?: string;
-  /** mpv-load only: the load's generation, which tags its subtitle updates */
-  generation?: number;
+}
+
+export interface MpvLoadOptions {
+  /** Seconds to resume at once the file is open */
+  startPosition?: number;
+  /** A live channel (the stall watchdog reloads it from the live edge, not a position) */
+  live?: boolean;
+  /** Echoed in media-loaded so the renderer can match the load to its own request */
+  requestId?: number;
 }
 
 export interface MpvModeInfo {
@@ -31,12 +38,25 @@ export interface MpvModeInfo {
 
 export type StreamRecoveryUpdate =
   | { state: 'reconnecting'; attempt: number }
-  | { state: 'reloaded'; generation: number }
   | { state: 'failed'; live: boolean };
 
+/**
+ * Main starts a load: every one is announced, whoever started it (play: the
+ * renderer's request, reload: the stall watchdog, restore: the compatibility
+ * restart). Subtitles and progress saving follow the announced generation.
+ */
+export interface MediaLoadedUpdate {
+  generation: number;
+  live: boolean;
+  /** Seconds the load resumes at, 0 from the start */
+  resumeAt: number;
+  reason: 'play' | 'reload' | 'restore';
+  /** The renderer's requestId for a play, else null */
+  requestId: number | null;
+}
+
 export interface MpvApi {
-  /** live: a live channel (the stall watchdog reloads it from the live edge, not a position) */
-  load: (url: string, startPosition?: number, live?: boolean) => Promise<MpvResult>;
+  load: (url: string, options?: MpvLoadOptions) => Promise<MpvResult>;
   play: () => Promise<MpvResult>;
   pause: () => Promise<MpvResult>;
   togglePause: () => Promise<MpvResult>;
@@ -51,8 +71,9 @@ export interface MpvApi {
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
-  /** Stall recovery: reconnecting (toast), reloaded (a new load generation), failed (give up) */
+  /** Stall recovery: reconnecting (toast), failed (give up) */
   onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => () => void;
+  onMediaLoaded: (callback: (update: MediaLoadedUpdate) => void) => () => void;
   removeAllListeners: () => void;
 }
 

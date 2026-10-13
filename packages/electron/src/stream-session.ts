@@ -14,8 +14,9 @@ export interface StreamLoadRequest {
   url: string;
   startPosition?: number;
   live: boolean;
-  /** A watchdog reload of the stream already playing: keeps its watchdog (and reload budget) */
-  recovery?: boolean;
+  /** play: asked for by the renderer; reload: the stall watchdog reloading the stream
+      playing (keeps its watchdog and reload budget); restore: the compatibility restart */
+  reason: 'play' | 'reload' | 'restore';
 }
 
 /**
@@ -38,12 +39,12 @@ export class StreamSession {
   private pendingResume: number | null = null;
 
   /** A load starts. hadPrevious: mpv had a file loaded or playing before it. */
-  begin({ url, startPosition, live, recovery = false }: StreamLoadRequest, now: number, hadPrevious: boolean): { generation: number; resumeAt: number } {
+  begin({ url, startPosition, live, reason }: StreamLoadRequest, now: number, hadPrevious: boolean): { generation: number; resumeAt: number } {
     const resumeAt = startPosition && startPosition > 0 ? Math.floor(startPosition) : 0;
     this.gate.begin(now, hadPrevious);
     this.media = { url, startPosition: resumeAt, live };
     this.userPaused = false;
-    if (!recovery || !this.watchdog) this.watchdog = new StallWatchdog({ live });
+    if (reason !== 'reload' || !this.watchdog) this.watchdog = new StallWatchdog({ live });
     this.generation++;
     this.pendingResume = resumeAt > 0 ? resumeAt : null;
     return { generation: this.generation, resumeAt };

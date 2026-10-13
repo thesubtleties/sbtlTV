@@ -23,7 +23,7 @@ import { mergedEpisodesForSeries } from './hooks/useContinueWatching';
 import { buildNextEpisodePlayInfo } from './services/continue-watching/next-episode.playinfo';
 import { UpNextOverlay } from './components/UpNextOverlay';
 import { usePlaybackStore } from './stores/playbackStore';
-import { useSubtitleStore } from './stores/subtitleStore';
+import { useSubtitleStore, type PendingDelay } from './stores/subtitleStore';
 import { resumeSettled } from './hooks/resumeSettle';
 import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
 import { perfMeasure, perfStart } from './utils/perfMarks';
@@ -90,15 +90,16 @@ async function tryLoadWithFallbacks(
   primaryUrl: string,
   isLive: boolean,
   mpv: NonNullable<typeof window.mpv>,
+  requestId: number,
   startPosition?: number,
-): Promise<{ success: boolean; url: string; error?: string; generation?: number }> {
+): Promise<{ success: boolean; url: string; error?: string }> {
   debugLog(`Attempting to load: ${primaryUrl} (isLive: ${isLive})${startPosition ? ` resume@${startPosition}s` : ''}`);
 
   // Try primary URL first
-  const result = await mpv.load(primaryUrl, startPosition, isLive);
+  const result = await mpv.load(primaryUrl, { startPosition, live: isLive, requestId });
   if (!result.error) {
     debugLog(`Primary URL loaded successfully`);
-    return { success: true, url: primaryUrl, generation: result.generation };
+    return { success: true, url: primaryUrl };
   }
   debugLog(`Primary URL failed: ${result.error}`);
 
@@ -107,10 +108,10 @@ async function tryLoadWithFallbacks(
   debugLog(`Trying ${fallbacks.length} fallback URLs...`);
   for (const fallbackUrl of fallbacks) {
     debugLog(`Trying fallback: ${fallbackUrl}`);
-    const fallbackResult = await mpv.load(fallbackUrl, startPosition, isLive);
+    const fallbackResult = await mpv.load(fallbackUrl, { startPosition, live: isLive, requestId });
     if (!fallbackResult.error) {
       debugLog(`Fallback succeeded: ${fallbackUrl}`);
-      return { success: true, url: fallbackUrl, generation: fallbackResult.generation };
+      return { success: true, url: fallbackUrl };
     }
     debugLog(`Fallback failed: ${fallbackResult.error}`);
   }
@@ -146,6 +147,15 @@ function saveVodProgress(info: VodPlayInfo, position: number, duration: number, 
 function currentSubDelay(): number | undefined {
   const s = useSubtitleStore.getState();
   return s.kind === 'vod' && s.delayResolved ? s.delay : undefined;
+}
+
+/** What a play this window asked for knows that main does not. */
+interface PlayRequest {
+  id: number;
+  /** The movie or episode (null for a live channel) */
+  vodInfo: VodPlayInfo | null;
+  /** A subtitle delay saved with this item's progress, confirmed by the file's duration */
+  subtitleDelay: PendingDelay | null;
 }
 
 function App() {
@@ -188,6 +198,9 @@ function App() {
   durationRef.current = duration;
   // The load the subtitle store is bound to, and the VOD item it plays (null for live).
   const loadInfoRef = useRef<{ generation: number; vodInfo: VodPlayInfo | null } | null>(null);
+  // The latest play this window asked for; main's media-loaded names it by id.
+  const playRequestRef = useRef<PlayRequest | null>(null);
+  const playRequestSeqRef = useRef(0);
   useSubtitleController();
 
   // Continue Watching: next-episode autoplay. Refs because the mpv status handler is mount-once.
@@ -331,15 +344,28 @@ function App() {
       setError(err);
     });
 
-    // Stall recovery in main: a quiet toast while it reloads, the store and the
-    // delay-save bookkeeping follow the reloaded load, one plain message if it gives up.
+    // Every load main starts is announced here: subtitles and progress saving
+    // follow it. A play this window asked for brings what it knows (the VOD item,
+    // a saved subtitle delay); a watchdog reload keeps the current choices.
+    const offLoaded = window.mpv.onMediaLoaded((update) => {
+      const store = useSubtitleStore.getState();
+      if (update.reason === 'reload') {
+        if (store.kind) store.rebindLoad(update.generation, subtitleDefaults()[store.kind], systemLocale());
+        if (loadInfoRef.current) loadInfoRef.current = { ...loadInfoRef.current, generation: update.generation };
+      } else {
+        const request = update.requestId !== null && playRequestRef.current?.id === update.requestId ? playRequestRef.current : null;
+        const kind = update.live ? 'live' : 'vod';
+        store.bindLoad(update.generation, kind, subtitleDefaults()[kind], systemLocale(), request?.subtitleDelay ?? null);
+        loadInfoRef.current = { generation: update.generation, vodInfo: request?.vodInfo ?? null };
+      }
+      // Progress is not saved until playback reaches where this load resumes.
+      resumeTargetRef.current = update.resumeAt > 0 ? update.resumeAt : null;
+    });
+
+    // Stall recovery in main: a quiet toast while it reloads, one plain message if it gives up.
     const offRecovery = window.mpv.onStreamRecovery((update) => {
       if (update.state === 'reconnecting') {
         useToastStore.getState().addToast({ kind: 'info', title: 'Reconnecting…', message: 'The stream stopped; trying again.', duration: 4000 });
-      } else if (update.state === 'reloaded') {
-        const store = useSubtitleStore.getState();
-        if (store.kind) store.rebindLoad(update.generation, subtitleDefaults()[store.kind], systemLocale());
-        if (loadInfoRef.current) loadInfoRef.current = { ...loadInfoRef.current, generation: update.generation };
       } else {
         setError(update.live
           ? 'This channel stopped responding. Try it again in a moment, or pick another channel.'
@@ -348,6 +374,7 @@ function App() {
     });
 
     return () => {
+      offLoaded();
       offRecovery();
       window.mpv?.removeAllListeners();
     };
@@ -383,11 +410,9 @@ function App() {
       return;
     }
     setError(null);
-    const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
-    if (result.success && result.generation !== undefined) {
-      loadInfoRef.current = { generation: result.generation, vodInfo: null };
-      useSubtitleStore.getState().bindLoad(result.generation, 'live', subtitleDefaults().live, systemLocale(), null);
-    }
+    const requestId = ++playRequestSeqRef.current;
+    playRequestRef.current = { id: requestId, vodInfo: null, subtitleDelay: null };
+    const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv, requestId);
     if (!result.success) {
       debugLog(`  FAILED: ${result.error}`);
       setError(result.error ?? 'Failed to load stream');
@@ -505,7 +530,9 @@ function App() {
         episodeNum: info.episodeNum,
       },
     );
-    const result = await tryLoadWithFallbacks(info.url, false, window.mpv, resumePos || undefined);
+    const requestId = ++playRequestSeqRef.current;
+    playRequestRef.current = { id: requestId, vodInfo: info, subtitleDelay: delayCandidate };
+    const result = await tryLoadWithFallbacks(info.url, false, window.mpv, requestId, resumePos || undefined);
     if (!result.success) {
       debugLog(`  FAILED: ${result.error}`);
       setError(result.error ?? 'Failed to load stream');
@@ -526,12 +553,7 @@ function App() {
       const updatedInfo = { ...info, url: workingUrl };
       setVodInfo(updatedInfo);
       vodInfoRef.current = updatedInfo;
-      if (result.generation !== undefined) {
-        loadInfoRef.current = { generation: result.generation, vodInfo: updatedInfo };
-        useSubtitleStore.getState().bindLoad(result.generation, 'vod', subtitleDefaults().vod, systemLocale(), delayCandidate);
-      }
       lastProgressSaveRef.current = 0; // Reset throttle for new content
-      resumeTargetRef.current = resumePos > 0 ? resumePos : null;
       setPosition(0);   // reset position UI immediately; mpv status refines it (resume seeks on duration)
       setDuration(0);
       setPlaying(true);

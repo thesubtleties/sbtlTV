@@ -33,6 +33,16 @@ describe('load binding', () => {
     expect(s().tracks).toEqual([]);
   });
 
+  it('an announcement for an older load does not take over from a newer one', () => {
+    s().bindLoad(6, 'vod', true, 'en-US', null);
+    s().receiveTracks(live(6, [eng]), true, 'en-US');
+    s().rebindLoad(5, true, 'en-US');
+    s().bindLoad(5, 'live', true, 'en-US', null);
+    expect(s().generation).toBe(6);
+    expect(s().kind).toBe('vod');
+    expect(s().tracks).toEqual([eng]);
+  });
+
   it('every control call carries the bound generation', () => {
     s().bindLoad(7, 'live', true, 'en-US', null);
     s().receiveTracks(live(7, [cc]), true, 'en-US');
