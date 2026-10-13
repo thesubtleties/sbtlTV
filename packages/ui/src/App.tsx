@@ -24,6 +24,7 @@ import { buildNextEpisodePlayInfo } from './services/continue-watching/next-epis
 import { UpNextOverlay } from './components/UpNextOverlay';
 import { usePlaybackStore } from './stores/playbackStore';
 import { useSubtitleStore } from './stores/subtitleStore';
+import { resumeSettled } from './hooks/resumeSettle';
 import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
 import { perfMeasure, perfStart } from './utils/perfMarks';
 
@@ -181,6 +182,8 @@ function App() {
   // Track current VOD info for progress updates (ref avoids stale closure in onStatus)
   const vodInfoRef = useRef<VodPlayInfo | null>(null);
   const lastProgressSaveRef = useRef(0);
+  // Where the current VOD play resumes; progress is not saved until playback gets there.
+  const resumeTargetRef = useRef<number | null>(null);
   const durationRef = useRef(0);
   durationRef.current = duration;
   // The load the subtitle store is bound to, and the VOD item it plays (null for live).
@@ -296,7 +299,9 @@ function App() {
       // Save watch progress for VOD (throttled to every 15 seconds)
       if (status.position !== undefined && status.duration && status.duration > 0) {
         const info = vodInfoRef.current;
-        if (info?.streamId) {
+        const settled = resumeSettled(status.position, resumeTargetRef.current);
+        if (settled) resumeTargetRef.current = null;
+        if (info?.streamId && settled) {
           const now = Date.now();
           if (now - lastProgressSaveRef.current >= 15000) {
             lastProgressSaveRef.current = now;
@@ -428,7 +433,8 @@ function App() {
     if (!window.mpv) return;
     // Save progress immediately before stopping
     const info = vodInfoRef.current;
-    if (info) saveVodProgress(info, usePlaybackStore.getState().position, duration);
+    const stopPosition = usePlaybackStore.getState().position;
+    if (info && resumeSettled(stopPosition, resumeTargetRef.current)) saveVodProgress(info, stopPosition, duration);
     // Null vodInfoRef BEFORE clearing the guard so a status tick during the stop await can't re-fire autoplay.
     vodInfoRef.current = null;
     setUpNext(null);
@@ -525,6 +531,7 @@ function App() {
         useSubtitleStore.getState().bindLoad(result.generation, 'vod', subtitleDefaults().vod, systemLocale(), delayCandidate);
       }
       lastProgressSaveRef.current = 0; // Reset throttle for new content
+      resumeTargetRef.current = resumePos > 0 ? resumePos : null;
       setPosition(0);   // reset position UI immediately; mpv status refines it (resume seeks on duration)
       setDuration(0);
       setPlaying(true);
@@ -651,7 +658,9 @@ function App() {
       const position = usePlaybackStore.getState().position;
       const duration = durationRef.current;
       clearTimeout(timer);
-      timer = setTimeout(() => saveVodProgress(info, position, duration, edit.delay), 800);
+      // Before the resume seek lands, keep the resume point rather than the 0 the player reports
+      const at = resumeSettled(position, resumeTargetRef.current) ? position : (resumeTargetRef.current ?? position);
+      timer = setTimeout(() => saveVodProgress(info, at, duration, edit.delay), 800);
     });
     return () => { clearTimeout(timer); unsubscribe(); };
   }, []);

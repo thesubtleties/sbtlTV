@@ -14,7 +14,7 @@ import { isTransientDecodeError } from './mpv-error-filter.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
-import { StallWatchdog, STREAM_BASE_OPTIONS } from './stream-health.js';
+import { StallWatchdog, STREAM_BASE_OPTIONS, LoadStatusGate } from './stream-health.js';
 import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, CaptionCheck, type SubtitleTrack } from './subtitles.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
@@ -109,6 +109,10 @@ let currentMedia: { url: string; startPosition: number; live: boolean } | null =
 let userPaused = false;
 let stallWatchdog: StallWatchdog | null = null;
 let stallReloadInFlight = false;
+// Holds the previous file's position/duration back until mpv unloads it (see LoadStatusGate).
+const loadStatusGate = new LoadStatusGate();
+// The external player's raw time-pos/duration; mpvState gets them through the gate.
+const externalRaw = { position: 0, duration: 0 };
 let pipelineFailurePromptOpen = false;
 let nativeRecoveryInProgress = false;
 
@@ -820,7 +824,9 @@ async function initNativeMpv(): Promise<boolean> {
       STATUS_THROTTLE_MS,
     );
     nativeStatusThrottle = throttle;
-    bridge.onStatus((status) => {
+    bridge.onStatus((rawStatus) => {
+      // Until mpv has unloaded the previous file, its numbers are not this load's.
+      const status = { ...rawStatus, ...loadStatusGate.pass(rawStatus, Date.now()) };
       if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
       // Sync local state for getStatus calls
       updateSleepBlock(status.playing);
@@ -1129,10 +1135,12 @@ function handleMpvMessage(msg: MpvMessage): void {
         mpvState.muted = (msg.data as boolean) ?? false;
         break;
       case 'time-pos':
-        mpvState.position = (msg.data as number) ?? 0;
+        externalRaw.position = (msg.data as number) ?? 0;
+        Object.assign(mpvState, loadStatusGate.pass(externalRaw, Date.now()));
         break;
       case 'duration':
-        mpvState.duration = (msg.data as number) ?? 0;
+        externalRaw.duration = (msg.data as number) ?? 0;
+        Object.assign(mpvState, loadStatusGate.pass(externalRaw, Date.now()));
         // The renderer restores a saved subtitle delay once the duration is known.
         if (mpvState.duration > 0 && lastSubtitleTracks.length > 0) sendSubtitleTracks(lastSubtitleTracks, mpvState.duration);
         // File loaded — execute pending resume seek (socket path)
@@ -1433,6 +1441,7 @@ async function loadMedia(url: string, startPosition?: number, live = false, reco
     return { error: 'Native playback must be reset' };
   }
   const resumeAt = startPosition && startPosition > 0 ? Math.floor(startPosition) : 0;
+  loadStatusGate.begin(Date.now(), currentMedia !== null);
   currentMedia = { url, startPosition: resumeAt, live };
   userPaused = false;
   if (!recovery) stallWatchdog = new StallWatchdog({ live });

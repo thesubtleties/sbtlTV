@@ -92,3 +92,30 @@ export class StallWatchdog {
     return 'give-up';
   }
 }
+
+/**
+ * After a loadfile, mpv keeps reporting the previous file's position and
+ * duration until it unloads it (half a second in a 2026-10-12 trace: CNN's
+ * 20s / 35s arrived after Obsession was chosen, and were saved as Obsession's
+ * progress). Hold both at 0 until the unload shows (both unavailable, which
+ * reads as 0), or for at most UNLOAD_WAIT_MS if it never does.
+ */
+const UNLOAD_WAIT_MS = 3000;
+
+export class LoadStatusGate {
+  private waitingSince: number | null = null;
+
+  /** A load started; hadPrevious: a file was loaded or playing before it. */
+  begin(now: number, hadPrevious: boolean): void {
+    this.waitingSince = hadPrevious ? now : null;
+  }
+
+  pass(status: { position: number; duration: number }, now: number): { position: number; duration: number } {
+    if (this.waitingSince !== null) {
+      const unloaded = status.position === 0 && status.duration === 0;
+      if (unloaded || now - this.waitingSince > UNLOAD_WAIT_MS) this.waitingSince = null;
+      else return { position: 0, duration: 0 };
+    }
+    return { position: status.position, duration: status.duration };
+  }
+}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { StallWatchdog, STREAM_RECONNECT_OPTIONS, STREAM_BASE_OPTIONS } from './stream-health.js';
+import { StallWatchdog, STREAM_RECONNECT_OPTIONS, STREAM_BASE_OPTIONS, LoadStatusGate } from './stream-health.js';
 
 // One tick per second, like main's timer.
 function run(w: StallWatchdog, ticks: Array<{ t: number; pos: number; paused?: boolean; duration?: number }>) {
@@ -67,4 +67,30 @@ test('recovering: from the first reload until playback moves again, never after 
   assert.equal(w.recovering, false);         // moving again
   for (let i = 0; i < 70; i++) tick(7);
   assert.equal(w.recovering, false);         // gave up: the final message may show
+});
+
+
+test('after a load, the old file\'s numbers are held back until it unloads', () => {
+  const g = new LoadStatusGate();
+  g.begin(0, true);  // something was playing
+  // CNN keeps reporting for half a second after Obsession's loadfile (2026-10-12 trace)
+  assert.deepEqual(g.pass({ position: 19.7, duration: 32.7 }, 2), { position: 0, duration: 0 });
+  assert.deepEqual(g.pass({ position: 20.1, duration: 35.4 }, 357), { position: 0, duration: 0 });
+  assert.deepEqual(g.pass({ position: 0, duration: 35.4 }, 456), { position: 0, duration: 0 });
+  assert.deepEqual(g.pass({ position: 0, duration: 0 }, 551), { position: 0, duration: 0 });   // unloaded
+  assert.deepEqual(g.pass({ position: 0, duration: 6533.2 }, 3757), { position: 0, duration: 6533.2 });
+  assert.deepEqual(g.pass({ position: 300, duration: 6533.2 }, 3860), { position: 300, duration: 6533.2 });
+});
+
+test('nothing was playing: the first numbers are the new file\'s', () => {
+  const g = new LoadStatusGate();
+  g.begin(0, false);
+  assert.deepEqual(g.pass({ position: 0, duration: 6533.2 }, 10), { position: 0, duration: 6533.2 });
+});
+
+test('if the unload is never seen, numbers flow again after 3s', () => {
+  const g = new LoadStatusGate();
+  g.begin(0, true);
+  assert.deepEqual(g.pass({ position: 5, duration: 40 }, 2999), { position: 0, duration: 0 });
+  assert.deepEqual(g.pass({ position: 5, duration: 40 }, 3001), { position: 5, duration: 40 });
 });
