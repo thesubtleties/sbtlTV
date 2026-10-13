@@ -154,3 +154,13 @@ test('caption check: still unclear after 8 lines, the captions are let through',
   assert.deepEqual(actions.slice(0, 7), ['none', 'none', 'none', 'none', 'none', 'none', 'none']);
   assert.equal(actions.at(-1), 'ok');
 });
+
+test('caption check: once it stops waiting for the wanted language, the other one is shown', () => {
+  const c = new CaptionCheck(8, 'en');
+  for (const t of ['Debería estar triste,', 'Debería estar triste, / pero no']) c.observe(t);
+  assert.equal(c.observe('Debería estar triste, / pero no lo estoy.'), 'retry');
+  c.stopWaitingForLanguage();
+  for (const t of ['Son las dos y media,', 'Son las dos y media, / y la fiesta']) assert.equal(c.observe(t), 'none');
+  assert.equal(c.observe('Son las dos y media, / y la fiesta / está por empezar.'), 'other-language');
+  assert.equal(c.language, 'es');
+});

@@ -28,15 +28,18 @@ export interface CaptionSessionIo {
 // is selected, read the first lines (hidden) and restart the decoder on junk or
 // on the language not wanted, up to CC_MAX_RETRIES restarts (as many again when
 // only the other language came through and the check goes back for it; see
-// CaptionCheck). Captions are only shown once confirmed. The check ends at its
+// CaptionCheck); after CC_LANGUAGE_WAIT_MS any real captions do. Captions are
+// only shown once confirmed. The check ends at its
 // verdict; while nothing comes through (an ad break) it reads every
 // CC_CHECK_SLOW_INTERVAL_MS after CC_CHECK_FAST_MS instead of showing captions unchecked.
 const CC_CHECK_INTERVAL_MS = 400;
 const CC_CHECK_SLOW_INTERVAL_MS = 2000;
 const CC_CHECK_FAST_MS = 60_000;
+/** The wanted caption language is looked for this long; then what comes through is shown (a Spanish-only channel, English wanted). */
+const CC_LANGUAGE_WAIT_MS = 30_000;
 export const CC_MAX_RETRIES = 8;
 
-interface CcCheckRun { generation: number; trackId: number; check: CaptionCheck; timer: ReturnType<typeof setInterval>; startedAt: number; lastRead: number }
+interface CcCheckRun { generation: number; trackId: number; check: CaptionCheck; timer: ReturnType<typeof setInterval>; startedAt: number; lastRead: number; languageWaitOver: boolean }
 
 export class CaptionSession {
   /** Tracks of the current load, as last reported */
@@ -124,13 +127,17 @@ export class CaptionSession {
     io.sendCcState({ generation, state: 'checking', language: null });
     let busy = false;
     const run: CcCheckRun = {
-      generation, trackId, startedAt: Date.now(), lastRead: 0,
+      generation, trackId, startedAt: Date.now(), lastRead: 0, languageWaitOver: false,
       // The other caption field is flipped away from when it is not the wanted language.
       check: new CaptionCheck(CC_MAX_RETRIES, io.preferredLanguage()),
       timer: setInterval(() => {
         const now = Date.now();
         const interval = now - run.startedAt > CC_CHECK_FAST_MS ? CC_CHECK_SLOW_INTERVAL_MS : CC_CHECK_INTERVAL_MS;
         if (busy || now - run.lastRead < interval) return;
+        if (!run.languageWaitOver && now - run.startedAt > CC_LANGUAGE_WAIT_MS) {
+          run.languageWaitOver = true;
+          run.check.stopWaitingForLanguage();
+        }
         busy = true;
         run.lastRead = now;
         void io.readSubText().then((text) => {

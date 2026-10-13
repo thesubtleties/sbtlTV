@@ -106,3 +106,19 @@ test('caption session: a language change re-checks the selected live track of th
   assert.deepEqual(io.states, ['checking', 'checking']);
   session.end();
 });
+
+test('caption session: the wanted language is waited for 30s at most, then what comes through is shown', async () => {
+  mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  try {
+    const spanish = (n: number) => [`Debería estar triste ${n},`, `Debería estar triste ${n}, / pero no`, `Debería estar triste ${n}, / pero no lo estoy.`];
+    const { io, api } = fakeIo([...spanish(1), ...Array<string>(80).fill(''), ...spanish(2)]);
+    const session = new CaptionSession({ ...api, preferredLanguage: () => 'en' });
+    session.setTracks([cc]);
+    session.selectTrack(1, true);
+    await tick(3 + 80 + 3);
+    assert.deepEqual(io.states, ['checking', 'other-language']);
+    assert.equal(option(io, 'sub-visibility'), 'yes');
+  } finally {
+    mock.timers.reset();
+  }
+});

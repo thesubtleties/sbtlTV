@@ -109,6 +109,11 @@ export class CaptionCheck {
   /** preferred: the caption language wanted (null: any); the other field's language is flipped away from */
   constructor(private readonly maxRetries = 8, private readonly preferred: CaptionLanguage | null = null) {}
 
+  /** Waited long enough for the wanted language: the next real captions are shown, whatever their language. */
+  stopWaitingForLanguage(): void {
+    this.acceptAny = true;
+  }
+
   observe(text: string): 'none' | 'ok' | 'other-language' | 'retry' | 'unreadable' {
     if (this.state !== 'checking') return 'none';
     if (this.ignore !== null) {
