@@ -17,7 +17,7 @@
  */
 import { create } from 'zustand';
 import type { CcState, SubtitleTrack, SubtitleTracksUpdate } from '../types/electron';
-import { pickSubtitleTrack, stepDelay, type SubtitleKind } from '../services/subtitleLogic';
+import { localeSubtitleTrack, pickSubtitleTrack, stepDelay, type SubtitleKind } from '../services/subtitleLogic';
 import { debugLog } from '../utils/debugLog';
 
 /** A saved delay waiting for the file's duration to confirm it is the same file. */
@@ -71,15 +71,19 @@ export function initialSubtitleState(): SubtitleData {
   };
 }
 
-function report(what: string) {
-  return (err: unknown) => debugLog(`subtitle ${what} failed: ${err}`, 'subtitles');
+/** Main answers stale or invalid calls with { error }; a throw is a broken IPC. Both go to the debug log. */
+function report(what: string, call: Promise<{ error?: string }> | undefined) {
+  call?.then(
+    (result) => { if (result?.error) debugLog(`subtitle ${what}: ${result.error}`, 'subtitles'); },
+    (err: unknown) => debugLog(`subtitle ${what} failed: ${err}`, 'subtitles'),
+  );
 }
 
 export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get) => {
   const send = {
-    track: (id: number | null, visible: boolean) => window.subtitles?.setTrack(get().generation, id, visible).catch(report('setTrack')),
-    visible: (visible: boolean) => window.subtitles?.setVisible(get().generation, visible).catch(report('setVisible')),
-    delay: (seconds: number) => window.subtitles?.setDelay(get().generation, seconds).catch(report('setDelay')),
+    track: (id: number | null, visible: boolean) => report('setTrack', window.subtitles?.setTrack(get().generation, id, visible)),
+    visible: (visible: boolean) => report('setVisible', window.subtitles?.setVisible(get().generation, visible)),
+    delay: (seconds: number) => report('setDelay', window.subtitles?.setDelay(get().generation, seconds)),
   };
 
   function apply(update: SubtitleTracksUpdate, defaultOn: boolean, locale: string) {
@@ -181,7 +185,7 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
     repickVodTrack: (locale) => {
       const { kind, tracks, selectedId } = get();
       if (kind !== 'vod' || selectedId === null) return;
-      const id = pickSubtitleTrack(tracks, 'vod', locale);
+      const id = localeSubtitleTrack(tracks, locale);  // none in that language: keep the current one
       if (id === null || id === selectedId) return;
       set({ selectedId: id });
       send.track(id, true);

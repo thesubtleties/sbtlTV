@@ -205,6 +205,16 @@ describe('changing the subtitle language while a movie plays', () => {
     expect(setTrack).toHaveBeenLastCalledWith(1, 2, true);
   });
 
+  it('keeps the current track when none is in the new language', () => {
+    s().bindLoad(1, 'vod', true, 'es-MX', null);
+    s().receiveTracks({ generation: 1, tracks: [eng, spa], duration: 100 }, true, 'es-MX');
+    expect(s().selectedId).toBe(2);
+    setTrack.mockClear();
+    s().repickVodTrack('fr');
+    expect(s().selectedId).toBe(2);
+    expect(setTrack).not.toHaveBeenCalled();
+  });
+
   it('leaves subtitles that are off, off', () => {
     s().bindLoad(1, 'vod', false, 'en-US', null);
     s().receiveTracks({ generation: 1, tracks: [eng, spa], duration: 100 }, false, 'en-US');

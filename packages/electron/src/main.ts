@@ -1430,7 +1430,8 @@ async function checkStreamHealth(): Promise<void> {
     sendToRenderer('stream-recovery', { state: 'reconnecting', attempt: watchdog.reloads });
     try {
       const request = stream.reloadRequest(mpvState.position);
-      if (request) await loadMedia(request);
+      const result = request ? await loadMedia(request) : null;
+      if (result?.error) debugLog(`Stall reload failed: ${result.error}`, 'mpv');
     } finally {
       stream.reloadInFlight = false;
     }
@@ -1439,7 +1440,9 @@ async function checkStreamHealth(): Promise<void> {
     sendToRenderer('stream-recovery', { state: 'failed', live: media.live });
   }
 }
-setInterval(() => { void checkStreamHealth(); }, 1000).unref();
+setInterval(() => {
+  checkStreamHealth().catch((err) => debugLog(`Stream health check failed: ${err instanceof Error ? err.message : err}`, 'mpv'));
+}, 1000).unref();
 
 ipcMain.handle('mpv-play', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
