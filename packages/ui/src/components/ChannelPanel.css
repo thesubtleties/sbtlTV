@@ -173,11 +173,14 @@
   color: var(--text);
 }
 
-/* Time Header - Aligned to grid */
+/* Time Header - Aligned to grid. The right padding is the channel list's
+   scrollbar gutter (.guide-channels::-webkit-scrollbar), so the times span
+   the same width as the programs below. */
 .guide-time-header {
   display: flex;
   align-items: center;
   height: 32px;
+  padding-right: 12px;
   border-bottom: 1px solid var(--line-faint);
   flex-shrink: 0;
   background: var(--fill-1);
@@ -185,6 +188,9 @@
 
 .guide-time-header-spacer {
   flex-shrink: 0;
+  /* The channel cell's horizontal padding (.guide-channel-info): its width
+     style is the content width, so the spacer needs the same padding. */
+  padding: 0 16px;
   border-right: 1px solid var(--line-faint);
 }
 
