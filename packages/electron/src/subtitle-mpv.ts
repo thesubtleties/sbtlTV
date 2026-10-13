@@ -42,6 +42,7 @@ export function parseSubtitleTracks(value: unknown): SubtitleTrack[] {
 export const SUBTITLE_BASE_OPTIONS: Array<[string, string]> = [
   ['sub-create-cc-track', 'yes'],  // a selectable CC track for live TV before any caption arrives
   ['sub-auto', 'no'],              // no sidecar subtitle requests to the provider
+  ['embeddedfonts', 'no'],         // fonts attached to a provider's file are not parsed; the bundled fonts and the system's draw subtitles
   ['sid', 'no'],
 ];
 

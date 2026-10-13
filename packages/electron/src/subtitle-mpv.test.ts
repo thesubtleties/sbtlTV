@@ -32,8 +32,8 @@ test('bad input gives no tracks', () => {
   }
 });
 
-test('base options turn on CC tracks and stop sidecar searches', () => {
-  assert.deepEqual(SUBTITLE_BASE_OPTIONS, [['sub-create-cc-track', 'yes'], ['sub-auto', 'no'], ['sid', 'no']]);
+test('base options turn on CC tracks, stop sidecar searches and ignore fonts inside files', () => {
+  assert.deepEqual(SUBTITLE_BASE_OPTIONS, [['sub-create-cc-track', 'yes'], ['sub-auto', 'no'], ['embeddedfonts', 'no'], ['sid', 'no']]);
 });
 
 test('style options: medium outline in Fira', () => {
