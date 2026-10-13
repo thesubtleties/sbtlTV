@@ -4,6 +4,7 @@ import { PALETTES, PALETTE_ORDER, type PaletteRoles } from '../../styles/palette
 import type { Appearance, PaletteId } from '../../types/electron';
 import { OptionRow, Segmented, SettingsTab } from './ui';
 import './AppearanceTab.css';
+import { saveSettings } from '../../utils/saveSettings';
 
 const DEFAULT_APPEARANCE: Appearance = { palette: 'sbtl', typeface: 'fira', accent: 'palette' };
 
@@ -46,7 +47,7 @@ export function AppearanceTab() {
   function save(partial: Partial<Appearance>) {
     const next = { ...appearance, ...partial };
     updateSettings({ appearance: next });
-    void window.storage?.updateSettings({ appearance: next });
+    void saveSettings({ appearance: next });
   }
 
   const selectPalette = (palette: PaletteId) => save({ palette });

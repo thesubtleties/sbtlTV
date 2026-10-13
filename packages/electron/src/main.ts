@@ -1664,9 +1664,18 @@ ipcMain.handle('storage-get-settings', async () => {
 });
 
 ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<typeof storage.updateSettings>[0]) => {
+  // Only a failure to store is the renderer's error (it tells the user); what
+  // the change sets in motion afterwards is logged if it fails.
+  let previousLanguage: string | undefined;
   try {
-    const previousLanguage = storage.getSettings().subtitles?.language;
+    previousLanguage = storage.getSettings().subtitles?.language;
     storage.updateSettings(settings);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    debugLog(`Settings not stored: ${message}`, 'app');
+    return { error: message };
+  }
+  try {
     if (settings.subtitles !== undefined || settings.appearance !== undefined) {
       applySubtitleStyle('settings changed');
     }
@@ -1678,10 +1687,10 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
       initDebugLogging(settings.debugLoggingEnabled);
     }
     dataHost?.pushSettings();
-    return { success: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Unknown error' };
+    debugLog(`Applying changed settings failed: ${error instanceof Error ? error.message : error}`, 'app');
   }
+  return { success: true };
 });
 
 ipcMain.handle('storage-is-encryption-available', async () => {

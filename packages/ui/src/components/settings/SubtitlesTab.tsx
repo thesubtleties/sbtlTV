@@ -3,6 +3,7 @@ import { useSubtitleStore } from '../../stores/subtitleStore';
 import { systemLocale } from '../../hooks/useSubtitleController';
 import type { SubtitleSettings } from '../../types/electron';
 import { OnOff, OptionRow, Section, Segmented, SettingsTab } from './ui';
+import { saveSettings } from '../../utils/saveSettings';
 
 /** Captions and subtitles, on every platform: defaults per kind, language and look. */
 export function SubtitlesTab() {
@@ -15,8 +16,7 @@ export function SubtitlesTab() {
     // A new language applies to what is playing now: a movie's subtitles switch
     // track here; main re-checks live captions for the new language.
     if (patch.language !== undefined) useSubtitleStore.getState().repickVodTrack(systemLocale());
-    if (!window.storage) return;
-    await window.storage.updateSettings({ subtitles: next });
+    await saveSettings({ subtitles: next });
   }
 
   return (
