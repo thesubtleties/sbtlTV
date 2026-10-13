@@ -1454,7 +1454,17 @@ ipcMain.handle('subtitle-set-delay', async (_event, generation: unknown, seconds
   return { success: true };
 });
 
-async function loadMedia(url: string, startPosition?: number, live = false, recovery = false): Promise<{ success?: boolean; error?: string; generation?: number }> {
+interface LoadRequest {
+  url: string;
+  /** Seconds to resume at once the file is open (movies) */
+  startPosition?: number;
+  /** A live channel: the watchdog reloads it from the live edge, not a position */
+  live: boolean;
+  /** A watchdog reload of the stream already playing: keeps its watchdog (and reload budget) */
+  recovery?: boolean;
+}
+
+async function loadMedia({ url, startPosition, live, recovery = false }: LoadRequest): Promise<{ success?: boolean; error?: string; generation?: number }> {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge && !mpvBridge.isInitialized()) {
     void handleNativePipelineFailure('Reset native playback before selecting another channel');
@@ -1517,7 +1527,7 @@ async function loadMedia(url: string, startPosition?: number, live = false, reco
 
 // IPC Handlers - mpv control
 ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number, live?: unknown) => {
-  return loadMedia(url, startPosition, live === true);
+  return loadMedia({ url, startPosition, live: live === true });
 });
 
 // Once a second: a stream that stopped moving without the user pausing it is
@@ -1531,7 +1541,7 @@ async function checkStreamHealth(): Promise<void> {
     debugLog(`Stream stalled at ${mpvState.position.toFixed(1)}s; reloading (${stallWatchdog.reloads}/3)`, 'mpv');
     sendToRenderer('stream-recovery', { state: 'reconnecting', attempt: stallWatchdog.reloads });
     try {
-      const result = await loadMedia(media.url, media.live ? undefined : mpvState.position, media.live, true);
+      const result = await loadMedia({ url: media.url, startPosition: media.live ? undefined : mpvState.position, live: media.live, recovery: true });
       if (result.generation !== undefined) sendToRenderer('stream-recovery', { state: 'reloaded', generation: result.generation });
     } finally {
       stallReloadInFlight = false;
@@ -2137,7 +2147,7 @@ app.whenReady().then(async () => {
   }
 
   if (compatibilityHandoff) {
-    const result = await loadMedia(compatibilityHandoff.url, compatibilityHandoff.position);
+    const result = await loadMedia({ url: compatibilityHandoff.url, startPosition: compatibilityHandoff.position, live: false });
     if (result.error) reportMpvError('Could not restore playback after compatibility restart.');
   }
 
