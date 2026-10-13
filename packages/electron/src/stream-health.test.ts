@@ -3,9 +3,15 @@ import { test } from 'node:test';
 import { StallWatchdog, STREAM_RECONNECT_OPTIONS, STREAM_BASE_OPTIONS, LoadStatusGate } from './stream-health.js';
 
 // One tick per second, like main's timer.
-function run(w: StallWatchdog, ticks: Array<{ t: number; pos: number; paused?: boolean; duration?: number }>) {
-  return ticks.map(({ t, pos, paused = false, duration = 0 }) => w.observe({ now: t * 1000, position: pos, userPaused: paused, duration }));
+// playing: mpv's own pause is off; eof: mpv stopped at the end of what it could read (keep-open).
+interface Tick { t: number; pos: number; paused?: boolean; duration?: number; playing?: boolean; eof?: boolean }
+function run(w: StallWatchdog, ticks: Tick[]) {
+  return ticks.map(({ t, pos, paused = false, duration = 0, playing = !paused, eof = false }) =>
+    w.observe({ now: t * 1000, position: pos, userPaused: paused, duration, playing, eof }));
 }
+const span = (from: number, count: number, tick: (t: number) => Omit<Tick, 't'>): Tick[] =>
+  Array.from({ length: count }, (_, i) => ({ t: from + i, ...tick(from + i) }));
+const reloadsIn = (actions: string[]) => actions.filter((a) => a === 'reload').length;
 
 test('ffmpeg reconnects cut HTTP streams, live included', () => {
   assert.equal(STREAM_RECONNECT_OPTIONS, 'reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4');
@@ -60,7 +66,7 @@ test('both players get reconnect and no youtube-dl hook', () => {
 test('recovering: from the first reload until playback moves again, never after giving up', () => {
   const w = new StallWatchdog({ live: true });
   let t = 0;
-  const tick = (pos: number) => w.observe({ now: (t++) * 1000, position: pos, userPaused: false, duration: 0 });
+  const tick = (pos: number) => w.observe({ now: (t++) * 1000, position: pos, userPaused: false, duration: 0, playing: true, eof: false });
   for (let i = 0; i < 16; i++) tick(5);
   assert.equal(w.recovering, true);          // reloaded once, still stuck
   tick(6); tick(7);
@@ -93,4 +99,51 @@ test('if the unload is never seen, numbers flow again after 3s', () => {
   g.begin(0, true);
   assert.deepEqual(g.pass({ position: 5, duration: 40 }, 2999), { position: 0, duration: 0 });
   assert.deepEqual(g.pass({ position: 5, duration: 40 }, 3001), { position: 5, duration: 40 });
+});
+
+test('a movie whose real end comes before its duration is not a stall (mpv stops there, keep-open)', () => {
+  const w = new StallWatchdog({ live: false });
+  const actions = run(w, [...span(0, 5, (t) => ({ pos: 5930 + t, duration: 6000 })), ...span(5, 60, () => ({ pos: 5935, duration: 6000, playing: false, eof: true }))]);
+  assert.equal(reloadsIn(actions), 0);
+});
+
+test('a movie that stops at the end of what could be read, far from its end, is reloaded', () => {
+  const w = new StallWatchdog({ live: false });
+  const actions = run(w, [...span(0, 5, (t) => ({ pos: 1000 + t, duration: 6000 })), ...span(5, 20, () => ({ pos: 1005, duration: 6000, playing: false, eof: true }))]);
+  assert.equal(reloadsIn(actions), 1);
+});
+
+test('a live stream that ended (provider cut that could not reconnect) is reloaded', () => {
+  const w = new StallWatchdog({ live: true });
+  const actions = run(w, [...span(0, 5, (t) => ({ pos: t })), ...span(5, 20, () => ({ pos: 5, playing: false, eof: true }))]);
+  assert.equal(reloadsIn(actions), 1);
+});
+
+test('mpv paused by something other than the app (system suspend, the compatibility window) is not a stall', () => {
+  const w = new StallWatchdog({ live: true });
+  const actions = run(w, [
+    ...span(0, 5, (t) => ({ pos: t })),
+    ...span(5, 120, () => ({ pos: 5, playing: false })),       // paused for two minutes
+    ...span(125, 10, () => ({ pos: 5 })),                       // playing again, not moving yet: 15s from here
+  ]);
+  assert.equal(reloadsIn(actions), 0);
+});
+
+test('a movie that takes a while to open gets 45s before it is reloaded', () => {
+  const slow = new StallWatchdog({ live: false });
+  assert.equal(reloadsIn(run(slow, [...span(0, 40, () => ({ pos: 0 })), ...span(40, 30, (t) => ({ pos: t - 40, duration: 6000 }))])), 0);
+  const dead = new StallWatchdog({ live: false });
+  const actions = run(dead, span(0, 50, () => ({ pos: 0 })));
+  assert.equal(actions.indexOf('reload'), 45);
+});
+
+test('after a reload, the held-back 0 and the resume seek are not playback coming back', () => {
+  const w = new StallWatchdog({ live: false });
+  const actions = run(w, [...span(0, 5, (t) => ({ pos: 1229 + t, duration: 6000 })), ...span(5, 16, () => ({ pos: 1234, duration: 6000 }))]);
+  assert.equal(reloadsIn(actions), 1);
+  assert.equal(w.recovering, true);
+  run(w, [...span(21, 3, () => ({ pos: 0, duration: 0 })), ...span(24, 5, () => ({ pos: 1234, duration: 6000 }))]);
+  assert.equal(w.recovering, true);
+  run(w, span(29, 3, (t) => ({ pos: 1234 + (t - 28), duration: 6000 })));
+  assert.equal(w.recovering, false);
 });

@@ -25,32 +25,47 @@ export interface StallSample {
   now: number;
   /** Playback position in seconds */
   position: number;
-  /** The user paused (not mpv pausing itself at the end of a stream) */
+  /** The user paused in the app */
   userPaused: boolean;
   /** File duration in seconds, 0 for live */
   duration: number;
+  /** mpv's own pause is off (it may still be waiting for data) */
+  playing: boolean;
+  /** mpv stopped at the end of what it could read (keep-open pauses it there) */
+  eof: boolean;
 }
 
+/** A movie stopping at its end within this much of its duration has ended (files often end a little short). */
+const VOD_END_SLACK_S = 120;
+
 /**
- * Notices a stream that stopped moving without the user pausing it (a dead
+ * Notices a stream that stopped moving without anyone pausing it (a dead
  * connection, a live stream that ended, a reconnect that keeps failing) and
  * asks for a reload, up to maxReloads times; then gives up once. A reload
  * that brings playback back for recoveredAfterMs restores the budget.
+ *
+ * Moving means the position advancing at about playback speed: the 0 that
+ * LoadStatusGate holds after a reload, or a seek, is not playback. Until a
+ * load first moves it gets openGraceMs (movies can take a while to open).
  */
 export class StallWatchdog {
   reloads = 0;
   private lastPosition: number | null = null;
+  private lastSampleAt = 0;
   private lastMoveAt = 0;
   private movingSince: number | null = null;
+  private started = false;
   private givenUp = false;
   private readonly live: boolean;
   private readonly stallMs: number;
+  private readonly openGraceMs: number;
   private readonly maxReloads: number;
   private readonly recoveredAfterMs: number;
 
-  constructor(opts: { live: boolean; stallMs?: number; maxReloads?: number; recoveredAfterMs?: number }) {
+  constructor(opts: { live: boolean; stallMs?: number; openGraceMs?: number; maxReloads?: number; recoveredAfterMs?: number }) {
     this.live = opts.live;
     this.stallMs = opts.stallMs ?? 15_000;
+    this.openGraceMs = opts.openGraceMs ?? (opts.live ? this.stallMs : 45_000);
     this.maxReloads = opts.maxReloads ?? 3;
     this.recoveredAfterMs = opts.recoveredAfterMs ?? 30_000;
   }
@@ -60,32 +75,40 @@ export class StallWatchdog {
     return this.reloads > 0 && this.movingSince === null && !this.givenUp;
   }
 
-  observe({ now, position, userPaused, duration }: StallSample): 'none' | 'reload' | 'give-up' {
-    if (this.lastPosition === null) {
-      this.lastPosition = position;
+  observe({ now, position, userPaused, duration, playing, eof }: StallSample): 'none' | 'reload' | 'give-up' {
+    const elapsedS = (now - this.lastSampleAt) / 1000;
+    const previous = this.lastPosition;
+    this.lastPosition = position;
+    this.lastSampleAt = now;
+    if (previous === null) {
       this.lastMoveAt = now;
       return 'none';
     }
     if (this.givenUp) return 'none';
-    const atEnd = !this.live && duration > 0 && position >= duration - 2;
-    if (userPaused || atEnd) {
-      this.lastPosition = position;
+    const ended = !this.live && duration > 0
+      && (position >= duration - 2 || (eof && position >= duration - VOD_END_SLACK_S));
+    // Paused by the user, or by mpv for something other than the stream ending
+    // (system suspend, the compatibility player's own window): wait for it.
+    const pausedElsewhere = !playing && !eof;
+    if (userPaused || pausedElsewhere || ended) {
       this.lastMoveAt = now;
       this.movingSince = null;
       return 'none';
     }
-    if (Math.abs(position - this.lastPosition) > 0.5) {
-      this.lastPosition = position;
+    const advanced = position - previous;
+    if (advanced > 0.5 && advanced < elapsedS + 5) {
       this.lastMoveAt = now;
+      this.started = true;
       this.movingSince ??= now;
       if (this.reloads > 0 && now - this.movingSince >= this.recoveredAfterMs) this.reloads = 0;
       return 'none';
     }
     this.movingSince = null;
-    if (now - this.lastMoveAt < this.stallMs) return 'none';
+    if (now - this.lastMoveAt < (this.started ? this.stallMs : this.openGraceMs)) return 'none';
     if (this.reloads < this.maxReloads) {
       this.reloads++;
-      this.lastMoveAt = now;  // give the reload its own 15s
+      this.lastMoveAt = now;  // the reload gets its own time to open
+      this.started = false;
       return 'reload';
     }
     this.givenUp = true;

@@ -107,6 +107,8 @@ const stream = new StreamSession();
 let decodeLoggedGeneration = -1;
 // The external player's raw time-pos/duration; mpvState gets them through the gate.
 const externalRaw = { position: 0, duration: 0 };
+// The external player's eof-reached (keep-open pauses mpv at the end of a file).
+let externalEof = false;
 let pipelineFailurePromptOpen = false;
 let nativeRecoveryInProgress = false;
 
@@ -1062,6 +1064,7 @@ async function connectToMpvSocket(): Promise<void> {
       sendMpvCommand('observe_property', [4, 'time-pos']);
       sendMpvCommand('observe_property', [5, 'duration']);
       sendMpvCommand('observe_property', [6, 'track-list']);
+      sendMpvCommand('observe_property', [7, 'eof-reached']);
       applySubtitleStyle('external mpv connected');
 
       resolve();
@@ -1140,6 +1143,9 @@ function handleMpvMessage(msg: MpvMessage): void {
             });
           }
         }
+        break;
+      case 'eof-reached':
+        externalEof = msg.data === true;
         break;
       case 'track-list':
         // Pushed by mpv on every change (file loaded, CC track created); no polling.
@@ -1403,13 +1409,17 @@ ipcMain.handle('mpv-load', async (_event, url: unknown, options: unknown) => {
   });
 });
 
-// Once a second: a stream that stopped moving without the user pausing it is
+// Once a second: a stream that stopped moving without anyone pausing it is
 // reloaded (at its position for movies), up to 3 times, then reported once.
 async function checkStreamHealth(): Promise<void> {
   const media = stream.media;
   const watchdog = stream.watchdog;
   if (!watchdog || !media || stream.reloadInFlight || nativeRecoveryInProgress || pipelineFailurePromptOpen) return;
-  const action = watchdog.observe({ now: Date.now(), position: mpvState.position, userPaused: stream.userPaused, duration: mpvState.duration });
+  // eof-reached is read only while mpv is paused (it pauses itself at the end, keep-open).
+  const eof = !mpvState.playing && (useNativeMpv && mpvBridge ? mpvBridge.getProperty('eof-reached') === 'yes' : externalEof);
+  const action = watchdog.observe({
+    now: Date.now(), position: mpvState.position, userPaused: stream.userPaused, duration: mpvState.duration, playing: mpvState.playing, eof,
+  });
   if (action === 'reload') {
     stream.reloadInFlight = true;
     debugLog(`Stream stalled at ${mpvState.position.toFixed(1)}s; reloading (${watchdog.reloads}/3)`, 'mpv');
