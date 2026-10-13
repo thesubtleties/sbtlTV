@@ -11,6 +11,7 @@ import electronUpdater from 'electron-updater';
 import { selectChromiumGpuIdentity } from './gpu-selection.js';
 import { startDataHost, type DataHost } from './data/data-host.js';
 import { isTransientDecodeError } from './mpv-error-filter.js';
+import { redactUrls } from './log-redact.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
@@ -266,7 +267,8 @@ function debugLog(message: string, category = 'app'): void {
   if (!debugLoggingEnabled || !debugLogStream) return;
   try {
     const timestamp = new Date().toISOString();
-    const line = `[${timestamp}] [${category}] ${message}\n`;
+    // Users attach this log to reports: no provider credentials (they ride in stream URLs).
+    const line = `[${timestamp}] [${category}] ${redactUrls(message)}\n`;
     debugLogStream.write(line);
   } catch {
     // Silently fail - logging should never crash the app
@@ -1196,7 +1198,7 @@ function sendToRenderer(channel: string, data: unknown): void {
 
 /** A message in the app's error card; its text goes to the debug log too, so reports can be matched. */
 function reportMpvError(message: string): void {
-  const text = message.trim();
+  const text = redactUrls(message.trim());
   debugLog(`banner: ${JSON.stringify(text)}`, 'mpv');
   sendToRenderer('mpv-error', text);
 }
