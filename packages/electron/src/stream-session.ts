@@ -49,6 +49,8 @@ export class StreamSession {
   /** The user's own pause, so mpv pausing at the end of a stream is not mistaken for it */
   userPaused = false;
   reloadInFlight = false;
+  /** The last mpv error held back during a reload, for the log when the watchdog gives up */
+  lastHeldError: string | null = null;
   /** Holds the previous file's position/duration back until mpv unloads it */
   readonly gate = new LoadStatusGate();
   private pendingResume: number | null = null;
@@ -63,7 +65,10 @@ export class StreamSession {
     this.gate.begin(now, player.position > 0 || player.duration > 0);
     this.media = { url, startPosition: resumeAt, live };
     this.userPaused = false;
-    if (reason !== 'reload' || !this.watchdog) this.watchdog = new StallWatchdog({ live });
+    if (reason !== 'reload' || !this.watchdog) {
+      this.watchdog = new StallWatchdog({ live });
+      this.lastHeldError = null;
+    }
     this.generation++;
     this.pendingResume = resumeAt > 0 ? resumeAt : null;
     return { generation: this.generation, resumeAt };
@@ -74,6 +79,7 @@ export class StreamSession {
     this.media = null;
     this.watchdog = null;
     this.pendingResume = null;
+    this.lastHeldError = null;
     if (invalidate) this.generation++;
   }
 
@@ -94,6 +100,15 @@ export class StreamSession {
     const media = this.media;
     if (!media) return null;
     return { url: media.url, position: position > 0 ? position : media.startPosition, live: media.live };
+  }
+
+  /**
+   * mpv's own error lines are expected while a stall reload opens the stream
+   * again (the toast says what is happening and the watchdog has the final
+   * word): held from the reload until playback moves, never while paused.
+   */
+  holdsMpvErrors(playing: boolean): boolean {
+    return this.reloadInFlight || (playing && this.watchdog?.recovering === true);
   }
 
   isCurrent(generation: unknown): boolean {

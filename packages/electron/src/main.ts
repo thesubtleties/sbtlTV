@@ -878,7 +878,7 @@ async function initNativeMpv(): Promise<boolean> {
         debugLog(`mpv (not shown): ${error.trim()}`, 'mpv');
         return;
       }
-      reportMpvError(error);
+      reportMpvLogError(error);
     });
 
     bridge.onPipelineFailure((error) => {
@@ -1194,16 +1194,21 @@ function sendToRenderer(channel: string, data: unknown): void {
   }
 }
 
-/** A red banner in the app; its text goes to the debug log too, so reports can be matched. */
+/** A message in the app's error card; its text goes to the debug log too, so reports can be matched. */
 function reportMpvError(message: string): void {
-  // While the stall watchdog is reloading, mpv's open errors are expected; the
-  // toast says what is happening and the watchdog has the final word.
-  if (stream.watchdog?.recovering || stream.reloadInFlight) {
-    debugLog(`banner held during reconnect: ${message.trim()}`, 'mpv');
+  const text = message.trim();
+  debugLog(`banner: ${JSON.stringify(text)}`, 'mpv');
+  sendToRenderer('mpv-error', text);
+}
+
+/** One of mpv's own error lines (native player): held back while a stall reload is opening the stream. */
+function reportMpvLogError(message: string): void {
+  if (stream.holdsMpvErrors(mpvState.playing)) {
+    stream.lastHeldError = message.trim();
+    debugLog(`banner held during reconnect: ${JSON.stringify(stream.lastHeldError)}`, 'mpv');
     return;
   }
-  debugLog(`banner: ${message.trim()}`, 'mpv');
-  sendToRenderer('mpv-error', message);
+  reportMpvError(message);
 }
 
 /** Set mpv options on whichever player is running. Failures are logged, never thrown. */
@@ -1428,7 +1433,7 @@ async function checkStreamHealth(): Promise<void> {
       stream.reloadInFlight = false;
     }
   } else if (action === 'give-up') {
-    debugLog('Stream still stalled after 3 reloads; giving up', 'mpv');
+    debugLog(`Stream still stalled after 3 reloads; giving up${stream.lastHeldError ? ` (last mpv error: ${JSON.stringify(stream.lastHeldError)})` : ''}`, 'mpv');
     sendToRenderer('stream-recovery', { state: 'failed', live: media.live });
   }
 }

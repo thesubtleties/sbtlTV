@@ -86,3 +86,27 @@ test('stream session: after a file that was playing, its numbers are held back u
   s.begin({ url: 'http://m', live: false, reason: 'play' }, 0, PLAYING);
   assert.deepEqual(s.gate.pass(PLAYING, 100), NONE);
 });
+
+test('stream session: mpv errors are held only while a reload is opening the stream and it is not paused', () => {
+  const s = new StreamSession();
+  s.begin({ url: 'http://live', live: true, reason: 'play' }, 0, NONE);
+  assert.equal(s.holdsMpvErrors(true), false);           // nothing reloading: shown
+  s.reloadInFlight = true;
+  assert.equal(s.holdsMpvErrors(true), true);
+  s.reloadInFlight = false;
+  // Stalled until the watchdog reloaded once; nothing has moved since.
+  for (let t = 0; t <= 16; t++) s.watchdog!.observe({ now: t * 1000, position: 5, userPaused: false, duration: 0, playing: true, eof: false });
+  assert.equal(s.watchdog!.recovering, true);
+  assert.equal(s.holdsMpvErrors(true), true);
+  assert.equal(s.holdsMpvErrors(false), false);          // paused: whatever mpv says is shown
+});
+
+test('stream session: the last held mpv error is kept for the give-up log, and dropped with the stream', () => {
+  const s = new StreamSession();
+  s.begin({ url: 'http://live', live: true, reason: 'play' }, 0, NONE);
+  s.lastHeldError = 'Failed to open';
+  s.begin({ url: 'http://live', live: true, reason: 'reload' }, 0, NONE);
+  assert.equal(s.lastHeldError, 'Failed to open');
+  s.begin({ url: 'http://other', live: true, reason: 'play' }, 0, NONE);
+  assert.equal(s.lastHeldError, null);
+});
