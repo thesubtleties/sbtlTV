@@ -94,12 +94,15 @@ export function AppearanceTab() {
         </div>
       </OptionRow>
 
-      {desktop?.accent && (
+      {/* Shown while the desktop has an accent, and while System is chosen without one (so it can be set back) */}
+      {(desktop?.accent || (desktop && appearance.accent === 'system')) && (
         <OptionRow
           title="Accent"
-          help={appearance.accent === 'system'
-            ? "Your system's accent color, on the palette's other colors."
-            : "The palette's own accent."}
+          help={appearance.accent !== 'system'
+            ? "The palette's own accent."
+            : desktop?.accent
+              ? "Your system's accent color, on the palette's other colors."
+              : "Your system's accent color isn't available right now; the palette's own is used."}
         >
           <Segmented
             value={appearance.accent}
