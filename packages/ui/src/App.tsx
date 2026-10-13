@@ -27,6 +27,7 @@ import { useSubtitleStore, type PendingDelay } from './stores/subtitleStore';
 import { resumeSettled } from './hooks/resumeSettle';
 import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
 import { perfMeasure, perfStart } from './utils/perfMarks';
+import { ErrorCard } from './components/ErrorCard';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -201,6 +202,8 @@ function App() {
   // The latest play this window asked for; main's media-loaded names it by id.
   const playRequestRef = useRef<PlayRequest | null>(null);
   const playRequestSeqRef = useRef(0);
+  // What was played last, so the error card can try it again.
+  const lastPlayRef = useRef<{ kind: 'live'; channel: StoredChannel } | { kind: 'vod'; info: VodPlayInfo } | null>(null);
   useSubtitleController();
 
   // Continue Watching: next-episode autoplay. Refs because the mpv status handler is mount-once.
@@ -410,6 +413,7 @@ function App() {
       return;
     }
     setError(null);
+    lastPlayRef.current = { kind: 'live', channel };
     const requestId = ++playRequestSeqRef.current;
     playRequestRef.current = { id: requestId, vodInfo: null, subtitleDelay: null };
     const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv, requestId);
@@ -505,6 +509,7 @@ function App() {
       return;
     }
     setError(null);
+    lastPlayRef.current = { kind: 'vod', info };
     // Look up the resume position and saved subtitle delay before loading. If the
     // progress store cannot be read, play from the start rather than not at all.
     const kind = info.type === 'movie' ? 'movie' : 'episode';
@@ -554,6 +559,13 @@ function App() {
       setActiveView('none');
     }
   }, []);
+
+  const retryLastPlay = () => {
+    const last = lastPlayRef.current;
+    if (!last) return;
+    if (last.kind === 'live') void handleLoadStream(last.channel);
+    else void handlePlayVod(last.info);
+  };
 
   // Autoplay countdown: tick down, then advance to the next episode at 0.
   useEffect(() => {
@@ -849,12 +861,12 @@ function App() {
         )}
       </div>
 
-      {/* Error display */}
       {error && (
-        <div className="error-banner">
-          <span>Error: {error}</span>
-          <button onClick={() => setError(null)}>Dismiss</button>
-        </div>
+        <ErrorCard
+          message={error}
+          onDismiss={() => setError(null)}
+          onRetry={lastPlayRef.current ? retryLastPlay : undefined}
+        />
       )}
 
       {/* Now Playing Bar */}

@@ -1206,7 +1206,7 @@ function reportMpvError(message: string): void {
 /** One of mpv's own error lines (native player): held back while a stall reload is opening the stream. */
 function reportMpvLogError(message: string): void {
   if (stream.holdsMpvErrors(mpvState.playing)) {
-    stream.lastHeldError = message.trim();
+    stream.lastHeldError = redactUrls(message.trim());  // before quoting: the URL ends at whitespace, not at the quote
     debugLog(`banner held during reconnect: ${JSON.stringify(stream.lastHeldError)}`, 'mpv');
     return;
   }
