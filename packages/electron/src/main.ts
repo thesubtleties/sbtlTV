@@ -15,7 +15,9 @@ import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
 import { StallWatchdog, STREAM_BASE_OPTIONS, LoadStatusGate } from './stream-health.js';
-import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, CaptionCheck, preferredCaptionLanguage, type SubtitleTrack, type CaptionLanguage } from './subtitles.js';
+import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, type SubtitleTrack } from './subtitle-mpv.js';
+import { preferredCaptionLanguage, type CaptionLanguage } from './subtitle-settings.js';
+import { CaptionCheck } from './caption-check.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API

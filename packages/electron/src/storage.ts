@@ -2,7 +2,7 @@ import Store from 'electron-store';
 import { safeStorage } from 'electron';
 import type { Source } from '@sbtltv/core';
 import { normalizeLinuxPlayerMode, type LinuxPlayerMode } from './linux-player-mode.js';
-import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitles.js';
+import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitle-settings.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
