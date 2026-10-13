@@ -128,7 +128,7 @@ async function tryLoadWithFallbacks(
  */
 function saveVodProgress(info: VodPlayInfo, position: number, duration: number, subDelay?: number): void {
   if (!info.streamId || !(duration > 0)) return;
-  void updateWatchProgress({
+  updateWatchProgress({
     type: info.type === 'series' ? 'episode' : 'movie',
     streamId: info.streamId,
     tmdbId: info.tmdbId,
@@ -141,7 +141,7 @@ function saveVodProgress(info: VodPlayInfo, position: number, duration: number, 
     duration,
     sourceId: info.sourceId,
     subDelay: subDelay ?? currentSubDelay(),
-  });
+  }).catch((err) => debugLog(`Saving watch progress failed: ${err instanceof Error ? err.message : err}`));
 }
 
 function currentSubDelay(): number | undefined {
@@ -505,31 +505,24 @@ function App() {
       return;
     }
     setError(null);
-    // Look up resume position before loading
-    const resumePos = await getResumePosition(
-      info.type === 'movie' ? 'movie' : 'episode',
-      {
-        streamId: info.streamId,
-        tmdbId: info.type === 'movie' ? info.tmdbId : undefined,
-        seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
-        seriesStreamId: info.type === 'series' ? info.seriesStreamId : undefined,
-        sourceId: info.sourceId,
-        seasonNum: info.seasonNum,
-        episodeNum: info.episodeNum,
-      },
-    );
-    const delayCandidate = await getSubtitleDelayCandidate(
-      info.type === 'movie' ? 'movie' : 'episode',
-      {
-        streamId: info.streamId,
-        tmdbId: info.type === 'movie' ? info.tmdbId : undefined,
-        seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
-        seriesStreamId: info.type === 'series' ? info.seriesStreamId : undefined,
-        sourceId: info.sourceId,
-        seasonNum: info.seasonNum,
-        episodeNum: info.episodeNum,
-      },
-    );
+    // Look up the resume position and saved subtitle delay before loading. If the
+    // progress store cannot be read, play from the start rather than not at all.
+    const kind = info.type === 'movie' ? 'movie' : 'episode';
+    const lookup = {
+      streamId: info.streamId,
+      tmdbId: info.type === 'movie' ? info.tmdbId : undefined,
+      seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
+      seriesStreamId: info.type === 'series' ? info.seriesStreamId : undefined,
+      sourceId: info.sourceId,
+      seasonNum: info.seasonNum,
+      episodeNum: info.episodeNum,
+    };
+    const lookupFailed = (what: string) => (err: unknown) => {
+      debugLog(`  ${what} lookup failed, starting without it: ${err instanceof Error ? err.message : err}`);
+      return null;
+    };
+    const resumePos = (await getResumePosition(kind, lookup).catch(lookupFailed('resume'))) ?? 0;
+    const delayCandidate = await getSubtitleDelayCandidate(kind, lookup).catch(lookupFailed('subtitle delay'));
     const requestId = ++playRequestSeqRef.current;
     playRequestRef.current = { id: requestId, vodInfo: info, subtitleDelay: delayCandidate };
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv, requestId, resumePos || undefined);
