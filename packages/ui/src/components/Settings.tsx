@@ -15,6 +15,7 @@ import { VideoPlayerTab } from './settings/VideoPlayerTab';
 import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
 import { AppearanceTab } from './settings/AppearanceTab';
+import { SubtitlesTab } from './settings/SubtitlesTab';
 import './Settings.css';
 
 interface SettingsProps {
@@ -270,6 +271,8 @@ export function Settings({ onClose }: SettingsProps) {
         );
       case 'appearance':
         return <AppearanceTab />;
+      case 'subtitles':
+        return <SubtitlesTab />;
       case 'player':
         return (
           <VideoPlayerTab
