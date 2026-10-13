@@ -10,6 +10,21 @@ export interface MediaLoad {
   live: boolean;
 }
 
+/** What playing is carried over a restart into the compatibility player */
+export interface CompatibilityHandoff {
+  url: string;
+  position: number;
+  live: boolean;
+}
+
+/** A handoff read back from disk; null when it is not one. */
+export function parseCompatibilityHandoff(value: unknown): CompatibilityHandoff | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.url !== 'string' || typeof candidate.position !== 'number') return null;
+  return { url: candidate.url, position: Math.max(0, candidate.position), live: candidate.live === true };
+}
+
 export interface StreamLoadRequest {
   url: string;
   startPosition?: number;
@@ -56,6 +71,25 @@ export class StreamSession {
     this.watchdog = null;
     this.pendingResume = null;
     if (invalidate) this.generation++;
+  }
+
+  /** The watchdog's reload of what is playing: a movie at its position, or where it was resuming if it never got there. */
+  reloadRequest(position: number): StreamLoadRequest | null {
+    const media = this.media;
+    if (!media) return null;
+    return {
+      url: media.url,
+      startPosition: media.live ? undefined : Math.max(position, media.startPosition),
+      live: media.live,
+      reason: 'reload',
+    };
+  }
+
+  /** What to carry into the compatibility player: where playback is, or where it was resuming. */
+  handoff(position: number): CompatibilityHandoff | null {
+    const media = this.media;
+    if (!media) return null;
+    return { url: media.url, position: position > 0 ? position : media.startPosition, live: media.live };
   }
 
   isCurrent(generation: unknown): boolean {

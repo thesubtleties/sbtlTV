@@ -15,7 +15,7 @@ import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
 import { STREAM_BASE_OPTIONS } from './stream-health.js';
-import { StreamSession, type StreamLoadRequest } from './stream-session.js';
+import { StreamSession, parseCompatibilityHandoff, type StreamLoadRequest, type CompatibilityHandoff } from './stream-session.js';
 import { CaptionSession } from './caption-session.js';
 import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
 import { preferredCaptionLanguage } from './subtitle-settings.js';
@@ -111,11 +111,6 @@ const externalRaw = { position: 0, duration: 0 };
 let externalEof = false;
 let pipelineFailurePromptOpen = false;
 let nativeRecoveryInProgress = false;
-
-interface CompatibilityHandoff {
-  url: string;
-  position: number;
-}
 
 // Prevent screen sleep during playback
 let sleepBlockerId: number | null = null;
@@ -308,11 +303,7 @@ function consumeCompatibilityHandoff(): CompatibilityHandoff | null {
   try {
     if (!safeStorage.isEncryptionAvailable()) return null;
     const decrypted = safeStorage.decryptString(fs.readFileSync(handoffPath));
-    const value: unknown = JSON.parse(decrypted);
-    if (!value || typeof value !== 'object') return null;
-    const candidate = value as Record<string, unknown>;
-    if (typeof candidate.url !== 'string' || typeof candidate.position !== 'number') return null;
-    return { url: candidate.url, position: Math.max(0, candidate.position) };
+    return parseCompatibilityHandoff(JSON.parse(decrypted));
   } catch (error) {
     debugLog(`Could not consume compatibility handoff: ${error instanceof Error ? error.message : error}`, 'mpv');
     return null;
@@ -989,13 +980,13 @@ async function handleNativePipelineFailure(error: string): Promise<void> {
   debugLog(`Native pipeline failure: ${error}`, 'mpv');
   if (pipelineFailurePromptOpen || nativeRecoveryInProgress || !mainWindow) return;
   pipelineFailurePromptOpen = true;
-  const media = stream.media;
-  const failurePosition = mpvState.position > 0 ? mpvState.position : media?.startPosition ?? 0;
-  const handoff = media ? { url: media.url, position: failurePosition } : null;
+  const handoff = stream.handoff(mpvState.position);
   const isLinux = process.platform === 'linux';
 
   try {
     mpvBridge?.stop();
+    // Stopped: the watchdog must not reload into the broken pipeline, whatever the answer.
+    endPlayback();
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'error',
       title: 'Native video playback failed',
@@ -1425,7 +1416,8 @@ async function checkStreamHealth(): Promise<void> {
     debugLog(`Stream stalled at ${mpvState.position.toFixed(1)}s; reloading (${watchdog.reloads}/3)`, 'mpv');
     sendToRenderer('stream-recovery', { state: 'reconnecting', attempt: watchdog.reloads });
     try {
-      await loadMedia({ url: media.url, startPosition: media.live ? undefined : mpvState.position, live: media.live, reason: 'reload' });
+      const request = stream.reloadRequest(mpvState.position);
+      if (request) await loadMedia(request);
     } finally {
       stream.reloadInFlight = false;
     }
@@ -2027,7 +2019,8 @@ app.whenReady().then(async () => {
   }
 
   if (compatibilityHandoff) {
-    const result = await loadMedia({ url: compatibilityHandoff.url, startPosition: compatibilityHandoff.position, live: false, reason: 'restore' });
+    const { url, position, live } = compatibilityHandoff;
+    const result = await loadMedia({ url, startPosition: live ? undefined : position, live, reason: 'restore' });
     if (result.error) reportMpvError('Could not restore playback after compatibility restart.');
   }
 

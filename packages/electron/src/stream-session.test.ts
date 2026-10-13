@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { StreamSession } from './stream-session.js';
+import { StreamSession, parseCompatibilityHandoff } from './stream-session.js';
 
 test('stream session: each load gets the next generation and its own resume point', () => {
   const s = new StreamSession();
@@ -42,4 +42,31 @@ test('stream session: end forgets the stream; invalidate also retires its genera
   assert.ok(s.isCurrent(1));
   s.end({ invalidate: true });
   assert.ok(!s.isCurrent(1));
+});
+
+test('stream session: a movie reloads where it is, or where it was resuming if it never got there', () => {
+  const s = new StreamSession();
+  s.begin({ url: 'http://m', startPosition: 1800, live: false, reason: 'play' }, 0, false);
+  assert.deepEqual(s.reloadRequest(0), { url: 'http://m', startPosition: 1800, live: false, reason: 'reload' });
+  assert.deepEqual(s.reloadRequest(2400.5), { url: 'http://m', startPosition: 2400.5, live: false, reason: 'reload' });
+  s.begin({ url: 'http://live', live: true, reason: 'play' }, 0, true);
+  assert.deepEqual(s.reloadRequest(37), { url: 'http://live', startPosition: undefined, live: true, reason: 'reload' });
+  s.end();
+  assert.equal(s.reloadRequest(10), null);
+});
+
+test('stream session: the compatibility handoff keeps whether it was live', () => {
+  const s = new StreamSession();
+  s.begin({ url: 'http://live', live: true, reason: 'play' }, 0, false);
+  assert.deepEqual(s.handoff(0), { url: 'http://live', position: 0, live: true });
+  s.begin({ url: 'http://m', startPosition: 600, live: false, reason: 'play' }, 0, true);
+  assert.deepEqual(s.handoff(0), { url: 'http://m', position: 600, live: false });
+  assert.deepEqual(s.handoff(700), { url: 'http://m', position: 700, live: false });
+});
+
+test('compatibility handoff: read back with its live flag; one saved before it had one is a movie', () => {
+  assert.deepEqual(parseCompatibilityHandoff({ url: 'http://live', position: 0, live: true }), { url: 'http://live', position: 0, live: true });
+  assert.deepEqual(parseCompatibilityHandoff({ url: 'http://m', position: 12 }), { url: 'http://m', position: 12, live: false });
+  assert.deepEqual(parseCompatibilityHandoff({ url: 'http://m', position: -3 }), { url: 'http://m', position: 0, live: false });
+  for (const bad of [null, 'x', {}, { url: 5, position: 1 }, { url: 'http://m' }]) assert.equal(parseCompatibilityHandoff(bad), null);
 });
