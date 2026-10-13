@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { StallWatchdog, STREAM_RECONNECT_OPTIONS } from './stream-health.js';
+import { StallWatchdog, STREAM_RECONNECT_OPTIONS, STREAM_BASE_OPTIONS } from './stream-health.js';
 
 // One tick per second, like main's timer.
 function run(w: StallWatchdog, ticks: Array<{ t: number; pos: number; paused?: boolean; duration?: number }>) {
@@ -51,4 +51,20 @@ test('a reload that brings playback back for a while restores the budget', () =>
   const play = (secs: number) => run(w, Array.from({ length: secs }, (_, i) => ({ t: t++, pos: 100 + t + i })));
   for (let i = 0; i < 5; i++) { stall(); play(40); }
   assert.equal(w.reloads, 0);
+});
+
+test('both players get reconnect and no youtube-dl hook', () => {
+  assert.deepEqual(STREAM_BASE_OPTIONS, [['stream-lavf-o', STREAM_RECONNECT_OPTIONS], ['ytdl', 'no']]);
+});
+
+test('recovering: from the first reload until playback moves again, never after giving up', () => {
+  const w = new StallWatchdog({ live: true });
+  let t = 0;
+  const tick = (pos: number) => w.observe({ now: (t++) * 1000, position: pos, userPaused: false, duration: 0 });
+  for (let i = 0; i < 16; i++) tick(5);
+  assert.equal(w.recovering, true);          // reloaded once, still stuck
+  tick(6); tick(7);
+  assert.equal(w.recovering, false);         // moving again
+  for (let i = 0; i < 70; i++) tick(7);
+  assert.equal(w.recovering, false);         // gave up: the final message may show
 });

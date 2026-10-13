@@ -14,7 +14,7 @@ import { isTransientDecodeError } from './mpv-error-filter.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
-import { StallWatchdog, STREAM_RECONNECT_OPTIONS } from './stream-health.js';
+import { StallWatchdog, STREAM_BASE_OPTIONS } from './stream-health.js';
 import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, CaptionCheck, type SubtitleTrack } from './subtitles.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
@@ -644,7 +644,7 @@ async function initMpv(): Promise<void> {
       '--no-terminal',
       '--hwdec=auto',
       '--vo=gpu',
-      `--stream-lavf-o=${STREAM_RECONNECT_OPTIONS}`,
+      ...STREAM_BASE_OPTIONS.map(([name, value]) => `--${name}=${value}`),
       ...SUBTITLE_BASE_OPTIONS.map(([name, value]) => `--${name}=${value}`),
       `--sub-fonts-dir=${subtitleFontsPath()}`,
     ];
@@ -809,7 +809,7 @@ async function initNativeMpv(): Promise<boolean> {
     mpvBridge = bridge;
     useNativeMpv = true;
     syncPlaybackDiagnostics();
-    setMpvOptions([['stream-lavf-o', STREAM_RECONNECT_OPTIONS], ...SUBTITLE_BASE_OPTIONS, ['sub-fonts-dir', subtitleFontsPath()]], 'native init');
+    setMpvOptions([...STREAM_BASE_OPTIONS, ...SUBTITLE_BASE_OPTIONS, ['sub-fonts-dir', subtitleFontsPath()]], 'native init');
     applySubtitleStyle('native init');
 
     // Forward status updates to renderer
@@ -1201,6 +1201,12 @@ function sendToRenderer(channel: string, data: unknown): void {
 
 /** A red banner in the app; its text goes to the debug log too, so reports can be matched. */
 function reportMpvError(message: string): void {
+  // While the stall watchdog is reloading, mpv's open errors are expected; the
+  // toast says what is happening and the watchdog has the final word.
+  if (stallWatchdog?.recovering || stallReloadInFlight) {
+    debugLog(`banner held during reconnect: ${message.trim()}`, 'mpv');
+    return;
+  }
   debugLog(`banner: ${message.trim()}`, 'mpv');
   sendToRenderer('mpv-error', message);
 }

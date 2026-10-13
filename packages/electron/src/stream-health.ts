@@ -11,6 +11,16 @@
  */
 export const STREAM_RECONNECT_OPTIONS = 'reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4';
 
+/**
+ * Stream options for both players. ytdl=no: mpv's youtube-dl hook retries every
+ * URL that fails to open through youtube-dl, which IPTV never needs and which
+ * floods the banner ("ytdl_hook: youtube-dl failed") on a dead stream.
+ */
+export const STREAM_BASE_OPTIONS: Array<[string, string]> = [
+  ['stream-lavf-o', STREAM_RECONNECT_OPTIONS],
+  ['ytdl', 'no'],
+];
+
 export interface StallSample {
   now: number;
   /** Playback position in seconds */
@@ -43,6 +53,11 @@ export class StallWatchdog {
     this.stallMs = opts.stallMs ?? 15_000;
     this.maxReloads = opts.maxReloads ?? 3;
     this.recoveredAfterMs = opts.recoveredAfterMs ?? 30_000;
+  }
+
+  /** Between a reload and playback moving again: mpv's own errors are expected then and stay out of the banner. */
+  get recovering(): boolean {
+    return this.reloads > 0 && this.movingSince === null && !this.givenUp;
   }
 
   observe({ now, position, userPaused, duration }: StallSample): 'none' | 'reload' | 'give-up' {
