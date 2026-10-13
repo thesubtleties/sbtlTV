@@ -53,10 +53,14 @@ export class StreamSession {
   readonly gate = new LoadStatusGate();
   private pendingResume: number | null = null;
 
-  /** A load starts. hadPrevious: mpv had a file loaded or playing before it. */
-  begin({ url, startPosition, live, reason }: StreamLoadRequest, now: number, hadPrevious: boolean): { generation: number; resumeAt: number } {
+  /**
+   * A load starts. player: the numbers mpv reports right now (before the gate);
+   * only if it has some is there a previous file to wait out. A previous load
+   * that never opened leaves none, and an idle mpv never reports an unload.
+   */
+  begin({ url, startPosition, live, reason }: StreamLoadRequest, now: number, player: { position: number; duration: number }): { generation: number; resumeAt: number } {
     const resumeAt = startPosition && startPosition > 0 ? Math.floor(startPosition) : 0;
-    this.gate.begin(now, hadPrevious);
+    this.gate.begin(now, player.position > 0 || player.duration > 0);
     this.media = { url, startPosition: resumeAt, live };
     this.userPaused = false;
     if (reason !== 'reload' || !this.watchdog) this.watchdog = new StallWatchdog({ live });

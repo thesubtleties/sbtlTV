@@ -105,8 +105,8 @@ const mpvState: MpvState = {
 const stream = new StreamSession();
 // Load generation whose first decoded frame has already been logged.
 let decodeLoggedGeneration = -1;
-// The external player's raw time-pos/duration; mpvState gets them through the gate.
-const externalRaw = { position: 0, duration: 0 };
+// The player's raw time-pos/duration (either player); mpvState gets them through the gate.
+const playerRaw = { position: 0, duration: 0 };
 // The external player's eof-reached (keep-open pauses mpv at the end of a file).
 let externalEof = false;
 let pipelineFailurePromptOpen = false;
@@ -813,6 +813,8 @@ async function initNativeMpv(): Promise<boolean> {
     nativeStatusThrottle = throttle;
     bridge.onStatus((rawStatus) => {
       // Until mpv has unloaded the previous file, its numbers are not this load's.
+      playerRaw.position = rawStatus.position;
+      playerRaw.duration = rawStatus.duration;
       const status = { ...rawStatus, ...stream.gate.pass(rawStatus, Date.now()) };
       if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
       // Sync local state for getStatus calls
@@ -931,6 +933,7 @@ async function resetNativePlayback(): Promise<void> {
     nativeStatusThrottle?.reset();
     syncPlaybackDiagnostics();
     Object.assign(mpvState, { playing: false, position: 0, duration: 0, width: 0, height: 0 });
+    Object.assign(playerRaw, { position: 0, duration: 0 });
     isShuttingDown = false;
     await createWindow(bounds);
     const replacement = mainWindow as BrowserWindow | null;
@@ -1116,24 +1119,16 @@ function handleMpvMessage(msg: MpvMessage): void {
         mpvState.muted = (msg.data as boolean) ?? false;
         break;
       case 'time-pos':
-        externalRaw.position = (msg.data as number) ?? 0;
-        Object.assign(mpvState, stream.gate.pass(externalRaw, Date.now()));
+        playerRaw.position = (msg.data as number) ?? 0;
+        Object.assign(mpvState, stream.gate.pass(playerRaw, Date.now()));
+        resumeExternalIfOpen();
         break;
       case 'duration':
-        externalRaw.duration = (msg.data as number) ?? 0;
-        Object.assign(mpvState, stream.gate.pass(externalRaw, Date.now()));
+        playerRaw.duration = (msg.data as number) ?? 0;
+        Object.assign(mpvState, stream.gate.pass(playerRaw, Date.now()));
         // The renderer restores a saved subtitle delay once the duration is known.
         if (mpvState.duration > 0 && captions.tracks.length > 0) captions.setTracks(captions.tracks, mpvState.duration);
-        // File loaded — execute pending resume seek (socket path)
-        {
-          const resumeAt = stream.takeResume(mpvState.duration);
-          if (resumeAt !== null) {
-            debugLog(`Resume: seeking to ${resumeAt}s (duration: ${mpvState.duration}s)`, 'mpv');
-            sendMpvCommand('seek', [resumeAt, 'absolute']).catch(() => {
-              debugLog('Resume: seek failed', 'mpv');
-            });
-          }
-        }
+        resumeExternalIfOpen();
         break;
       case 'eof-reached':
         externalEof = msg.data === true;
@@ -1161,6 +1156,17 @@ function handleMpvMessage(msg: MpvMessage): void {
       }
     }
   }
+}
+
+// File open (its duration got through the gate): the pending resume seek, external player.
+// Checked on every gated update: the duration can arrive while the gate still holds it.
+function resumeExternalIfOpen(): void {
+  const resumeAt = stream.takeResume(mpvState.duration);
+  if (resumeAt === null) return;
+  debugLog(`Resume: seeking to ${resumeAt}s (duration: ${mpvState.duration}s)`, 'mpv');
+  sendMpvCommand('seek', [resumeAt, 'absolute']).catch(() => {
+    debugLog('Resume: seek failed', 'mpv');
+  });
 }
 
 function sendMpvCommand(command: string, args: unknown[] = []): Promise<unknown> {
@@ -1345,7 +1351,7 @@ async function loadMedia(request: StreamLoadRequest & { requestId?: number }): P
     return { error: 'Native playback must be reset' };
   }
   const url = request.url;
-  const { generation, resumeAt } = stream.begin(request, Date.now(), stream.media !== null);
+  const { generation, resumeAt } = stream.begin(request, Date.now(), playerRaw);
   debugLog(`mpv-load called (${request.reason})${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
   // The renderer binds subtitles and progress saving to this, whoever started the load;
   // sent before the load's first track update.
