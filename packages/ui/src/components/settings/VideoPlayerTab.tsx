@@ -21,7 +21,7 @@ export function VideoPlayerTab({
   onLinuxPerformanceModeChange,
 }: VideoPlayerTabProps) {
   const updateSettings = useUpdateSettings();
-  const subtitles: SubtitleSettings = useUIStore((s) => s.settings.subtitles) ?? { liveDefault: false, vodDefault: false, size: 'medium', style: 'outline' };
+  const subtitles: SubtitleSettings = useUIStore((s) => s.settings.subtitles) ?? { liveDefault: false, vodDefault: false, size: 'medium', style: 'outline', language: 'auto' };
 
   async function updateSubtitles(patch: Partial<SubtitleSettings>) {
     const next = { ...subtitles, ...patch };
@@ -67,6 +67,18 @@ export function VideoPlayerTab({
         </OptionRow>
         <OptionRow title="Movie & series subtitles" help={subtitles.vodDefault ? 'Subtitles start on, in your system language when the file has it.' : 'Movies and episodes start without subtitles.'}>
           <OnOff value={subtitles.vodDefault} onChange={(v) => void updateSubtitles({ vodDefault: v })} />
+        </OptionRow>
+        <OptionRow
+          title="Language"
+          help={subtitles.language === 'auto'
+            ? 'Your system language. Live captions prefer it when a channel carries several; if a channel only has another language, that one shows.'
+            : 'Live captions prefer this language when a channel carries several; movie and series subtitles pick it when the file has it.'}
+        >
+          <Segmented
+            value={subtitles.language}
+            options={[{ id: 'auto', label: 'Auto' }, { id: 'en', label: 'English' }, { id: 'es', label: 'Español' }, { id: 'fr', label: 'Français' }]}
+            onChange={(language) => void updateSubtitles({ language })}
+          />
         </OptionRow>
         <OptionRow title="Size">
           <Segmented

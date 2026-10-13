@@ -7,8 +7,10 @@ import { useEffect } from 'react';
 import { useSubtitleStore } from '../stores/subtitleStore';
 import { useUIStore } from '../stores/uiStore';
 
+/** The language subtitle tracks are picked in: the setting, or the system language for auto. */
 export function systemLocale(): string {
-  return navigator.language || 'en';
+  const setting = useUIStore.getState().settings.subtitles?.language;
+  return setting && setting !== 'auto' ? setting : (navigator.language || 'en');
 }
 
 export function subtitleDefaults(): { live: boolean; vod: boolean } {

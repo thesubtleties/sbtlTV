@@ -15,7 +15,7 @@ import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
 import { StallWatchdog, STREAM_BASE_OPTIONS, LoadStatusGate } from './stream-health.js';
-import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, CaptionCheck, type SubtitleTrack } from './subtitles.js';
+import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, CaptionCheck, preferredCaptionLanguage, type SubtitleTrack, type CaptionLanguage } from './subtitles.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -1289,8 +1289,8 @@ async function readSubText(): Promise<string> {
   }
 }
 
-function sendCcState(generation: number, state: 'checking' | 'ok' | 'unreadable'): void {
-  sendToRenderer('subtitle-cc-state', { generation, state });
+function sendCcState(generation: number, state: 'checking' | 'ok' | 'other-language' | 'unreadable', language: CaptionLanguage | null = null): void {
+  sendToRenderer('subtitle-cc-state', { generation, state, language });
 }
 
 function startCcCheck(generation: number, trackId: number): void {
@@ -1299,7 +1299,9 @@ function startCcCheck(generation: number, trackId: number): void {
   sendCcState(generation, 'checking');
   let busy = false;
   const run: CcCheckRun = {
-    generation, trackId, check: new CaptionCheck(8), startedAt: Date.now(), lastRead: 0,
+    generation, trackId, startedAt: Date.now(), lastRead: 0,
+    // Prefer the caption language from Settings (auto: the system language); the other caption field is flipped away from.
+    check: new CaptionCheck(8, preferredCaptionLanguage(storage.getSettings().subtitles!.language, app.getLocale())),
     timer: setInterval(() => {
       const now = Date.now();
       const interval = now - run.startedAt > CC_CHECK_FAST_MS ? CC_CHECK_SLOW_INTERVAL_MS : CC_CHECK_INTERVAL_MS;
@@ -1309,14 +1311,20 @@ function startCcCheck(generation: number, trackId: number): void {
       void readSubText().then((text) => {
         if (ccCheck !== run || generation !== loadGeneration) return;
         const action = run.check.observe(text.trim());
+        const sample = JSON.stringify(text.trim().replace(/\s+/g, ' ').slice(0, 40));
         if (action === 'retry') {
-          debugLog(`captions: station data instead of captions, restarting the decoder (${run.check.retries}/8)`, 'mpv');
+          debugLog(`captions: station data or the other language, restarting the decoder (${run.check.retries}/8): ${sample}`, 'mpv');
           setMpvOptions([['sid', 'no'], ['sid', String(trackId)]], 'cc retry');
         } else if (action === 'ok') {
-          debugLog(`captions: readable after ${run.check.retries} restart(s)`, 'mpv');
+          debugLog(`captions: readable after ${run.check.retries} restart(s): ${sample}`, 'mpv');
           stopCcCheck();
           setMpvOptions([['sub-visibility', subtitleVisibleWanted ? 'yes' : 'no']], 'cc ok');
           sendCcState(generation, 'ok');
+        } else if (action === 'other-language') {
+          debugLog(`captions: only ${run.check.language} came through after ${run.check.retries} restart(s); showing them`, 'mpv');
+          stopCcCheck();
+          setMpvOptions([['sub-visibility', subtitleVisibleWanted ? 'yes' : 'no']], 'cc other language');
+          sendCcState(generation, 'other-language', run.check.language);
         } else if (action === 'unreadable') {
           debugLog('captions: still station data after 8 restarts; turning them off for this channel', 'mpv');
           stopCcCheck();

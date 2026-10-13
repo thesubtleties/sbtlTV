@@ -3,20 +3,29 @@ import { test } from 'node:test';
 import path from 'node:path';
 import {
   normalizeSubtitleSettings, parseSubtitleTracks, subtitleStyleOptions,
-  loadResetOptions, SUBTITLE_BASE_OPTIONS, TrackReadSchedule, subtitleFontsDir, judgeCaptionText, CaptionCheck,
+  loadResetOptions, SUBTITLE_BASE_OPTIONS, TrackReadSchedule, subtitleFontsDir, judgeCaptionText, CaptionCheck, preferredCaptionLanguage, detectCaptionLanguage,
 } from './subtitles.js';
 
-test('settings default to off, medium, outline', () => {
+test('settings default to off, medium, outline, auto language', () => {
   for (const value of [undefined, null, 'x', 42, {}]) {
-    assert.deepEqual(normalizeSubtitleSettings(value), { liveDefault: false, vodDefault: false, size: 'medium', style: 'outline' });
+    assert.deepEqual(normalizeSubtitleSettings(value), { liveDefault: false, vodDefault: false, size: 'medium', style: 'outline', language: 'auto' });
   }
 });
 
 test('settings keep valid values and drop invalid ones', () => {
   assert.deepEqual(
-    normalizeSubtitleSettings({ liveDefault: true, vodDefault: 'yes', size: 'large', style: 'neon' }),
-    { liveDefault: true, vodDefault: false, size: 'large', style: 'outline' },
+    normalizeSubtitleSettings({ liveDefault: true, vodDefault: 'yes', size: 'large', style: 'neon', language: 'es' }),
+    { liveDefault: true, vodDefault: false, size: 'large', style: 'outline', language: 'es' },
   );
+  assert.equal(normalizeSubtitleSettings({ language: 'de' }).language, 'auto');
+});
+
+test('caption language: auto follows the system language when it is one we can tell apart', () => {
+  assert.equal(preferredCaptionLanguage('auto', 'en-US'), 'en');
+  assert.equal(preferredCaptionLanguage('auto', 'es-MX'), 'es');
+  assert.equal(preferredCaptionLanguage('auto', 'fr-CA'), 'fr');
+  assert.equal(preferredCaptionLanguage('auto', 'de-DE'), null);   // no preference: any real captions
+  assert.equal(preferredCaptionLanguage('es', 'en-US'), 'es');
 });
 
 const LIVE_JSON = JSON.stringify([
@@ -53,7 +62,7 @@ test('base options turn on CC tracks and stop sidecar searches', () => {
 
 
 test('style options: medium outline in Fira', () => {
-  const opts = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'medium', style: 'outline' }, 'fira'));
+  const opts = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'medium', style: 'outline', language: 'auto' }, 'fira'));
   assert.equal(opts.get('sub-font'), 'Fira Sans');
   assert.equal(opts.get('sub-font-size'), '46');
   assert.equal(opts.get('sub-border-style'), 'outline-and-shadow');
@@ -63,11 +72,11 @@ test('style options: medium outline in Fira', () => {
 });
 
 test('style options: large box in mono, small shadow in system font', () => {
-  const box = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'large', style: 'box' }, 'mono'));
+  const box = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'large', style: 'box', language: 'auto' }, 'mono'));
   assert.equal(box.get('sub-font'), 'JetBrains Mono');
   assert.equal(box.get('sub-font-size'), '56');
   assert.equal(box.get('sub-border-style'), 'opaque-box');
-  const shadow = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'small', style: 'shadow' }, 'system'));
+  const shadow = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'small', style: 'shadow', language: 'auto' }, 'system'));
   assert.equal(shadow.get('sub-font'), 'sans-serif');
   assert.equal(shadow.get('sub-font-size'), '38');
   assert.equal(shadow.get('sub-shadow-offset'), '2');
@@ -175,4 +184,88 @@ test('caption check: gives up after the retry budget', () => {
 
 test('loadResetOptions also shows subtitles again', () => {
   assert.deepEqual(loadResetOptions(), [['sid', 'no'], ['sub-delay', '0'], ['sub-visibility', 'yes']]);
+});
+
+// Real caption lines, 2026-10-12 language sample (field 1 / field 2 decoded separately).
+const ENGLISH = [
+  '- Performing the title track / from his new album Signs, / once again, Luke Bryan.',
+  "Until I found out / I'm better ever / since you're gone / I don't wanna go on and on",
+  "But I'm not / It's half past / cold beer o'clock / Might take a sip",
+  "That's what I'll be hitting / Baby, you're calls / Are all that I'll / be missing, baby",
+  'After speaking / with the FBI, they / could find no connection / and no evidence',
+];
+const SPANISH = [
+  '- Luke Bryan vuelve / a interpretar / la canción que da título / a su nuevo álbum, *Signs*.',
+  'que descubrí que estoy / mejor desde que te fuiste. / No quiero dar más / vueltas al tema.',
+  'Debería estar triste, / pero no lo estoy. / Son las dos y media, / la hora de la cerveza fría.',
+  'son lo único / que echaré de menos, cariño. / La soltería es / una droga de las buenas.',
+  'Mantente conectado y reduce tu / factura móvil a la mitad con / Xfinity Mobile.',
+  'A ESTA HORA EN DIRECTO USA. / >> ELLA VIENE DE SOMALIA. YA NO / TIENEN GOBIERNO, NO TIENEN / POLICÍA, NO TIENEN NADA.',
+];
+const FRENCH = [
+  'Il pénètre en profondeur pour / lutter contre les odeurs tenaces / tout en diffusant / un parfum agréable.',
+  "un maximum de témoignages. / Alors, qu'est-ce que / vous en dites? / Holmes? Vos impressions?",
+];
+
+test('caption language: real English, Spanish and French lines', () => {
+  for (const t of ENGLISH) assert.equal(detectCaptionLanguage(t), 'en', t);
+  for (const t of SPANISH) assert.equal(detectCaptionLanguage(t), 'es', t);
+  for (const t of FRENCH) assert.equal(detectCaptionLanguage(t), 'fr', t);
+});
+
+test('caption language: too little to tell is unknown', () => {
+  for (const t of ['OK', '>> YES', 'Holmes?', '♪ ♪', 'Xfinity Mobile.']) assert.equal(detectCaptionLanguage(t), 'unknown', t);
+});
+
+test('caption judge: a station name looping is junk (KUSA Denver field 2)', () => {
+  assert.equal(judgeCaptionText('9NEWSKUSA9NEWSKUSA9NEWSKUSA9NEWS'), 'junk');
+  assert.equal(judgeCaptionText('COUSCOUS AND BERIBERI'), 'ok');
+});
+
+test('caption check: the other language is skipped while the wanted one may come up', () => {
+  const c = new CaptionCheck(8, 'en');
+  for (const t of ['- Luke Bryan vuelve', '- Luke Bryan vuelve / a interpretar']) assert.equal(c.observe(t), 'none');
+  assert.equal(c.observe('- Luke Bryan vuelve / a interpretar / la canción que da título'), 'retry');   // Spanish confirmed: flip again
+  for (const t of ['- Performing the title', '- Performing the title track / from his']) assert.equal(c.observe(t), 'none');
+  assert.equal(c.observe('- Performing the title track / from his new album Signs, once again'), 'ok');
+});
+
+test('caption check: if only the other language ever comes up, it is shown', () => {
+  const c = new CaptionCheck(2, 'en');
+  const spanish = (n: number) => [`Debería estar triste ${n},`, `Debería estar triste ${n}, / pero no lo estoy.`, `Debería estar triste ${n}, / pero no lo estoy. / Son las dos y media,`];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const lines = spanish(attempt);
+    for (const t of lines.slice(0, 2)) c.observe(t);
+    assert.equal(c.observe(lines[2]), 'retry');
+    c.observe('');
+  }
+  const last = spanish(9);
+  for (const t of last.slice(0, 2)) c.observe(t);
+  assert.equal(c.observe(last[2]), 'other-language');
+  assert.equal(c.state, 'other-language');
+  assert.equal(c.language, 'es');
+});
+
+test('caption check: no preference takes any real captions', () => {
+  const c = new CaptionCheck(8, null);
+  for (const t of ['Debería estar triste,', 'Debería estar triste, / pero no']) assert.equal(c.observe(t), 'none');
+  assert.equal(c.observe('Debería estar triste, / pero no lo estoy.'), 'ok');
+});
+
+test('caption check: short lines that do not say the language are read on until they do (WNBC, 2026-10-12)', () => {
+  const c = new CaptionCheck(8, 'es');
+  const lines = [
+    'DTERM CONVENTION,', 'DTERM CONVENTION, PRESIDENT TR', 'PRESIDENT TRUMP SAID',
+    'I DON’T KNOW WHY.', 'I DON’T KNOW WHY. ANYBODY KNOW WHY?', 'ANYBODY KNOW WHY? AND THE ANSWER IS',
+  ];
+  const actions = lines.map((t) => c.observe(t));
+  assert.ok(!actions.includes('ok'), JSON.stringify(actions));    // never accepted as Spanish
+  assert.ok(actions.includes('retry'), JSON.stringify(actions));  // English found: flip for Spanish
+});
+
+test('caption check: still unclear after 8 lines, the captions are let through', () => {
+  const c = new CaptionCheck(8, 'es');
+  const actions = ['OKAY OKAY', 'YEAH YEAH', 'NOPE NOPE', 'WOW WOW WOW', 'HEY HEY HEY', 'BOOM BOOM', 'ZAP ZAP ZAP', 'BAM BAM BAM'].map((t) => c.observe(t));
+  assert.deepEqual(actions.slice(0, 7), ['none', 'none', 'none', 'none', 'none', 'none', 'none']);
+  assert.equal(actions.at(-1), 'ok');
 });

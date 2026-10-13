@@ -80,6 +80,8 @@ export interface SubtitleSettings {
   vodDefault: boolean;
   size: 'small' | 'medium' | 'large';
   style: 'outline' | 'box' | 'shadow';
+  /** auto = the system language */
+  language: 'auto' | 'en' | 'es' | 'fr';
 }
 
 export interface AppSettings {
@@ -198,7 +200,7 @@ contextBridge.exposeInMainWorld('mpv', {
 // Subtitles: mpv's subtitle tracks for the current stream, and the choice back
 interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean }
 interface SubtitleTracksUpdate { generation: number; tracks: SubtitleTrack[]; duration: number }
-interface CcStateUpdate { generation: number; state: 'checking' | 'ok' | 'unreadable' }
+interface CcStateUpdate { generation: number; state: 'checking' | 'ok' | 'other-language' | 'unreadable'; language: 'en' | 'es' | 'fr' | null }
 contextBridge.exposeInMainWorld('subtitles', {
   setTrack: (generation: number, id: number | null, visible: boolean) => ipcRenderer.invoke('subtitle-set-track', generation, id, visible),
   setVisible: (generation: number, visible: boolean) => ipcRenderer.invoke('subtitle-set-visible', generation, visible),

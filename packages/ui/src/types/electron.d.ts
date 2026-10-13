@@ -74,7 +74,7 @@ export interface SubtitleTracksUpdate {
 }
 
 /** Live captions: main checks the first lines and hides station-data junk */
-export type CcState = 'checking' | 'ok' | 'unreadable';
+export type CcState = 'checking' | 'ok' | 'other-language' | 'unreadable';
 
 export interface SubtitlesApi {
   /** Calls carry the load generation they were decided for; main ignores stale ones. null turns subtitles off. */
@@ -84,7 +84,8 @@ export interface SubtitlesApi {
   setDelay: (generation: number, seconds: number) => Promise<MpvResult>;
   /** Returns an unsubscribe function */
   onTracks: (callback: (update: SubtitleTracksUpdate) => void) => () => void;
-  onCcState: (callback: (update: { generation: number; state: CcState }) => void) => () => void;
+  /** language: set for other-language, the only caption language the channel gave */
+  onCcState: (callback: (update: { generation: number; state: CcState; language: 'en' | 'es' | 'fr' | null }) => void) => () => void;
 }
 
 export interface ElectronWindowApi {
@@ -128,6 +129,8 @@ export interface SubtitleSettings {
   vodDefault: boolean;
   size: 'small' | 'medium' | 'large';
   style: 'outline' | 'box' | 'shadow';
+  /** auto = the system language */
+  language: 'auto' | 'en' | 'es' | 'fr';
 }
 
 export interface AppSettings {

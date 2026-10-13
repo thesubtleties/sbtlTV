@@ -65,7 +65,7 @@ describe('live captions (TV-style)', () => {
   it('unreadable captions cannot be turned on', () => {
     s().bindLoad(1, 'live', true, 'en-US', null);
     s().receiveTracks(live(1, [cc]), true, 'en-US');
-    s().receiveCcState({ generation: 1, state: 'unreadable' });
+    s().receiveCcState({ generation: 1, state: 'unreadable', language: null });
     expect(s().ccState).toBe('unreadable');
     setVisible.mockClear();
     s().toggle('en-US');
@@ -74,7 +74,7 @@ describe('live captions (TV-style)', () => {
 
   it('a cc state for another load is ignored', () => {
     s().bindLoad(2, 'live', true, 'en-US', null);
-    s().receiveCcState({ generation: 1, state: 'unreadable' });
+    s().receiveCcState({ generation: 1, state: 'unreadable', language: null });
     expect(s().ccState).toBeNull();
   });
 });
@@ -168,5 +168,17 @@ describe('automatic reload of the same stream', () => {
     s().receiveTracks({ generation: 2, tracks: [cc], duration: 0 }, false, 'en-US');  // arrives before the rebind
     s().rebindLoad(2, false, 'en-US');
     expect(setTrack).toHaveBeenLastCalledWith(2, 1, true);
+  });
+});
+
+describe('captions only in another language', () => {
+  it('are kept with their language and can be shown and hidden', () => {
+    s().bindLoad(1, 'live', false, 'en-US', null);
+    s().receiveTracks({ generation: 1, tracks: [cc], duration: 0 }, false, 'en-US');
+    s().receiveCcState({ generation: 1, state: 'other-language', language: 'es' });
+    expect(s().ccState).toBe('other-language');
+    expect(s().ccLanguage).toBe('es');
+    s().toggle('en-US');
+    expect(setVisible).toHaveBeenLastCalledWith(1, true);
   });
 });
