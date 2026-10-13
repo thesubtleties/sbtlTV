@@ -15,6 +15,23 @@
   color: var(--accent);
 }
 
+/* On, but main is still reading the first lines: the icon breathes until they show */
+.cc__btn--checking svg {
+  animation: cc-checking 1.4s ease-in-out infinite;
+}
+
+@keyframes cc-checking {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc__btn--checking svg {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 .cc__btn:disabled {
   opacity: 0.4;
 }
