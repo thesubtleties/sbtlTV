@@ -1,13 +1,13 @@
 /**
- * mpv forwards every error-level log line to the renderer as a red banner.
+ * mpv forwards every error-level log line to the renderer's error card.
  * Some of those recover on their own within a second, or never mattered, and
  * should only reach the debug log: hardware decoder probing while mpv picks an
  * hwdec, the broken first pictures of a live stream joined between keyframes,
  * and file metadata ffmpeg skips while the video plays normally.
  *
  * Only the messages listed below are filtered; anything else, including every
- * audio error and any decoder that fails to open, keeps its banner. Every mpv
- * log line still reaches stderr from the addon regardless.
+ * audio error and any decoder that fails to open, keeps its card. Every error
+ * line still reaches stderr from the addon regardless.
  */
 
 // Specific messages, not whole subsystems: a broad "vd:" or "ffmpeg/video:"

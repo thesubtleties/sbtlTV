@@ -7,8 +7,8 @@ import type { CaptionLanguage } from './subtitle-settings.js';
  * Is this live caption text real captions or the station data (XDS) that
  * ffmpeg's 608 decoder shows when its "auto" field choice locks onto field 2?
  * XDS comes out as the network or show name glued to stray bytes ("H@ABC
- * NetworkGMA 3H@", "HDDateline DaytimeHD") or short repeating pieces
- * ("HEHEHE", "CNNCNN", "HGTEHCHG"). Tuned on a 12-channel sample (2026-10-12).
+ * NetworkGMA 3H@", "HDDateline DaytimeHD"), short repeating pieces ("HEHEHE",
+ * "CNNCNN") or consonant-heavy runs ("HGTEHCHG"). Tuned on a 12-channel sample.
  */
 export function judgeCaptionText(text: string): 'ok' | 'junk' | 'unknown' {
   if (text.includes('@')) return 'junk';
@@ -31,7 +31,8 @@ export function judgeCaptionText(text: string): 'ok' | 'junk' | 'unknown' {
 function isRepeatedUnit(word: string): boolean {
   // A piece of up to 3 letters repeated over the whole word ("HEHEHE",
   // "CNNCNN"), or a longer one (a station name) looping at least two and a
-  // half times over ("9NEWSKUSA9NEWSKUSA9NEWS").
+  // half times over, up to 12 letters long ("NEWSKUSANEWSKUSANEWS": letters
+  // only, the caller drops the digits of "9NEWSKUSA9NEWSKUSA9NEWS").
   for (let unit = 1; unit <= 12; unit++) {
     if (unit > 3 && word.length < unit * 2.5) break;
     const piece = word.slice(0, unit);
@@ -56,8 +57,9 @@ function vowelRatio(word: string): number {
 
 // Words that mark English, Spanish or French captions (US/Canadian broadcast
 // captions are one of the three). A word in two lists ("de", "la", "que", "en",
-// "un") counts for both. Then ñ ¿ ¡ and á í ó ú add to Spanish, è à ù â ê î ô û ç œ
-// to French; é, common to both, adds to neither.
+// "un") counts for both. Then ñ ¿ ¡ add 3 each and á í ó ú 1 each to Spanish,
+// è à ù â ê î ô û ç œ 2 each to French; é, common to both, adds to neither. A
+// language needs a score of at least 3 and twice the runner-up.
 const LANGUAGE_WORDS: Record<CaptionLanguage, Set<string>> = {
   en: new Set(['the', 'and', 'you', 'to', 'of', 'is', 'that', 'it', 'in', 'for', 'this', 'what', 'we', 'have', 'i', "i'm", "i'll", "don't", "it's", "that's", "you're", 'my', 'with', 'be', 'are', 'was', 'not', 'but', 'on', 'your', 'from', 'his', 'her', 'they', 'all', 'just', 'if', 'about', 'there', 'he', 'she', 'can', 'will', 'so', 'do', 'at', 'an', 'or']),
   es: new Set(['que', 'de', 'el', 'la', 'los', 'las', 'y', 'en', 'es', 'por', 'con', 'para', 'una', 'un', 'lo', 'se', 'del', 'está', 'esta', 'pero', 'más', 'su', 'al', 'como', 'mi', 'te', 'tu', 'estoy', 'son', 'ya', 'nada', 'tienen', 'hora', 'muy', 'sí', 'qué', 'yo', 'eso', 'este', 'hay']),
@@ -79,7 +81,7 @@ export function detectCaptionLanguage(text: string): CaptionLanguage | 'unknown'
   return top >= 3 && top >= 2 * second ? best : 'unknown';
 }
 
-/** A fragment of station data can look like a word for a moment: this many different real-looking lines in a row (since the decoder last started) confirm. */
+/** A fragment of station data can look like a word for a moment: this many real-looking lines (each a change of text; junk restarts the count) confirm. */
 const CONFIRM_LINES = 3;
 /** With a language wanted, short lines that do not say which language they are in are read on up to this many. */
 const LANGUAGE_LINES = 8;
@@ -87,13 +89,14 @@ const LANGUAGE_LINES = 8;
 /**
  * Live captions are checked in their first lines. Junk (station data) asks for
  * a decoder restart (a fresh "auto" field choice, about a coin flip on most
- * channels). Real lines confirm the captions, after CONFIRM_LINES, or with a
- * language preferred, once they read as it (or as nothing in particular after
- * LANGUAGE_LINES); real lines in the other language ask for a restart too.
- * When maxRetries runs out: if the other language came through, the budget is
- * spent once more on taking any real captions (acceptAny) and those are shown
- * as other-language; otherwise the captions are unreadable. The verdict is
- * final for the load.
+ * channels). CONFIRM_LINES real lines confirm the captions; with a language
+ * preferred they must also read as it (or as nothing in particular after
+ * LANGUAGE_LINES), and real lines in the other language ask for a restart too.
+ * When maxRetries runs out on other-language lines, they are shown as
+ * other-language. When it runs out on junk after other-language lines were
+ * seen, the budget is refilled once and any real captions are taken
+ * (acceptAny, also set by stopWaitingForLanguage). Otherwise the captions are
+ * unreadable. The verdict is final for this check; a language change starts a new one.
  */
 export class CaptionCheck {
   state: 'checking' | 'ok' | 'other-language' | 'unreadable' = 'checking';
@@ -120,7 +123,7 @@ export class CaptionCheck {
       if (text === this.ignore) return 'none';  // the junk lingering until the restarted decoder clears it
       this.ignore = null;
     }
-    if (text === this.lastText) return 'none';  // read every few hundred ms; only changes count
+    if (text === this.lastText) return 'none';  // read on a timer; only changes count
     this.lastText = text;
     const verdict = judgeCaptionText(text);
     if (verdict === 'ok') {

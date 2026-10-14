@@ -26,12 +26,12 @@ export interface CaptionSessionIo {
 // on most channels it is a coin flip whether it lands on the captions or the
 // station data (XDS) or other-language captions beside them. While a CC track
 // is selected, read the first lines (hidden) and restart the decoder on junk or
-// on the language not wanted, up to CC_MAX_RETRIES restarts (as many again when
-// only the other language came through and the check goes back for it; see
-// CaptionCheck); after CC_LANGUAGE_WAIT_MS any real captions do. Captions are
-// only shown once confirmed. The check ends at its
-// verdict; while nothing comes through (an ad break) it reads every
-// CC_CHECK_SLOW_INTERVAL_MS after CC_CHECK_FAST_MS instead of showing captions unchecked.
+// on the language not wanted, up to CC_MAX_RETRIES restarts (refilled once when
+// junk runs it out after other-language lines; see CaptionCheck). After
+// CC_LANGUAGE_WAIT_MS any real captions do. Captions are only shown once
+// confirmed. The check ends at its verdict; while nothing comes through (an ad
+// break) it reads every CC_CHECK_SLOW_INTERVAL_MS after CC_CHECK_FAST_MS
+// instead of showing captions unchecked.
 const CC_CHECK_INTERVAL_MS = 400;
 const CC_CHECK_SLOW_INTERVAL_MS = 2000;
 const CC_CHECK_FAST_MS = 60_000;
@@ -136,7 +136,7 @@ export class CaptionSession {
     let busy = false;
     const run: CcCheckRun = {
       generation, trackId, startedAt: Date.now(), lastRead: 0, languageWaitOver: false,
-      // The other caption field is flipped away from when it is not the wanted language.
+      // With a language preferred, lines in another language restart the decoder to land on the other caption field.
       check: new CaptionCheck(CC_MAX_RETRIES, io.preferredLanguage()),
       timer: setInterval(() => {
         const now = Date.now();

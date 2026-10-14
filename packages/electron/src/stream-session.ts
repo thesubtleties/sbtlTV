@@ -29,7 +29,7 @@ export interface StreamLoadRequest {
   url: string;
   startPosition?: number;
   live: boolean;
-  /** play: asked for by the renderer; reload: the stall watchdog reloading the stream
+  /** play: asked for by the renderer; reload: the stall watchdog reloading the stream now
       playing (keeps its watchdog and reload budget); restore: the compatibility restart */
   reason: 'play' | 'reload' | 'restore';
 }
@@ -38,8 +38,8 @@ export interface StreamLoadRequest {
  * What is loaded (for reloads and the compatibility handoff), its load
  * generation, the resume seek still to do, the user's own pause, its stall
  * watchdog and the gate holding back the previous file's numbers. Every path
- * that starts or ends playback goes through begin()/end(), so nothing of one
- * stream is left over for the next.
+ * that starts or ends playback goes through begin()/end(), which reset the
+ * per-stream state (media, watchdog, resume, held error).
  */
 export class StreamSession {
   /** Bumped by every load (and by end with invalidate); tags everything sent for a load */
@@ -104,8 +104,9 @@ export class StreamSession {
 
   /**
    * mpv's own error lines are expected while a stall reload opens the stream
-   * again (the toast says what is happening and the watchdog has the final
-   * word): held from the reload until playback moves, never while paused.
+   * again (the Reconnecting toast says what is happening and the watchdog has
+   * the final word): held while a reload is in flight, and afterwards until
+   * playback moves again (not while mpv is paused).
    */
   holdsMpvErrors(playing: boolean): boolean {
     return this.reloadInFlight || (playing && this.watchdog?.recovering === true);

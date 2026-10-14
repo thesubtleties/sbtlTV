@@ -47,7 +47,7 @@ interface SubtitleData {
 
 interface SubtitleActions {
   bindLoad: (generation: number, kind: SubtitleKind, defaultOn: boolean, locale: string, pendingDelay: PendingDelay | null) => void;
-  /** Main reloaded the same stream (stall recovery): follow it to the new load, keeping choices and delay */
+  /** Main reloaded the same stream (stall recovery): follow it to the new load, keeping the on/off choice and the delay */
   rebindLoad: (generation: number, defaultOn: boolean, locale: string) => void;
   receiveTracks: (update: SubtitleTracksUpdate, defaultOn: boolean, locale: string) => void;
   receiveCcState: (update: { generation: number; state: CcState; language: 'en' | 'es' | 'fr' | null }) => void;

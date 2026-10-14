@@ -89,8 +89,6 @@ test('subtitle fonts live in resources when packaged, in assets when not', () =>
   assert.equal(subtitleFontsDir({ isPackaged: false, resourcesPath: '/r', dirname: '/repo/packages/electron/dist' }), path.join('/repo/packages/electron', 'assets', 'sub-fonts'));
 });
 
-// Texts seen on 12 US channels (2026-10-12 sample): field-2/XDS junk vs real captions.
-
 test('loadResetOptions also shows subtitles again', () => {
   assert.deepEqual(loadResetOptions(), [['sid', 'no'], ['sub-delay', '0'], ['sub-visibility', 'yes']]);
 });

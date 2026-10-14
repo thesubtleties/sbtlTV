@@ -87,7 +87,7 @@ export interface SubtitleTrack {
 }
 
 export interface SubtitleTracksUpdate {
-  /** main's load counter; a new value means a new stream started */
+  /** main's load counter; a new value means a new load (a stall reload of the same stream included) */
   generation: number;
   tracks: SubtitleTrack[];
   /** The file's duration when main knows it for this load, else 0 */

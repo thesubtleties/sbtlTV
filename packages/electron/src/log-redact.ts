@@ -6,7 +6,7 @@
 // nothing inside the token may end it early.
 const URL_TOKEN = /\b[a-z][a-z0-9+.-]*:\/\/\S*/gi;
 
-/** Every URL in the text cut down to scheme://host/… (scheme://… when it has credentials before the host). */
+/** Every URL in the text cut down to scheme://host/… (scheme://… when the URL holds an @ anywhere: credentials may sit before the host). */
 export function redactUrls(text: string): string {
   return text.replace(URL_TOKEN, (token) => {
     const split = token.indexOf('://') + 3;

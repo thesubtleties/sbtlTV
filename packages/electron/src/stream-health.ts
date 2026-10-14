@@ -4,17 +4,17 @@
 /**
  * ffmpeg's HTTP reconnect, for both players (mpv `stream-lavf-o`). A provider
  * that closes a live stream mid-way ("Stream ends prematurely") is reopened at
- * once; movies already recovered by re-requesting from their byte offset, this
- * also covers network errors. Without reconnect_at_eof: on a movie that would
- * loop at the real ending; a live stream that ends cleanly is the watchdog's.
- * Proven against a local server that cuts a live stream (2026-10-12).
+ * once. Movies already recovered by re-requesting from their byte offset;
+ * these options also cover network errors for them. Without reconnect_at_eof:
+ * on a movie that would loop at the real ending; a live stream that ends
+ * cleanly is the watchdog's. Proven against a local server that cuts a live stream.
  */
 export const STREAM_RECONNECT_OPTIONS = 'reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4';
 
 /**
  * Stream options for both players. ytdl=no: mpv's youtube-dl hook retries every
  * URL that fails to open through youtube-dl, which IPTV never needs and which
- * floods the banner ("ytdl_hook: youtube-dl failed") on a dead stream.
+ * floods the error card ("ytdl_hook: youtube-dl failed") on a dead stream.
  */
 export const STREAM_BASE_OPTIONS: Array<[string, string]> = [
   ['stream-lavf-o', STREAM_RECONNECT_OPTIONS],
@@ -86,7 +86,7 @@ export class StallWatchdog {
     this.recoveredAfterMs = opts.recoveredAfterMs ?? 30_000;
   }
 
-  /** Between a reload and playback moving again: mpv's own errors are expected then and stay out of the banner. */
+  /** Between a reload and playback moving again: mpv's own errors are expected then and stay out of the error card. */
   get recovering(): boolean {
     return this.reloads > 0 && this.movingSince === null && !this.givenUp;
   }
@@ -149,6 +149,9 @@ export class StallWatchdog {
   }
 }
 
+/** How long the previous file's numbers are held back when mpv never reports the unload. */
+const UNLOAD_WAIT_MS = 3000;
+
 /**
  * After a loadfile, mpv keeps reporting the previous file's position and
  * duration until it unloads it (about half a second). Hold both at 0 until the
@@ -156,8 +159,6 @@ export class StallWatchdog {
  * UNLOAD_WAIT_MS if it never does; otherwise the previous file's numbers pass
  * as the new one's (a live channel's position saved as a movie's progress).
  */
-const UNLOAD_WAIT_MS = 3000;
-
 export class LoadStatusGate {
   private waitingSince: number | null = null;
 
