@@ -50,13 +50,15 @@ export interface XtreamAuthResponse {
 }
 
 /**
- * The start of a response body for an error message, without login values:
- * Xtream's login reply echoes the username and password.
+ * The start of a response body for an error message, without login details:
+ * Xtream's login reply echoes the username and password. The head stops at the
+ * first login-related word, so nothing after it is shown however the value is
+ * written (escaped quotes, spaces, commas).
  */
 export function bodyHead(body: string): string {
-  return JSON.stringify(
-    body.slice(0, 120).replace(/("?(?:username|password|pass|token|api_key|key)"?\s*[:=]\s*"?)[^"&\s,}]*/gi, '$1…'),
-  );
+  const head = body.slice(0, 120);
+  const login = head.search(/user|pass|token|key|auth/i);
+  return JSON.stringify(login === -1 ? head : `${head.slice(0, login)}…`);
 }
 
 export class XtreamClient {
