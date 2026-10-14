@@ -4,16 +4,21 @@ A privacy release.
 
 ## Added
 
-- **Settings > Privacy** - who sbtlTV talks to and what each one sees, marked by whether it applies to you, plus a Check button that shows the IP address they see (asks Mullvad's public checker, only when clicked; nothing is saved).
+- **Settings > Privacy** - what stays on your computer (including whether your saved passwords are encrypted), a Check button that shows the IP address outside services see, and who sbtlTV talks to and what each one sees.
 
 ## Changed
 
 - **Team logos on live games are off by default** - they load from ESPN. Turn them on in Settings > EPG > Team logos.
 
+## Improved
+
+- **Team logos** sit apart with "@" or "vs" between them, and more games are recognized from their guide descriptions.
+
 ## Fixed
 
-- **No more request to Google on first launch** (Chromium's spell-check dictionary).
-- **Provider usernames and passwords no longer appear in terminal or system log output** - stream links are cut to their host there too, as in the debug log since 0.12.0.
+- **No more request to Google on first launch** on Windows and Linux (Chromium's spell-check dictionary).
+- **Login details are cleaned from terminal and system log output too**, as in the debug log since 0.12.0.
+- **A provider's unreadable reply could put login details in an error message.**
 
 ## Known issues
 

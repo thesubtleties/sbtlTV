@@ -56,13 +56,25 @@ function matchSides(candA: Team[], candB: Team[], hint: LeagueId | undefined, se
 // are then found by trying the words next to the verb against the directory, so
 // a sentence about one team ("The Penguins face a tough road trip") finds no
 // second team and stays unmatched.
-const PROSE_FORMS: Array<{ re: RegExp; separator: '@' | 'vs'; firstIsHome?: boolean }> = [
-  { re: /^(.+?)\s+(?:at|@)\s+(.+?)\s+from\s+\S.*$/i, separator: '@' },  // "A at B from <venue>."
-  { re: /^(.+?)\s+(?:visit|visits|travel to|travels to)\s+(.+)$/i, separator: '@' },
-  { re: /^(.+?)\s+(?:host|hosts|welcome|welcomes)\s+(.+)$/i, separator: '@', firstIsHome: true },
-  { re: /^(.+?)\s+and\s+(.+?)\s+(?:meet|clash|square off|face off|battle|play)\b.*$/i, separator: 'vs' },
-  { re: /^(.+?)\s+(?:face|faces|meet|meets|play|plays|take on|takes on|battle|battles|clash with|clashes with)\s+(.+)$/i, separator: 'vs' },
+// Verbs that join the two teams, found with plain substring searches (no
+// regular expression over the whole sentence, so a long description cannot
+// stall the interface). Each says which side is home, if any.
+const PROSE_VERBS: Array<{ words: string[]; separator: '@' | 'vs'; firstIsHome?: boolean }> = [
+  { words: ['visit', 'visits', 'travel to', 'travels to'], separator: '@' },
+  { words: ['host', 'hosts', 'welcome', 'welcomes'], separator: '@', firstIsHome: true },
+  { words: ['face', 'faces', 'meet', 'meets', 'play', 'plays', 'take on', 'takes on', 'battle', 'battles', 'clash', 'clashes', 'clash with', 'clashes with', 'square off', 'face off'], separator: 'vs' },
 ];
+/** Longer sentences are not looked at: a game is named near the start of a description. */
+const MAX_SENTENCE = 300;
+
+/** The two sides of a sentence around a joining word: [before, after], or null. */
+function aroundWord(sentence: string, word: string): [string, string] | null {
+  const lower = sentence.toLowerCase();
+  const needle = ` ${word} `;
+  const at = lower.indexOf(needle);
+  if (at <= 0) return null;
+  return [sentence.slice(0, at), sentence.slice(at + needle.length)];
+}
 
 /** Words that can sit around a team name in a sentence: articles, rankings, records. */
 function cleanProseSide(text: string): string {
@@ -89,16 +101,28 @@ function teamAtEnd(dir: Directory, text: string, end: 'start' | 'end', hint?: Le
 /** A game named in a sentence of a description, or null. */
 function matchProse(dir: Directory, description: string, hint?: LeagueId): MatchResult | null {
   // A sentence ends at . ! ? before a capital letter, but not after "No." or "St." ("No. 16", "St. Louis").
-  const sentences = description.split(/(?<!\b(?:No|St|Mt|Ft|Jr|Sr|vs))(?<=[.!?])\s+(?=[A-Z])/).slice(0, 2);
-  for (const sentence of sentences) {
-    for (const form of PROSE_FORMS) {
-      const m = sentence.trim().match(form.re);
-      if (!m) continue;
-      const first = teamAtEnd(dir, m[1], 'end', hint);
-      const second = teamAtEnd(dir, m[2], 'start', hint);
-      const result = form.firstIsHome
-        ? matchSides(second, first, hint, form.separator)
-        : matchSides(first, second, hint, form.separator);
+  const sentences = description.slice(0, 2 * MAX_SENTENCE).split(/(?<!\b(?:No|St|Mt|Ft|Jr|Sr|vs))(?<=[.!?])\s+(?=[A-Z])/).slice(0, 2);
+  for (const raw of sentences) {
+    const sentence = raw.trim().slice(0, MAX_SENTENCE);
+    const tries: Array<{ first: string; second: string; separator: '@' | 'vs'; firstIsHome?: boolean }> = [];
+    // "A at B from <venue>."
+    const fromVenue = aroundWord(sentence, 'from');
+    const atSides = fromVenue && aroundWord(fromVenue[0], 'at');
+    if (atSides) tries.push({ first: atSides[0], second: atSides[1], separator: '@' });
+    for (const verb of PROSE_VERBS) {
+      for (const word of verb.words) {
+        const sides = aroundWord(sentence, word);
+        if (!sides) continue;
+        // "A and B meet ...": both teams before the verb.
+        const pair = verb.separator === 'vs' ? aroundWord(sides[0], 'and') : null;
+        if (pair) tries.push({ first: pair[0], second: pair[1], separator: 'vs' });
+        tries.push({ first: sides[0], second: sides[1], separator: verb.separator, firstIsHome: verb.firstIsHome });
+      }
+    }
+    for (const t of tries) {
+      const first = teamAtEnd(dir, t.first, 'end', hint);
+      const second = teamAtEnd(dir, t.second, 'start', hint);
+      const result = t.firstIsHome ? matchSides(second, first, hint, t.separator) : matchSides(first, second, hint, t.separator);
       if (result.status === 'matched') return result;
     }
   }

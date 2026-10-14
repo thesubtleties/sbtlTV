@@ -16,5 +16,5 @@ test('ip check: not on Mullvad, missing place', () => {
 });
 
 test('ip check: anything that is not an answer with an IP is refused', () => {
-  for (const bad of [null, 'x', {}, { ip: 5 }, { ip: '' }]) assert.equal(parseIpCheck(bad), null);
+  for (const bad of [null, 'x', {}, { ip: 5 }, { ip: '' }, { ip: 'not an address' }]) assert.equal(parseIpCheck(bad), null);
 });

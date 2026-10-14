@@ -152,6 +152,12 @@ describe('matchProgram: games described in a sentence', () => {
     expect(desc('NFL Football', 'Action from week 3 of the NFL season.').matchup).toBeNull();
     expect(desc('NHL Hockey', 'The Penguins face a tough road trip this week.').matchup).toBeNull();
   });
+  it('a very long description without a game is handled quickly', () => {
+    const long = `${'word and more words '.repeat(5000)}the end.`;
+    const started = Date.now();
+    expect(desc('College Football', long).matchup).toBeNull();
+    expect(Date.now() - started).toBeLessThan(200);
+  });
   it('a title split keeps its separator', () => {
     expect(teams(matchProgram(dir, { title: 'Pittsburgh Penguins at Chicago Blackhawks' }))).toEqual(['PIT', '@', 'CHI']);
     expect(teams(matchProgram(dir, { title: 'Lakers vs. Celtics' }))).toEqual(['LAL', 'vs', 'BOS']);

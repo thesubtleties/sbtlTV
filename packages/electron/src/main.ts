@@ -13,7 +13,7 @@ import { startDataHost, type DataHost } from './data/data-host.js';
 import { isTransientDecodeError } from './mpv-error-filter.js';
 import { redactUrls } from './log-redact.js';
 import { createLineBuffer } from './line-buffer.js';
-import { IP_CHECK_URL, parseIpCheck } from './ip-check.js';
+import { IP_CHECK_URL, IP_CHECK_MAX_BYTES, parseIpCheck } from './ip-check.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
@@ -1789,15 +1789,48 @@ ipcMain.handle('debug-open-log-folder', async () => {
 
 // Settings > Privacy: what IP the outside services see. Only on request, one
 // call to Mullvad's public checker; the answer is shown, never stored or logged.
+// Settings > Privacy: how saved passwords and API keys are protected on this
+// computer (storage.ts encrypts with safeStorage, and falls back to plain
+// storage when the system offers no encryption).
+ipcMain.handle('privacy-storage-protection', () => {
+  const available = safeStorage.isEncryptionAvailable();
+  // Linux only: which keyring, or 'basic_text' (Chromium's fixed key, no real keyring).
+  const backend = process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : null;
+  return { platform: process.platform, available, backend };
+});
+
+// A failure is logged by its reason only, never with an address.
 ipcMain.handle('privacy-check-ip', async () => {
+  const failed = (message: string, reason: string) => {
+    debugLog(`IP check failed: ${reason}`, 'privacy');
+    return { error: message };
+  };
+  let body: string;
   try {
-    const response = await electronNet.fetch(IP_CHECK_URL, { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return { error: `The checker answered ${response.status}` };
-    const result = parseIpCheck(await response.json());
-    return result ? { success: true, data: result } : { error: 'The checker sent an answer without an IP address' };
+    const response = await electronNet.fetch(IP_CHECK_URL, {
+      cache: 'no-store',
+      credentials: 'omit',
+      // Only the app's name: no version or system details for this request.
+      headers: { 'User-Agent': 'sbtlTV' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return failed(`Mullvad's checker answered with an error (${response.status}). Try again in a moment.`, `HTTP ${response.status}`);
+    body = await response.text();
   } catch (error) {
-    return { error: error instanceof Error && error.name === 'TimeoutError' ? 'The checker did not answer' : 'Could not reach the checker' };
+    const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    return error instanceof Error && error.name === 'TimeoutError'
+      ? failed("Mullvad's checker did not answer in time. Try again in a moment.", reason)
+      : failed("Could not reach Mullvad's checker. Check your connection; a VPN or firewall may be blocking it.", reason);
   }
+  if (body.length > IP_CHECK_MAX_BYTES) return failed("Mullvad's checker sent something unexpected.", `answer of ${body.length} bytes`);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return failed("Mullvad's checker sent something unexpected. A network login page (hotel, airport) can do this.", 'answer is not JSON');
+  }
+  const result = parseIpCheck(parsed);
+  return result ? { success: true, data: result } : failed("Mullvad's checker sent an answer without an IP address.", 'no IP address in the answer');
 });
 
 // Desktop colors for Settings > Appearance (system accent, Caelestia palette)

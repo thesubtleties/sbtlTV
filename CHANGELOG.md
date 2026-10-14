@@ -7,16 +7,20 @@ All notable changes to this project will be documented in this file.
 A privacy release.
 
 ### Added
-- **Settings > Privacy** - who sbtlTV talks to and what each one sees (your IPTV provider, guide sources, image hosts, GitHub, TMDB and RPDB when you have added a key, ESPN when team logos are on), marked by whether it applies to you right now, and what stays on your computer. A Check button asks Mullvad's public checker which IP address those services see, with the location, network and whether it is a Mullvad VPN exit; it runs only when clicked and nothing is saved
-- **Privacy section in the README** with the same list
+- **Settings > Privacy** - what stays on your computer (including whether saved passwords and API keys are encrypted by your system), a Check button that shows the IP address outside services see, and who sbtlTV talks to and what each one sees, marked by whether it applies to you right now. The check asks Mullvad's public checker, only when clicked, and nothing is saved
+- **Privacy section in the README** with the same information
 
 ### Changed
 - **Team logos on live games are off by default** - the logos load from ESPN, which then sees your IP address and which teams you are watching. Turn them on in Settings > EPG > Team logos; the setting now says where they come from
 
+### Improved
+- **Team logos** sit apart with "@" or "vs" between them, as the listing has it, instead of overlapping
+- **More games are recognized** - guide listings with a generic title ("College Football", "NFL Football") and the game in the description ("The Nevada Wolf Pack visit the UTEP Miners...", "The Broncos face the Seahawks...", "Raptors at Knicks from Madison Square Garden") now show the teams' logos too
+
 ### Fixed
-- **A request to Google on first launch** - Chromium's spell checker downloaded its dictionary from Google. sbtlTV has nothing to spell-check, so it is now off and nothing is fetched
-- **Provider usernames and passwords in terminal output** - 0.12.0 removed them from the debug log and error messages; stream links are now also cut to their host in what the player prints to the terminal or system log (the in-window player's mpv messages, the external mpv's output, and error messages), and the interface no longer prints its log lines to the console outside development builds
-- **A link with text glued in front of it** could slip past the redaction; any `://` is now treated as the start of a link
+- **A request to Google on first launch (Windows and Linux)** - Chromium downloaded a spell-check dictionary from Google. Spell checking is now off and nothing is fetched
+- **Login details in terminal and system log output** - 0.12.0 cleaned them from the debug log and error messages; links are now also cut to their host in what the player prints to a terminal or the system log, login values and Xtream paths are cleaned even when they are not part of a full link, and output split across chunks is cleaned as whole lines. The interface's debug messages are no longer printed to the console outside development builds
+- **A provider's unreadable reply could put login details in an error message** - the start of the reply is still shown to help diagnose it, with login values removed
 
 ### Known issues
 - **Memory use can climb during in-window playback (macOS and Linux)** - it mostly levels off and is released when you change channel or title. Still being watched

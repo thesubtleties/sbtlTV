@@ -7,7 +7,7 @@ export { parseXmltv, parseXmltvFull } from './xmltv-parser';
 export type { XmltvProgram, XmltvChannel, XmltvParseResult } from './xmltv-parser';
 
 // Xtream Client
-export { XtreamClient } from './xtream-client';
+export { XtreamClient, bodyHead } from './xtream-client';
 export type {
   XtreamConfig,
   XtreamServerInfo,

@@ -151,8 +151,18 @@ export interface IpCheckResult {
   mullvadServer: string | null;
 }
 
+/** How saved passwords and API keys are protected on this computer */
+export interface StorageProtection {
+  platform: string;
+  /** The system offers encryption (on Linux this includes Chromium's 'basic_text' fallback) */
+  available: boolean;
+  /** Linux: 'kwallet', 'kwallet5', 'kwallet6', 'gnome_libsecret', 'basic_text' or 'unknown'; null elsewhere */
+  backend: string | null;
+}
+
 export interface PrivacyApi {
   checkIp: () => Promise<{ success?: boolean; data?: IpCheckResult; error?: string }>;
+  storageProtection: () => Promise<StorageProtection>;
 }
 
 export interface AppearanceApi {

@@ -49,6 +49,16 @@ export interface XtreamAuthResponse {
   server_info: XtreamServerInfo;
 }
 
+/**
+ * The start of a response body for an error message, without login values:
+ * Xtream's login reply echoes the username and password.
+ */
+export function bodyHead(body: string): string {
+  return JSON.stringify(
+    body.slice(0, 120).replace(/("?(?:username|password|pass|token|api_key|key)"?\s*[:=]\s*"?)[^"&\s,}]*/gi, '$1…'),
+  );
+}
+
 export class XtreamClient {
   private config: XtreamConfig;
   private sourceId: string;
@@ -97,7 +107,7 @@ export class XtreamClient {
         try {
           return JSON.parse(body);
         } catch (error) {
-          const head = body.length > 0 ? `, starts with ${JSON.stringify(body.slice(0, 120))}` : '';
+          const head = body.length > 0 ? `, starts with ${bodyHead(body)}` : '';
           throw new Error(`Xtream API returned unparseable JSON (HTTP ${result.data.status}, ${body.length} bytes${head}): ${error instanceof Error ? error.message : String(error)}`);
         }
       }
@@ -118,7 +128,7 @@ export class XtreamClient {
       try {
         return JSON.parse(body);
       } catch (error) {
-        const head = body.length > 0 ? `, starts with ${JSON.stringify(body.slice(0, 120))}` : '';
+        const head = body.length > 0 ? `, starts with ${bodyHead(body)}` : '';
         throw new Error(`Xtream API returned unparseable JSON (HTTP ${response.status}, ${body.length} bytes${head}): ${error instanceof Error ? error.message : String(error)}`);
       }
     }

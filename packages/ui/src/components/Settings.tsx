@@ -151,7 +151,7 @@ export function Settings({ onClose }: SettingsProps) {
     setChannelColumnWidth(s.channelColumnWidth ?? 300);
     setGuideOpacity(s.guideOpacity ?? 0.95);
 
-    // Load sports matchup setting (default ON)
+    // Load sports matchup setting (default off: the logos load from ESPN)
     setSportsMatchupEnabled(s.sportsMatchupEnabled ?? false);
     setGuideMorphEnabled(s.guideMorphEnabled ?? true);
     setAutoplayNextEpisode(s.autoplayNextEpisode ?? true);
