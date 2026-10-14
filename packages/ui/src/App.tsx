@@ -345,9 +345,12 @@ function App() {
       }
     }
 
+    // The first error of a play stays on the card: it is usually the cause ("HTTP
+    // error 403", "Connection refused"), and mpv follows it with generic lines
+    // ("Playback error: loading failed"). All of them are in the debug log.
     window.mpv.onError((err) => {
       console.error('mpv error:', err);
-      setError(err);
+      setError((current) => current ?? err);
     });
 
     // Every load main starts is announced here: subtitles and progress saving
