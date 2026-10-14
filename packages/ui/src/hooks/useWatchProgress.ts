@@ -44,6 +44,7 @@ export async function updateWatchProgress(opts: {
   position: number;
   duration: number;
   sourceId?: string;
+  subDelay?: number;
 }): Promise<void> {
   if (opts.duration <= 0) return;
 
@@ -58,22 +59,35 @@ export async function updateWatchProgress(opts: {
     id = movieProgressId(opts.streamId);
   }
 
-  await db.watchProgress.put({
-    id,
-    type: opts.type,
-    tmdb_id: opts.tmdbId,
-    stream_id: opts.streamId,
-    series_tmdb_id: opts.seriesTmdbId,
-    series_stream_id: opts.seriesStreamId,
-    season_num: opts.seasonNum,
-    episode_num: opts.episodeNum,
-    position: opts.position,
-    duration: opts.duration,
-    progress,
-    completed,
-    name: opts.name,
-    updated_at: new Date(),
-    source_id: opts.sourceId,
+  // put() replaces the whole record. A save that has not decided the subtitle
+  // delay yet (undefined: the play started and the saved delay is not restored
+  // yet) keeps the stored one; a number (0 clears) replaces it.
+  await db.transaction('rw', db.watchProgress, async () => {
+    let delayFields: Pick<StoredWatchProgress, 'sub_delay' | 'sub_delay_stream_id'> = {};
+    if (opts.subDelay === undefined) {
+      const prev = await db.watchProgress.get(id);
+      if (prev?.sub_delay) delayFields = { sub_delay: prev.sub_delay, sub_delay_stream_id: prev.sub_delay_stream_id };
+    } else if (opts.subDelay !== 0) {
+      delayFields = { sub_delay: opts.subDelay, sub_delay_stream_id: opts.streamId };
+    }
+    await db.watchProgress.put({
+      id,
+      type: opts.type,
+      tmdb_id: opts.tmdbId,
+      stream_id: opts.streamId,
+      series_tmdb_id: opts.seriesTmdbId,
+      series_stream_id: opts.seriesStreamId,
+      season_num: opts.seasonNum,
+      episode_num: opts.episodeNum,
+      position: opts.position,
+      duration: opts.duration,
+      progress,
+      completed,
+      name: opts.name,
+      updated_at: new Date(),
+      source_id: opts.sourceId,
+      ...delayFields,
+    });
   });
 }
 
@@ -96,35 +110,46 @@ export function useClearProgress() {
   return { clearOne, clearSeries };
 }
 
-/** One-time DB lookup for resume position (seconds). Returns 0 if none or completed. */
-export async function getResumePosition(
-  type: 'movie' | 'episode',
-  opts: { streamId?: string; tmdbId?: number; seriesTmdbId?: number; seriesStreamId?: string; sourceId?: string; seasonNum?: number; episodeNum?: number },
-): Promise<number> {
-  let entry: StoredWatchProgress | undefined;
+export type ProgressLookup = {
+  streamId?: string; tmdbId?: number; seriesTmdbId?: number; seriesStreamId?: string;
+  sourceId?: string; seasonNum?: number; episodeNum?: number;
+};
 
+/** The progress record a play resumes from (same lookup order as before). */
+export async function findProgressEntry(type: 'movie' | 'episode', opts: ProgressLookup): Promise<StoredWatchProgress | undefined> {
+  let entry: StoredWatchProgress | undefined;
   if (type === 'episode' && opts.seasonNum != null && opts.episodeNum != null) {
     const skey = seriesKey({ seriesTmdbId: opts.seriesTmdbId, sourceId: opts.sourceId, seriesStreamId: opts.seriesStreamId });
-    if (skey) {
-      entry = await db.watchProgress.get(episodeProgressId(skey, opts.seasonNum, opts.episodeNum));
-    }
-    if (!entry && opts.streamId) {
-      entry = await db.watchProgress.where('stream_id').equals(opts.streamId).first();
-    }
+    if (skey) entry = await db.watchProgress.get(episodeProgressId(skey, opts.seasonNum, opts.episodeNum));
+    if (!entry && opts.streamId) entry = await db.watchProgress.where('stream_id').equals(opts.streamId).first();
   } else if (type === 'movie') {
-    // Prefer tmdb_id lookup (cross-source), fall back to stream_id
-    if (opts.tmdbId) {
-      entry = await db.watchProgress.where('tmdb_id').equals(opts.tmdbId).first();
-    }
-    if (!entry && opts.streamId) {
-      entry = await db.watchProgress.get(movieProgressId(opts.streamId));
-    }
+    if (opts.tmdbId) entry = await db.watchProgress.where('tmdb_id').equals(opts.tmdbId).first();
+    if (!entry && opts.streamId) entry = await db.watchProgress.get(movieProgressId(opts.streamId));
   }
+  return entry;
+}
 
+/** One-time DB lookup for resume position (seconds). Returns 0 if none or completed. */
+export async function getResumePosition(type: 'movie' | 'episode', opts: ProgressLookup): Promise<number> {
+  const entry = await findProgressEntry(type, opts);
   if (!entry || entry.completed) return 0;
   // Don't resume if less than 10s in — not worth it
   if (entry.position < 10) return 0;
   return entry.position;
+}
+
+/**
+ * The subtitle delay saved for this exact copy of an unfinished item, with the
+ * duration it was saved at (the player checks that against the file it opens).
+ * Movies look up this copy's own record first: with two copies of a movie the
+ * TMDB lookup can return the other copy's record.
+ */
+export async function getSubtitleDelayCandidate(type: 'movie' | 'episode', opts: ProgressLookup): Promise<{ delay: number; duration: number } | null> {
+  if (!opts.streamId) return null;
+  const own = type === 'movie' ? await db.watchProgress.get(movieProgressId(opts.streamId)) : undefined;
+  const entry = own ?? await findProgressEntry(type, opts);
+  if (!entry || entry.completed || !entry.sub_delay || entry.sub_delay_stream_id !== opts.streamId) return null;
+  return { delay: entry.sub_delay, duration: entry.duration };
 }
 
 const EMPTY_PROGRESS_MAP = new Map<string, number>();

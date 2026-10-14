@@ -17,6 +17,7 @@ test('decoder and hwdec probe noise is transient', () => {
     'ffmpeg/video: h264: number of reference frames (0+5) exceeds max (4; probably corrupt input), discarding one\n',
     'libmpv_render/drmprime-overlay: Cannot retrieve DRM resources: Bad file descriptor\n',
     'ffmpeg/demuxer: mov,mp4,m4a,3gp,3g2,mj2: Referenced QT chapter track not found\n',
+    'ffmpeg: NULL: missing picture in access unit with size 44711\n',
   ]) {
     assert.equal(isTransientDecodeError(message), true, message);
   }

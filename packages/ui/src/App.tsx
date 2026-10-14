@@ -18,11 +18,13 @@ import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetCh
 import { data } from './data/client';
 import type { StoredChannel, StoredSeries } from './db';
 import type { VodPlayInfo } from './types/media';
-import { updateWatchProgress, getResumePosition } from './hooks/useWatchProgress';
+import { updateWatchProgress, getResumePosition, getSubtitleDelayCandidate } from './hooks/useWatchProgress';
 import { mergedEpisodesForSeries } from './hooks/useContinueWatching';
 import { buildNextEpisodePlayInfo } from './services/continue-watching/next-episode.playinfo';
 import { UpNextOverlay } from './components/UpNextOverlay';
 import { usePlaybackStore } from './stores/playbackStore';
+import { useSubtitleStore } from './stores/subtitleStore';
+import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
 import { perfMeasure, perfStart } from './utils/perfMarks';
 
 // Auto-hide controls after this many milliseconds of inactivity
@@ -88,14 +90,14 @@ async function tryLoadWithFallbacks(
   isLive: boolean,
   mpv: NonNullable<typeof window.mpv>,
   startPosition?: number,
-): Promise<{ success: boolean; url: string; error?: string }> {
+): Promise<{ success: boolean; url: string; error?: string; generation?: number }> {
   debugLog(`Attempting to load: ${primaryUrl} (isLive: ${isLive})${startPosition ? ` resume@${startPosition}s` : ''}`);
 
   // Try primary URL first
   const result = await mpv.load(primaryUrl, startPosition);
   if (!result.error) {
     debugLog(`Primary URL loaded successfully`);
-    return { success: true, url: primaryUrl };
+    return { success: true, url: primaryUrl, generation: result.generation };
   }
   debugLog(`Primary URL failed: ${result.error}`);
 
@@ -107,7 +109,7 @@ async function tryLoadWithFallbacks(
     const fallbackResult = await mpv.load(fallbackUrl, startPosition);
     if (!fallbackResult.error) {
       debugLog(`Fallback succeeded: ${fallbackUrl}`);
-      return { success: true, url: fallbackUrl };
+      return { success: true, url: fallbackUrl, generation: fallbackResult.generation };
     }
     debugLog(`Fallback failed: ${fallbackResult.error}`);
   }
@@ -115,6 +117,34 @@ async function tryLoadWithFallbacks(
   // All failed - return original error
   debugLog(`All URLs failed, returning error: ${result.error}`);
   return { success: false, url: primaryUrl, error: result.error };
+}
+
+/**
+ * Save VOD watch progress with the subtitle delay. By default the current one,
+ * or undefined (keep the stored one) while a saved delay is not restored yet;
+ * a user's delay change passes the value it saved for its own load.
+ */
+function saveVodProgress(info: VodPlayInfo, position: number, duration: number, subDelay?: number): void {
+  if (!info.streamId || !(duration > 0)) return;
+  void updateWatchProgress({
+    type: info.type === 'series' ? 'episode' : 'movie',
+    streamId: info.streamId,
+    tmdbId: info.tmdbId,
+    seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
+    seriesStreamId: info.type === 'series' ? info.seriesStreamId : undefined,
+    seasonNum: info.seasonNum,
+    episodeNum: info.episodeNum,
+    name: info.title + (info.episodeInfo ? ` ${info.episodeInfo}` : ''),
+    position,
+    duration,
+    sourceId: info.sourceId,
+    subDelay: subDelay ?? currentSubDelay(),
+  });
+}
+
+function currentSubDelay(): number | undefined {
+  const s = useSubtitleStore.getState();
+  return s.kind === 'vod' && s.delayResolved ? s.delay : undefined;
 }
 
 function App() {
@@ -151,6 +181,11 @@ function App() {
   // Track current VOD info for progress updates (ref avoids stale closure in onStatus)
   const vodInfoRef = useRef<VodPlayInfo | null>(null);
   const lastProgressSaveRef = useRef(0);
+  const durationRef = useRef(0);
+  durationRef.current = duration;
+  // The load the subtitle store is bound to, and the VOD item it plays (null for live).
+  const loadInfoRef = useRef<{ generation: number; vodInfo: VodPlayInfo | null } | null>(null);
+  useSubtitleController();
 
   // Continue Watching: next-episode autoplay. Refs because the mpv status handler is mount-once.
   const [upNext, setUpNext] = useState<{ info: VodPlayInfo; secondsLeft: number } | null>(null);
@@ -265,19 +300,7 @@ function App() {
           const now = Date.now();
           if (now - lastProgressSaveRef.current >= 15000) {
             lastProgressSaveRef.current = now;
-            updateWatchProgress({
-              type: info.type === 'series' ? 'episode' : 'movie',
-              streamId: info.streamId,
-              tmdbId: info.tmdbId,
-              seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
-              seriesStreamId: info.type === 'series' ? info.seriesStreamId : undefined,
-              seasonNum: info.seasonNum,
-              episodeNum: info.episodeNum,
-              name: info.title + (info.episodeInfo ? ` ${info.episodeInfo}` : ''),
-              position: status.position,
-              duration: status.duration,
-              sourceId: info.sourceId,
-            });
+            saveVodProgress(info, status.position, status.duration);
           }
         }
       }
@@ -339,6 +362,10 @@ function App() {
     }
     setError(null);
     const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
+    if (result.success && result.generation !== undefined) {
+      loadInfoRef.current = { generation: result.generation, vodInfo: null };
+      useSubtitleStore.getState().bindLoad(result.generation, 'live', subtitleDefaults().live, systemLocale(), null);
+    }
     if (!result.success) {
       debugLog(`  FAILED: ${result.error}`);
       setError(result.error ?? 'Failed to load stream');
@@ -384,21 +411,7 @@ function App() {
     if (!window.mpv) return;
     // Save progress immediately before stopping
     const info = vodInfoRef.current;
-    if (info?.streamId && duration > 0) {
-      updateWatchProgress({
-        type: info.type === 'series' ? 'episode' : 'movie',
-        streamId: info.streamId,
-        tmdbId: info.tmdbId,
-        seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
-        seriesStreamId: info.type === 'series' ? info.seriesStreamId : undefined,
-        seasonNum: info.seasonNum,
-        episodeNum: info.episodeNum,
-        name: info.title + (info.episodeInfo ? ` ${info.episodeInfo}` : ''),
-        position: usePlaybackStore.getState().position,
-        duration,
-        sourceId: info.sourceId,
-      });
-    }
+    if (info) saveVodProgress(info, usePlaybackStore.getState().position, duration);
     // Null vodInfoRef BEFORE clearing the guard so a status tick during the stop await can't re-fire autoplay.
     vodInfoRef.current = null;
     setUpNext(null);
@@ -409,6 +422,7 @@ function App() {
     setPlaying(false);
     setCurrentChannel(null);
     setVodInfo(null);
+    useSubtitleStore.getState().clear();
   };
 
   const handleSeek = async (seconds: number) => {
@@ -456,6 +470,18 @@ function App() {
         episodeNum: info.episodeNum,
       },
     );
+    const delayCandidate = await getSubtitleDelayCandidate(
+      info.type === 'movie' ? 'movie' : 'episode',
+      {
+        streamId: info.streamId,
+        tmdbId: info.type === 'movie' ? info.tmdbId : undefined,
+        seriesTmdbId: info.type === 'series' ? info.tmdbId : undefined,
+        seriesStreamId: info.type === 'series' ? info.seriesStreamId : undefined,
+        sourceId: info.sourceId,
+        seasonNum: info.seasonNum,
+        episodeNum: info.episodeNum,
+      },
+    );
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv, resumePos || undefined);
     if (!result.success) {
       debugLog(`  FAILED: ${result.error}`);
@@ -477,6 +503,10 @@ function App() {
       const updatedInfo = { ...info, url: workingUrl };
       setVodInfo(updatedInfo);
       vodInfoRef.current = updatedInfo;
+      if (result.generation !== undefined) {
+        loadInfoRef.current = { generation: result.generation, vodInfo: updatedInfo };
+        useSubtitleStore.getState().bindLoad(result.generation, 'vod', subtitleDefaults().vod, systemLocale(), delayCandidate);
+      }
       lastProgressSaveRef.current = 0; // Reset throttle for new content
       setPosition(0);   // reset position UI immediately; mpv status refines it (resume seeks on duration)
       setDuration(0);
@@ -589,6 +619,26 @@ function App() {
     if (p.stage === 'tmdb') useUIStore.getState().setTmdbMatching(p.state === 'started');
   }), [setChannelSyncing, setVodSyncing]);
 
+  // Save a subtitle delay the user set on a movie or episode soon after the
+  // change (the external mpv sends no status while paused, so the 15s tick is
+  // not enough). The item, position and duration are taken when the change is
+  // made, so switching to the next item right after cannot misfile it.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = useSubtitleStore.subscribe((state, prev) => {
+      const edit = state.userDelayEdit;
+      if (!edit || edit === prev.userDelayEdit) return;
+      const load = loadInfoRef.current;
+      if (!load?.vodInfo || load.generation !== edit.generation) return;
+      const info = load.vodInfo;
+      const position = usePlaybackStore.getState().position;
+      const duration = durationRef.current;
+      clearTimeout(timer);
+      timer = setTimeout(() => saveVodProgress(info, position, duration, edit.delay), 800);
+    });
+    return () => { clearTimeout(timer); unsubscribe(); };
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -643,6 +693,20 @@ function App() {
           break;
         case '0':
           handleVolumeStep(5);
+          break;
+        case 'v':
+        case 'V':
+          // Captions / subtitles on or off (mpv's subtitle visibility key)
+          if (useSubtitleStore.getState().kind) useSubtitleStore.getState().toggle(systemLocale());
+          break;
+        case 'z':
+        case 'Z':
+          // mpv's subtitle delay keys
+          if (useSubtitleStore.getState().kind) useSubtitleStore.getState().nudgeDelay(-0.1);
+          break;
+        case 'x':
+        case 'X':
+          if (useSubtitleStore.getState().kind) useSubtitleStore.getState().nudgeDelay(0.1);
           break;
         case 'g':
           // Toggle guide

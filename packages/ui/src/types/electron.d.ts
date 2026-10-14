@@ -14,6 +14,8 @@ export interface MpvStatus {
 export interface MpvResult {
   success?: boolean;
   error?: string;
+  /** mpv-load only: the load's generation, which tags its subtitle updates */
+  generation?: number;
 }
 
 export interface MpvModeInfo {
@@ -44,6 +46,37 @@ export interface MpvApi {
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
   removeAllListeners: () => void;
+}
+
+export interface SubtitleTrack {
+  id: number;
+  lang: string | null;
+  title: string | null;
+  codec: string;
+  /** EIA-608 closed captions carried in the video (live TV) */
+  isCc: boolean;
+}
+
+export interface SubtitleTracksUpdate {
+  /** main's load counter; a new value means a new stream started */
+  generation: number;
+  tracks: SubtitleTrack[];
+  /** The file's duration when main knows it for this load, else 0 */
+  duration: number;
+}
+
+/** Live captions: main checks the first lines and hides station-data junk */
+export type CcState = 'checking' | 'ok' | 'unreadable';
+
+export interface SubtitlesApi {
+  /** Calls carry the load generation they were decided for; main ignores stale ones. null turns subtitles off. */
+  setTrack: (generation: number, id: number | null, visible: boolean) => Promise<MpvResult>;
+  /** Show or hide without restarting the decoder (live captions keep decoding) */
+  setVisible: (generation: number, visible: boolean) => Promise<MpvResult>;
+  setDelay: (generation: number, seconds: number) => Promise<MpvResult>;
+  /** Returns an unsubscribe function */
+  onTracks: (callback: (update: SubtitleTracksUpdate) => void) => () => void;
+  onCcState: (callback: (update: { generation: number; state: CcState }) => void) => () => void;
 }
 
 export interface ElectronWindowApi {
@@ -82,6 +115,13 @@ export interface AppearanceApi {
   onDesktopColorsChanged: (callback: (colors: DesktopColors) => void) => () => void;
 }
 
+export interface SubtitleSettings {
+  liveDefault: boolean;
+  vodDefault: boolean;
+  size: 'small' | 'medium' | 'large';
+  style: 'outline' | 'box' | 'shadow';
+}
+
 export interface AppSettings {
   theme: 'dark' | 'light';
   appearance?: Appearance;  // Palette and typeface (default sbtl / fira)
@@ -108,6 +148,7 @@ export interface AppSettings {
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video
+  subtitles?: SubtitleSettings;  // Caption defaults (live / movies & series) and subtitle look
 }
 
 export interface Source {
@@ -219,6 +260,7 @@ declare global {
   interface Window {
     data?: DataApi;
     mpv?: MpvApi;
+    subtitles?: SubtitlesApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
     appearance?: AppearanceApi;

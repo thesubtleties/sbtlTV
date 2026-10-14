@@ -17,6 +17,9 @@
 const TRANSIENT_PATTERNS = [
   // Joining a live stream between keyframes (seen in the field).
   /^ffmpeg\/video: \w+: (non-existing [PS]PS \d+ referenced|no frame!|co located POCs unavailable|mmco: unref short failure|number of reference frames .* exceeds max|decode_slice_header error|error while decoding MB|concealing \d+)/,
+  // ffmpeg's H.264 parser (logged with no context name) when a live stream is
+  // joined mid-picture: the next whole picture decodes normally.
+  /^ffmpeg: NULL: missing picture in access unit with size \d+/,
   // Hardware decode of a broken first picture; mpv recovers or falls back.
   /^ffmpeg\/video: \w+: Failed to end picture decode issue/,
   /^vd: Error while decoding frame/,

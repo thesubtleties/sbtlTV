@@ -2,6 +2,7 @@ import Store from 'electron-store';
 import { safeStorage } from 'electron';
 import type { Source } from '@sbtltv/core';
 import { normalizeLinuxPlayerMode, type LinuxPlayerMode } from './linux-player-mode.js';
+import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitles.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -49,6 +50,7 @@ interface AppSettings {
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: 'compatibility' runs mpv in its own window (default 'native'); takes effect on restart
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video (immediate); default false
   appearance?: Appearance;  // Palette and typeface (default sbtl / fira)
+  subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
 }
 
 export type { LinuxPlayerMode };
@@ -96,6 +98,7 @@ interface StoredSettings {
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: video player used at next launch
   linuxPerformanceMode?: boolean;  // Linux only: cheaper rendering for slower GPUs
   appearance?: Appearance;
+  subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
 }
 
 const store = new Store<StoreSchema>({
@@ -247,6 +250,7 @@ export function getSettings(): AppSettings {
   result.linuxPlayerMode = normalizeLinuxPlayerMode(stored.linuxPlayerMode);
   result.linuxPerformanceMode = stored.linuxPerformanceMode === true;
   result.appearance = normalizeAppearance(stored.appearance);
+  result.subtitles = normalizeSubtitleSettings(stored.subtitles);
   return result;
 }
 
@@ -267,6 +271,7 @@ export function updateSettings(settings: Partial<AppSettings>): void {
 
   if (settings.theme !== undefined) updated.theme = settings.theme;
   if (settings.appearance !== undefined) updated.appearance = normalizeAppearance(settings.appearance);
+  if (settings.subtitles !== undefined) updated.subtitles = normalizeSubtitleSettings(settings.subtitles);
   if (settings.lastSourceId !== undefined) updated.lastSourceId = settings.lastSourceId;
   if (settings.tmdbApiKey !== undefined) {
     updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;

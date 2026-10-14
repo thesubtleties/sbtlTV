@@ -16,6 +16,8 @@ export interface MpvStatus {
 export interface MpvResult {
   success?: boolean;
   error?: string;
+  /** mpv-load only: the load's generation, which tags its subtitle updates */
+  generation?: number;
 }
 
 export interface MpvModeInfo {
@@ -65,10 +67,18 @@ export interface StorageResult<T = void> {
   data?: T;
 }
 
+export interface SubtitleSettings {
+  liveDefault: boolean;
+  vodDefault: boolean;
+  size: 'small' | 'medium' | 'large';
+  style: 'outline' | 'box' | 'shadow';
+}
+
 export interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   autoUpdateEnabled?: boolean;
+  subtitles?: SubtitleSettings;
 }
 
 export interface M3UImportResult {
@@ -171,6 +181,26 @@ contextBridge.exposeInMainWorld('mpv', {
     ipcRenderer.removeAllListeners('mpv-error');
   },
 } satisfies MpvApi);
+
+// Subtitles: mpv's subtitle tracks for the current stream, and the choice back
+interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean }
+interface SubtitleTracksUpdate { generation: number; tracks: SubtitleTrack[]; duration: number }
+interface CcStateUpdate { generation: number; state: 'checking' | 'ok' | 'unreadable' }
+contextBridge.exposeInMainWorld('subtitles', {
+  setTrack: (generation: number, id: number | null, visible: boolean) => ipcRenderer.invoke('subtitle-set-track', generation, id, visible),
+  setVisible: (generation: number, visible: boolean) => ipcRenderer.invoke('subtitle-set-visible', generation, visible),
+  setDelay: (generation: number, seconds: number) => ipcRenderer.invoke('subtitle-set-delay', generation, seconds),
+  onTracks: (callback: (update: SubtitleTracksUpdate) => void) => {
+    const listener = (_event: IpcRendererEvent, data: SubtitleTracksUpdate) => callback(data);
+    ipcRenderer.on('subtitle-tracks', listener);
+    return () => { ipcRenderer.removeListener('subtitle-tracks', listener); };
+  },
+  onCcState: (callback: (update: CcStateUpdate) => void) => {
+    const listener = (_event: IpcRendererEvent, data: CcStateUpdate) => callback(data);
+    ipcRenderer.on('subtitle-cc-state', listener);
+    return () => { ipcRenderer.removeListener('subtitle-cc-state', listener); };
+  },
+});
 
 // Colors the desktop provides, for Settings > Appearance
 interface DesktopColors {
