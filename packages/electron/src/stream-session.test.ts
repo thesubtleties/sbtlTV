@@ -95,7 +95,7 @@ test('stream session: mpv errors are held only while a reload is opening the str
   assert.equal(s.holdsMpvErrors(true), true);
   s.reloadInFlight = false;
   // Stalled until the watchdog reloaded once; nothing has moved since.
-  for (let t = 0; t <= 16; t++) s.watchdog!.observe({ now: t * 1000, position: 5, userPaused: false, duration: 0, playing: true, eof: false });
+  for (let t = 0; t <= 16; t++) s.watchdog!.observe({ now: t * 1000, position: 5, userPaused: false, duration: 0, playing: true, readEof: () => false });
   assert.equal(s.watchdog!.recovering, true);
   assert.equal(s.holdsMpvErrors(true), true);
   assert.equal(s.holdsMpvErrors(false), false);          // paused: whatever mpv says is shown
@@ -109,4 +109,15 @@ test('stream session: the last held mpv error is kept for the give-up log, and d
   assert.equal(s.lastHeldError, 'Failed to open');
   s.begin({ url: 'http://other', live: true, reason: 'play' }, 0, NONE);
   assert.equal(s.lastHeldError, null);
+});
+
+test('stream session: a load that failed before it ever played is no longer watched; one that played is', () => {
+  const s = new StreamSession();
+  s.begin({ url: 'http://dead', live: false, reason: 'play' }, 0, NONE);
+  s.stopWatchingIfNeverPlayed();
+  assert.equal(s.watchdog, null);
+  s.begin({ url: 'http://live', live: true, reason: 'play' }, 0, NONE);
+  for (let t = 0; t <= 3; t++) s.watchdog!.observe({ now: t * 1000, position: t, userPaused: false, duration: 0, playing: true, readEof: () => false });
+  s.stopWatchingIfNeverPlayed();
+  assert.notEqual(s.watchdog, null);
 });

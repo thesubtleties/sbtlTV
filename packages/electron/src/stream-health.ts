@@ -31,15 +31,24 @@ export interface StallSample {
   duration: number;
   /** mpv's own pause is off (it may still be waiting for data) */
   playing: boolean;
-  /** mpv stopped at the end of what it could read (keep-open pauses it there) */
-  eof: boolean;
+  /**
+   * mpv stopped at the end of what it could read (keep-open pauses it there).
+   * A synchronous read into mpv, so asked only when mpv paused itself.
+   */
+  readEof: () => boolean;
 }
 
 /** Reloads before the watchdog gives up and says so */
 export const STALL_MAX_RELOADS = 3;
 
-/** A movie stopping at its end within this much of its duration has ended (files often end a little short). */
+/**
+ * A movie that reaches the end of its file within this many seconds of its
+ * duration has finished (files often end a little short of the duration their
+ * container reports); further from the end it was cut, and is reloaded. Short
+ * clips get 5% of their length instead.
+ */
 const VOD_END_SLACK_S = 120;
+const VOD_END_SLACK_SHARE = 0.05;
 
 /**
  * Notices a stream that stopped moving without anyone pausing it (a dead
@@ -47,17 +56,21 @@ const VOD_END_SLACK_S = 120;
  * asks for a reload, up to maxReloads times; then gives up once. A reload
  * that brings playback back for recoveredAfterMs restores the budget.
  *
- * Moving means the position advancing at about playback speed: the 0 that
- * LoadStatusGate holds after a reload, or a seek, is not playback. Until a
- * load first moves it gets openGraceMs (movies can take a while to open).
+ * Moving means the position getting more than half a second past where it
+ * last moved (so a stream crawling forward counts). A jump (the 0 that
+ * LoadStatusGate holds after a reload, a seek) is not playback: it starts a
+ * new wait with openGraceMs, as a load does (movies can take a while to open,
+ * a seek a while to get its data).
  */
 export class StallWatchdog {
   reloads = 0;
-  private lastPosition: number | null = null;
+  private lastPosition: number | null = null;  // the previous sample, to tell jumps
   private lastSampleAt = 0;
+  private anchor = 0;  // the position at the last movement (or jump)
   private lastMoveAt = 0;
   private movingSince: number | null = null;
-  private started = false;
+  private started = false;  // moved since the load, the last reload or the last jump
+  private everPlayed = false;
   private givenUp = false;
   private readonly live: boolean;
   private readonly stallMs: number;
@@ -78,30 +91,47 @@ export class StallWatchdog {
     return this.reloads > 0 && this.movingSince === null && !this.givenUp;
   }
 
-  observe({ now, position, userPaused, duration, playing, eof }: StallSample): 'none' | 'reload' | 'give-up' {
+  /** This load has played at some point (a seek or the held 0 does not count). */
+  get hasPlayed(): boolean {
+    return this.everPlayed;
+  }
+
+  observe({ now, position, userPaused, duration, playing, readEof }: StallSample): 'none' | 'reload' | 'give-up' {
     const elapsedS = (now - this.lastSampleAt) / 1000;
     const previous = this.lastPosition;
     this.lastPosition = position;
     this.lastSampleAt = now;
     if (previous === null) {
+      this.anchor = position;
       this.lastMoveAt = now;
       return 'none';
     }
     if (this.givenUp) return 'none';
-    const ended = !this.live && duration > 0
-      && (position >= duration - 2 || (eof && position >= duration - VOD_END_SLACK_S));
+    const eof = !playing && !userPaused && readEof();
+    const slack = Math.min(VOD_END_SLACK_S, duration * VOD_END_SLACK_SHARE);
+    const ended = !this.live && duration > 0 && (position >= duration - 2 || (eof && position >= duration - slack));
     // Paused by the user, or by mpv for something other than the stream ending
     // (system suspend, the compatibility player's own window): wait for it.
     const pausedElsewhere = !playing && !eof;
     if (userPaused || pausedElsewhere || ended) {
+      this.anchor = position;
       this.lastMoveAt = now;
       this.movingSince = null;
       return 'none';
     }
-    const advanced = position - previous;
-    if (advanced > 0.5 && advanced < elapsedS + 5) {
+    if (position < previous - 0.5 || position > previous + elapsedS + 5) {
+      // A jump, not playback: wait for the stream from here as for a new open.
+      this.anchor = position;
+      this.lastMoveAt = now;
+      this.started = false;
+      this.movingSince = null;
+      return 'none';
+    }
+    if (position - this.anchor > 0.5) {
+      this.anchor = position;
       this.lastMoveAt = now;
       this.started = true;
+      this.everPlayed = true;
       this.movingSince ??= now;
       if (this.reloads > 0 && now - this.movingSince >= this.recoveredAfterMs) this.reloads = 0;
       return 'none';

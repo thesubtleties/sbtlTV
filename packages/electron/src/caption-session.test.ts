@@ -13,13 +13,15 @@ function fakeIo(lines: string[] = []) {
     tracks: [] as Array<{ generation: number; tracks: SubtitleTrack[]; duration: number }>,
     states: [] as string[],
     lines,
+    reads: 0,
+    logs: [] as string[],
   };
   const api: CaptionSessionIo = {
     setOptions: (options) => { io.options.push(...options); },
-    readSubText: async () => io.lines.shift() ?? '',
+    readSubText: async () => { io.reads++; return io.lines.shift() ?? ''; },
     sendTracks: (update) => { io.tracks.push(update); },
     sendCcState: (update) => { io.states.push(update.state); },
-    log: () => {},
+    log: (message) => { io.logs.push(message); },
     preferredLanguage: () => null,
     currentGeneration: () => io.generation,
   };
@@ -85,9 +87,9 @@ test('caption session: a check still running when the next load starts is droppe
     const session = new CaptionSession(api);
     session.setTracks([cc]);
     session.selectTrack(1, true);
-    io.generation = 2;
-    session.beginLoad();
+    session.beginLoad();  // same generation: only beginLoad can stop it
     await tick(5);
+    assert.equal(io.reads, 0);
     assert.deepEqual(io.states, ['checking']);
   } finally {
     mock.timers.reset();
@@ -95,16 +97,20 @@ test('caption session: a check still running when the next load starts is droppe
 });
 
 test('caption session: a language change re-checks the selected live track of this load only', () => {
-  const { io, api } = fakeIo();
-  const session = new CaptionSession(api);
-  session.setTracks([cc]);
-  session.selectTrack(1, true);
-  session.recheckLanguage();
-  assert.deepEqual(io.states, ['checking', 'checking']);
-  io.generation = 2;
-  session.recheckLanguage();
-  assert.deepEqual(io.states, ['checking', 'checking']);
-  session.end();
+  mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  try {
+    const { io, api } = fakeIo();
+    const session = new CaptionSession(api);
+    session.setTracks([cc]);
+    session.selectTrack(1, true);
+    session.recheckLanguage();
+    assert.deepEqual(io.states, ['checking', 'checking']);
+    io.generation = 2;
+    session.recheckLanguage();
+    assert.deepEqual(io.states, ['checking', 'checking']);
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test('caption session: the wanted language is waited for 30s at most, then what comes through is shown', async () => {
@@ -118,6 +124,73 @@ test('caption session: the wanted language is waited for 30s at most, then what 
     await tick(3 + 80 + 3);
     assert.deepEqual(io.states, ['checking', 'other-language']);
     assert.equal(option(io, 'sub-visibility'), 'yes');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('caption session: station data restarts the decoder, and after 8 restarts the captions stay off for this load', async () => {
+  mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  try {
+    const junk = Array.from({ length: 9 }, (_, i) => `H@ABC NetworkGMA ${i}H@`);
+    const { io, api } = fakeIo(junk);
+    const session = new CaptionSession(api);
+    session.setTracks([cc]);
+    session.selectTrack(1, true);
+    await tick(1);
+    assert.deepEqual(io.options.slice(-2), [['sid', 'no'], ['sid', '1']]);   // restarted, still hidden
+    assert.equal(option(io, 'sub-visibility'), 'no');
+    await tick(8);
+    assert.deepEqual(io.states, ['checking', 'unreadable']);
+    assert.equal(option(io, 'sid'), 'no');
+    const before = io.options.length;
+    session.selectTrack(1, true);   // the same track again: the junk is not brought back
+    assert.equal(io.options.length, before);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('caption session: turning captions off while they are checked keeps them off when they confirm', async () => {
+  mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  try {
+    const { io, api } = fakeIo(['Good evening, everyone.', 'Here is the news tonight.', 'Thanks for joining us.']);
+    const session = new CaptionSession(api);
+    session.setTracks([cc]);
+    session.selectTrack(1, true);
+    session.setVisible(false);
+    assert.equal(option(io, 'sub-visibility'), 'no');
+    session.setVisible(true);       // on again, still checking: stays hidden for now
+    session.setVisible(false);
+    await tick(3);
+    assert.deepEqual(io.states, ['checking', 'ok']);
+    assert.equal(option(io, 'sub-visibility'), 'no');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('caption session: after playback ends, a late track choice does nothing', () => {
+  const { io, api } = fakeIo();
+  const session = new CaptionSession(api);
+  session.setTracks([cc]);
+  session.end();
+  session.selectTrack(1, true);
+  assert.deepEqual(io.states, []);
+  assert.equal(option(io, 'sid'), 'no');
+});
+
+test('caption session: a failed caption read is logged and the check carries on', async () => {
+  mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  try {
+    const { io, api } = fakeIo(['Good evening, everyone.', 'Here is the news tonight.', 'Thanks for joining us.']);
+    let failed = false;
+    const session = new CaptionSession({ ...api, readSubText: async () => { if (!failed) { failed = true; throw new Error('mpv gone'); } return api.readSubText(); } });
+    session.setTracks([cc]);
+    session.selectTrack(1, true);
+    await tick(4);
+    assert.ok(io.logs.some((l) => l.includes('reading the caption line failed: mpv gone')));
+    assert.deepEqual(io.states, ['checking', 'ok']);
   } finally {
     mock.timers.reset();
   }

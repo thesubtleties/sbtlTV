@@ -46,13 +46,13 @@ export class CaptionSession {
   tracks: SubtitleTrack[] = [];
   private visibleWanted = true;
   private run: CcCheckRun | null = null;
-  private checkedKey: string | null = null;  // `${generation}:${trackId}` checked (or being checked): selecting it again only applies visibility
+  private checkedKey: string | null = null;  // `${generation}:${trackId}` checked (or being checked) and still selected: selecting it again only applies visibility
   private unreadable = false;  // that check gave up: keep the junk off screen for this load
   private selected: { generation: number; trackId: number } | null = null;  // the live CC track selected for the current load
 
   constructor(private readonly io: CaptionSessionIo) {}
 
-  /** A load starts: mpv keeps sid and sub-delay across loadfile, so it starts with no subtitle and no offset. */
+  /** A load starts: mpv keeps sid, sub-delay and sub-visibility across loadfile, so it starts with no subtitle, no offset, shown. */
   beginLoad(): void {
     this.end();
     this.visibleWanted = true;
@@ -60,10 +60,18 @@ export class CaptionSession {
     this.setTracks([]);
   }
 
-  /** Playback stopped or the player is going away. */
+  /** Playback stopped or the player is going away: nothing of this load's subtitles is kept. */
   end(): void {
+    this.leaveCc();
+    this.tracks = [];
+    this.unreadable = false;
+  }
+
+  /** Off the live CC track: its check stops, and selecting it again checks it again (a fresh decoder start). */
+  private leaveCc(): void {
     this.stopCheck();
     this.selected = null;
+    this.checkedKey = null;
   }
 
   /** Tracks of the current load, tagged with its generation and (when known) the file's duration. */
@@ -78,12 +86,12 @@ export class CaptionSession {
     this.visibleWanted = visible;
     const track = id === null ? undefined : this.tracks.find((t) => t.id === id);
     if (!track) {
-      this.end();
+      this.leaveCc();
       this.io.setOptions([['sid', 'no']], 'set track');
       return;
     }
     if (!track.isCc) {
-      this.end();
+      this.leaveCc();
       this.io.setOptions([['sub-visibility', visible ? 'yes' : 'no'], ['sid', String(track.id)]], 'set track');
       return;
     }
@@ -165,6 +173,8 @@ export class CaptionSession {
             io.setOptions([['sid', 'no']], 'cc unreadable');
             io.sendCcState({ generation, state: 'unreadable', language: null });
           }
+        }).catch((err: unknown) => {
+          io.log(`captions: reading the caption line failed: ${err instanceof Error ? err.message : err}`);
         }).finally(() => { busy = false; });
       }, CC_CHECK_INTERVAL_MS),
     };

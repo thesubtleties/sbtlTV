@@ -7,7 +7,7 @@ import { StallWatchdog, STREAM_RECONNECT_OPTIONS, STREAM_BASE_OPTIONS, LoadStatu
 interface Tick { t: number; pos: number; paused?: boolean; duration?: number; playing?: boolean; eof?: boolean }
 function run(w: StallWatchdog, ticks: Tick[]) {
   return ticks.map(({ t, pos, paused = false, duration = 0, playing = !paused, eof = false }) =>
-    w.observe({ now: t * 1000, position: pos, userPaused: paused, duration, playing, eof }));
+    w.observe({ now: t * 1000, position: pos, userPaused: paused, duration, playing, readEof: () => eof }));
 }
 const span = (from: number, count: number, tick: (t: number) => Omit<Tick, 't'>): Tick[] =>
   Array.from({ length: count }, (_, i) => ({ t: from + i, ...tick(from + i) }));
@@ -71,7 +71,7 @@ test('both players get reconnect and no youtube-dl hook', () => {
 test('recovering: from the first reload until playback moves again, never after giving up', () => {
   const w = new StallWatchdog({ live: true });
   let t = 0;
-  const tick = (pos: number) => w.observe({ now: (t++) * 1000, position: pos, userPaused: false, duration: 0, playing: true, eof: false });
+  const tick = (pos: number) => w.observe({ now: (t++) * 1000, position: pos, userPaused: false, duration: 0, playing: true, readEof: () => false });
   for (let i = 0; i < 16; i++) tick(5);
   assert.equal(w.recovering, true);          // reloaded once, still stuck
   tick(6); tick(7);
@@ -151,4 +151,45 @@ test('after a reload, the held-back 0 and the resume seek are not playback comin
   assert.equal(w.recovering, true);
   run(w, span(29, 3, (t) => ({ pos: 1234 + (t - 28), duration: 6000 })));
   assert.equal(w.recovering, false);
+});
+
+test('a stream that crawls forward (under half a second per second) is still playing', () => {
+  const w = new StallWatchdog({ live: true });
+  assert.equal(reloadsIn(run(w, span(0, 90, (t) => ({ pos: t * 0.3 })))), 0);
+});
+
+test('a seek that takes a while to get data gets the opening grace, not 15s', () => {
+  const w = new StallWatchdog({ live: false });
+  const actions = run(w, [
+    ...span(0, 10, (t) => ({ pos: 100 + t, duration: 6000 })),
+    ...span(10, 40, () => ({ pos: 3000, duration: 6000 })),            // jumped ahead, waiting for data
+    ...span(50, 10, (t) => ({ pos: 3000 + (t - 49), duration: 6000 })),
+  ]);
+  assert.equal(reloadsIn(actions), 0);
+});
+
+test('a short clip that dies early is not taken for its end', () => {
+  const w = new StallWatchdog({ live: false });
+  const actions = run(w, [...span(0, 5, (t) => ({ pos: 10 + t, duration: 90 })), ...span(5, 20, () => ({ pos: 15, duration: 90, playing: false, eof: true }))]);
+  assert.equal(reloadsIn(actions), 1);
+});
+
+test('eof-reached is only asked for when mpv paused itself', () => {
+  const w = new StallWatchdog({ live: true });
+  let reads = 0;
+  const sample = (t: number, playing: boolean, userPaused: boolean) =>
+    w.observe({ now: t * 1000, position: 5, userPaused, duration: 0, playing, readEof: () => { reads++; return false; } });
+  sample(0, true, false); sample(1, true, false);   // playing
+  sample(2, false, true); sample(3, false, true);   // the user paused
+  assert.equal(reads, 0);
+  sample(4, false, false);                          // paused, not by the user
+  assert.equal(reads, 1);
+});
+
+test('hasPlayed: set by the first real playback, not by a seek or the held 0', () => {
+  const w = new StallWatchdog({ live: false });
+  run(w, [{ t: 0, pos: 0, duration: 6000 }, { t: 1, pos: 1800, duration: 6000 }, { t: 2, pos: 0, duration: 6000 }]);
+  assert.equal(w.hasPlayed, false);
+  run(w, [{ t: 3, pos: 1, duration: 6000 }]);
+  assert.equal(w.hasPlayed, true);
 });

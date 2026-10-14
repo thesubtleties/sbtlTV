@@ -443,6 +443,8 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
 
 function killMpv(): void {
   isShuttingDown = true;
+  // The player is going away (window closed; on macOS the app stays): so does what it was playing.
+  endPlayback({ invalidate: true });
 
   // Clean up native mpv bridge
   if (mpvBridge) {
@@ -880,7 +882,8 @@ async function initNativeMpv(): Promise<boolean> {
         debugLog(`mpv (not shown): ${error.trim()}`, 'mpv');
         return;
       }
-      reportMpvLogError(error);
+      if (error.startsWith('Playback error: ')) reportPlaybackFailure(error);
+      else reportMpvLogError(error);
     });
 
     bridge.onPipelineFailure((error) => {
@@ -991,7 +994,7 @@ async function handleNativePipelineFailure(error: string): Promise<void> {
   try {
     mpvBridge?.stop();
     // Stopped: the watchdog must not reload into the broken pipeline, whatever the answer.
-    endPlayback();
+    endPlayback({ invalidate: true });
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'error',
       title: 'Native video playback failed',
@@ -1102,9 +1105,17 @@ interface MpvMessage {
   data?: unknown;
   request_id?: number;
   error?: string;
+  /** end-file: why the file ended ('eof', 'stop', 'error', ...) and, for 'error', mpv's reason */
+  reason?: string;
+  file_error?: string;
 }
 
 function handleMpvMessage(msg: MpvMessage): void {
+  // A file mpv could not open or play (the in-window player reports this through its own error callback).
+  if (msg.event === 'end-file' && msg.reason === 'error') {
+    reportPlaybackFailure(`Playback error: ${msg.file_error ?? 'unknown error'}`);
+  }
+
   // Handle property change events
   if (msg.event === 'property-change') {
     switch (msg.name) {
@@ -1203,7 +1214,18 @@ function reportMpvError(message: string): void {
   sendToRenderer('mpv-error', text);
 }
 
-/** One of mpv's own error lines (native player): held back while a stall reload is opening the stream. */
+/**
+ * mpv could not open or play the file. For a load that never played this is
+ * the answer (the card offers Try again), so the stall watchdog does not keep
+ * reloading a link that does not open; during a stall reload it is part of the
+ * reconnecting and is held like any mpv line.
+ */
+function reportPlaybackFailure(message: string): void {
+  if (!stream.holdsMpvErrors(mpvState.playing)) stream.stopWatchingIfNeverPlayed();
+  reportMpvLogError(message);
+}
+
+/** One of mpv's own error lines: held back while a stall reload is opening the stream. */
 function reportMpvLogError(message: string): void {
   if (stream.holdsMpvErrors(mpvState.playing)) {
     stream.lastHeldError = redactUrls(message.trim());  // before quoting: the URL ends at whitespace, not at the quote
@@ -1419,10 +1441,10 @@ async function checkStreamHealth(): Promise<void> {
   const media = stream.media;
   const watchdog = stream.watchdog;
   if (!watchdog || !media || stream.reloadInFlight || nativeRecoveryInProgress || pipelineFailurePromptOpen) return;
-  // eof-reached is read only while mpv is paused (it pauses itself at the end, keep-open).
-  const eof = !mpvState.playing && (useNativeMpv && mpvBridge ? mpvBridge.getProperty('eof-reached') === 'yes' : externalEof);
   const action = watchdog.observe({
-    now: Date.now(), position: mpvState.position, userPaused: stream.userPaused, duration: mpvState.duration, playing: mpvState.playing, eof,
+    now: Date.now(), position: mpvState.position, userPaused: stream.userPaused, duration: mpvState.duration, playing: mpvState.playing,
+    // keep-open pauses mpv at the end of a file; the watchdog asks only when mpv paused itself.
+    readEof: () => (useNativeMpv && mpvBridge ? mpvBridge.getProperty('eof-reached') === 'yes' : externalEof),
   });
   if (action === 'reload') {
     stream.reloadInFlight = true;
@@ -1440,8 +1462,15 @@ async function checkStreamHealth(): Promise<void> {
     sendToRenderer('stream-recovery', { state: 'failed', live: media.live });
   }
 }
+let lastHealthCheckError: string | null = null;
 setInterval(() => {
-  checkStreamHealth().catch((err) => debugLog(`Stream health check failed: ${err instanceof Error ? err.message : err}`, 'mpv'));
+  checkStreamHealth().catch((err) => {
+    // Shown even with debug logging off, once per distinct message: a failing check is a watchdog that is not watching.
+    const message = err instanceof Error ? err.message : String(err);
+    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', message);
+    lastHealthCheckError = message;
+    debugLog(`Stream health check failed: ${message}`, 'mpv');
+  });
 }, 1000).unref();
 
 ipcMain.handle('mpv-play', async () => {
@@ -1575,7 +1604,7 @@ ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
 ipcMain.handle('mpv-stop', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   debugLog('mpv-stop called', 'mpv');
-  endPlayback();
+  endPlayback({ invalidate: true });
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.stop();
@@ -1675,21 +1704,28 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
     debugLog(`Settings not stored: ${message}`, 'app');
     return { error: message };
   }
-  try {
-    if (settings.subtitles !== undefined || settings.appearance !== undefined) {
-      applySubtitleStyle('settings changed');
+  // Each follow-up on its own, so one that fails does not skip the rest.
+  const followUp = (what: string, run: () => void) => {
+    try {
+      run();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[settings] ${what} failed:`, message);
+      debugLog(`Settings changed, but ${what} failed: ${message}`, 'app');
     }
-    if (settings.subtitles !== undefined && storage.getSettings().subtitles?.language !== previousLanguage) {
-      captions.recheckLanguage();
-    }
-    // Update debug logging if that setting changed
-    if (settings.debugLoggingEnabled !== undefined) {
-      initDebugLogging(settings.debugLoggingEnabled);
-    }
-    dataHost?.pushSettings();
-  } catch (error) {
-    debugLog(`Applying changed settings failed: ${error instanceof Error ? error.message : error}`, 'app');
+  };
+  if (settings.subtitles !== undefined || settings.appearance !== undefined) {
+    followUp('applying the subtitle style', () => applySubtitleStyle('settings changed'));
   }
+  if (settings.subtitles !== undefined) {
+    followUp('re-checking captions', () => {
+      if (storage.getSettings().subtitles?.language !== previousLanguage) captions.recheckLanguage();
+    });
+  }
+  if (settings.debugLoggingEnabled !== undefined) {
+    followUp('switching debug logging', () => initDebugLogging(settings.debugLoggingEnabled!));
+  }
+  followUp('sending settings to the data process', () => dataHost?.pushSettings());
   return { success: true };
 });
 

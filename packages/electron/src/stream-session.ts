@@ -111,6 +111,11 @@ export class StreamSession {
     return this.reloadInFlight || (playing && this.watchdog?.recovering === true);
   }
 
+  /** The load failed before it ever played: stop watching it (no reloads of a link that does not open). */
+  stopWatchingIfNeverPlayed(): void {
+    if (this.watchdog && !this.watchdog.hasPlayed && this.watchdog.reloads === 0) this.watchdog = null;
+  }
+
   isCurrent(generation: unknown): boolean {
     return generation === this.generation;
   }
