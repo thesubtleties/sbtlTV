@@ -1,27 +1,19 @@
-# sbtlTV 0.12.0
+# sbtlTV 0.12.1
+
+A privacy release.
 
 ## Added
 
-- **Themes** - Settings > Appearance: sbtl, Catppuccin, Gruvbox, Nord, Tokyo Night, Mocha, Pi and more, Caelestia (follows the desktop on Linux), an optional system accent, and a choice of typeface.
-- **Subtitles for movies and episodes** - the CC button (or V) turns them on; right-click for tracks and a subtitle delay, which is remembered per title.
-- **Closed captions on live TV** - checked before they show, so station-data garbage stays off screen.
-- **Caption language** - English, Spanish or French captions and subtitles, or follow the system.
-- **Stream recovery** - provider cuts reconnect on their own, and a stalled stream is reloaded before you see an error.
+- **Settings > Privacy** - who sbtlTV talks to and what each one sees, marked by whether it applies to you, plus a Check button that shows the IP address they see (asks Mullvad's public checker, only when clicked; nothing is saved).
 
 ## Changed
 
-- **New look throughout** - Settings, guide, Movies and Series, title bar and overlays restyled to the theme.
-- **Playback problems show in a card** with the actual cause and a Try again button.
+- **Team logos on live games are off by default** - they load from ESPN. Turn them on in Settings > EPG > Team logos.
 
 ## Fixed
 
-- **A movie's resume point could be overwritten** when it was started after a live channel.
-- **macOS: closing the window left the app unable to play** after reopening it from the Dock.
-- **The guide's times did not line up** with the programmes below them.
-- **Provider usernames and passwords no longer appear in the debug log.**
-- **A link that fails to open now says so at once** with the compatibility player and on Windows.
-- **Player controls did not respond after the window reloaded.**
-- **Fewer harmless error messages**, now on macOS too.
+- **No more request to Google on first launch** (Chromium's spell-check dictionary).
+- **Provider usernames and passwords no longer appear in terminal or system log output** - stream links are cut to their host there too, as in the debug log since 0.12.0.
 
 ## Known issues
 

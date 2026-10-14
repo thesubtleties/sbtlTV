@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.1] - 2026-10-14
+
+A privacy release.
+
+### Added
+- **Settings > Privacy** - who sbtlTV talks to and what each one sees (your IPTV provider, guide sources, image hosts, GitHub, TMDB and RPDB when you have added a key, ESPN when team logos are on), marked by whether it applies to you right now, and what stays on your computer. A Check button asks Mullvad's public checker which IP address those services see, with the location, network and whether it is a Mullvad VPN exit; it runs only when clicked and nothing is saved
+- **Privacy section in the README** with the same list
+
+### Changed
+- **Team logos on live games are off by default** - the logos load from ESPN, which then sees your IP address and which teams you are watching. Turn them on in Settings > EPG > Team logos; the setting now says where they come from
+
+### Fixed
+- **A request to Google on first launch** - Chromium's spell checker downloaded its dictionary from Google. sbtlTV has nothing to spell-check, so it is now off and nothing is fetched
+- **Provider usernames and passwords in terminal output** - 0.12.0 removed them from the debug log and error messages; stream links are now also cut to their host in what the player prints to the terminal or system log (the in-window player's mpv messages, the external mpv's output, and error messages), and the interface no longer prints its log lines to the console outside development builds
+- **A link with text glued in front of it** could slip past the redaction; any `://` is now treated as the start of a link
+
+### Known issues
+- **Memory use can climb during in-window playback (macOS and Linux)** - it mostly levels off and is released when you change channel or title. Still being watched
+- **Widescreen SD channels still play small on macOS**
+
 ## [0.12.0] - 2026-10-14
 
 ### Added
