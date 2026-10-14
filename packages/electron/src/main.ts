@@ -441,6 +441,9 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
   }
 }
 
+// The native player being torn down after the window closed; a new one waits for it.
+let bridgeTeardown: Promise<void> | null = null;
+
 function killMpv(): void {
   isShuttingDown = true;
   // The player is going away (window closed; on macOS the app stays): so does what it was playing.
@@ -449,7 +452,7 @@ function killMpv(): void {
   // Clean up native mpv bridge
   if (mpvBridge) {
     try {
-      void mpvBridge.destroy().catch(error => {
+      bridgeTeardown = mpvBridge.destroy().catch(error => {
         debugLog(`Error destroying native bridge: ${error instanceof Error ? error.message : error}`, 'mpv');
       });
     } catch (error) {
@@ -2016,6 +2019,50 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
 });
 
 // App lifecycle
+/**
+ * Start the player for the window: the in-window (native) player where it is
+ * used, falling back to external mpv; external mpv on Windows and in Linux
+ * compatibility mode. False when the app is quitting instead.
+ */
+async function startPlayer(): Promise<boolean> {
+  isShuttingDown = false;
+  if (bridgeTeardown) {
+    await bridgeTeardown;
+    bridgeTeardown = null;
+  }
+  if (USE_NATIVE_MPV) {
+    let nativeSuccess = false;
+    if (MpvTextureBridgeClass) {
+      console.log('[mpv] Attempting native mpv-texture initialization...');
+      nativeSuccess = await initNativeMpv();
+    }
+    if (nativeSuccess) {
+      console.log('[mpv] Using native mpv-texture bridge');
+    } else {
+      console.log('[mpv] Native bridge unavailable');
+      if (!await confirmCompatibilityFallback(nativeInitError)) {
+        app.quit();
+        return false;
+      }
+      const mpvAvailable = await checkMpvAvailable();
+      if (!mpvAvailable) {
+        app.quit();
+        return false;
+      }
+      await initMpv();
+    }
+  } else {
+    // Windows and explicitly requested Linux compatibility launches use external mpv.
+    const mpvAvailable = await checkMpvAvailable();
+    if (!mpvAvailable) {
+      app.quit();
+      return false;
+    }
+    await initMpv();
+  }
+  return true;
+}
+
 app.whenReady().then(async () => {
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
@@ -2048,36 +2095,7 @@ app.whenReady().then(async () => {
     void readDesktopColors().then((colors) => sendToRenderer('appearance-desktop-colors', colors));
   });
 
-  if (USE_NATIVE_MPV) {
-    let nativeSuccess = false;
-    if (MpvTextureBridgeClass) {
-      console.log('[mpv] Attempting native mpv-texture initialization...');
-      nativeSuccess = await initNativeMpv();
-    }
-    if (nativeSuccess) {
-      console.log('[mpv] Using native mpv-texture bridge');
-    } else {
-      console.log('[mpv] Native bridge unavailable');
-      if (!await confirmCompatibilityFallback(nativeInitError)) {
-        app.quit();
-        return;
-      }
-      const mpvAvailable = await checkMpvAvailable();
-      if (!mpvAvailable) {
-        app.quit();
-        return;
-      }
-      await initMpv();
-    }
-  } else {
-    // Windows and explicitly requested Linux compatibility launches use external mpv.
-    const mpvAvailable = await checkMpvAvailable();
-    if (!mpvAvailable) {
-      app.quit();
-      return;
-    }
-    await initMpv();
-  }
+  if (!await startPlayer()) return;
 
   if (compatibilityHandoff) {
     const { url, position, live } = compatibilityHandoff;
@@ -2225,6 +2243,10 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (nativeRecoveryInProgress) return;
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    // macOS keeps the app running after its window closes, and closing it
+    // stopped the player (killMpv): the new window needs a player again.
+    void createWindow()
+      .then(() => startPlayer())
+      .catch((error) => debugLog(`Reopening the window failed: ${error instanceof Error ? error.message : error}`, 'app'));
   }
 });
