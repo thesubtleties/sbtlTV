@@ -140,6 +140,21 @@ export interface DesktopColors {
   caelestia: import('../styles/palettes').PaletteRoles | null;
 }
 
+/** Settings > Privacy: what IP outside services see (asks Mullvad's checker, only when called) */
+export interface IpCheckResult {
+  ip: string;
+  city: string | null;
+  country: string | null;
+  /** Who owns the address: an ISP, or a VPN's hosting company */
+  organization: string | null;
+  /** The Mullvad server the connection leaves from, when it is a Mullvad exit */
+  mullvadServer: string | null;
+}
+
+export interface PrivacyApi {
+  checkIp: () => Promise<{ success?: boolean; data?: IpCheckResult; error?: string }>;
+}
+
 export interface AppearanceApi {
   getDesktopColors: () => Promise<DesktopColors>;
   onDesktopColorsChanged: (callback: (colors: DesktopColors) => void) => () => void;
@@ -296,6 +311,7 @@ declare global {
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
     appearance?: AppearanceApi;
+    privacy?: PrivacyApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
     debug?: DebugApi;

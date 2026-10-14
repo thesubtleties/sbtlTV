@@ -17,6 +17,12 @@ test('credentials before the host and in the query are dropped too', () => {
   assert.equal(redactUrls('http://host.example?username=u&password=p'), 'http://host.example/…');
 });
 
+test('text glued in front of a URL does not let it through', () => {
+  assert.equal(redactUrls('x1http://provider.example/live/u/p/1.ts'), 'x1http://provider.example/…');
+  assert.equal(redactUrls('[http://provider.example/live/u/p/1.ts]'), '[http://provider.example/…');
+  assert.equal(redactUrls('://provider.example/live/u/p/1.ts'), '://provider.example/…');
+});
+
 test('every URL in a line is redacted; text without one is unchanged', () => {
   assert.equal(redactUrls('a http://a.example/1 b http://b.example/2'), 'a http://a.example/… b http://b.example/…');
   assert.equal(redactUrls('Decoding 1920x1080 hwdec:vaapi'), 'Decoding 1920x1080 hwdec:vaapi');

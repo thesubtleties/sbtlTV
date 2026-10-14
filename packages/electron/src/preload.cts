@@ -243,6 +243,12 @@ contextBridge.exposeInMainWorld('subtitles', {
   },
 });
 
+// Settings > Privacy: what IP outside services see (asks Mullvad's checker, only when called)
+interface IpCheckResult { ip: string; city: string | null; country: string | null; organization: string | null; mullvadServer: string | null }
+contextBridge.exposeInMainWorld('privacy', {
+  checkIp: (): Promise<{ success?: boolean; data?: IpCheckResult; error?: string }> => ipcRenderer.invoke('privacy-check-ip'),
+});
+
 // Colors the desktop provides, for Settings > Appearance
 interface DesktopColors {
   accent: string | null;

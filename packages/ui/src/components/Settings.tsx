@@ -11,6 +11,7 @@ import { MoviesTab } from './settings/MoviesTab';
 import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
+import { PrivacyTab } from './settings/PrivacyTab';
 import { VideoPlayerTab } from './settings/VideoPlayerTab';
 import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
@@ -267,6 +268,16 @@ export function Settings({ onClose }: SettingsProps) {
           <SecurityTab
             allowLanSources={allowLanSources}
             onAllowLanSourcesChange={setAllowLanSources}
+          />
+        );
+      case 'privacy':
+        return (
+          <PrivacyTab
+            tmdbKeySet={tmdbApiKey.trim().length > 0}
+            posterDbKeySet={posterDbApiKey.trim().length > 0}
+            teamLogosEnabled={sportsMatchupEnabled}
+            autoUpdateEnabled={autoUpdateEnabled}
+            debugLoggingEnabled={debugLoggingEnabled}
           />
         );
       case 'appearance':

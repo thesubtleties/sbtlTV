@@ -12,6 +12,7 @@ import { selectChromiumGpuIdentity } from './gpu-selection.js';
 import { startDataHost, type DataHost } from './data/data-host.js';
 import { isTransientDecodeError } from './mpv-error-filter.js';
 import { redactUrls } from './log-redact.js';
+import { IP_CHECK_URL, parseIpCheck } from './ip-check.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
@@ -1784,6 +1785,19 @@ ipcMain.handle('debug-open-log-folder', async () => {
   const logPath = getDebugLogPath();
   shell.showItemInFolder(logPath);
   return { success: true };
+});
+
+// Settings > Privacy: what IP the outside services see. Only on request, one
+// call to Mullvad's public checker; the answer is shown, never stored or logged.
+ipcMain.handle('privacy-check-ip', async () => {
+  try {
+    const response = await electronNet.fetch(IP_CHECK_URL, { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) return { error: `The checker answered ${response.status}` };
+    const result = parseIpCheck(await response.json());
+    return result ? { success: true, data: result } : { error: 'The checker sent an answer without an IP address' };
+  } catch (error) {
+    return { error: error instanceof Error && error.name === 'TimeoutError' ? 'The checker did not answer' : 'Could not reach the checker' };
+  }
 });
 
 // Desktop colors for Settings > Appearance (system accent, Caelestia palette)

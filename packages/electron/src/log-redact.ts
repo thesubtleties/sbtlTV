@@ -2,9 +2,10 @@
 // URLs carry them in the path (Xtream: /live/<user>/<pass>/<id>.ts), the query
 // or before the host. Pure, so it runs under node:test.
 
-// A URL runs to the next whitespace: passwords can hold quotes, < or @, so
-// nothing inside the token may end it early.
-const URL_TOKEN = /\b[a-z][a-z0-9+.-]*:\/\/\S*/gi;
+// Every :// starts a URL, whatever is glued in front of it (no word-boundary or
+// scheme rules a log line could slip past), and the URL runs to the next
+// whitespace: passwords can hold quotes, < or @, so nothing inside may end it early.
+const URL_TOKEN = /[a-z0-9+.-]*:\/\/\S*/gi;
 
 /** Every URL in the text cut down to scheme://host/… (scheme://… when the URL holds an @ anywhere: credentials may sit before the host). */
 export function redactUrls(text: string): string {

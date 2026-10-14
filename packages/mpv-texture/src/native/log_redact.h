@@ -6,8 +6,9 @@
 // Stream URLs carry provider credentials (Xtream puts the username and password
 // in the path). mpv's log lines go to stderr (a terminal or the system journal),
 // so every URL in them is cut to scheme://host/..., as the app's debug log does
-// (packages/electron/src/log-redact.ts). A URL runs to the next whitespace; one
-// holding an @ anywhere (credentials before the host) keeps only its scheme.
+// (packages/electron/src/log-redact.ts). Every :// starts a URL, whatever is
+// glued in front of it; a URL runs to the next whitespace, and one holding an @
+// anywhere (credentials before the host) keeps only its scheme.
 inline std::string redactUrls(const std::string& text) {
     static const char* const kEllipsis = "\xE2\x80\xA6";
     const auto isSchemeChar = [](char c) {
@@ -23,11 +24,6 @@ inline std::string redactUrls(const std::string& text) {
         }
         size_t start = sep;
         while (start > pos && isSchemeChar(text[start - 1])) start--;
-        if (start == sep || !std::isalpha(static_cast<unsigned char>(text[start]))) {
-            out.append(text, pos, sep + 3 - pos);  // no scheme before it: not a URL
-            pos = sep + 3;
-            continue;
-        }
         size_t end = sep + 3;
         while (end < text.size() && !std::isspace(static_cast<unsigned char>(text[end]))) end++;
         out.append(text, pos, start - pos);
