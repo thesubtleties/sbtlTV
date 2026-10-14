@@ -161,7 +161,7 @@ let lastUncaughtReportAt = 0;
 process.on('uncaughtException', (error) => {
   const summary = error instanceof Error ? error.message : String(error);
   const detail = error instanceof Error ? error.stack ?? summary : summary;
-  console.error('[main] Uncaught exception:', detail);
+  console.error('[main] Uncaught exception:', redactUrls(detail));
   debugLog(`Uncaught exception: ${detail}`, 'system');
   const now = Date.now();
   if (now - lastUncaughtReportAt < 30_000) return;
@@ -703,14 +703,14 @@ async function initMpv(): Promise<void> {
       if (str) debugLog(str, 'mpv-stdout');
       // Only console.log non-status lines
       if (!str.includes('AV:') && !str.includes('A:') && !str.includes('V:')) {
-        console.log('[mpv stdout]', str);
+        console.log('[mpv stdout]', redactUrls(str));
       }
     });
 
     mpvProcess.stderr?.on('data', (data: Buffer) => {
       const str = data.toString().trim();
       if (str) debugLog(str, 'mpv-stderr');
-      console.log('[mpv stderr]', str);
+      console.log('[mpv stderr]', redactUrls(str));
     });
 
     mpvProcess.on('error', (error: Error) => {
@@ -1087,7 +1087,7 @@ async function connectToMpvSocket(): Promise<void> {
           const msg = JSON.parse(line);
           handleMpvMessage(msg);
         } catch {
-          console.error('[mpv] Failed to parse:', line);
+          console.error('[mpv] Failed to parse:', redactUrls(line));
         }
       }
     });
@@ -1473,7 +1473,7 @@ setInterval(() => {
   checkStreamHealth().catch((err) => {
     // Shown even with debug logging off, once per distinct message: a failing check is a watchdog that is not watching.
     const message = err instanceof Error ? err.message : String(err);
-    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', message);
+    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', redactUrls(message));
     lastHealthCheckError = message;
     debugLog(`Stream health check failed: ${message}`, 'mpv');
   });
