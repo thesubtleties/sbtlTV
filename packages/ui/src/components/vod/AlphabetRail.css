@@ -26,33 +26,33 @@
   justify-content: center;
   font-size: 0.75rem;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   background: transparent;
   border: none;
   padding: 0;
   cursor: pointer;
   transition: all 100ms ease;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .alphabet-rail__letter:hover:not(:disabled) {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-2);
 }
 
 .alphabet-rail__letter--current {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.15);
+  color: var(--text);
+  background: var(--fill-4);
 }
 
 .alphabet-rail__letter--active {
-  color: #fff;
+  color: var(--text);
   font-size: 0.85rem;
   font-weight: 600;
   transform: scale(1.3);
 }
 
 .alphabet-rail__letter--unavailable {
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--faint);
   cursor: default;
 }
 
@@ -70,9 +70,9 @@
   justify-content: center;
   font-size: 1.5rem;
   font-weight: 600;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
+  color: var(--text);
+  background: var(--fill-4);
+  border-radius: var(--r-control);
   backdrop-filter: blur(12px);
   pointer-events: none;
   animation: magnifier-pop 100ms ease-out;
@@ -94,7 +94,7 @@
   padding: 4px 6px;
   font-size: 0.7rem;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   white-space: nowrap;
   text-align: center;
 }
@@ -103,7 +103,7 @@
 .alphabet-rail__separator {
   width: 20px;
   height: 1px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--fill-4);
   margin: 4px 0 6px;
 }
 

@@ -1,0 +1,399 @@
+/* Settings building blocks (ui.tsx), in shtl's settings style. */
+
+.st-tab {
+  display: flex;
+  flex-direction: column;
+  padding: 22px 22px 28px;
+  height: auto;
+}
+
+/* Sections: hairlines between them, not extra space */
+.st-section + .st-section {
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line-faint);
+}
+
+.st-section__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.st-section__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.st-section__desc {
+  margin: 6px 0 0;
+  max-width: 620px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.st-section__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.st-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 18px;
+}
+
+/* Rows: title column with help, control on the right */
+.st-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.st-row__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.st-row__help {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.st-row__control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Segmented control */
+.st-seg {
+  display: inline-flex;
+  gap: 2px;
+  height: 34px;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+}
+
+.st-seg__item {
+  min-width: 92px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r-inner);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+
+.st-seg__item:hover {
+  background: var(--fill-2);
+}
+
+.st-seg__item--on,
+.st-seg__item--on:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.st-seg--compact .st-seg__item {
+  min-width: 0;
+  padding: 0 11px;
+}
+
+.st-seg--disabled {
+  opacity: 0.4;
+}
+
+.st-seg--disabled .st-seg__item {
+  cursor: default;
+}
+
+/* Buttons */
+.st-btn {
+  height: 34px;
+  min-width: 88px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.st-btn:hover:not(:disabled) {
+  background: var(--fill-2);
+  border-color: var(--edge);
+}
+
+.st-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent-edge);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.st-btn--primary:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent-edge);
+  filter: brightness(1.08);
+}
+
+.st-btn--danger {
+  color: var(--danger);
+}
+
+.st-btn--danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+}
+
+.st-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Text field */
+.st-input {
+  height: 34px;
+  width: 100%;
+  max-width: 360px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  transition: border-color 0.1s ease;
+}
+
+.st-input::placeholder {
+  color: var(--faint);
+}
+
+.st-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Small notes under a control */
+.st-hint {
+  margin: 0;
+  max-width: 560px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.st-hint--ok { color: var(--success); }
+.st-hint--warn { color: var(--warning); }
+.st-hint--danger { color: var(--danger); }
+
+.st-hint a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.st-hint a:hover {
+  text-decoration: underline;
+}
+
+/* A path or other technical value */
+.st-code {
+  display: block;
+  max-width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.st-section__desc a,
+.st-row__help a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.st-section__desc a:hover,
+.st-row__help a:hover {
+  text-decoration: underline;
+}
+
+/* An action with an inline confirmation */
+.st-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.st-confirm__question {
+  margin-right: 4px;
+  font-size: 13px;
+  color: var(--warning);
+}
+
+/* Slider with a value readout */
+.st-slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 380px;
+  height: 34px;
+}
+
+.st-slider input[type='range'] {
+  flex: 1;
+  height: 4px;
+  margin: 0;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--fill), var(--fill-4) var(--fill));
+  appearance: none;
+  cursor: pointer;
+}
+
+.st-slider input[type='range']::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--card);
+  appearance: none;
+  transition: transform 0.1s ease;
+}
+
+.st-slider input[type='range']:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+
+.st-slider input[type='range']:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 6px;
+}
+
+.st-slider__value {
+  min-width: 56px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+.st-keyfield {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 440px;
+}
+
+.st-keyfield .st-input {
+  flex: 1;
+}
+
+/* Small status pill, e.g. a subscription tier */
+.st-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-inner);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Toggle chips (e.g. genres) */
+.st-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.st-chip {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--fill-1);
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.st-chip:hover:not(:disabled) {
+  background: var(--fill-2);
+  border-color: var(--edge);
+}
+
+.st-chip--on,
+.st-chip--on:hover:not(:disabled) {
+  background: var(--accent-faint);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.st-chip:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.st-btn--small {
+  height: 28px;
+  min-width: 0;
+  padding: 0 11px;
+  border-radius: var(--r-control);
+  font-size: 12px;
+}
+
+/* Keyboard focus, for every control in Settings */
+.st-seg__item:focus-visible,
+.st-btn:focus-visible,
+.st-chip:focus-visible,
+.palette-tile:focus-visible,
+.settings-nav-item:focus-visible,
+.close-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-tab *,
+  .settings-sidebar * {
+    transition: none !important;
+  }
+}

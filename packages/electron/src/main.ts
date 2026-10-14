@@ -13,6 +13,7 @@ import { startDataHost, type DataHost } from './data/data-host.js';
 import { isTransientDecodeError } from './mpv-error-filter.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
+import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -853,10 +854,10 @@ async function initNativeMpv(): Promise<boolean> {
     // Forward errors to renderer
     bridge.onError((error) => {
       if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
-      // Linux only: hwdec probing and mid-GOP decode errors are logged by
-      // ffmpeg at error level but recover on their own; the debug log keeps
+      // hwdec probing, mid-GOP decode errors and skipped file metadata are
+      // logged at error level but do not stop playback; the debug log keeps
       // them, the red banner does not.
-      if (process.platform === 'linux' && isTransientDecodeError(error)) {
+      if (isTransientDecodeError(error)) {
         debugLog(`mpv (not shown): ${error.trim()}`, 'mpv');
         return;
       }
@@ -1557,6 +1558,9 @@ ipcMain.handle('debug-open-log-folder', async () => {
   return { success: true };
 });
 
+// Desktop colors for Settings > Appearance (system accent, Caelestia palette)
+ipcMain.handle('appearance-get-desktop-colors', () => readDesktopColors());
+
 // App version
 ipcMain.handle('get-app-version', () => app.getVersion());
 
@@ -1816,6 +1820,11 @@ app.whenReady().then(async () => {
   });
 
   await createWindow();
+
+  // Caelestia rewrites its palette on every wallpaper change.
+  watchDesktopColors(() => {
+    void readDesktopColors().then((colors) => sendToRenderer('appearance-desktop-colors', colors));
+  });
 
   if (USE_NATIVE_MPV) {
     let nativeSuccess = false;

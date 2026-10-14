@@ -1,14 +1,14 @@
 .settings-sidebar {
-  width: 140px;
-  min-width: 140px;
-  background: rgba(0, 0, 0, 0.3);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  padding: 0.75rem 0;
+  width: 176px;
+  min-width: 176px;
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  border-right: 1px solid var(--line-faint);
+  padding: 10px 8px;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  scrollbar-color: var(--fill-3) transparent;
 }
 
 .settings-sidebar::-webkit-scrollbar {
@@ -20,12 +20,12 @@
 }
 
 .settings-sidebar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
   border-radius: 3px;
 }
 
 .settings-sidebar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--fill-5);
 }
 
 .settings-category {
@@ -37,36 +37,35 @@
 }
 
 .settings-category-header {
-  padding: 0.75rem 0.875rem 0.375rem;
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.35);
+  padding: 12px 10px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--faint);
 }
 
 .settings-nav-item {
   display: block;
   width: 100%;
-  padding: 0.4rem 0.875rem;
+  margin: 1px 0;
+  padding: 7px 10px;
   background: none;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
   text-align: left;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.8rem;
+  color: var(--text-3);
+  font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
 }
 
 .settings-nav-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--fill-2);
+  color: var(--text-2);
 }
 
 .settings-nav-item.active {
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
-  font-weight: 500;
-  border-left: 2px solid #00d4ff;
-  padding-left: calc(0.875rem - 2px);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+  font-weight: 600;
 }

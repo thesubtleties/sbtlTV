@@ -226,6 +226,11 @@ function App() {
     }
 
     refreshPlayerMode();
+    // mpv-ready is sent once, when main finishes setting up the player. A
+    // window that loads after that (a reload) asks instead.
+    window.mpv.getMode()
+      .then((info) => { if (info.settled) setMpvReady(true); })
+      .catch((err) => debugLog(`getMode failed: ${err instanceof Error ? err.message : err}`, 'mpv'));
     window.mpv.onReady((ready) => {
       console.log('mpv ready:', ready);
       setMpvReady(ready);
@@ -691,7 +696,7 @@ function App() {
           {/* macOS can't minimize a window in a native fullscreen space — hide it there */}
           {!(isFullscreen && window.platform?.isMac) && (
             <button onClick={handleMinimize} title="Minimize">
-              ─
+              <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5.5h10" /></svg>
             </button>
           )}
           {/* In fullscreen, maximize is meaningless (and flaky on macOS), so the button exits fullscreen */}
@@ -699,10 +704,14 @@ function App() {
             onClick={isFullscreen ? handleToggleFullscreen : handleMaximize}
             title={isFullscreen ? 'Exit fullscreen' : 'Maximize'}
           >
-            {isFullscreen ? '❐' : '□'}
+            {isFullscreen ? (
+              <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 2.5V.5h7v7h-2M.5 2.5h7v7h-7z" /></svg>
+            ) : (
+              <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M.5 .5h9v9h-9z" /></svg>
+            )}
           </button>
           <button onClick={handleClose} className="close" title="Close">
-            ✕
+            <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M.5 .5l9 9M9.5 .5l-9 9" /></svg>
           </button>
         </div>
       </div>

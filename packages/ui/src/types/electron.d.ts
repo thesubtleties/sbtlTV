@@ -63,8 +63,28 @@ export interface StorageResult<T = void> {
   data?: T;
 }
 
+export type PaletteId = 'sbtl' | 'mocha' | 'pi' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula' | 'caelestia';
+export type Typeface = 'fira' | 'mono' | 'system';
+export interface Appearance {
+  palette: PaletteId;
+  typeface: Typeface;
+  accent: 'palette' | 'system';  // 'system' takes the OS accent where there is one
+}
+
+/** Colors the desktop provides (Settings > Appearance). */
+export interface DesktopColors {
+  accent: string | null;
+  caelestia: import('../styles/palettes').PaletteRoles | null;
+}
+
+export interface AppearanceApi {
+  getDesktopColors: () => Promise<DesktopColors>;
+  onDesktopColorsChanged: (callback: (colors: DesktopColors) => void) => () => void;
+}
+
 export interface AppSettings {
   theme: 'dark' | 'light';
+  appearance?: Appearance;  // Palette and typeface (default sbtl / fira)
   lastSourceId?: string;
   tmdbApiKey?: string;
   vodRefreshHours?: number;  // 0 = manual only, default 24
@@ -201,6 +221,7 @@ declare global {
     mpv?: MpvApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
+    appearance?: AppearanceApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
     debug?: DebugApi;

@@ -14,6 +14,7 @@ import { SecurityTab } from './settings/SecurityTab';
 import { VideoPlayerTab } from './settings/VideoPlayerTab';
 import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
+import { AppearanceTab } from './settings/AppearanceTab';
 import './Settings.css';
 
 interface SettingsProps {
@@ -267,6 +268,8 @@ export function Settings({ onClose }: SettingsProps) {
             onAllowLanSourcesChange={setAllowLanSources}
           />
         );
+      case 'appearance':
+        return <AppearanceTab />;
       case 'player':
         return (
           <VideoPlayerTab
@@ -300,7 +303,8 @@ export function Settings({ onClose }: SettingsProps) {
       <div className="settings-panel settings-panel--sidebar">
         <div className="settings-header">
           <h2>Settings</h2>
-          <button className="close-btn" onClick={onClose}>✕</button>
+          <span className="settings-header__hint">Saved as you go · Esc closes</span>
+          <button className="close-btn" onClick={onClose} aria-label="Close settings">✕</button>
         </div>
 
         {/* Encryption Warning */}

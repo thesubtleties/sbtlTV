@@ -1,8 +1,9 @@
 /**
  * mpv forwards every error-level log line to the renderer as a red banner.
- * Some of those recover on their own within a second and should only reach
- * the debug log: hardware decoder probing while mpv picks an hwdec, and the
- * broken first pictures of a live stream joined between keyframes.
+ * Some of those recover on their own within a second, or never mattered, and
+ * should only reach the debug log: hardware decoder probing while mpv picks an
+ * hwdec, the broken first pictures of a live stream joined between keyframes,
+ * and file metadata ffmpeg skips while the video plays normally.
  *
  * Only the messages listed below are filtered; anything else, including every
  * audio error and any decoder that fails to open, keeps its banner. Every mpv
@@ -25,6 +26,9 @@ const TRANSIENT_PATTERNS = [
   /^libmpv_render\/[\w-]+: /,
   /^(vaapi|cuda): /,
   /^ffmpeg: CUDA: Could not dynamically load/,
+  // An MP4/MOV that lists a chapter track it does not contain: ffmpeg skips
+  // the chapters and the video plays (seen in the field on macOS).
+  /^ffmpeg\/demuxer: [\w,]+: Referenced QT chapter track not found/,
 ];
 
 export function isTransientDecodeError(message: string): boolean {

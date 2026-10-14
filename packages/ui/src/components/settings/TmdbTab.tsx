@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { validateAccessToken } from '../../services/tmdb';
 import { useUpdateSettings } from '../../stores/uiStore';
+import { Hint, KeyField, OptionRow, Section, SettingsTab } from './ui';
 
 interface TmdbTabProps {
   tmdbApiKey: string;
@@ -36,55 +37,34 @@ export function TmdbTab({
   }
 
   return (
-    <div className="settings-tab-content">
-      <div className="settings-section">
-        <div className="section-header">
-          <h3>TMDB Integration</h3>
-        </div>
-
-        <p className="section-description">
-          Basic TMDB integration is automatic. An Access Token enables enhancements like
-          filling in missing metadata from your provider and higher quality backdrop images.
-          Use the token labeled "API Read Access Token"{' '}
-          <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer" className="tmdb-link">
-            from here
-          </a>.
-        </p>
-
-        <div className="tmdb-form">
-          <div className="form-group inline">
-            <label>Access Token</label>
-            <input
-              type="password"
-              value={tmdbApiKey}
-              onChange={(e) => {
-                onApiKeyChange(e.target.value);
-                onApiKeyValidChange(null);
-              }}
-              placeholder="API Read Access Token"
-            />
-            <button
-              type="button"
-              onClick={saveTmdbApiKey}
-              disabled={tmdbValidating}
-              className={tmdbKeyValid === true ? 'success' : tmdbKeyValid === false ? 'error' : ''}
-            >
-              {tmdbValidating ? 'Validating...' : tmdbKeyValid === true ? 'Valid' : tmdbKeyValid === false ? 'Invalid' : 'Save'}
-            </button>
-          </div>
-          <p className="form-hint">
-            Get a free account at{' '}
-            <a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener noreferrer">
-              themoviedb.org
-            </a>
-          </p>
-        </div>
-
-      </div>
-
-      <p className="settings-disclaimer">
-        This product uses the TMDB API but is not endorsed or certified by TMDB.
-      </p>
-    </div>
+    <SettingsTab>
+      <Section
+        title="TMDB"
+        description="Basic TMDB data works without setup. An access token adds more: cast and director on detail pages, live genre rows, and filling in metadata your provider leaves out."
+      >
+        <OptionRow
+          title="Access token"
+          help={
+            <>
+              Use the token labeled "API Read Access Token" in your{' '}
+              <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer">TMDB API settings</a>.
+              No account?{' '}
+              <a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener noreferrer">It's free</a>.
+            </>
+          }
+        >
+          <KeyField
+            label="TMDB access token"
+            value={tmdbApiKey}
+            placeholder="API Read Access Token"
+            validating={tmdbValidating}
+            valid={tmdbKeyValid}
+            onChange={(key) => { onApiKeyChange(key); onApiKeyValidChange(null); }}
+            onSave={() => void saveTmdbApiKey()}
+          />
+        </OptionRow>
+        <Hint>This product uses the TMDB API but is not endorsed or certified by TMDB.</Hint>
+      </Section>
+    </SettingsTab>
   );
 }

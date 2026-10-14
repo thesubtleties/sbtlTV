@@ -6,9 +6,9 @@
   width: calc(var(--category-content-width, 160px) + 70px);
   padding-left: 60px; /* Space for collapsed sidebar */
   box-sizing: border-box;
-  background: rgb(0 0 0 / var(--guide-opacity, 0.95));
+  background: color-mix(in srgb, var(--overlay-base) calc(var(--guide-opacity, 0.95) * 100%), transparent);
   backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   z-index: 90; /* Below sidebar (100), above guide (80) */
@@ -41,15 +41,13 @@
 
 .category-strip-header {
   padding: 14px 12px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--line);
 }
 
 .category-strip-title {
-  font-size: 0.75rem;
+  font-size: 14px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text);
 }
 
 /* Category filter */
@@ -58,28 +56,28 @@
   display: flex;
   align-items: center;
   margin: 8px 10px 4px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  background: var(--fill-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .category-filter:focus-within {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.18);
+  background: var(--fill-1);
+  border-color: var(--accent);
 }
 
 .category-filter__icon {
   width: 14px;
   height: 14px;
   margin-left: 10px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--faint);
   flex-shrink: 0;
   transition: color 0.2s ease;
 }
 
 .category-filter:focus-within .category-filter__icon {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .category-filter__input {
@@ -87,15 +85,15 @@
   background: none;
   border: none;
   outline: none;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 0.78rem;
+  color: var(--text);
+  font-size: 13px;
   padding: 7px 8px;
   width: 100%;
   font-family: inherit;
 }
 
 .category-filter__input::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--faint);
 }
 
 .category-filter__clear {
@@ -106,12 +104,12 @@
   border: none;
   cursor: pointer;
   padding: 0 8px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--faint);
   transition: color 0.15s ease;
 }
 
 .category-filter__clear:hover {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-3);
 }
 
 .category-filter__clear svg {
@@ -131,9 +129,9 @@
   overscroll-behavior: contain;
 }
 
-/* Hide scrollbar but keep functionality */
+/* Scrollbar: shows while the list is hovered, like the channel list */
 .category-strip-list::-webkit-scrollbar {
-  width: 4px;
+  width: 10px;
 }
 
 .category-strip-list::-webkit-scrollbar-track {
@@ -141,45 +139,61 @@
 }
 
 .category-strip-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 2px;
+  min-height: 40px;
+  background: transparent;
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 5px;
 }
 
-.category-strip-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+.category-strip-list:hover::-webkit-scrollbar-thumb {
+  background-color: var(--fill-5);
+}
+
+.category-strip-list::-webkit-scrollbar-thumb:hover,
+.category-strip-list::-webkit-scrollbar-thumb:active {
+  background-color: var(--accent-strong);
 }
 
 .category-item {
-  width: 100%;
+  width: calc(100% - 16px);
+  margin: 1px 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  border: none;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
   background: transparent;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-2);
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
 .category-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: white;
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+.category-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .category-item.selected {
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .category-item.selected .category-count {
-  background: rgba(0, 212, 255, 0.3);
-  color: #00d4ff;
+  color: var(--accent);
 }
 
 .category-name {
-  font-size: 0.85rem;
+  font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -188,12 +202,11 @@
 }
 
 .category-count {
-  font-size: 0.7rem;
-  font-weight: 500;
-  padding: 2px 6px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--font-condensed);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
@@ -208,21 +221,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px 4px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--muted);
   user-select: none;
 }
 
 .category-group-name {
-  font-size: 0.75rem;
+  font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.category-group-header .category-count {
-  font-size: 0.6rem;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-3);
 }
 
 .category-sub-item {
@@ -230,22 +236,22 @@
 }
 
 .category-sub-item .category-name {
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  color: var(--text-3);
 }
 
 .category-sub-item:hover .category-name {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-2);
 }
 
 .category-sub-item.selected .category-name {
-  color: #00d4ff;
+  color: var(--accent);
 }
 
 .category-empty {
   padding: 20px 12px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .category-empty p {

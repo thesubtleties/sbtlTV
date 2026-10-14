@@ -4,10 +4,10 @@
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(10, 10, 10, 0.92);
+  background: color-mix(in srgb, var(--overlay-base) 90%, transparent);
   backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  padding: 12px 18px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -53,8 +53,8 @@
   width: 36px;
   height: 36px;
   object-fit: contain;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--r-control);
+  background: var(--fill-2);
   flex-shrink: 0;
 }
 
@@ -67,9 +67,9 @@
 }
 
 .npb-channel-name {
-  font-size: 0.85rem;
+  font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -77,9 +77,9 @@
 }
 
 .npb-program-title {
-  font-size: 0.78rem;
+  font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -87,14 +87,14 @@
 }
 
 .npb-no-program {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: 13px;
+  color: var(--faint);
   font-style: italic;
 }
 
 .npb-vod-year {
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 /* Soft vertical divider with faded top/bottom */
@@ -105,8 +105,8 @@
   background: linear-gradient(
     to bottom,
     transparent 0%,
-    rgba(255, 255, 255, 0.2) 20%,
-    rgba(255, 255, 255, 0.2) 80%,
+    var(--fill-5) 20%,
+    var(--fill-5) 80%,
     transparent 100%
   );
 }
@@ -120,8 +120,8 @@
 }
 
 .npb-program-desc {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  color: var(--muted);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -146,15 +146,15 @@
 
 .npb-progress-bar {
   flex: 1;
-  height: 3px;
-  background: rgba(255, 255, 255, 0.1);
+  height: 4px;
+  background: var(--fill-3);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .npb-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #00d4ff, #00a8cc);
+  background: var(--accent);
   border-radius: 2px;
   transition: width 0.5s ease;
 }
@@ -165,8 +165,9 @@
 }
 
 .npb-time-elapsed {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--font-condensed);
+  font-size: 12px;
+  color: var(--text-3);
   white-space: nowrap;
   min-width: 50px;
   text-align: left;
@@ -177,7 +178,7 @@
 .npb-progress-interactive {
   cursor: pointer;
   position: relative;
-  height: 3px;
+  height: 4px;
   transition: height 0.15s ease;
 }
 
@@ -195,7 +196,7 @@
   top: 50%;
   width: 12px;
   height: 12px;
-  background: white;
+  background: var(--text);
   border-radius: 50%;
   transform: translate(-50%, -50%) scale(0);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
@@ -217,11 +218,13 @@
   position: absolute;
   bottom: calc(100% + 8px);
   transform: translateX(-50%);
-  background: rgba(20, 20, 20, 0.95);
-  color: white;
+  background: color-mix(in srgb, var(--card) 95%, transparent);
+  color: var(--text);
   padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-inner);
+  font-family: var(--font-condensed);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
@@ -235,12 +238,13 @@
   left: 50%;
   transform: translateX(-50%);
   border: 5px solid transparent;
-  border-top-color: rgba(20, 20, 20, 0.95);
+  border-top-color: color-mix(in srgb, var(--card) 95%, transparent);
 }
 
 .npb-time-remaining {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.5);
+  font-family: var(--font-condensed);
+  font-size: 12px;
+  color: var(--muted);
   white-space: nowrap;
   min-width: 65px;
   text-align: right;
@@ -261,17 +265,35 @@
   justify-content: center;
   width: 34px;
   height: 34px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--fill-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  color: var(--text-2);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.12s ease;
 }
 
 .npb-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--fill-3);
+  border-color: var(--edge);
+  color: var(--text);
+}
+
+.npb-btn--primary {
+  background: var(--accent-glass);
+  border-color: var(--accent-strong);
+  color: var(--text);
+}
+
+.npb-btn--primary:hover:not(:disabled) {
+  background: var(--accent-glass-hover);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.npb-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .npb-btn:active:not(:disabled) {
@@ -297,11 +319,11 @@
 }
 
 .npb-volume-slider {
-  width: 70px;
-  height: 3px;
+  width: 76px;
+  height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.15);
+  background: linear-gradient(to right, var(--accent) var(--volume, 100%), var(--fill-4) var(--volume, 100%));
   border-radius: 2px;
   cursor: pointer;
 }
@@ -309,9 +331,9 @@
 .npb-volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 10px;
-  height: 10px;
-  background: white;
+  width: 12px;
+  height: 12px;
+  background: var(--text);
   border-radius: 50%;
   cursor: pointer;
   transition: transform 0.1s ease;
@@ -324,7 +346,7 @@
 .npb-volume-slider::-moz-range-thumb {
   width: 10px;
   height: 10px;
-  background: white;
+  background: var(--text);
   border: none;
   border-radius: 50%;
   cursor: pointer;
@@ -336,8 +358,9 @@
 }
 
 .npb-volume-value {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.5);
+  font-family: var(--font-condensed);
+  font-size: 12px;
+  color: var(--muted);
   min-width: 22px;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -352,8 +375,8 @@
 }
 
 .npb-empty-state span {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.35);
+  font-size: 13px;
+  color: var(--faint);
   font-style: italic;
 }
 

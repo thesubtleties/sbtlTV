@@ -1,0 +1,76 @@
+/* Appearance tab: palette tiles (rows and controls come from ui.css). */
+
+.appearance-tab {
+  gap: 26px;
+}
+
+.opt-row__note {
+  display: block;
+  margin-top: 10px;
+  color: var(--faint);
+}
+
+/* Palette tiles: each drawn in its own colors, with a swatch strip */
+.palette-tiles {
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.palette-tile {
+  position: relative;
+  height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.1s ease, filter 0.1s ease;
+}
+
+.palette-tile:hover {
+  border-color: var(--edge-2);
+  filter: brightness(1.12);
+}
+
+.palette-tile--on,
+.palette-tile--on:hover {
+  background: var(--accent-soft);
+  border: 2px solid var(--accent);
+  padding: 8px 9px;
+  color: var(--accent);
+  font-weight: 600;
+  filter: none;
+}
+
+.palette-tile__label {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette-tile__swatch {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 9px;
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.palette-tile--on .palette-tile__swatch {
+  left: 9px;
+  right: 9px;
+  bottom: 8px;
+}
+
+.palette-tile__swatch span {
+  flex: 1;
+}

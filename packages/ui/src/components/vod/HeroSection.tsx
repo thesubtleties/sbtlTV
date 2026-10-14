@@ -155,7 +155,6 @@ export function HeroSection({
       {/* Content */}
       <div className={`hero__content ${isContentTransitioning ? 'hero__content--transitioning' : ''}`}>
         <div className="hero__info">
-          <span className="hero__type">{type === 'movie' ? 'Movie' : 'Series'}</span>
           <h1 className="hero__title">{displayTitle}</h1>
 
           <div className="hero__meta">
@@ -198,7 +197,7 @@ export function HeroSection({
                 <path d="M12 9h.01" />
                 <path d="M11 12h1v4h1" />
               </svg>
-              More Info
+              More info
             </button>
           </div>
         </div>

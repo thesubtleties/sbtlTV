@@ -1,6 +1,7 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { useUpdateSettings } from '../../stores/uiStore';
 import type { AppSettings } from '../../types/electron';
+import { Button, Hint, Section, SettingsTab } from './ui';
 
 interface GenreCarouselTabProps {
   tmdbApiKey: string | null;
@@ -12,6 +13,8 @@ interface GenreCarouselTabProps {
   settingsKey: keyof Pick<AppSettings, 'movieGenresEnabled' | 'seriesGenresEnabled'>;
   title: string;
   description: string;
+  /** Sections shown above the genre picker */
+  before?: ReactNode;
 }
 
 export function GenreCarouselTab({
@@ -24,6 +27,7 @@ export function GenreCarouselTab({
   settingsKey,
   title,
   description,
+  before,
 }: GenreCarouselTabProps) {
   const { genres, loading } = useGenres(tmdbApiKey);
   const updateStoreSettings = useUpdateSettings();
@@ -82,78 +86,53 @@ export function GenreCarouselTab({
     await window.storage.updateSettings({ [settingsKey]: genreIds });
   }
 
+  const ready = settingsLoaded && !loading && !countsLoading;
+
   return (
-    <div className="settings-tab-content">
-      <div className="settings-section">
-        <div className="section-header">
-          <h3>{title}</h3>
-        </div>
-
-        <p className="section-description">
-          {description}
-        </p>
-
-        {!settingsLoaded || loading || countsLoading ? (
-          <div className="loading-state">Loading genres...</div>
+    <SettingsTab>
+      {before}
+      <Section
+        title={title}
+        description={description}
+        actions={ready && genres.length > 0 ? (
+          <>
+            <Button onClick={handleSelectAll} disabled={isAllSelected}>Select all</Button>
+            <Button onClick={handleDeselectAll} disabled={isNoneSelected}>Clear</Button>
+          </>
+        ) : undefined}
+      >
+        {!ready ? (
+          <Hint>Loading genres…</Hint>
         ) : genres.length === 0 ? (
-          <div className="empty-state">
-            <p>No genres available</p>
-            <p className="hint">Unable to load genres from cache</p>
-          </div>
+          <Hint>No genres available: the genre list could not be loaded.</Hint>
         ) : (
           <>
-            <div className="genre-actions">
-              <button
-                type="button"
-                className="sync-btn"
-                onClick={handleSelectAll}
-                disabled={isAllSelected}
-              >
-                Select All
-              </button>
-              <button
-                type="button"
-                className="sync-btn"
-                onClick={handleDeselectAll}
-                disabled={isNoneSelected}
-              >
-                Deselect All
-              </button>
-              <span className="genre-count">
-                {enabledGenres?.length || 0} of {availableGenreIds.length} selected
-              </span>
+            <Hint>
+              {enabledGenres?.length || 0} of {availableGenreIds.length} shown.
+              Dimmed genres have nothing from your library yet.
+              {!tmdbApiKey && ' A TMDB access token fills the rows with more titles.'}
+            </Hint>
+            <div className="st-chips">
+              {genres.map(genre => {
+                const available = hasContent(genre.id);
+                const on = available && (enabledGenres?.includes(genre.id) ?? true);
+                return (
+                  <button
+                    key={genre.id}
+                    type="button"
+                    className={`st-chip${on ? ' st-chip--on' : ''}`}
+                    aria-pressed={on}
+                    disabled={!available}
+                    onClick={() => handleToggleGenre(genre.id)}
+                  >
+                    {genre.name}
+                  </button>
+                );
+              })}
             </div>
-
-            <div className="genre-grid-container">
-              <div className="genre-grid">
-                {genres.map(genre => {
-                  const available = hasContent(genre.id);
-                  return (
-                    <label
-                      key={genre.id}
-                      className={`genre-checkbox ${!available ? 'genre-checkbox--disabled' : ''}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={available && (enabledGenres?.includes(genre.id) ?? true)}
-                        onChange={() => handleToggleGenre(genre.id)}
-                        disabled={!available}
-                      />
-                      <span className="genre-name">{genre.name}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {!tmdbApiKey && (
-              <p className="settings-disclaimer">
-                Add a TMDB access token for more genre options.
-              </p>
-            )}
           </>
         )}
-      </div>
-    </div>
+      </Section>
+    </SettingsTab>
   );
 }

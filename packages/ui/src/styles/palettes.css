@@ -1,0 +1,44 @@
+/*
+ * Palette roles for the first paint, before settings load: the sbtl palette.
+ * The palettes themselves live in palettes.ts, which sets these roles inline
+ * on the root element (see useCssVariableSync).
+ *
+ * overlay-base is what the guide and other panels over video are tinted with,
+ * at the guide opacity. progress is the watched-progress bar.
+ */
+
+:root,
+:root[data-palette='sbtl'] {
+  --bg: #0d0d0d;
+  --card: #141414;
+  --surface: #1a1a1a;
+  --line: rgba(255, 255, 255, 0.1);
+  --edge: rgba(255, 255, 255, 0.2);
+  --fg: #ffffff;
+  --muted: rgba(255, 255, 255, 0.5);
+  --accent: #00d4ff;
+  --on-accent: #0d0d0d;
+  --danger: #ef4444;
+  --teal: #22c55e;
+  --button: rgba(255, 255, 255, 0.85);
+  --on-button: #0d0d0d;
+  --heart: rgba(220, 60, 60, 0.8);
+  --heart-base: rgb(255, 180, 180);
+  --heart-hover: rgba(200, 50, 50, 0.85);
+  --overlay-base: #000000;
+  --progress: rgba(229, 9, 20, 0.65);
+}
+
+/* Palettes other than sbtl tint overlays with their own background and show
+   progress in their accent. */
+:root[data-palette]:not([data-palette='sbtl']) {
+  --overlay-base: var(--bg);
+  --progress: color-mix(in srgb, var(--accent) 80%, transparent);
+}
+
+/* Outside the house palettes (sbtl, Mocha, Pi stay black), overlays take the
+   palette's card tone, like the empty play area, so the guide and bars read as
+   the theme rather than black. */
+:root[data-palette]:not([data-palette='sbtl']):not([data-palette='mocha']):not([data-palette='pi']) {
+  --overlay-base: var(--card);
+}

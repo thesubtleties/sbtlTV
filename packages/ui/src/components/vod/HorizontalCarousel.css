@@ -2,9 +2,9 @@
   position: relative;
   /* Use padding instead of margin - Virtuoso can't measure margins correctly */
   margin-bottom: 0;
-  padding-bottom: 16px;
-  /* Fixed height for Virtuoso - all rows must be same size */
-  height: 366px;
+  padding-bottom: 0;
+  /* Fixed height for Virtuoso - all rows must be same size (VodPage fixedItemHeight is 20 more) */
+  height: 374px;
   box-sizing: border-box;
   overflow: hidden;
   display: flex;
@@ -13,7 +13,7 @@
 
 /* Empty/hidden carousel - same height as normal for Virtuoso fixedItemHeight */
 .carousel--empty {
-  height: 366px;
+  height: 374px;
   padding: 0;
   overflow: hidden;
 }
@@ -29,7 +29,7 @@
 .carousel__title {
   font-size: 1.125rem;
   font-weight: 500;
-  color: #fff;
+  color: var(--text);
   margin: 0;
   letter-spacing: 0.01em;
 }
@@ -42,21 +42,21 @@
 .carousel__nav-btn {
   width: 32px;
   height: 32px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--r-control);
+  background: var(--fill-3);
+  border: 1px solid var(--line);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.7);
-  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  color: var(--text-3);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .carousel__nav-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--fill-4);
+  color: var(--text);
+  border-color: var(--edge);
 }
 
 .carousel__nav-btn:disabled {
@@ -86,11 +86,11 @@
 
 .carousel__track {
   display: flex;
-  gap: 12px;
-  /* Top-weighted padding gives the hover scale(1.05) headroom so it isn't clipped by the
-     carousel's fixed height + overflow:hidden. Net vertical padding unchanged (16px) so the
-     row height and Virtuoso fixedItemHeight stay constant. */
-  padding: 12px 48px 4px;
+  gap: 16px;
+  /* Room for the hover scale(1.05) and its glow, which the scroll container would
+     otherwise clip (a horizontal scroller cannot let content spill vertically). The
+     row's bottom spacing lives here, inside the scroller, for the same reason. */
+  padding: 16px 48px 24px;
 }
 
 /* Scroll fade indicators */
@@ -105,23 +105,23 @@
 
 .carousel__fade--left {
   left: 0;
-  background: linear-gradient(to right, #0d0d0d 0%, transparent 100%);
+  background: linear-gradient(to right, var(--bg) 0%, transparent 100%);
 }
 
 .carousel__fade--right {
   right: 0;
-  background: linear-gradient(to left, #0d0d0d 0%, transparent 100%);
+  background: linear-gradient(to left, var(--bg) 0%, transparent 100%);
 }
 
 /* Loading skeletons */
 .media-card-skeleton {
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: var(--r-control);
   background: linear-gradient(
     90deg,
-    #1a1a1a 25%,
-    #222 50%,
-    #1a1a1a 75%
+    var(--surface) 25%,
+    var(--surface) 50%,
+    var(--surface) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;

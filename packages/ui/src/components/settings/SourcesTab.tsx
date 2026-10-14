@@ -6,6 +6,7 @@ import { useSyncStatus } from '../../hooks/useChannels';
 import { useChannelSyncing, useVodSyncing, useUIStore, useUpdateSettings } from '../../stores/uiStore';
 import { parseM3U } from '@sbtltv/local-adapter';
 import { useToast } from '../../hooks/useToast';
+import { Button, Hint, Section, Segmented, SettingsTab } from './ui';
 
 interface SourcesTabProps {
   sources: Source[];
@@ -259,39 +260,26 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
   }
 
   return (
-    <div className="settings-tab-content">
-      {/* Sources List */}
-      <div className="settings-section">
-        <div className="section-header">
-          <h3>Sources</h3>
-          <div className="section-actions">
-            <button
-              className="sync-btn"
-              onClick={handleSync}
-              disabled={syncing || sources.length === 0}
-            >
-              {syncing ? 'Syncing...' : 'Sync Channels'}
-            </button>
-            <button
-              className="sync-btn"
-              onClick={handleVodSync}
-              disabled={vodSyncing || !hasXtreamSource}
-            >
-              {vodSyncing ? 'Syncing...' : 'Sync Movies & Series'}
-            </button>
-            <button className="add-btn" onClick={handleAdd}>+ Add Source</button>
-          </div>
-        </div>
-
-        {syncError && (
-          <div className="sync-error">{syncError}</div>
-        )}
+    <SettingsTab>
+      <Section
+        title="Sources"
+        description="Your M3U playlists and Xtream accounts. Turn one off to hide its channels without deleting it."
+        actions={
+          <>
+            <Button onClick={handleSync} disabled={syncing || sources.length === 0}>
+              {syncing ? 'Syncing…' : 'Sync channels'}
+            </Button>
+            <Button onClick={handleVodSync} disabled={vodSyncing || !hasXtreamSource}>
+              {vodSyncing ? 'Syncing…' : 'Sync movies & series'}
+            </Button>
+            <Button variant="primary" onClick={handleAdd}>Add source</Button>
+          </>
+        }
+      >
+        {syncError && <Hint tone="danger">{syncError}</Hint>}
 
         {sources.length === 0 ? (
-          <div className="empty-state">
-            <p>No sources configured</p>
-            <p className="hint">Add an M3U playlist or Xtream account to get started</p>
-          </div>
+          <Hint>No sources yet. Add an M3U playlist or an Xtream account to start watching.</Hint>
         ) : (
           <ul className="sources-list">
             {sources.map((source) => {
@@ -313,11 +301,11 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
                         <span className="toggle-slider" />
                       </label>
                       <span className="source-name">{source.name}</span>
-                      <span className="source-type">{source.type.toUpperCase()}</span>
+                      <span className="source-type">{source.type === 'xtream' ? 'Xtream' : 'M3U'}</span>
                     </div>
                     <div className="source-actions">
-                      <button onClick={() => handleEdit(source)}>Edit</button>
-                      <button className="delete" onClick={() => handleDelete(source.id, source.name)}>Delete</button>
+                      <Button className="st-btn--small" onClick={() => handleEdit(source)}>Edit</Button>
+                      <Button className="st-btn--small" variant="danger" onClick={() => handleDelete(source.id, source.name)}>Delete</Button>
                     </div>
                   </div>
                   {(parts.length > 0 || meta?.error || meta?.last_synced) && (
@@ -339,13 +327,13 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
             })}
           </ul>
         )}
-      </div>
+      </Section>
 
       {/* Add/Edit Form */}
       {showAddForm && createPortal(
         <div className="source-form-overlay">
           <form className="source-form" onSubmit={handleSubmit}>
-            <h3>{editingId ? 'Edit Source' : 'Add Source'}</h3>
+            <h3>{editingId ? 'Edit source' : 'Add source'}</h3>
 
             {error && <div className="form-error">{error}</div>}
 
@@ -363,29 +351,18 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
             {!importedM3U && (
               <div className="form-group">
                 <label>Type</label>
-                <div className="type-selector">
-                  <button
-                    type="button"
-                    className={formData.type === 'm3u' ? 'active' : ''}
-                    onClick={() => setFormData({ ...formData, type: 'm3u' })}
-                  >
-                    M3U Playlist
-                  </button>
-                  <button
-                    type="button"
-                    className={formData.type === 'xtream' ? 'active' : ''}
-                    onClick={() => setFormData({ ...formData, type: 'xtream' })}
-                  >
-                    Xtream Codes
-                  </button>
-                </div>
+                <Segmented
+                  value={formData.type}
+                  options={[{ id: 'm3u', label: 'M3U playlist' }, { id: 'xtream', label: 'Xtream Codes' }]}
+                  onChange={(type) => setFormData({ ...formData, type })}
+                />
               </div>
             )}
 
             {/* URL field for Xtream sources */}
             {formData.type === 'xtream' && (
               <div className="form-group">
-                <label>Server URL</label>
+                <label>Server address</label>
                 <input
                   type="text"
                   value={formData.url}
@@ -398,7 +375,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
             {/* M3U: URL or File import */}
             {formData.type === 'm3u' && !importedM3U && (
               <div className="form-group">
-                <label>Playlist URL</label>
+                <label>Playlist address</label>
                 <input
                   type="text"
                   value={formData.url}
@@ -413,7 +390,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
                   className="import-btn"
                   onClick={handleImportM3U}
                 >
-                  Import from File...
+                  Import from file…
                 </button>
               </div>
             )}
@@ -421,7 +398,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
             {/* Import info for file imports */}
             {formData.type === 'm3u' && importedM3U && (
               <div className="form-group import-info">
-                <label>Imported File</label>
+                <label>Imported file</label>
                 <div className="import-summary">
                   <span>{importedM3U.channels} channels</span>
                   <span>{importedM3U.categories} categories</span>
@@ -459,7 +436,7 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
                 </div>
                 {!isEncryptionAvailable && (
                   <div className="inline-warning">
-                    Warning: Password will be stored without encryption
+                    No keyring available, so this password will be stored unencrypted.
                   </div>
                 )}
               </>
@@ -467,46 +444,41 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
 
             {/* EPG Settings */}
             <div className="form-group epg-settings">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={formData.autoLoadEpg}
-                  onChange={(e) => setFormData({ ...formData, autoLoadEpg: e.target.checked })}
-                />
-                Auto-load EPG from source
-              </label>
+              <label>Program guide</label>
+              <Segmented
+                value={formData.autoLoadEpg ? 'auto' : 'url'}
+                options={[{ id: 'auto', label: 'From the source' }, { id: 'url', label: 'Own address' }]}
+                onChange={(mode) => setFormData({ ...formData, autoLoadEpg: mode === 'auto' })}
+              />
               <span className="hint">
-                {formData.type === 'xtream'
-                  ? 'Uses provider\'s XMLTV endpoint'
-                  : 'Uses url-tvg from M3U header if available'}
+                {formData.autoLoadEpg
+                  ? formData.type === 'xtream'
+                    ? "Uses the provider's XMLTV guide."
+                    : "Uses the url-tvg address in the playlist's header, when it has one."
+                  : 'Enter an XMLTV guide address below, or leave it empty for no guide.'}
               </span>
             </div>
 
             {!formData.autoLoadEpg && (
               <div className="form-group">
-                <label>EPG URL (optional)</label>
+                <label>Guide address (XMLTV)</label>
                 <input
                   type="text"
                   value={formData.epgUrl}
                   onChange={(e) => setFormData({ ...formData, epgUrl: e.target.value })}
                   placeholder="http://example.com/epg.xml"
                 />
-                <span className="hint">XMLTV format EPG URL</span>
               </div>
             )}
 
             <div className="form-actions">
-              <button type="button" className="cancel-btn" onClick={handleCancel}>
-                Cancel
-              </button>
-              <button type="submit" className="save-btn">
-                {editingId ? 'Save Changes' : 'Add Source'}
-              </button>
+              <Button onClick={handleCancel}>Cancel</Button>
+              <Button type="submit" variant="primary">{editingId ? 'Save changes' : 'Add source'}</Button>
             </div>
           </form>
         </div>,
         document.body
       )}
-    </div>
+    </SettingsTab>
   );
 }
