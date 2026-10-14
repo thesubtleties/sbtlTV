@@ -2117,10 +2117,19 @@ app.whenReady().then(async () => {
   // On Windows and Linux, Chromium downloads spell-check dictionaries from Google
   // for the session's languages, even with spell checking off in the window. With
   // no languages there is nothing to download. (macOS uses the system checker.)
-  session.defaultSession.setSpellCheckerLanguages([]);
-  session.defaultSession.setSpellCheckerEnabled(false);
-
-  storage.applySettingsUpgrades();
+  // Neither of these may stop the app from starting: a failure is reported and startup goes on.
+  try {
+    session.defaultSession.setSpellCheckerLanguages([]);
+    session.defaultSession.setSpellCheckerEnabled(false);
+  } catch (error) {
+    console.error('[startup] Could not turn off the spell checker:', error instanceof Error ? error.message : error);
+  }
+  try {
+    storage.applySettingsUpgrades();
+  } catch (error) {
+    // Runs again next launch: nothing was marked done.
+    console.error('[startup] One-time settings update failed:', error instanceof Error ? error.message : error);
+  }
 
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
