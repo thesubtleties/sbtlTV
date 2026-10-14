@@ -11,7 +11,7 @@ A desktop IPTV player built with Electron and mpv.
   <img src="https://storage.sbtl.dev/spookyspot/sbtltv-0.12.webp" alt="sbtlTV UI" width="720" />
 </p>
 
-> **Early Development** - This project is new and actively evolving. The goal is a dead-simple, low-latency player that balances aesthetics, ease of use, and quality-of-life features. We're constantly fixing bugs, adding features, and improving the experience. Check back often for updates, and feel free to [open an issue](../../issues) if you run into problems or have suggestions.
+sbtlTV aims to be a dead-simple, low-latency player that looks good and stays out of your way: quick channel changes, a real program guide, a proper Movies and Series library, and the small comforts that make IPTV feel like TV - resume where you left off, captions, themes, and streams that reconnect on their own. It is updated regularly; if you run into a problem or have an idea, [open an issue](../../issues).
 
 ## Features
 
@@ -28,6 +28,9 @@ A desktop IPTV player built with Electron and mpv.
 - **EPG from Multiple Sources** - Fetch guide data from your provider or external XMLTV URLs, with multi-strategy channel matching for third-party guides
 - **Channel & Category Ordering** - Sort channels by provider number or alphabetically, and keep categories in your provider's original order (or A-Z)
 - **Offline Storage** - Channels, EPG, and catalog cached locally for fast browsing
+- **Subtitles & Live Captions** - Movie and episode subtitle tracks, and closed captions on live TV (checked for station-data junk before they show), in your language; size, style, and a per-title delay that is remembered
+- **Themes** - sbtl plus Catppuccin, Gruvbox, Nord, Tokyo Night and more palettes, an optional system accent, and your choice of typeface
+- **Stream Recovery** - Provider cuts reconnect on their own, and a stalled stream is reloaded where it was before you ever see an error
 
 ## Installation
 
