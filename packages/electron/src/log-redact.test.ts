@@ -4,8 +4,8 @@ import { redactUrls } from './log-redact.js';
 
 test('stream URLs keep only scheme and host (Xtream puts the username and password in the path)', () => {
   assert.equal(
-    redactUrls('Failed to open http://kytv.xyz:8080/live/someuser/s3cret/12345.ts.'),
-    'Failed to open http://kytv.xyz:8080/…',
+    redactUrls('Failed to open http://provider.example:8080/live/someuser/s3cret/12345.ts.'),
+    'Failed to open http://provider.example:8080/…',
   );
   assert.equal(redactUrls('  URL: https://host.example/movie/u/p/99.mkv'), '  URL: https://host.example/…');
 });

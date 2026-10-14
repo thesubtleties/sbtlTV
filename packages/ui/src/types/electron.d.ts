@@ -175,7 +175,7 @@ export interface AppSettings {
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
-  sportsMatchupEnabled?: boolean;  // Show team logos in the bar on a live sports game (default true)
+  sportsMatchupEnabled?: boolean;  // Show team logos in the bar on a live sports game (default off: the logos load from ESPN)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a noticeable wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)

@@ -376,6 +376,9 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Chromium's spell checker downloads its dictionaries from Google on first
+      // launch; sbtlTV has nothing to spell-check, so nothing is fetched.
+      spellcheck: false,
     },
   });
 

@@ -101,7 +101,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   vodRefreshHours: 24,
   epgRefreshHours: 6,
   autoUpdateEnabled: true,
-  sportsMatchupEnabled: true,
+  sportsMatchupEnabled: false,
   guideMorphEnabled: true,
   autoplayNextEpisode: true,
 };
@@ -242,7 +242,7 @@ export const useEpgRefreshHours = () => useUIStore((s) => s.settings.epgRefreshH
 export const useAllowLanSources = () => useUIStore((s) => s.settings.allowLanSources ?? false);
 export const useDebugLoggingEnabled = () => useUIStore((s) => s.settings.debugLoggingEnabled ?? false);
 export const useAutoUpdateEnabled = () => useUIStore((s) => s.settings.autoUpdateEnabled ?? true);
-export const useSportsMatchupEnabled = () => useUIStore((s) => s.settings.sportsMatchupEnabled ?? true);
+export const useSportsMatchupEnabled = () => useUIStore((s) => s.settings.sportsMatchupEnabled ?? false);
 export const useGuideMorphEnabled = () => useUIStore((s) => s.settings.guideMorphEnabled ?? true);
 export const useAutoplayNextEpisode = () => useUIStore((s) => s.settings.autoplayNextEpisode ?? true);
 export const useUpdateSettings = () => useUIStore((s) => s.updateSettings);

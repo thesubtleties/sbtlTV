@@ -185,8 +185,8 @@ export function EpgTab({
         <OptionRow
           title="Team logos"
           help={sportsMatchupEnabled
-            ? "On a live channel showing a recognized game, the bar shows both teams' logos instead of the channel icon. Matched from the guide for NFL, NBA, MLB, NHL and college football and basketball; scores are never shown."
-            : 'The bar always shows the channel icon.'}
+            ? "On a live channel showing a recognized game, the bar shows both teams' logos instead of the channel icon. Matched from the guide for NFL, NBA, MLB, NHL and college football and basketball; scores are never shown. The logos load from ESPN, which sees your IP address and which teams."
+            : "The bar always shows the channel icon. On: both teams' logos on a recognized live game, loaded from ESPN (it sees your IP address and which teams)."}
         >
           <OnOff value={sportsMatchupEnabled} onChange={(enabled) => void handleSportsMatchupChange(enabled)} />
         </OptionRow>

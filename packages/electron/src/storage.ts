@@ -44,7 +44,7 @@ interface AppSettings {
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
-  sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game (default true)
+  sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game (default off: the logos load from ESPN)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: 'compatibility' runs mpv in its own window (default 'native'); takes effect on restart
@@ -244,7 +244,7 @@ export function getSettings(): AppSettings {
   result.guideOpacity = stored.guideOpacity ?? 0.95;
   result.liveSourceOrder = stored.liveSourceOrder;
   result.vodSourceOrder = stored.vodSourceOrder;
-  result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? true;
+  result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? false;
   result.guideMorphEnabled = stored.guideMorphEnabled ?? true;
   result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
   result.linuxPlayerMode = normalizeLinuxPlayerMode(stored.linuxPlayerMode);

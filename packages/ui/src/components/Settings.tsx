@@ -65,7 +65,7 @@ export function Settings({ onClose }: SettingsProps) {
   const [guideOpacity, setGuideOpacity] = useState(0.95);
 
   // Sports matchup state
-  const [sportsMatchupEnabled, setSportsMatchupEnabled] = useState(true);
+  const [sportsMatchupEnabled, setSportsMatchupEnabled] = useState(false);
   const [guideMorphEnabled, setGuideMorphEnabled] = useState(true);
   const [autoplayNextEpisode, setAutoplayNextEpisode] = useState(true);
 
@@ -151,7 +151,7 @@ export function Settings({ onClose }: SettingsProps) {
     setGuideOpacity(s.guideOpacity ?? 0.95);
 
     // Load sports matchup setting (default ON)
-    setSportsMatchupEnabled(s.sportsMatchupEnabled ?? true);
+    setSportsMatchupEnabled(s.sportsMatchupEnabled ?? false);
     setGuideMorphEnabled(s.guideMorphEnabled ?? true);
     setAutoplayNextEpisode(s.autoplayNextEpisode ?? true);
 
