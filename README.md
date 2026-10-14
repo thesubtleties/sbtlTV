@@ -138,6 +138,25 @@ Enable logging in Settings → Debug for troubleshooting. Logs are saved to your
 - **macOS**: `~/Library/Application Support/sbtlTV`
 - **Linux**: `~/.config/sbtlTV`
 
+## Privacy
+
+sbtlTV has no server of its own: no account, analytics, telemetry or crash reporting. It talks directly to the services below, and Settings > Privacy shows which of them apply to you.
+
+| Who | When | What they see |
+|-----|------|---------------|
+| Your IPTV provider | Always | Your IP address, your account, and every channel and title you play, with times |
+| Guide (EPG) sources | Always | Your IP address and when the guide refreshes (your provider's guide, plus any guide URLs you add) |
+| Image hosts | Always | Your IP address and which images: channel logos and posters load from the addresses in your provider's data and from TMDB's image server |
+| GitHub | Always | Your IP address, sbtlTV version and system for the update check at launch (can be turned off), and a movie/series match file downloaded with library syncs (no account) |
+| TMDB | Only with your TMDB key | Your key, your IP address and the lists you browse |
+| RatingPosterDB | Only with your RPDB key | Your key, your IP address and which titles' posters you see |
+| ESPN | Only with team logos on (off by default) | Your IP address and which teams are playing on the channel you watch |
+| Mullvad | Only when you click Check in Settings > Privacy | Your IP address, to show you the address the others see (nothing is saved) |
+
+Everything else stays on your computer: settings, watch history, favorites, watchlist, guide and library. Provider passwords and API keys are encrypted with your system's keychain. The debug log is off by default; when on, it is written locally with stream links cut to their host, since they carry provider passwords.
+
+Many providers stream over plain http, so your internet provider can see what you stream. A VPN hides that from your internet provider, but not from your IPTV provider.
+
 ## Disclaimer
 
 This application is a media player only and does not provide any content. Users must provide their own IPTV service credentials from a legitimate provider. The developers are not responsible for how this software is used or for any content accessed through it.
