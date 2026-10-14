@@ -17,6 +17,8 @@ export interface Matchup {
   leagueId: LeagueId;
   away: Team;
   home: Team;
+  /** '@' when the listing says who is at home ("A at B", "A visits B"), 'vs' when it does not ("A vs B", "A face B") */
+  separator: '@' | 'vs';
 }
 
 /** Bundled directory payload, keyed by league id. */

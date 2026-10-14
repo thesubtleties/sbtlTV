@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage, session } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
@@ -12,6 +12,7 @@ import { selectChromiumGpuIdentity } from './gpu-selection.js';
 import { startDataHost, type DataHost } from './data/data-host.js';
 import { isTransientDecodeError } from './mpv-error-filter.js';
 import { redactUrls } from './log-redact.js';
+import { createLineBuffer } from './line-buffer.js';
 import { IP_CHECK_URL, parseIpCheck } from './ip-check.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
@@ -377,8 +378,7 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      // Chromium's spell checker downloads its dictionaries from Google on first
-      // launch; sbtlTV has nothing to spell-check, so nothing is fetched.
+      // No spell checking in the window (see the session settings in app.whenReady).
       spellcheck: false,
     },
   });
@@ -698,21 +698,21 @@ async function initMpv(): Promise<void> {
       shell: false,
     });
 
-    mpvProcess.stdout?.on('data', (data: Buffer) => {
-      const str = data.toString().trim();
-      // Always log to debug file if enabled
-      if (str) debugLog(str, 'mpv-stdout');
+    // Whole lines only, so a link split across chunks is still redacted as one.
+    const stdoutLines = createLineBuffer((line) => {
+      debugLog(line, 'mpv-stdout');
       // Only console.log non-status lines
-      if (!str.includes('AV:') && !str.includes('A:') && !str.includes('V:')) {
-        console.log('[mpv stdout]', redactUrls(str));
+      if (!line.includes('AV:') && !line.includes('A:') && !line.includes('V:')) {
+        console.log('[mpv stdout]', redactUrls(line));
       }
     });
-
-    mpvProcess.stderr?.on('data', (data: Buffer) => {
-      const str = data.toString().trim();
-      if (str) debugLog(str, 'mpv-stderr');
-      console.log('[mpv stderr]', redactUrls(str));
+    const stderrLines = createLineBuffer((line) => {
+      debugLog(line, 'mpv-stderr');
+      console.log('[mpv stderr]', redactUrls(line));
     });
+    mpvProcess.stdout?.on('data', (data: Buffer) => stdoutLines.push(data.toString()));
+    mpvProcess.stderr?.on('data', (data: Buffer) => stderrLines.push(data.toString()));
+    mpvProcess.on('close', () => { stdoutLines.flush(); stderrLines.flush(); });
 
     mpvProcess.on('error', (error: Error) => {
       debugLog(`Process error: ${error.message}`, 'mpv');
@@ -2081,6 +2081,12 @@ async function startPlayer(): Promise<boolean> {
 }
 
 app.whenReady().then(async () => {
+  // On Windows and Linux, Chromium downloads spell-check dictionaries from Google
+  // for the session's languages, even with spell checking off in the window. With
+  // no languages there is nothing to download. (macOS uses the system checker.)
+  session.defaultSession.setSpellCheckerLanguages([]);
+  session.defaultSession.setSpellCheckerEnabled(false);
+
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
   initDebugLogging(settings.debugLoggingEnabled ?? false);

@@ -32,3 +32,17 @@ test('every URL in a line is redacted; text without one is unchanged', () => {
 test('a quote or < in the password does not end the URL early', () => {
   assert.equal(redactUrls(`Opening 'http://host.example/live/u/pa"s'w<rd/1.ts' for reading`), `Opening 'http://host.example/… for reading`);
 });
+
+test('a long line without a URL is handled quickly (no backtracking)', () => {
+  const line = 'a'.repeat(200_000) + ' b.c-d+e'.repeat(20_000);
+  const started = Date.now();
+  assert.equal(redactUrls(line), line);
+  assert.ok(Date.now() - started < 200, `took ${Date.now() - started}ms`);
+});
+
+test('login details outside a URL are cleaned too', () => {
+  assert.equal(redactUrls('GET player_api.php?username=bob&password=s3cret&action=x'), 'GET player_api.php?username=…&password=…&action=x');
+  assert.equal(redactUrls("Opening 'live/bob/s3cret/12345.ts'"), "Opening 'live/…/12345.ts'");
+  assert.equal(redactUrls('Location: /movie/bob/s3cret/99.mkv'), 'Location: /movie/…/99.mkv');
+  assert.equal(redactUrls('token=abc123 and api_key=xyz'), 'token=… and api_key=…');
+});
