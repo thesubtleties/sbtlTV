@@ -33,6 +33,16 @@ describe('load binding', () => {
     expect(s().tracks).toEqual([]);
   });
 
+  it('an announcement for an older load does not take over from a newer one', () => {
+    s().bindLoad(6, 'vod', true, 'en-US', null);
+    s().receiveTracks(live(6, [eng]), true, 'en-US');
+    s().rebindLoad(5, true, 'en-US');
+    s().bindLoad(5, 'live', true, 'en-US', null);
+    expect(s().generation).toBe(6);
+    expect(s().kind).toBe('vod');
+    expect(s().tracks).toEqual([eng]);
+  });
+
   it('every control call carries the bound generation', () => {
     s().bindLoad(7, 'live', true, 'en-US', null);
     s().receiveTracks(live(7, [cc]), true, 'en-US');
@@ -65,7 +75,7 @@ describe('live captions (TV-style)', () => {
   it('unreadable captions cannot be turned on', () => {
     s().bindLoad(1, 'live', true, 'en-US', null);
     s().receiveTracks(live(1, [cc]), true, 'en-US');
-    s().receiveCcState({ generation: 1, state: 'unreadable' });
+    s().receiveCcState({ generation: 1, state: 'unreadable', language: null });
     expect(s().ccState).toBe('unreadable');
     setVisible.mockClear();
     s().toggle('en-US');
@@ -74,7 +84,7 @@ describe('live captions (TV-style)', () => {
 
   it('a cc state for another load is ignored', () => {
     s().bindLoad(2, 'live', true, 'en-US', null);
-    s().receiveCcState({ generation: 1, state: 'unreadable' });
+    s().receiveCcState({ generation: 1, state: 'unreadable', language: null });
     expect(s().ccState).toBeNull();
   });
 });
@@ -143,5 +153,74 @@ describe('saved delay', () => {
     expect(s().delay).toBe(0.2);
     s().bindLoad(2, 'vod', true, 'en-US', null);
     expect(s().delay).toBe(0);
+  });
+});
+
+describe('automatic reload of the same stream', () => {
+  it('keeps the session choice and the delay on the reloaded load', () => {
+    s().bindLoad(1, 'vod', true, 'en-US', null);
+    s().receiveTracks({ generation: 1, tracks: [eng], duration: 100 }, true, 'en-US');
+    s().nudgeDelay(0.3);
+    setDelay.mockClear(); setTrack.mockClear();
+    s().rebindLoad(2, true, 'en-US');
+    expect(s().generation).toBe(2);
+    expect(s().kind).toBe('vod');
+    expect(s().delay).toBe(0.3);
+    expect(setDelay).toHaveBeenLastCalledWith(2, 0.3);   // main reset sub-delay with the reload
+    s().receiveTracks({ generation: 2, tracks: [eng], duration: 100 }, true, 'en-US');
+    expect(setTrack).toHaveBeenLastCalledWith(2, 1, true);
+  });
+
+  it('live captions come back shown if they were shown', () => {
+    s().bindLoad(1, 'live', false, 'en-US', null);
+    s().receiveTracks({ generation: 1, tracks: [cc], duration: 0 }, false, 'en-US');
+    s().toggle('en-US');                                   // shown
+    s().receiveTracks({ generation: 2, tracks: [cc], duration: 0 }, false, 'en-US');  // arrives before the rebind
+    s().rebindLoad(2, false, 'en-US');
+    expect(setTrack).toHaveBeenLastCalledWith(2, 1, true);
+  });
+});
+
+describe('captions only in another language', () => {
+  it('are kept with their language and can be shown and hidden', () => {
+    s().bindLoad(1, 'live', false, 'en-US', null);
+    s().receiveTracks({ generation: 1, tracks: [cc], duration: 0 }, false, 'en-US');
+    s().receiveCcState({ generation: 1, state: 'other-language', language: 'es' });
+    expect(s().ccState).toBe('other-language');
+    expect(s().ccLanguage).toBe('es');
+    s().toggle('en-US');
+    expect(setVisible).toHaveBeenLastCalledWith(1, true);
+  });
+});
+
+describe('changing the subtitle language while a movie plays', () => {
+  const spa: SubtitleTrack = { id: 2, lang: 'spa', title: null, codec: 'subrip', isCc: false };
+
+  it('switches to the track in the new language', () => {
+    s().bindLoad(1, 'vod', true, 'en-US', null);
+    s().receiveTracks({ generation: 1, tracks: [eng, spa], duration: 100 }, true, 'en-US');
+    expect(s().selectedId).toBe(1);
+    s().repickVodTrack('es');
+    expect(s().selectedId).toBe(2);
+    expect(setTrack).toHaveBeenLastCalledWith(1, 2, true);
+  });
+
+  it('keeps the current track when none is in the new language', () => {
+    s().bindLoad(1, 'vod', true, 'es-MX', null);
+    s().receiveTracks({ generation: 1, tracks: [eng, spa], duration: 100 }, true, 'es-MX');
+    expect(s().selectedId).toBe(2);
+    setTrack.mockClear();
+    s().repickVodTrack('fr');
+    expect(s().selectedId).toBe(2);
+    expect(setTrack).not.toHaveBeenCalled();
+  });
+
+  it('leaves subtitles that are off, off', () => {
+    s().bindLoad(1, 'vod', false, 'en-US', null);
+    s().receiveTracks({ generation: 1, tracks: [eng, spa], duration: 100 }, false, 'en-US');
+    setTrack.mockClear();
+    s().repickVodTrack('es');
+    expect(s().selectedId).toBeNull();
+    expect(setTrack).not.toHaveBeenCalled();
   });
 });

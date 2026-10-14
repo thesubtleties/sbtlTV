@@ -12,6 +12,10 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
   const delay = useSubtitleStore((s) => s.delay);
   const visible = useSubtitleStore((s) => s.visible);
   const ccState = useSubtitleStore((s) => s.ccState);
+  const ccLanguage = useSubtitleStore((s) => s.ccLanguage);
+  const otherLanguage = kind === 'live' && ccState === 'other-language' && ccLanguage
+    ? { en: 'English', es: 'Spanish', fr: 'French' }[ccLanguage]
+    : null;
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -19,6 +23,8 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
   const none = tracks.length === 0 || unreadable;
   // Live captions stay selected (decoding) while hidden; on = shown
   const on = !none && (kind === 'live' ? visible : selectedId !== null);
+  // Live captions on but still being checked (hidden until real lines confirm them)
+  const checking = on && kind === 'live' && ccState === 'checking';
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -40,12 +46,12 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
     ? "This channel's captions can't be read"
     : none
       ? (kind === 'vod' ? 'No subtitles in this file' : 'No captions on this channel')
-      : `${on ? 'Captions on' : 'Captions off'} (V) · right-click for tracks and delay`;
+      : `${on ? 'Captions on' : 'Captions off'} (V)${checking ? ' · checking the captions, they show in a moment' : ''}${otherLanguage ? ` · this channel's captions only came through in ${otherLanguage}` : ''} · right-click for tracks and delay`;
 
   return (
     <div className="cc" ref={rootRef}>
       <button
-        className={`npb-btn cc__btn${on ? ' cc__btn--on' : ''}`}
+        className={`npb-btn cc__btn${on ? ' cc__btn--on' : ''}${checking ? ' cc__btn--checking' : ''}`}
         onClick={toggle}
         onContextMenu={(e) => { e.preventDefault(); if (!none) setMenuOpen((o) => !o); }}
         disabled={disabled || none}

@@ -205,9 +205,15 @@
   padding-top: 24px;
 }
 
-/* Virtualized home view - must fill container for Virtuoso */
+/* Virtualized home view - must fill container for Virtuoso. It scrolls itself,
+   so it gets the same thin themed scrollbar as the other views, with its space
+   reserved on both edges: rows sit centred (48px each side of the cards) instead
+   of the right side being a scrollbar wider. Floating (macOS) scrollbars take no space. */
 .vod-page__home {
   height: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fill-3) transparent;
+  scrollbar-gutter: stable both-edges;
 }
 
 /* Wrapper for genre carousels in virtualized list */

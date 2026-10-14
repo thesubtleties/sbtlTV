@@ -2,7 +2,7 @@ import Store from 'electron-store';
 import { safeStorage } from 'electron';
 import type { Source } from '@sbtltv/core';
 import { normalizeLinuxPlayerMode, type LinuxPlayerMode } from './linux-player-mode.js';
-import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitles.js';
+import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitle-settings.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -271,7 +271,7 @@ export function updateSettings(settings: Partial<AppSettings>): void {
 
   if (settings.theme !== undefined) updated.theme = settings.theme;
   if (settings.appearance !== undefined) updated.appearance = normalizeAppearance(settings.appearance);
-  if (settings.subtitles !== undefined) updated.subtitles = normalizeSubtitleSettings(settings.subtitles);
+  if (settings.subtitles !== undefined) updated.subtitles = normalizeSubtitleSettings({ ...current.subtitles, ...settings.subtitles });
   if (settings.lastSourceId !== undefined) updated.lastSourceId = settings.lastSourceId;
   if (settings.tmdbApiKey !== undefined) {
     updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;

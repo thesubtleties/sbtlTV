@@ -14,8 +14,15 @@ export interface MpvStatus {
 export interface MpvResult {
   success?: boolean;
   error?: string;
-  /** mpv-load only: the load's generation, which tags its subtitle updates */
-  generation?: number;
+}
+
+export interface MpvLoadOptions {
+  /** Seconds to resume at once the file is open */
+  startPosition?: number;
+  /** A live channel (the stall watchdog reloads it from the live edge, not a position) */
+  live?: boolean;
+  /** Echoed in media-loaded so the renderer can match the load to its own request */
+  requestId?: number;
 }
 
 export interface MpvModeInfo {
@@ -29,8 +36,27 @@ export interface MpvModeInfo {
   launchPlayerMode?: 'native' | 'compatibility' | null;
 }
 
+export type StreamRecoveryUpdate =
+  | { state: 'reconnecting'; attempt: number }
+  | { state: 'failed'; live: boolean };
+
+/**
+ * Main starts a load: every one is announced, whoever started it (play: the
+ * renderer's request, reload: the stall watchdog, restore: the compatibility
+ * restart). Subtitles and progress saving follow the announced generation.
+ */
+export interface MediaLoadedUpdate {
+  generation: number;
+  live: boolean;
+  /** Seconds the load resumes at, 0 from the start */
+  resumeAt: number;
+  reason: 'play' | 'reload' | 'restore';
+  /** The renderer's requestId for a play, else null */
+  requestId: number | null;
+}
+
 export interface MpvApi {
-  load: (url: string, startPosition?: number) => Promise<MpvResult>;
+  load: (url: string, options?: MpvLoadOptions) => Promise<MpvResult>;
   play: () => Promise<MpvResult>;
   pause: () => Promise<MpvResult>;
   togglePause: () => Promise<MpvResult>;
@@ -45,6 +71,9 @@ export interface MpvApi {
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
+  /** Stall recovery: reconnecting (toast), failed (give up) */
+  onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => () => void;
+  onMediaLoaded: (callback: (update: MediaLoadedUpdate) => void) => () => void;
   removeAllListeners: () => void;
 }
 
@@ -58,7 +87,7 @@ export interface SubtitleTrack {
 }
 
 export interface SubtitleTracksUpdate {
-  /** main's load counter; a new value means a new stream started */
+  /** main's load counter; a new value means a new load (a stall reload of the same stream included) */
   generation: number;
   tracks: SubtitleTrack[];
   /** The file's duration when main knows it for this load, else 0 */
@@ -66,7 +95,7 @@ export interface SubtitleTracksUpdate {
 }
 
 /** Live captions: main checks the first lines and hides station-data junk */
-export type CcState = 'checking' | 'ok' | 'unreadable';
+export type CcState = 'checking' | 'ok' | 'other-language' | 'unreadable';
 
 export interface SubtitlesApi {
   /** Calls carry the load generation they were decided for; main ignores stale ones. null turns subtitles off. */
@@ -76,7 +105,8 @@ export interface SubtitlesApi {
   setDelay: (generation: number, seconds: number) => Promise<MpvResult>;
   /** Returns an unsubscribe function */
   onTracks: (callback: (update: SubtitleTracksUpdate) => void) => () => void;
-  onCcState: (callback: (update: { generation: number; state: CcState }) => void) => () => void;
+  /** language: set for other-language, the only caption language the channel gave */
+  onCcState: (callback: (update: { generation: number; state: CcState; language: 'en' | 'es' | 'fr' | null }) => void) => () => void;
 }
 
 export interface ElectronWindowApi {
@@ -120,6 +150,8 @@ export interface SubtitleSettings {
   vodDefault: boolean;
   size: 'small' | 'medium' | 'large';
   style: 'outline' | 'box' | 'shadow';
+  /** auto = the system language */
+  language: 'auto' | 'en' | 'es' | 'fr';
 }
 
 export interface AppSettings {

@@ -2,11 +2,12 @@
  * Subtitle state for the current stream. Like playbackStore, kept out of App
  * state so track updates re-render only the CC control.
  *
- * Everything is tied to a load: main tags its track updates with the load's
- * generation, App binds the generation mpv-load returned (with what it is:
- * live or vod, and any saved delay), and every call back to main carries it,
- * so nothing decided for one stream can land on the next. Updates that arrive
- * before App binds their load wait for it.
+ * Everything is tied to a load: main announces each load it starts
+ * (media-loaded) and tags its track updates with the load's generation, App
+ * binds the announced generation (with what it is: live or vod, and any saved
+ * delay), and every call back to main carries it, so nothing decided for one
+ * stream can land on the next. Updates that arrive before App binds their load
+ * wait for it; an announcement older than the bound load is ignored.
  *
  * Live captions are TV-style: the CC track is selected as the channel starts
  * and the button only shows or hides it, so the decoder is already in step
@@ -16,7 +17,7 @@
  */
 import { create } from 'zustand';
 import type { CcState, SubtitleTrack, SubtitleTracksUpdate } from '../types/electron';
-import { pickSubtitleTrack, stepDelay, type SubtitleKind } from '../services/subtitleLogic';
+import { localeSubtitleTrack, pickSubtitleTrack, stepDelay, type SubtitleKind } from '../services/subtitleLogic';
 import { debugLog } from '../utils/debugLog';
 
 /** A saved delay waiting for the file's duration to confirm it is the same file. */
@@ -30,6 +31,8 @@ interface SubtitleData {
   /** Live: captions shown (the CC track stays selected either way) */
   visible: boolean;
   ccState: CcState | null;
+  /** other-language: the only caption language the channel gave */
+  ccLanguage: 'en' | 'es' | 'fr' | null;
   delay: number;
   /** False until a saved delay has been restored or rejected; progress saves keep the stored one meanwhile */
   delayResolved: boolean;
@@ -44,10 +47,14 @@ interface SubtitleData {
 
 interface SubtitleActions {
   bindLoad: (generation: number, kind: SubtitleKind, defaultOn: boolean, locale: string, pendingDelay: PendingDelay | null) => void;
+  /** Main reloaded the same stream (stall recovery): follow it to the new load, keeping the on/off choice and the delay */
+  rebindLoad: (generation: number, defaultOn: boolean, locale: string) => void;
   receiveTracks: (update: SubtitleTracksUpdate, defaultOn: boolean, locale: string) => void;
-  receiveCcState: (update: { generation: number; state: CcState }) => void;
+  receiveCcState: (update: { generation: number; state: CcState; language: 'en' | 'es' | 'fr' | null }) => void;
   toggle: (locale: string) => void;
   selectTrack: (id: number | null) => void;
+  /** The subtitle language setting changed: a movie or episode with subtitles on switches to that language's track */
+  repickVodTrack: (locale: string) => void;
   nudgeDelay: (delta: number) => void;
   setDelay: (seconds: number) => void;
   clear: () => void;
@@ -58,21 +65,25 @@ const DURATION_TOLERANCE_S = 5;
 
 export function initialSubtitleState(): SubtitleData {
   return {
-    generation: -1, kind: null, tracks: [], selectedId: null, visible: false, ccState: null,
+    generation: -1, kind: null, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null,
     delay: 0, delayResolved: true, pendingDelay: null, userDelayEdit: null,
     sessionOn: { live: null, vod: null }, waiting: null,
   };
 }
 
-function report(what: string) {
-  return (err: unknown) => debugLog(`subtitle ${what} failed: ${err}`, 'subtitles');
+/** Main answers stale or invalid calls with { error }; a throw is a broken IPC. Both go to the debug log. */
+function report(what: string, call: Promise<{ error?: string }> | undefined) {
+  call?.then(
+    (result) => { if (result?.error) debugLog(`subtitle ${what}: ${result.error}`, 'subtitles'); },
+    (err: unknown) => debugLog(`subtitle ${what} failed: ${err}`, 'subtitles'),
+  );
 }
 
 export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get) => {
   const send = {
-    track: (id: number | null, visible: boolean) => window.subtitles?.setTrack(get().generation, id, visible).catch(report('setTrack')),
-    visible: (visible: boolean) => window.subtitles?.setVisible(get().generation, visible).catch(report('setVisible')),
-    delay: (seconds: number) => window.subtitles?.setDelay(get().generation, seconds).catch(report('setDelay')),
+    track: (id: number | null, visible: boolean) => report('setTrack', window.subtitles?.setTrack(get().generation, id, visible)),
+    visible: (visible: boolean) => report('setVisible', window.subtitles?.setVisible(get().generation, visible)),
+    delay: (seconds: number) => report('setDelay', window.subtitles?.setDelay(get().generation, seconds)),
   };
 
   function apply(update: SubtitleTracksUpdate, defaultOn: boolean, locale: string) {
@@ -118,10 +129,19 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
 
     bindLoad: (generation, kind, defaultOn, locale, pendingDelay) => {
       const { waiting } = get();
+      if (generation < get().generation) return;
       set({
-        generation, kind, tracks: [], selectedId: null, visible: false, ccState: null, delay: 0,
+        generation, kind, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, delay: 0,
         delayResolved: pendingDelay === null, pendingDelay, waiting: null,
       });
+      if (waiting?.generation === generation) apply(waiting, defaultOn, locale);
+    },
+
+    rebindLoad: (generation, defaultOn, locale) => {
+      const { waiting, kind, delay } = get();
+      if (!kind || generation < get().generation) return;
+      set({ generation, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, waiting: null });
+      if (delay !== 0) send.delay(delay);  // main reset sub-delay with the reload
       if (waiting?.generation === generation) apply(waiting, defaultOn, locale);
     },
 
@@ -131,8 +151,8 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
       else if (update.generation === generation) apply(update, defaultOn, locale);
     },
 
-    receiveCcState: ({ generation, state }) => {
-      if (generation === get().generation) set({ ccState: state });
+    receiveCcState: ({ generation, state, language }) => {
+      if (generation === get().generation) set({ ccState: state, ccLanguage: language });
     },
 
     toggle: (locale) => {
@@ -162,9 +182,18 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
       send.track(id, true);
     },
 
+    repickVodTrack: (locale) => {
+      const { kind, tracks, selectedId } = get();
+      if (kind !== 'vod' || selectedId === null) return;
+      const id = localeSubtitleTrack(tracks, locale);  // none in that language: keep the current one
+      if (id === null || id === selectedId) return;
+      set({ selectedId: id });
+      send.track(id, true);
+    },
+
     nudgeDelay: (delta) => changeDelay(get().delay + delta),
     setDelay: (seconds) => changeDelay(seconds),
 
-    clear: () => set({ kind: null, tracks: [], selectedId: null, visible: false, ccState: null, delay: 0, delayResolved: true, pendingDelay: null }),
+    clear: () => set({ kind: null, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, delay: 0, delayResolved: true, pendingDelay: null }),
   };
 });

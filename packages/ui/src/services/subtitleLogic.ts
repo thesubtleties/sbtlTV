@@ -28,6 +28,11 @@ export function pickSubtitleTrack(tracks: SubtitleTrack[], kind: SubtitleKind, l
   return (tracks.find(t => matchesLocale(t.lang, locale)) ?? tracks[0]).id;
 }
 
+/** The movie's track in the locale's language, or null when it has none (no fallback). */
+export function localeSubtitleTrack(tracks: SubtitleTrack[], locale: string): number | null {
+  return tracks.find(t => matchesLocale(t.lang, locale))?.id ?? null;
+}
+
 export function stepDelay(current: number, delta: number): number {
   const next = Math.round((current + delta) * 10) / 10;
   return Math.min(Math.max(next, -DELAY_LIMIT), DELAY_LIMIT) || 0;  // || 0 turns -0 into 0

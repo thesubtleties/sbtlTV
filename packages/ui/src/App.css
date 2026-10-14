@@ -223,30 +223,6 @@
   margin-top: 10px;
 }
 
-/* Error Banner */
-.error-banner {
-  position: absolute;
-  top: 32px;
-  left: 0;
-  right: 0;
-  background: var(--danger);
-  padding: 10px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  z-index: 100;
-}
-
-.error-banner button {
-  background: var(--fill-5);
-  border: 1px solid var(--text);
-  color: var(--text);
-  padding: 4px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-
 /* Resize grip for frameless window */
 .resize-grip {
   position: fixed;

@@ -4,6 +4,7 @@ import { PALETTES, PALETTE_ORDER, type PaletteRoles } from '../../styles/palette
 import type { Appearance, PaletteId } from '../../types/electron';
 import { OptionRow, Segmented, SettingsTab } from './ui';
 import './AppearanceTab.css';
+import { saveSettings } from '../../utils/saveSettings';
 
 const DEFAULT_APPEARANCE: Appearance = { palette: 'sbtl', typeface: 'fira', accent: 'palette' };
 
@@ -46,7 +47,7 @@ export function AppearanceTab() {
   function save(partial: Partial<Appearance>) {
     const next = { ...appearance, ...partial };
     updateSettings({ appearance: next });
-    void window.storage?.updateSettings({ appearance: next });
+    void saveSettings({ appearance: next });
   }
 
   const selectPalette = (palette: PaletteId) => save({ palette });
@@ -93,12 +94,15 @@ export function AppearanceTab() {
         </div>
       </OptionRow>
 
-      {desktop?.accent && (
+      {/* Shown while the desktop has an accent, and while System is chosen without one (so it can be set back) */}
+      {(desktop?.accent || (desktop && appearance.accent === 'system')) && (
         <OptionRow
           title="Accent"
-          help={appearance.accent === 'system'
-            ? "Your system's accent color, on the palette's other colors."
-            : "The palette's own accent."}
+          help={appearance.accent !== 'system'
+            ? "The palette's own accent."
+            : desktop?.accent
+              ? "Your system's accent color, on the palette's other colors."
+              : "Your system's accent color isn't available right now; the palette's own is used."}
         >
           <Segmented
             value={appearance.accent}

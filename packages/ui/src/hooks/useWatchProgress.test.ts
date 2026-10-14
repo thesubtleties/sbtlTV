@@ -68,7 +68,7 @@ describe('subtitle delay with watch progress', () => {
   });
 });
 
-describe('subtitle delay survives the next play (review C1)', () => {
+describe('subtitle delay survives the next play', () => {
   const movie = { type: 'movie' as const, streamId: 'm-1', tmdbId: 550, position: 600, duration: 7200, sourceId: 's1' };
 
   it('a save that has not resolved the delay yet keeps the saved one', async () => {
@@ -85,7 +85,7 @@ describe('subtitle delay survives the next play (review C1)', () => {
     expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toBeNull();
   });
 
-  it('prefers this copy\'s record over another copy of the same movie (review M4)', async () => {
+  it('prefers this copy\'s record over another copy of the same movie', async () => {
     await updateWatchProgress({ ...movie, streamId: 'm-2', subDelay: 1.0 });
     await updateWatchProgress({ ...movie, subDelay: 0.4 });
     expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toEqual({ delay: 0.4, duration: 7200 });

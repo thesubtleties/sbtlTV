@@ -711,6 +711,14 @@ void MpvContext::handlePropertyChange(mpv_event_property* prop) {
         } else if (strcmp(prop->name, "duration") == 0 && prop->format == MPV_FORMAT_DOUBLE) {
             m_status.duration = *static_cast<double*>(prop->data);
             statusChanged = true;
+        } else if ((strcmp(prop->name, "time-pos") == 0 || strcmp(prop->name, "duration") == 0)
+                   && prop->format == MPV_FORMAT_NONE) {
+            // Unavailable: the file is changing. Report 0, not the previous
+            // file's value, which the app would take for the new file's.
+            // Status numbers only; the render size (width/height) is untouched.
+            if (strcmp(prop->name, "time-pos") == 0) m_status.position = 0;
+            else m_status.duration = 0;
+            statusChanged = true;
         } else if (strcmp(prop->name, "width") == 0 && prop->format == MPV_FORMAT_INT64) {
             int newWidth = static_cast<int>(*static_cast<int64_t*>(prop->data));
             if (newWidth > 0 && newWidth != m_status.width) {

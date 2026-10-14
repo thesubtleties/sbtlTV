@@ -11,10 +11,15 @@ import electronUpdater from 'electron-updater';
 import { selectChromiumGpuIdentity } from './gpu-selection.js';
 import { startDataHost, type DataHost } from './data/data-host.js';
 import { isTransientDecodeError } from './mpv-error-filter.js';
+import { redactUrls } from './log-redact.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
-import { SUBTITLE_BASE_OPTIONS, loadResetOptions, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, CaptionCheck, type SubtitleTrack } from './subtitles.js';
+import { STREAM_BASE_OPTIONS, STALL_MAX_RELOADS } from './stream-health.js';
+import { StreamSession, parseCompatibilityHandoff, type StreamLoadRequest, type CompatibilityHandoff } from './stream-session.js';
+import { CaptionSession } from './caption-session.js';
+import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
+import { preferredCaptionLanguage } from './subtitle-settings.js';
 const { autoUpdater } = electronUpdater;
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -96,20 +101,17 @@ const mpvState: MpvState = {
   duration: 0,
 };
 
-// Pending resume — seek when duration first arrives (file loaded).
-// Generation counter prevents stale seeks on rapid re-load.
-let pendingResume: { position: number; generation: number } | null = null;
-let loadGeneration = 0;
+// The stream playing: what is loaded, its generation, the resume seek still to
+// do, the user's pause and the stall watchdog (stream-session.ts).
+const stream = new StreamSession();
 // Load generation whose first decoded frame has already been logged.
 let decodeLoggedGeneration = -1;
-let currentMedia: { url: string; startPosition: number } | null = null;
+// The player's raw time-pos/duration (either player); mpvState gets them through the gate.
+const playerRaw = { position: 0, duration: 0 };
+// The external player's eof-reached (keep-open pauses mpv at the end of a file).
+let externalEof = false;
 let pipelineFailurePromptOpen = false;
 let nativeRecoveryInProgress = false;
-
-interface CompatibilityHandoff {
-  url: string;
-  position: number;
-}
 
 // Prevent screen sleep during playback
 let sleepBlockerId: number | null = null;
@@ -265,7 +267,8 @@ function debugLog(message: string, category = 'app'): void {
   if (!debugLoggingEnabled || !debugLogStream) return;
   try {
     const timestamp = new Date().toISOString();
-    const line = `[${timestamp}] [${category}] ${message}\n`;
+    // Users attach this log to reports: no provider credentials (they ride in stream URLs).
+    const line = `[${timestamp}] [${category}] ${redactUrls(message)}\n`;
     debugLogStream.write(line);
   } catch {
     // Silently fail - logging should never crash the app
@@ -302,11 +305,7 @@ function consumeCompatibilityHandoff(): CompatibilityHandoff | null {
   try {
     if (!safeStorage.isEncryptionAvailable()) return null;
     const decrypted = safeStorage.decryptString(fs.readFileSync(handoffPath));
-    const value: unknown = JSON.parse(decrypted);
-    if (!value || typeof value !== 'object') return null;
-    const candidate = value as Record<string, unknown>;
-    if (typeof candidate.url !== 'string' || typeof candidate.position !== 'number') return null;
-    return { url: candidate.url, position: Math.max(0, candidate.position) };
+    return parseCompatibilityHandoff(JSON.parse(decrypted));
   } catch (error) {
     debugLog(`Could not consume compatibility handoff: ${error instanceof Error ? error.message : error}`, 'mpv');
     return null;
@@ -442,13 +441,18 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
   }
 }
 
+// The native player being torn down after the window closed; a new one waits for it.
+let bridgeTeardown: Promise<void> | null = null;
+
 function killMpv(): void {
   isShuttingDown = true;
+  // The player is going away (window closed; on macOS the app stays): so does what it was playing.
+  endPlayback({ invalidate: true });
 
   // Clean up native mpv bridge
   if (mpvBridge) {
     try {
-      void mpvBridge.destroy().catch(error => {
+      bridgeTeardown = mpvBridge.destroy().catch(error => {
         debugLog(`Error destroying native bridge: ${error instanceof Error ? error.message : error}`, 'mpv');
       });
     } catch (error) {
@@ -638,6 +642,7 @@ async function initMpv(): Promise<void> {
       '--no-terminal',
       '--hwdec=auto',
       '--vo=gpu',
+      ...STREAM_BASE_OPTIONS.map(([name, value]) => `--${name}=${value}`),
       ...SUBTITLE_BASE_OPTIONS.map(([name, value]) => `--${name}=${value}`),
       `--sub-fonts-dir=${subtitleFontsPath()}`,
     ];
@@ -708,7 +713,7 @@ async function initMpv(): Promise<void> {
     mpvProcess.on('error', (error: Error) => {
       debugLog(`Process error: ${error.message}`, 'mpv');
       console.error('[mpv] Process error:', error.message);
-      sendToRenderer('mpv-error', error.message);
+      reportMpvError(error.message);
     });
 
     mpvProcess.on('exit', (code) => {
@@ -725,7 +730,7 @@ async function initMpv(): Promise<void> {
       // Auto-restart if not intentionally shutting down
       if (!isShuttingDown && mainWindow) {
         console.log('[mpv] Unexpected exit, restarting in 1 second...');
-        sendToRenderer('mpv-error', 'mpv crashed, restarting...');
+        reportMpvError('mpv crashed, restarting...');
         setTimeout(() => {
           if (!isShuttingDown && mainWindow) {
             initMpv();
@@ -744,7 +749,7 @@ async function initMpv(): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[mpv] Failed to initialize:', message);
-    sendToRenderer('mpv-error', message);
+    reportMpvError(message);
   }
 }
 
@@ -802,7 +807,7 @@ async function initNativeMpv(): Promise<boolean> {
     mpvBridge = bridge;
     useNativeMpv = true;
     syncPlaybackDiagnostics();
-    setMpvOptions([...SUBTITLE_BASE_OPTIONS, ['sub-fonts-dir', subtitleFontsPath()]], 'native init');
+    setMpvOptions([...STREAM_BASE_OPTIONS, ...SUBTITLE_BASE_OPTIONS, ['sub-fonts-dir', subtitleFontsPath()]], 'native init');
     applySubtitleStyle('native init');
 
     // Forward status updates to renderer
@@ -813,7 +818,11 @@ async function initNativeMpv(): Promise<boolean> {
       STATUS_THROTTLE_MS,
     );
     nativeStatusThrottle = throttle;
-    bridge.onStatus((status) => {
+    bridge.onStatus((rawStatus) => {
+      // Until mpv has unloaded the previous file, its numbers are not this load's.
+      playerRaw.position = rawStatus.position;
+      playerRaw.duration = rawStatus.duration;
+      const status = { ...rawStatus, ...stream.gate.pass(rawStatus, Date.now()) };
       if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
       // Sync local state for getStatus calls
       updateSleepBlock(status.playing);
@@ -832,29 +841,24 @@ async function initNativeMpv(): Promise<boolean> {
       // (Linux only: there hwdec-current is an instant cached read; on macOS it
       // would be a synchronous mpv call on every status until the decode line.)
       const decoderUp = process.platform !== 'linux' || bridge?.getProperty('hwdec-current') !== undefined;
-      if (status.width > 0 && status.height > 0 && decodeLoggedGeneration !== loadGeneration && decoderUp) {
-        decodeLoggedGeneration = loadGeneration;
+      if (status.width > 0 && status.height > 0 && decodeLoggedGeneration !== stream.generation && decoderUp) {
+        decodeLoggedGeneration = stream.generation;
         debugLog(`Decoding ${status.width}x${status.height} ${bridge?.decodeSummary() ?? 'hwdec:?'}`, 'mpv');
         perfProbe?.notePlaybackStarted();
       }
 
       // File loaded — execute pending resume seek (native path)
-      if (pendingResume && status.duration > 0 && mpvBridge) {
-        const { position, generation } = pendingResume;
-        if (generation === loadGeneration) {
-          pendingResume = null;
-          debugLog(`Resume (native): seeking to ${position}s (duration: ${status.duration}s)`, 'mpv');
-          mpvBridge.seek(position);
-        } else {
-          pendingResume = null; // stale, discard
-        }
+      const resumeAt = mpvBridge ? stream.takeResume(status.duration) : null;
+      if (resumeAt !== null) {
+        debugLog(`Resume (native): seeking to ${resumeAt}s (duration: ${status.duration}s)`, 'mpv');
+        mpvBridge?.seek(resumeAt);
       }
 
       // Subtitle tracks for this load: read track-list only on the schedule
       // (after the video is up, retried briefly until a subtitle track exists),
       // never per status. It is a synchronous call into mpv on this thread.
-      if (trackReadGeneration !== loadGeneration) {
-        trackReadGeneration = loadGeneration;
+      if (trackReadGeneration !== stream.generation) {
+        trackReadGeneration = stream.generation;
         trackReadSchedule.reset();
       }
       const now = Date.now();
@@ -862,7 +866,7 @@ async function initNativeMpv(): Promise<boolean> {
         const tracks = parseSubtitleTracks(bridge?.getProperty('track-list'));
         trackReadSchedule.record(now, tracks);
         // Read with the tracks: the status duration can still be the previous file's.
-        sendSubtitleTracks(tracks, Number(bridge?.getProperty('duration')) || 0);
+        captions.setTracks(tracks, Number(bridge?.getProperty('duration')) || 0);
       }
 
       // mpv reports time-pos on every frame. Each forwarded status is an IPC
@@ -876,12 +880,13 @@ async function initNativeMpv(): Promise<boolean> {
       if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
       // hwdec probing, mid-GOP decode errors and skipped file metadata are
       // logged at error level but do not stop playback; the debug log keeps
-      // them, the red banner does not.
+      // them, the error card does not.
       if (isTransientDecodeError(error)) {
         debugLog(`mpv (not shown): ${error.trim()}`, 'mpv');
         return;
       }
-      sendToRenderer('mpv-error', error);
+      if (error.startsWith('Playback error: ')) reportPlaybackFailure(error);
+      else reportMpvLogError(error);
     });
 
     bridge.onPipelineFailure((error) => {
@@ -922,8 +927,7 @@ async function resetNativePlayback(): Promise<void> {
   try {
     if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
     updateSleepBlock(false);
-    pendingResume = null;
-    loadGeneration++;
+    endPlayback({ invalidate: true });
     useNativeMpv = false;
     const destruction = oldBridge.destroy();
     oldWindow.destroy();
@@ -936,8 +940,8 @@ async function resetNativePlayback(): Promise<void> {
     mpvBridge = null;
     nativeStatusThrottle?.reset();
     syncPlaybackDiagnostics();
-    currentMedia = null;
     Object.assign(mpvState, { playing: false, position: 0, duration: 0, width: 0, height: 0 });
+    Object.assign(playerRaw, { position: 0, duration: 0 });
     isShuttingDown = false;
     await createWindow(bounds);
     const replacement = mainWindow as BrowserWindow | null;
@@ -987,12 +991,13 @@ async function handleNativePipelineFailure(error: string): Promise<void> {
   debugLog(`Native pipeline failure: ${error}`, 'mpv');
   if (pipelineFailurePromptOpen || nativeRecoveryInProgress || !mainWindow) return;
   pipelineFailurePromptOpen = true;
-  const failurePosition = mpvState.position > 0 ? mpvState.position : currentMedia?.startPosition ?? 0;
-  const handoff = currentMedia ? { url: currentMedia.url, position: failurePosition } : null;
+  const handoff = stream.handoff(mpvState.position);
   const isLinux = process.platform === 'linux';
 
   try {
     mpvBridge?.stop();
+    // Stopped: the watchdog must not reload into the broken pipeline, whatever the answer.
+    endPlayback({ invalidate: true });
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'error',
       title: 'Native video playback failed',
@@ -1009,7 +1014,7 @@ async function handleNativePipelineFailure(error: string): Promise<void> {
       return;
     }
     if (!isLinux && result.response !== 0) {
-      sendToRenderer('mpv-error', error);
+      reportMpvError(error);
       return;
     }
     await resetNativePlayback();
@@ -1061,6 +1066,7 @@ async function connectToMpvSocket(): Promise<void> {
       sendMpvCommand('observe_property', [4, 'time-pos']);
       sendMpvCommand('observe_property', [5, 'duration']);
       sendMpvCommand('observe_property', [6, 'track-list']);
+      sendMpvCommand('observe_property', [7, 'eof-reached']);
       applySubtitleStyle('external mpv connected');
 
       resolve();
@@ -1102,9 +1108,17 @@ interface MpvMessage {
   data?: unknown;
   request_id?: number;
   error?: string;
+  /** end-file: why the file ended ('eof', 'stop', 'error', ...) and, for 'error', mpv's reason */
+  reason?: string;
+  file_error?: string;
 }
 
 function handleMpvMessage(msg: MpvMessage): void {
+  // A file mpv could not open or play (the in-window player reports this through its own error callback).
+  if (msg.event === 'end-file' && msg.reason === 'error') {
+    reportPlaybackFailure(`Playback error: ${msg.file_error ?? 'unknown error'}`);
+  }
+
   // Handle property change events
   if (msg.event === 'property-change') {
     switch (msg.name) {
@@ -1121,29 +1135,23 @@ function handleMpvMessage(msg: MpvMessage): void {
         mpvState.muted = (msg.data as boolean) ?? false;
         break;
       case 'time-pos':
-        mpvState.position = (msg.data as number) ?? 0;
+        playerRaw.position = (msg.data as number) ?? 0;
+        Object.assign(mpvState, stream.gate.pass(playerRaw, Date.now()));
+        resumeExternalIfOpen();
         break;
       case 'duration':
-        mpvState.duration = (msg.data as number) ?? 0;
+        playerRaw.duration = (msg.data as number) ?? 0;
+        Object.assign(mpvState, stream.gate.pass(playerRaw, Date.now()));
         // The renderer restores a saved subtitle delay once the duration is known.
-        if (mpvState.duration > 0 && lastSubtitleTracks.length > 0) sendSubtitleTracks(lastSubtitleTracks, mpvState.duration);
-        // File loaded — execute pending resume seek (socket path)
-        if (pendingResume && mpvState.duration > 0) {
-          const { position, generation } = pendingResume;
-          if (generation === loadGeneration) {
-            pendingResume = null;
-            debugLog(`Resume: seeking to ${position}s (duration: ${mpvState.duration}s)`, 'mpv');
-            sendMpvCommand('seek', [position, 'absolute']).catch(() => {
-              debugLog('Resume: seek failed', 'mpv');
-            });
-          } else {
-            pendingResume = null; // stale, discard
-          }
-        }
+        if (mpvState.duration > 0 && captions.tracks.length > 0) captions.setTracks(captions.tracks, mpvState.duration);
+        resumeExternalIfOpen();
+        break;
+      case 'eof-reached':
+        externalEof = msg.data === true;
         break;
       case 'track-list':
         // Pushed by mpv on every change (file loaded, CC track created); no polling.
-        sendSubtitleTracks(parseSubtitleTracks(msg.data), mpvState.duration);
+        captions.setTracks(parseSubtitleTracks(msg.data), mpvState.duration);
         break;
     }
 
@@ -1164,6 +1172,17 @@ function handleMpvMessage(msg: MpvMessage): void {
       }
     }
   }
+}
+
+// File open (its duration got through the gate): the pending resume seek, external player.
+// Checked on every gated update: the duration can arrive while the gate still holds it.
+function resumeExternalIfOpen(): void {
+  const resumeAt = stream.takeResume(mpvState.duration);
+  if (resumeAt === null) return;
+  debugLog(`Resume: seeking to ${resumeAt}s (duration: ${mpvState.duration}s)`, 'mpv');
+  sendMpvCommand('seek', [resumeAt, 'absolute']).catch(() => {
+    debugLog('Resume: seek failed', 'mpv');
+  });
 }
 
 function sendMpvCommand(command: string, args: unknown[] = []): Promise<unknown> {
@@ -1189,6 +1208,34 @@ function sendToRenderer(channel: string, data: unknown): void {
   if (mainWindow && mainWindow.webContents) {
     mainWindow.webContents.send(channel, data);
   }
+}
+
+/** A message in the app's error card; its text goes to the debug log too, so reports can be matched. */
+function reportMpvError(message: string): void {
+  const text = redactUrls(message.trim());
+  debugLog(`banner: ${JSON.stringify(text)}`, 'mpv');
+  sendToRenderer('mpv-error', text);
+}
+
+/**
+ * mpv could not open or play the file. For a load that never played this is
+ * the answer (the card offers Try again), so the stall watchdog does not keep
+ * reloading a link that does not open; during a stall reload it is part of the
+ * reconnecting and is held like any mpv line.
+ */
+function reportPlaybackFailure(message: string): void {
+  if (!stream.holdsMpvErrors(mpvState.playing)) stream.stopWatchingIfNeverPlayed();
+  reportMpvLogError(message);
+}
+
+/** One of mpv's own error lines: held back while a stall reload is opening the stream. */
+function reportMpvLogError(message: string): void {
+  if (stream.holdsMpvErrors(mpvState.playing)) {
+    stream.lastHeldError = redactUrls(message.trim());  // before quoting: the URL ends at whitespace, not at the quote
+    debugLog(`banner held during reconnect: ${JSON.stringify(stream.lastHeldError)}`, 'mpv');
+    return;
+  }
+  reportMpvError(message);
 }
 
 /** Set mpv options on whichever player is running. Failures are logged, never thrown. */
@@ -1221,35 +1268,6 @@ function applySubtitleStyle(why: string): void {
 const trackReadSchedule = new TrackReadSchedule();
 let trackReadGeneration = -1;
 
-let lastSubtitleTracks: SubtitleTrack[] = [];
-
-/** Tracks of the current load, tagged with its generation and (when known) the file's duration. */
-function sendSubtitleTracks(tracks: SubtitleTrack[], duration = 0): void {
-  lastSubtitleTracks = tracks;
-  sendToRenderer('subtitle-tracks', { generation: loadGeneration, tracks, duration: duration > 0 ? duration : 0 });
-}
-
-// Live captions (EIA-608): ffmpeg's decoder picks a caption field on its own and
-// on most channels it is a coin flip whether it lands on the captions or the
-// station data (XDS) beside them. While a CC track is selected, read the first
-// lines (hidden), restart the decoder on junk, and give up after 8 restarts.
-// Captions are only shown once confirmed. It stops at the verdict; a channel
-// that sends no captions for a while (an ad break) is checked less often
-// after CC_CHECK_FAST_MS rather than shown unchecked.
-const CC_CHECK_INTERVAL_MS = 400;
-const CC_CHECK_SLOW_INTERVAL_MS = 2000;
-const CC_CHECK_FAST_MS = 60_000;
-interface CcCheckRun { generation: number; trackId: number; check: CaptionCheck; timer: NodeJS.Timeout; startedAt: number; lastRead: number }
-let ccCheck: CcCheckRun | null = null;
-let ccCheckedKey: string | null = null;  // `${generation}:${trackId}` already checked this load
-let ccUnreadable = false;  // that check gave up: keep the junk off screen for this load
-let subtitleVisibleWanted = true;
-
-function stopCcCheck(): void {
-  if (ccCheck) clearInterval(ccCheck.timer);
-  ccCheck = null;
-}
-
 async function readSubText(): Promise<string> {
   if (useNativeMpv && mpvBridge) return mpvBridge.getProperty('sub-text') ?? '';
   if (!mpvSocket) return '';
@@ -1261,45 +1279,21 @@ async function readSubText(): Promise<string> {
   }
 }
 
-function sendCcState(generation: number, state: 'checking' | 'ok' | 'unreadable'): void {
-  sendToRenderer('subtitle-cc-state', { generation, state });
-}
+// Subtitle tracks, the selected one and the live caption check (caption-session.ts).
+const captions = new CaptionSession({
+  setOptions: setMpvOptions,
+  readSubText,
+  sendTracks: (update) => sendToRenderer('subtitle-tracks', update),
+  sendCcState: (update) => sendToRenderer('subtitle-cc-state', update),
+  log: (message) => debugLog(message, 'mpv'),
+  preferredLanguage: () => preferredCaptionLanguage(storage.getSettings().subtitles!.language, app.getLocale()),
+  currentGeneration: () => stream.generation,
+});
 
-function startCcCheck(generation: number, trackId: number): void {
-  stopCcCheck();
-  setMpvOptions([['sub-visibility', 'no'], ['sid', String(trackId)]], 'cc check start');
-  sendCcState(generation, 'checking');
-  let busy = false;
-  const run: CcCheckRun = {
-    generation, trackId, check: new CaptionCheck(8), startedAt: Date.now(), lastRead: 0,
-    timer: setInterval(() => {
-      const now = Date.now();
-      const interval = now - run.startedAt > CC_CHECK_FAST_MS ? CC_CHECK_SLOW_INTERVAL_MS : CC_CHECK_INTERVAL_MS;
-      if (busy || now - run.lastRead < interval) return;
-      busy = true;
-      run.lastRead = now;
-      void readSubText().then((text) => {
-        if (ccCheck !== run || generation !== loadGeneration) return;
-        const action = run.check.observe(text.trim());
-        if (action === 'retry') {
-          debugLog(`captions: station data instead of captions, restarting the decoder (${run.check.retries}/8)`, 'mpv');
-          setMpvOptions([['sid', 'no'], ['sid', String(trackId)]], 'cc retry');
-        } else if (action === 'ok') {
-          debugLog(`captions: readable after ${run.check.retries} restart(s)`, 'mpv');
-          stopCcCheck();
-          setMpvOptions([['sub-visibility', subtitleVisibleWanted ? 'yes' : 'no']], 'cc ok');
-          sendCcState(generation, 'ok');
-        } else if (action === 'unreadable') {
-          debugLog('captions: still station data after 8 restarts; turning them off for this channel', 'mpv');
-          stopCcCheck();
-          ccUnreadable = true;
-          setMpvOptions([['sid', 'no']], 'cc unreadable');
-          sendCcState(generation, 'unreadable');
-        }
-      }).finally(() => { busy = false; });
-    }, CC_CHECK_INTERVAL_MS),
-  };
-  ccCheck = run;
+/** Playback stopped or the player is going away: the stream and its captions end together. */
+function endPlayback(opts: { invalidate?: boolean } = {}): void {
+  stream.end(opts);
+  captions.end();
 }
 
 // IPC Handlers - Window controls
@@ -1362,71 +1356,39 @@ ipcMain.handle('mpv-toggle-stats', async (_event, persistent: boolean) => {
 
 // Subtitle controls carry the load generation they were decided for; a late
 // call for a previous stream must not change the one now playing.
-const isCurrentGeneration = (generation: unknown) => generation === loadGeneration;
-
 ipcMain.handle('subtitle-set-track', async (_event, generation: unknown, id: unknown, visible: unknown) => {
-  if (!isCurrentGeneration(generation)) return { error: 'Stale subtitle request' };
-  subtitleVisibleWanted = visible !== false;
-  const track = typeof id === 'number' ? lastSubtitleTracks.find((t) => t.id === id) : undefined;
-  if (!track) {
-    stopCcCheck();
-    setMpvOptions([['sid', 'no']], 'set track');
-    return { success: true };
-  }
-  if (track.isCc) {
-    const key = `${generation}:${track.id}`;
-    if (ccCheckedKey === key) {
-      // Already checked (or being checked) for this load: just apply the wanted visibility.
-      if (!ccCheck && !ccUnreadable) setMpvOptions([['sub-visibility', subtitleVisibleWanted ? 'yes' : 'no'], ['sid', String(track.id)]], 'set track');
-    } else {
-      ccCheckedKey = key;
-      ccUnreadable = false;
-      startCcCheck(generation as number, track.id);
-    }
-    return { success: true };
-  }
-  stopCcCheck();
-  setMpvOptions([['sub-visibility', subtitleVisibleWanted ? 'yes' : 'no'], ['sid', String(track.id)]], 'set track');
+  if (!stream.isCurrent(generation)) return { error: 'Stale subtitle request' };
+  captions.selectTrack(typeof id === 'number' ? id : null, visible !== false);
   return { success: true };
 });
 
 ipcMain.handle('subtitle-set-visible', async (_event, generation: unknown, visible: unknown) => {
-  if (!isCurrentGeneration(generation)) return { error: 'Stale subtitle request' };
-  subtitleVisibleWanted = visible === true;
-  // While live captions are being checked they stay hidden; the check applies this when it ends.
-  if (!ccCheck) setMpvOptions([['sub-visibility', subtitleVisibleWanted ? 'yes' : 'no']], 'set visible');
+  if (!stream.isCurrent(generation)) return { error: 'Stale subtitle request' };
+  captions.setVisible(visible === true);
   return { success: true };
 });
 
 ipcMain.handle('subtitle-set-delay', async (_event, generation: unknown, seconds: unknown) => {
-  if (!isCurrentGeneration(generation)) return { error: 'Stale subtitle request' };
+  if (!stream.isCurrent(generation)) return { error: 'Stale subtitle request' };
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return { error: 'Invalid delay' };
   const clamped = Math.min(Math.max(seconds, -60), 60);
   setMpvOptions([['sub-delay', clamped.toFixed(3)]], 'set delay');
   return { success: true };
 });
 
-async function loadMedia(url: string, startPosition?: number): Promise<{ success?: boolean; error?: string; generation?: number }> {
+async function loadMedia(request: StreamLoadRequest & { requestId?: number }): Promise<{ success?: boolean; error?: string }> {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge && !mpvBridge.isInitialized()) {
     void handleNativePipelineFailure('Reset native playback before selecting another channel');
     return { error: 'Native playback must be reset' };
   }
-  const resumeAt = startPosition && startPosition > 0 ? Math.floor(startPosition) : 0;
-  currentMedia = { url, startPosition: resumeAt };
-  debugLog(`mpv-load called${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
-
-  // Set pending resume — will seek when duration property arrives (file loaded).
-  // Generation counter ensures stale seeks from previous loads are discarded.
-  loadGeneration++;
-  pendingResume = resumeAt > 0 ? { position: resumeAt, generation: loadGeneration } : null;
-
-  // mpv keeps sid and sub-delay across loadfile: start every stream with no
-  // subtitle and no offset; the renderer picks the track and restores a delay.
-  stopCcCheck();
-  subtitleVisibleWanted = true;
-  setMpvOptions(loadResetOptions(), 'load');
-  sendSubtitleTracks([]);
+  const url = request.url;
+  const { generation, resumeAt } = stream.begin(request, Date.now(), playerRaw);
+  debugLog(`mpv-load called (${request.reason})${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
+  // The renderer binds subtitles and progress saving to this, whoever started the load;
+  // sent before the load's first track update.
+  sendToRenderer('media-loaded', { generation, live: request.live, resumeAt, reason: request.reason, requestId: request.requestId ?? null });
+  captions.beginLoad();
 
   // Route to native bridge if available — plain loadfile, no options string
   // (start= option is unreliable across mpv versions; seek-on-duration is used instead)
@@ -1435,7 +1397,7 @@ async function loadMedia(url: string, startPosition?: number): Promise<{ success
       await mpvBridge.load(url, '');
       mpvBridge.play(); // ensure playback — pause can persist across loads after a prior EOF
       debugLog('mpv-load SUCCESS (native)', 'mpv');
-      return { success: true, generation: loadGeneration };
+      return { success: true };
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unknown error';
       debugLog(`mpv-load FAILED (native): ${errMsg}`, 'mpv');
@@ -1455,7 +1417,7 @@ async function loadMedia(url: string, startPosition?: number): Promise<{ success
     // (e.g. autoplaying the next episode), so loadfile alone would load the new file paused.
     await sendMpvCommand('set_property', ['pause', false]);
     debugLog('mpv-load SUCCESS', 'mpv');
-    return { success: true, generation: loadGeneration };
+    return { success: true };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
     debugLog(`mpv-load FAILED: ${errMsg}`, 'mpv');
@@ -1464,12 +1426,59 @@ async function loadMedia(url: string, startPosition?: number): Promise<{ success
 }
 
 // IPC Handlers - mpv control
-ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number) => {
-  return loadMedia(url, startPosition);
+ipcMain.handle('mpv-load', async (_event, url: unknown, options: unknown) => {
+  if (typeof url !== 'string') return { error: 'Invalid URL' };
+  const o = (options && typeof options === 'object' ? options : {}) as Record<string, unknown>;
+  return loadMedia({
+    url,
+    startPosition: typeof o.startPosition === 'number' && Number.isFinite(o.startPosition) ? o.startPosition : undefined,
+    live: o.live === true,
+    reason: 'play',
+    requestId: typeof o.requestId === 'number' ? o.requestId : undefined,
+  });
 });
+
+// Once a second: a stream that stopped moving without anyone pausing it is
+// reloaded (at its position for movies), up to STALL_MAX_RELOADS times, then reported once.
+async function checkStreamHealth(): Promise<void> {
+  const media = stream.media;
+  const watchdog = stream.watchdog;
+  if (!watchdog || !media || stream.reloadInFlight || nativeRecoveryInProgress || pipelineFailurePromptOpen) return;
+  const action = watchdog.observe({
+    now: Date.now(), position: mpvState.position, userPaused: stream.userPaused, duration: mpvState.duration, playing: mpvState.playing,
+    // keep-open pauses mpv at the end of a file; the watchdog asks only when mpv paused itself.
+    readEof: () => (useNativeMpv && mpvBridge ? mpvBridge.getProperty('eof-reached') === 'yes' : externalEof),
+  });
+  if (action === 'reload') {
+    stream.reloadInFlight = true;
+    debugLog(`Stream stalled at ${mpvState.position.toFixed(1)}s; reloading (${watchdog.reloads}/${STALL_MAX_RELOADS})`, 'mpv');
+    sendToRenderer('stream-recovery', { state: 'reconnecting', attempt: watchdog.reloads });
+    try {
+      const request = stream.reloadRequest(mpvState.position);
+      const result = request ? await loadMedia(request) : null;
+      if (result?.error) debugLog(`Stall reload failed: ${result.error}`, 'mpv');
+    } finally {
+      stream.reloadInFlight = false;
+    }
+  } else if (action === 'give-up') {
+    debugLog(`Stream still stalled after ${STALL_MAX_RELOADS} reloads; giving up${stream.lastHeldError ? ` (last mpv error: ${JSON.stringify(stream.lastHeldError)})` : ''}`, 'mpv');
+    sendToRenderer('stream-recovery', { state: 'failed', live: media.live });
+  }
+}
+let lastHealthCheckError: string | null = null;
+setInterval(() => {
+  checkStreamHealth().catch((err) => {
+    // Shown even with debug logging off, once per distinct message: a failing check is a watchdog that is not watching.
+    const message = err instanceof Error ? err.message : String(err);
+    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', message);
+    lastHealthCheckError = message;
+    debugLog(`Stream health check failed: ${message}`, 'mpv');
+  });
+}, 1000).unref();
 
 ipcMain.handle('mpv-play', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
+  stream.userPaused = false;
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.play();
@@ -1490,6 +1499,7 @@ ipcMain.handle('mpv-play', async () => {
 
 ipcMain.handle('mpv-pause', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
+  stream.userPaused = true;
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.pause();
@@ -1510,6 +1520,7 @@ ipcMain.handle('mpv-pause', async () => {
 
 ipcMain.handle('mpv-toggle-pause', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
+  stream.userPaused = mpvState.playing;  // playing now: this pauses
   if (useNativeMpv && mpvBridge) {
     try {
       const status = mpvBridge.getStatus();
@@ -1596,9 +1607,7 @@ ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
 ipcMain.handle('mpv-stop', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   debugLog('mpv-stop called', 'mpv');
-  pendingResume = null;
-  stopCcCheck();
-  currentMedia = null;
+  endPlayback({ invalidate: true });
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.stop();
@@ -1687,20 +1696,40 @@ ipcMain.handle('storage-get-settings', async () => {
 });
 
 ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<typeof storage.updateSettings>[0]) => {
+  // Only a failure to store is the renderer's error (it tells the user); what
+  // the change sets in motion afterwards is logged if it fails.
+  let previousLanguage: string | undefined;
   try {
+    previousLanguage = storage.getSettings().subtitles?.language;
     storage.updateSettings(settings);
-    if (settings.subtitles !== undefined || settings.appearance !== undefined) {
-      applySubtitleStyle('settings changed');
-    }
-    // Update debug logging if that setting changed
-    if (settings.debugLoggingEnabled !== undefined) {
-      initDebugLogging(settings.debugLoggingEnabled);
-    }
-    dataHost?.pushSettings();
-    return { success: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Unknown error' };
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    debugLog(`Settings not stored: ${message}`, 'app');
+    return { error: message };
   }
+  // Each follow-up on its own, so one that fails does not skip the rest.
+  const followUp = (what: string, run: () => void) => {
+    try {
+      run();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[settings] ${what} failed:`, message);
+      debugLog(`Settings changed, but ${what} failed: ${message}`, 'app');
+    }
+  };
+  if (settings.subtitles !== undefined || settings.appearance !== undefined) {
+    followUp('applying the subtitle style', () => applySubtitleStyle('settings changed'));
+  }
+  if (settings.subtitles !== undefined) {
+    followUp('re-checking captions', () => {
+      if (storage.getSettings().subtitles?.language !== previousLanguage) captions.recheckLanguage();
+    });
+  }
+  if (settings.debugLoggingEnabled !== undefined) {
+    followUp('switching debug logging', () => initDebugLogging(settings.debugLoggingEnabled!));
+  }
+  followUp('sending settings to the data process', () => dataHost?.pushSettings());
+  return { success: true };
 });
 
 ipcMain.handle('storage-is-encryption-available', async () => {
@@ -1990,6 +2019,50 @@ ipcMain.handle('fetch-binary', async (_event, url: string) => {
 });
 
 // App lifecycle
+/**
+ * Start the player for the window: the in-window (native) player where it is
+ * used, falling back to external mpv; external mpv on Windows and in Linux
+ * compatibility mode. False when the app is quitting instead.
+ */
+async function startPlayer(): Promise<boolean> {
+  isShuttingDown = false;
+  if (bridgeTeardown) {
+    await bridgeTeardown;
+    bridgeTeardown = null;
+  }
+  if (USE_NATIVE_MPV) {
+    let nativeSuccess = false;
+    if (MpvTextureBridgeClass) {
+      console.log('[mpv] Attempting native mpv-texture initialization...');
+      nativeSuccess = await initNativeMpv();
+    }
+    if (nativeSuccess) {
+      console.log('[mpv] Using native mpv-texture bridge');
+    } else {
+      console.log('[mpv] Native bridge unavailable');
+      if (!await confirmCompatibilityFallback(nativeInitError)) {
+        app.quit();
+        return false;
+      }
+      const mpvAvailable = await checkMpvAvailable();
+      if (!mpvAvailable) {
+        app.quit();
+        return false;
+      }
+      await initMpv();
+    }
+  } else {
+    // Windows and explicitly requested Linux compatibility launches use external mpv.
+    const mpvAvailable = await checkMpvAvailable();
+    if (!mpvAvailable) {
+      app.quit();
+      return false;
+    }
+    await initMpv();
+  }
+  return true;
+}
+
 app.whenReady().then(async () => {
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
@@ -2022,40 +2095,12 @@ app.whenReady().then(async () => {
     void readDesktopColors().then((colors) => sendToRenderer('appearance-desktop-colors', colors));
   });
 
-  if (USE_NATIVE_MPV) {
-    let nativeSuccess = false;
-    if (MpvTextureBridgeClass) {
-      console.log('[mpv] Attempting native mpv-texture initialization...');
-      nativeSuccess = await initNativeMpv();
-    }
-    if (nativeSuccess) {
-      console.log('[mpv] Using native mpv-texture bridge');
-    } else {
-      console.log('[mpv] Native bridge unavailable');
-      if (!await confirmCompatibilityFallback(nativeInitError)) {
-        app.quit();
-        return;
-      }
-      const mpvAvailable = await checkMpvAvailable();
-      if (!mpvAvailable) {
-        app.quit();
-        return;
-      }
-      await initMpv();
-    }
-  } else {
-    // Windows and explicitly requested Linux compatibility launches use external mpv.
-    const mpvAvailable = await checkMpvAvailable();
-    if (!mpvAvailable) {
-      app.quit();
-      return;
-    }
-    await initMpv();
-  }
+  if (!await startPlayer()) return;
 
   if (compatibilityHandoff) {
-    const result = await loadMedia(compatibilityHandoff.url, compatibilityHandoff.position);
-    if (result.error) sendToRenderer('mpv-error', 'Could not restore playback after compatibility restart.');
+    const { url, position, live } = compatibilityHandoff;
+    const result = await loadMedia({ url, startPosition: live ? undefined : position, live, reason: 'restore' });
+    if (result.error) reportMpvError('Could not restore playback after compatibility restart.');
   }
 
   // Auto-updater (packaged builds with native update support:
@@ -2198,6 +2243,10 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (nativeRecoveryInProgress) return;
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    // macOS keeps the app running after its window closes, and closing it
+    // stopped the player (killMpv): the new window needs a player again.
+    void createWindow()
+      .then(() => startPlayer())
+      .catch((error) => debugLog(`Reopening the window failed: ${error instanceof Error ? error.message : error}`, 'app'));
   }
 });

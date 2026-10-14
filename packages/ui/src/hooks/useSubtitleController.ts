@@ -1,14 +1,17 @@
 /**
  * Feeds main's subtitle events into the subtitle store. Which load an update
- * belongs to, the defaults and any saved delay are bound by App when mpv-load
- * returns (useSubtitleStore.bindLoad); this hook only forwards.
+ * belongs to, the defaults and any saved delay are bound by App when main
+ * announces the load (media-loaded: useSubtitleStore.bindLoad / rebindLoad);
+ * this hook only forwards.
  */
 import { useEffect } from 'react';
 import { useSubtitleStore } from '../stores/subtitleStore';
 import { useUIStore } from '../stores/uiStore';
 
+/** The language subtitle tracks are picked in: the setting, or the system language for auto. */
 export function systemLocale(): string {
-  return navigator.language || 'en';
+  const setting = useUIStore.getState().settings.subtitles?.language;
+  return setting && setting !== 'auto' ? setting : (navigator.language || 'en');
 }
 
 export function subtitleDefaults(): { live: boolean; vod: boolean } {
