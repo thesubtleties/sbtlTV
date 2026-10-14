@@ -1,0 +1,89 @@
+/* Playback problem: a card under the title bar (32px), centred, with the
+   palette's danger color on its edge and icon. */
+.error-card {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: min(560px, calc(100% - 32px));
+  padding: 12px 12px 12px 14px;
+  border-radius: var(--r-panel);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--danger);
+  color: var(--text);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  animation: errorCardIn 0.2s ease-out;
+}
+
+@keyframes errorCardIn {
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .error-card { animation: none; }
+}
+
+.error-card__icon {
+  flex: 0 0 auto;
+  color: var(--danger);
+}
+
+.error-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.error-card__text strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.error-card__text span {
+  font-size: 13px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3; /* long mpv lines: the full text is in the tooltip and the debug log */
+  overflow: hidden;
+}
+
+.error-card__retry {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-radius: var(--r-control);
+  border: 1px solid var(--line-2);
+  background: var(--fill-2);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.error-card__retry:hover {
+  background: var(--fill-4);
+}
+
+.error-card__close {
+  flex: 0 0 auto;
+  display: flex;
+  padding: 6px;
+  border: none;
+  border-radius: var(--r-inner);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.error-card__close:hover {
+  color: var(--text);
+  background: var(--fill-2);
+}

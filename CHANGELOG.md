@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.0] - 2026-10-14
+
+### Added
+- **Themes** - Settings > Appearance has palette tiles: sbtl (the default), Catppuccin, Gruvbox, Nord, Tokyo Night, Mocha, Pi and more, plus Caelestia, which follows the desktop's colors on Linux. The accent can follow the system's, and the typeface is selectable (Fira Sans, now bundled, JetBrains Mono or the system font)
+- **Subtitles for movies and episodes** - the file's own subtitle tracks, drawn by mpv in both players. The CC button in the player bar (or V) turns them on and off; right-click it for the track list and a subtitle delay (Z and X nudge it). A delay set for a movie or episode is saved with its watch progress and restored the next time it plays
+- **Closed captions on live TV** - the captions broadcast with US channels (EIA-608). mpv's caption decoder picks one of the two caption fields at random each time it starts, and on most channels the other field carries station data that shows as garbage ("HEHEHE", "H@ABC Network"). Captions now stay hidden until their first lines read as real text; on junk the decoder is restarted (the channel keeps playing), and a channel whose captions never come through says so on the CC button
+- **Caption language** - Settings > Subtitles > Language (Auto, English, Espanol, Francais). Many channels carry English on one caption field and Spanish on the other; live captions settle on the language chosen, showing the other one only if nothing else comes through within 30 seconds, and a movie's subtitles pick that language's track
+- **Settings > Subtitles** - on by default for live TV and for movies and series separately, size and style (outline, box or shadow)
+- **Stream recovery** - when a provider cuts a stream, it reconnects on its own. A stream that stops moving for 15 seconds without being paused is reloaded (movies at their position), up to three times with a quiet "Reconnecting" note, then a single message. Pausing, system sleep, a movie reaching its end and a slow-opening movie are not mistaken for a stall
+
+### Changed
+- **New look throughout** - Settings, the guide, Movies and Series, cards, the hero, the title bar and the overlays were restyled to the theme, with firmer corners and line icons
+- **Playback problems show in a card under the title bar** instead of a full-width red strip. It shows the first error mpv reported (usually the cause, such as an HTTP error), with Try again to play the same channel or movie again
+- **A link that does not open shows its error once** instead of the error being followed by reconnect attempts
+
+### Fixed
+- **A movie's resume point could be overwritten when it was started after a live channel** - the previous stream's position and duration were briefly taken for the movie's and saved as its progress. They are now held back until mpv has switched files, and progress is saved only once the resume seek has landed
+- **Closing the window on macOS left the app unable to play** - reopening it from the Dock gave "mpv not initialized". The player now starts again with the window
+- **The guide's times were 32px left of the programmes they mark**
+- **Provider usernames and passwords in the debug log** - stream URLs (which carry them for Xtream sources) are cut to their host in the log and in error messages
+- **A failed open showed nothing with the compatibility player and on Windows** until the stream timed out; it now shows its error at once
+- **No error for an MP4 that lists a chapter track it does not contain**, or for the half picture at the start of a live stream joined mid-picture; the harmless-message filter now applies on macOS too
+- **Player controls did not respond after the window reloaded** - a reloaded window waited for a ready signal that is only sent once
+- **Movies and Series rows** - the space after the last card matches the space before the first, and the rows' scrollbar no longer shifts them off-centre
+
+### Known issues
+- **Memory use can climb during in-window playback (macOS and Linux)** - it mostly levels off and is released when you change channel or title; earlier notes overstated it. Still being watched
+- **Widescreen SD channels still play small on macOS**
+
 ## [0.11.1] - 2026-10-09
 
 ### Changed

@@ -2,6 +2,7 @@ import Store from 'electron-store';
 import { safeStorage } from 'electron';
 import type { Source } from '@sbtltv/core';
 import { normalizeLinuxPlayerMode, type LinuxPlayerMode } from './linux-player-mode.js';
+import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitle-settings.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -48,9 +49,27 @@ interface AppSettings {
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: 'compatibility' runs mpv in its own window (default 'native'); takes effect on restart
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video (immediate); default false
+  appearance?: Appearance;  // Palette and typeface (default sbtl / fira)
+  subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
 }
 
 export type { LinuxPlayerMode };
+
+export const PALETTES = ['sbtl', 'mocha', 'pi', 'catppuccin', 'tokyonight', 'kanagawa', 'gruvbox', 'nord', 'rosepine', 'everforest', 'dracula', 'caelestia'] as const;
+export const TYPEFACES = ['fira', 'mono', 'system'] as const;
+export const ACCENTS = ['palette', 'system'] as const;
+export interface Appearance {
+  palette: (typeof PALETTES)[number];
+  typeface: (typeof TYPEFACES)[number];
+  accent: (typeof ACCENTS)[number];  // 'system' takes the OS accent where there is one
+}
+
+function normalizeAppearance(value: Partial<Appearance> | undefined): Appearance {
+  const palette = PALETTES.find(p => p === value?.palette) ?? 'sbtl';
+  const typeface = TYPEFACES.find(t => t === value?.typeface) ?? 'fira';
+  const accent = ACCENTS.find(a => a === value?.accent) ?? 'palette';
+  return { palette, typeface, accent };
+}
 
 // Internal storage format (encrypted)
 interface StoredSettings {
@@ -78,6 +97,8 @@ interface StoredSettings {
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: video player used at next launch
   linuxPerformanceMode?: boolean;  // Linux only: cheaper rendering for slower GPUs
+  appearance?: Appearance;
+  subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
 }
 
 const store = new Store<StoreSchema>({
@@ -228,6 +249,8 @@ export function getSettings(): AppSettings {
   result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
   result.linuxPlayerMode = normalizeLinuxPlayerMode(stored.linuxPlayerMode);
   result.linuxPerformanceMode = stored.linuxPerformanceMode === true;
+  result.appearance = normalizeAppearance(stored.appearance);
+  result.subtitles = normalizeSubtitleSettings(stored.subtitles);
   return result;
 }
 
@@ -247,6 +270,8 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   const updated: StoredSettings = { ...current };
 
   if (settings.theme !== undefined) updated.theme = settings.theme;
+  if (settings.appearance !== undefined) updated.appearance = normalizeAppearance(settings.appearance);
+  if (settings.subtitles !== undefined) updated.subtitles = normalizeSubtitleSettings({ ...current.subtitles, ...settings.subtitles });
   if (settings.lastSourceId !== undefined) updated.lastSourceId = settings.lastSourceId;
   if (settings.tmdbApiKey !== undefined) {
     updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;

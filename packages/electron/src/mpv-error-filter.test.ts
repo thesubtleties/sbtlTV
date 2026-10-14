@@ -16,6 +16,12 @@ test('decoder and hwdec probe noise is transient', () => {
     'ffmpeg/video: h264: mmco: unref short failure\n',
     'ffmpeg/video: h264: number of reference frames (0+5) exceeds max (4; probably corrupt input), discarding one\n',
     'libmpv_render/drmprime-overlay: Cannot retrieve DRM resources: Bad file descriptor\n',
+    'ffmpeg/demuxer: mov,mp4,m4a,3gp,3g2,mj2: Referenced QT chapter track not found\n',
+    'ffmpeg: NULL: missing picture in access unit with size 44711\n',
+    // Provider cuts: ffmpeg reconnects (live) or re-requests from the offset (movies)
+    'ffmpeg: http: Stream ends prematurely at 35947348, should be 2155869476\n',
+    'ffmpeg: http: Stream ends prematurely at 9234124, should be 18446744073709551615\n',
+    'ffmpeg: http: Will reconnect at 2039800 in 0 second(s), error=Input/output error.\n',
   ]) {
     assert.equal(isTransientDecodeError(message), true, message);
   }
@@ -29,6 +35,8 @@ test('stream, network and audio failures still reach the banner', () => {
     'stream: Failed to open http://example.invalid/live\n',
     'cplayer: Failed to recognize file format.\n',
     'demux: ... \n',
+    // A file the demuxer cannot read at all must keep its banner.
+    'ffmpeg/demuxer: mov,mp4,m4a,3gp,3g2,mj2: moov atom not found\n',
     // A decoder that cannot open must keep its banner: video would stay black.
     'vd: Could not open codec.\n',
     "vd: Failed to initialize a decoder for codec 'hevc'.\n",

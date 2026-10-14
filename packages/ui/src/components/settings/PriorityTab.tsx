@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import type { Source } from '../../types/electron';
 import { useUIStore, useUpdateSettings } from '../../stores/uiStore';
+import { OptionRow, Section, SettingsTab } from './ui';
 import { DragDropProvider, type DragEndEvent } from '@dnd-kit/react';
 import { useSortable, isSortable } from '@dnd-kit/react/sortable';
 
@@ -51,9 +52,7 @@ function SourcePriorityList({
   if (sourceIds.length < 2) return null;
 
   return (
-    <div className="priority-list-section">
-      <h4>{title}</h4>
-      <p className="priority-description">{description}</p>
+    <OptionRow title={title} help={description}>
       <DragDropProvider onDragEnd={handleDragEnd}>
         <div className="priority-list">
           {sourceIds.map((id, index) => {
@@ -72,7 +71,7 @@ function SourcePriorityList({
           })}
         </div>
       </DragDropProvider>
-    </div>
+    </OptionRow>
   );
 }
 
@@ -113,30 +112,26 @@ export function PriorityTab({ sources }: PriorityTabProps) {
   }
 
   return (
-    <div className="settings-tab-content">
-      <div className="settings-section">
-        <div className="section-header">
-          <h3>Source Priority</h3>
-        </div>
-        <p className="section-description">
-          Drag to reorder. Higher sources are preferred when content exists in multiple sources.
-          Disabled sources appear dimmed but can still be reordered.
-        </p>
+    <SettingsTab>
+      <Section
+        title="Source priority"
+        description="Drag to reorder. When the same content is in several sources, the higher one is used. Disabled sources are dimmed but can still be moved."
+      >
         <SourcePriorityList
           title="Live TV"
-          description="Priority for live channels across all source types"
+          description="Live channels, across all source types."
           sourceIds={effectiveLiveOrder}
           sources={sources}
           onReorder={handleLiveReorder}
         />
         <SourcePriorityList
-          title="Movies & Series"
-          description="Priority for VOD content (Xtream sources only)"
+          title="Movies & series"
+          description="Movies and series, from Xtream sources."
           sourceIds={effectiveVodOrder}
           sources={sources}
           onReorder={handleVodReorder}
         />
-      </div>
-    </div>
+      </Section>
+    </SettingsTab>
   );
 }

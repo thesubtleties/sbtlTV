@@ -18,6 +18,15 @@ export interface MpvResult {
   error?: string;
 }
 
+export interface MpvLoadOptions {
+  /** Seconds to resume at once the file is open */
+  startPosition?: number;
+  /** A live channel (the stall watchdog reloads it from the live edge, not a position) */
+  live?: boolean;
+  /** Echoed in media-loaded so the renderer can match the load to its own request */
+  requestId?: number;
+}
+
 export interface MpvModeInfo {
   mode: 'native' | 'external';
   sharedTextureAvailable: boolean;
@@ -29,8 +38,27 @@ export interface MpvModeInfo {
   launchPlayerMode?: 'native' | 'compatibility' | null;
 }
 
+type StreamRecoveryUpdate =
+  | { state: 'reconnecting'; attempt: number }
+  | { state: 'failed'; live: boolean };
+
+/**
+ * Main starts a load: every one is announced, whoever started it (play: the
+ * renderer's request, reload: the stall watchdog, restore: the compatibility
+ * restart). Subtitles and progress saving follow the announced generation.
+ */
+interface MediaLoadedUpdate {
+  generation: number;
+  live: boolean;
+  /** Seconds the load resumes at, 0 from the start */
+  resumeAt: number;
+  reason: 'play' | 'reload' | 'restore';
+  /** The renderer's requestId for a play, else null */
+  requestId: number | null;
+}
+
 export interface MpvApi {
-  load: (url: string, startPosition?: number) => Promise<MpvResult>;
+  load: (url: string, options?: MpvLoadOptions) => Promise<MpvResult>;
   play: () => Promise<MpvResult>;
   pause: () => Promise<MpvResult>;
   togglePause: () => Promise<MpvResult>;
@@ -45,6 +73,9 @@ export interface MpvApi {
   onReady: (callback: (ready: boolean) => void) => void;
   onStatus: (callback: (status: MpvStatus) => void) => void;
   onError: (callback: (error: string) => void) => void;
+  /** Stall recovery: reconnecting (toast), failed (give up) */
+  onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => () => void;
+  onMediaLoaded: (callback: (update: MediaLoadedUpdate) => void) => () => void;
   removeAllListeners: () => void;
 }
 
@@ -65,10 +96,20 @@ export interface StorageResult<T = void> {
   data?: T;
 }
 
+export interface SubtitleSettings {
+  liveDefault: boolean;
+  vodDefault: boolean;
+  size: 'small' | 'medium' | 'large';
+  style: 'outline' | 'box' | 'shadow';
+  /** auto = the system language */
+  language: 'auto' | 'en' | 'es' | 'fr';
+}
+
 export interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   autoUpdateEnabled?: boolean;
+  subtitles?: SubtitleSettings;
 }
 
 export interface M3UImportResult {
@@ -141,7 +182,7 @@ contextBridge.exposeInMainWorld('electronWindow', {
 // Expose mpv API to the renderer process
 contextBridge.exposeInMainWorld('mpv', {
   // Control functions
-  load: (url: string, startPosition?: number) => ipcRenderer.invoke('mpv-load', url, startPosition),
+  load: (url: string, options?: MpvLoadOptions) => ipcRenderer.invoke('mpv-load', url, options),
   play: () => ipcRenderer.invoke('mpv-play'),
   pause: () => ipcRenderer.invoke('mpv-pause'),
   togglePause: () => ipcRenderer.invoke('mpv-toggle-pause'),
@@ -163,6 +204,16 @@ contextBridge.exposeInMainWorld('mpv', {
   onError: (callback: (error: string) => void) => {
     ipcRenderer.on('mpv-error', (_event: IpcRendererEvent, data: string) => callback(data));
   },
+  onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => {
+    const listener = (_event: IpcRendererEvent, data: StreamRecoveryUpdate) => callback(data);
+    ipcRenderer.on('stream-recovery', listener);
+    return () => { ipcRenderer.removeListener('stream-recovery', listener); };
+  },
+  onMediaLoaded: (callback: (update: MediaLoadedUpdate) => void) => {
+    const listener = (_event: IpcRendererEvent, data: MediaLoadedUpdate) => callback(data);
+    ipcRenderer.on('media-loaded', listener);
+    return () => { ipcRenderer.removeListener('media-loaded', listener); };
+  },
 
   // Cleanup
   removeAllListeners: () => {
@@ -171,6 +222,40 @@ contextBridge.exposeInMainWorld('mpv', {
     ipcRenderer.removeAllListeners('mpv-error');
   },
 } satisfies MpvApi);
+
+// Subtitles: mpv's subtitle tracks for the current stream, and the choice back
+interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean }
+interface SubtitleTracksUpdate { generation: number; tracks: SubtitleTrack[]; duration: number }
+interface CcStateUpdate { generation: number; state: 'checking' | 'ok' | 'other-language' | 'unreadable'; language: 'en' | 'es' | 'fr' | null }
+contextBridge.exposeInMainWorld('subtitles', {
+  setTrack: (generation: number, id: number | null, visible: boolean) => ipcRenderer.invoke('subtitle-set-track', generation, id, visible),
+  setVisible: (generation: number, visible: boolean) => ipcRenderer.invoke('subtitle-set-visible', generation, visible),
+  setDelay: (generation: number, seconds: number) => ipcRenderer.invoke('subtitle-set-delay', generation, seconds),
+  onTracks: (callback: (update: SubtitleTracksUpdate) => void) => {
+    const listener = (_event: IpcRendererEvent, data: SubtitleTracksUpdate) => callback(data);
+    ipcRenderer.on('subtitle-tracks', listener);
+    return () => { ipcRenderer.removeListener('subtitle-tracks', listener); };
+  },
+  onCcState: (callback: (update: CcStateUpdate) => void) => {
+    const listener = (_event: IpcRendererEvent, data: CcStateUpdate) => callback(data);
+    ipcRenderer.on('subtitle-cc-state', listener);
+    return () => { ipcRenderer.removeListener('subtitle-cc-state', listener); };
+  },
+});
+
+// Colors the desktop provides, for Settings > Appearance
+interface DesktopColors {
+  accent: string | null;
+  caelestia: Record<string, string> | null;
+}
+contextBridge.exposeInMainWorld('appearance', {
+  getDesktopColors: (): Promise<DesktopColors> => ipcRenderer.invoke('appearance-get-desktop-colors'),
+  onDesktopColorsChanged: (callback: (colors: DesktopColors) => void) => {
+    const listener = (_event: IpcRendererEvent, colors: DesktopColors) => callback(colors);
+    ipcRenderer.on('appearance-desktop-colors', listener);
+    return () => { ipcRenderer.removeListener('appearance-desktop-colors', listener); };
+  },
+});
 
 // Expose storage API for sources and settings
 contextBridge.exposeInMainWorld('storage', {

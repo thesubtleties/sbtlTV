@@ -22,10 +22,10 @@
   min-width: 240px;
   max-width: 360px;
   padding: 12px 14px;
-  border-radius: 8px;
-  background: #1a1a1a;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: #e8e8ea;
+  border-radius: var(--r-panel);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
   animation: toastSlideIn 0.25s ease-out;
 }
@@ -35,16 +35,16 @@
   flex: 0 0 auto;
 }
 .toast--success .toast__icon {
-  color: #4ade80;
+  color: var(--success);
 }
 .toast--error .toast__icon {
-  color: #f87171;
+  color: var(--danger);
 }
 .toast--info .toast__icon {
-  color: #93c5fd;
+  color: var(--accent);
 }
 .toast--progress .toast__icon {
-  color: #e8e8ea;
+  color: var(--text);
 }
 
 .toast__text {

@@ -56,6 +56,8 @@ export interface StoredWatchProgress {
   progress: number;        // 0-100%
   completed: boolean;      // true when progress >= 90%
   name?: string;
+  sub_delay?: number;           // Subtitle delay (s) the user set on this copy; not indexed
+  sub_delay_stream_id?: string; // stream_id it was set on (another source's copy starts at 0)
   updated_at: Date;
   source_id?: string;
 }

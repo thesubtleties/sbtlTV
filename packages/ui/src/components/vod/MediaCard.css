@@ -3,23 +3,33 @@
   display: flex;
   flex-direction: column;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: var(--r-card);
   overflow: hidden;
-  background: #141414;
+  background: var(--card);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   flex-shrink: 0;
 }
 
+/* Hover: the card grows a little, lifted by a soft glow in the accent */
 .media-card:hover,
 .media-card:focus-visible {
   transform: scale(1.05);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.45),
+    0 0 16px color-mix(in srgb, var(--accent) 26%, transparent);
   z-index: 10;
 }
 
 .media-card:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.4);
-  outline-offset: 2px;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-card:hover,
+  .media-card:focus-visible {
+    transform: none;
+  }
 }
 
 /* Size variants */
@@ -40,7 +50,7 @@
   position: relative;
   width: 100%;
   aspect-ratio: 2/3;
-  background: #0d0d0d;
+  background: var(--bg);
   overflow: hidden;
   will-change: transform;
 }
@@ -50,7 +60,13 @@
   height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.3s ease, filter 0.2s ease;
+}
+
+/* Hover lifts the poster rather than dimming it */
+.media-card:hover .media-card__poster img,
+.media-card:focus-visible .media-card__poster img {
+  filter: brightness(1.08) saturate(1.06);
 }
 
 .media-card__poster img.loaded {
@@ -64,13 +80,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
+  background: linear-gradient(135deg, var(--surface) 0%, var(--bg) 100%);
 }
 
 .media-card__placeholder span {
   font-size: 3rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.15);
+  color: var(--faint);
   text-transform: uppercase;
 }
 
@@ -82,7 +98,7 @@
   z-index: 2;
   width: 28px;
   height: 28px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--fill-4);
   backdrop-filter: blur(12px);
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 4c4.29 0 7.863 2.429 10.665 7.154l.22 .379l.045 .1l.03 .083l.014 .055l.014 .082l.011 .1v.11l-.014 .111a.992 .992 0 0 1 -.026 .11l-.039 .108l-.036 .075l-.016 .03c-2.764 4.836 -6.3 7.38 -10.555 7.499l-.313 .004c-4.396 0 -8.037 -2.549 -10.868 -7.504a1 1 0 0 1 0 -.992c2.831 -4.955 6.472 -7.504 10.868 -7.504zm0 5a3 3 0 1 0 0 6a3 3 0 0 0 0 -6'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 4c4.29 0 7.863 2.429 10.665 7.154l.22 .379l.045 .1l.03 .083l.014 .055l.014 .082l.011 .1v.11l-.014 .111a.992 .992 0 0 1 -.026 .11l-.039 .108l-.036 .075l-.016 .03c-2.764 4.836 -6.3 7.38 -10.555 7.499l-.313 .004c-4.396 0 -8.037 -2.549 -10.868 -7.504a1 1 0 0 1 0 -.992c2.831 -4.955 6.472 -7.504 10.868 -7.504zm0 5a3 3 0 1 0 0 6a3 3 0 0 0 0 -6'/%3E%3C/svg%3E");
@@ -107,18 +123,21 @@
 
 .media-card:hover .media-card__overlay,
 .media-card:focus-visible .media-card__overlay {
-  background: rgba(0, 0, 0, 0.5);
+  /* The old hover darkness, kept only as a circle under the play icon
+     (44px, its size) so the icon reads on bright posters while the rest
+     of the poster stays at full brightness. */
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.3) 21.5px, transparent 22px);
 }
 
 .media-card__play-icon {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0);
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: var(--text);
   backdrop-filter: blur(0px);
   transition: backdrop-filter 0.01s ease, background 0.01s ease;
   will-change: backdrop-filter;
@@ -126,7 +145,7 @@
 
 .media-card:hover .media-card__play-icon,
 .media-card:focus-visible .media-card__play-icon {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
   backdrop-filter: blur(12px);
 }
 
@@ -155,14 +174,13 @@
   border: none;
   border-radius: 0;
   background: none;
-  color: rgba(255, 255, 255, 0.9);
+  /* The Play button's color, so empty hearts carry a little of the palette
+     (near-white in sbtl) */
+  color: var(--button);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  opacity: 0;
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.6))
-         drop-shadow(0 0 1px rgba(0, 0, 0, 0.8));
   transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1),
               color 200ms cubic-bezier(0.2, 0, 0, 1),
               filter 200ms cubic-bezier(0.2, 0, 0, 1),
@@ -170,19 +188,51 @@
 }
 
 .media-card__heart svg {
-  width: 20px;
-  height: 20px;
+  width: 25px;
+  height: 25px;
+  opacity: 0;
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-.media-card:hover .media-card__heart,
-.media-card:focus-visible .media-card__heart {
+/* Outline heart: a heart-shaped piece of the play button's glass (the same
+   10% tint and blur over a slight black), outline on top. No filter on the
+   button itself: a filter would stop the blur seeing the poster behind. */
+.media-card__heart:not(.media-card__heart--active)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(var(--fill-3), var(--fill-3)), rgba(0, 0, 0, 0.45);
+  /* Primed like the play icon: the blur layer exists at 0px while hidden and
+     only changes radius on hover, so it appears instantly */
+  opacity: 0;
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  will-change: backdrop-filter;
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), backdrop-filter 0.01s ease;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z'/%3E%3C/svg%3E");
+  -webkit-mask-size: 25px 25px;
+  mask-size: 25px 25px;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+/* The buttons themselves never fade: a fading (translucent) parent cuts its
+   children's backdrop blur off from the poster, so the glass would only form
+   after the fade. Only the icon and the glass inside fade, as the play icon. */
+.media-card:hover .media-card__heart svg,
+.media-card:focus-visible .media-card__heart svg,
+.media-card__heart--active svg {
   opacity: 1;
 }
 
 /* Always visible when on watchlist */
 .media-card__heart--active {
   opacity: 1;
-  color: rgba(220, 60, 60, 0.8);
+  color: var(--heart);
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
   animation: heart-pulse 300ms cubic-bezier(0.2, 0, 0, 1);
 }
@@ -192,11 +242,11 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: rgb(255, 180, 180);
+  background: var(--heart-base);
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.979 3.074a6 6 0 0 1 4.988 1.425l.037 .033l.034 -.03a6 6 0 0 1 4.733 -1.44l.246 .036a6 6 0 0 1 3.364 10.008l-.18 .185l-.048 .041l-7.45 7.379a1 1 0 0 1 -1.313 .082l-.094 -.082l-7.493 -7.422a6 6 0 0 1 3.176 -10.215z'/%3E%3C/svg%3E");
-  -webkit-mask-size: 20px 20px;
-  mask-size: 20px 20px;
+  -webkit-mask-size: 25px 25px;
+  mask-size: 25px 25px;
   -webkit-mask-position: center;
   mask-position: center;
   -webkit-mask-repeat: no-repeat;
@@ -206,12 +256,10 @@
 
 .media-card__heart:hover {
   transform: scale(1.15);
-  filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.7))
-         drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
 }
 
 .media-card__heart--active:hover {
-  color: rgba(200, 50, 50, 0.85);
+  color: var(--heart-hover);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
 }
 
@@ -225,13 +273,13 @@
 .media-card__progress {
   width: 100%;
   height: 3px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
   flex-shrink: 0;
 }
 
 .media-card__progress-bar {
   height: 100%;
-  background: rgba(229, 9, 20, 0.65);
+  background: var(--progress);
   border-radius: 0 1px 1px 0;
   transition: width 0.3s ease;
 }
@@ -245,45 +293,58 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: none;
   background: none;
   cursor: pointer;
-  /* Translucent white icon on top — a see-through highlight that reads on dark posters. */
-  color: rgba(255, 255, 255, 0.55);
-  opacity: 0;
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.45))
-         drop-shadow(0 0 1px rgba(0, 0, 0, 0.65));
+  /* Same set as the heart: the Play button's color over a trash-shaped
+     piece of the play button's glass. No filter here, so the blur works. */
+  color: var(--button);
   transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1),
               transform 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-/* Dark base underneath — frames the white icon so it reads on light posters. */
 .media-card__remove::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7l16 0'/%3E%3Cpath d='M10 11l0 6'/%3E%3Cpath d='M14 11l0 6'/%3E%3Cpath d='M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12'/%3E%3Cpath d='M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7l16 0'/%3E%3Cpath d='M10 11l0 6'/%3E%3Cpath d='M14 11l0 6'/%3E%3Cpath d='M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12'/%3E%3Cpath d='M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3'/%3E%3C/svg%3E");
-  -webkit-mask-size: 22px 22px;
-  mask-size: 22px 22px;
+  z-index: -1;
+  background: linear-gradient(var(--fill-3), var(--fill-3)), rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  will-change: backdrop-filter;
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), backdrop-filter 0.01s ease;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3.5 6h17v2h-17z'/%3E%3Cpath d='M8.2 7V4a1.8 1.8 0 0 1 1.8 -1.8h4a1.8 1.8 0 0 1 1.8 1.8v3h-1.8v-3h-4v3z'/%3E%3Cpath d='M4.9 7.5h14.2l-1.05 12.1a2.6 2.6 0 0 1 -2.6 2.4h-6.9a2.6 2.6 0 0 1 -2.6 -2.4z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3.5 6h17v2h-17z'/%3E%3Cpath d='M8.2 7V4a1.8 1.8 0 0 1 1.8 -1.8h4a1.8 1.8 0 0 1 1.8 1.8v3h-1.8v-3h-4v3z'/%3E%3Cpath d='M4.9 7.5h14.2l-1.05 12.1a2.6 2.6 0 0 1 -2.6 2.4h-6.9a2.6 2.6 0 0 1 -2.6 -2.4z'/%3E%3C/svg%3E");
+  -webkit-mask-size: 23px 23px;
+  mask-size: 23px 23px;
   -webkit-mask-position: center;
   mask-position: center;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
-  z-index: -1;
+}
+
+.media-card:hover .media-card__heart:not(.media-card__heart--active)::after,
+.media-card:focus-visible .media-card__heart:not(.media-card__heart--active)::after,
+.media-card:hover .media-card__remove::before,
+.media-card:focus-visible .media-card__remove::before {
+  opacity: 1;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .media-card__remove svg {
-  width: 20px;
-  height: 20px;
+  width: 23px;
+  height: 23px;
+  opacity: 0;
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-.media-card:hover .media-card__remove,
-.media-card:focus-visible .media-card__remove {
+.media-card:hover .media-card__remove svg,
+.media-card:focus-visible .media-card__remove svg {
   opacity: 1;
 }
 
@@ -301,9 +362,9 @@
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
-  color: #fff;
+  color: var(--text);
   background: rgba(0, 0, 0, 0.55);
-  border-radius: 4px;
+  border-radius: 6px;
   backdrop-filter: blur(4px);
   opacity: 0;
   pointer-events: none;
@@ -329,7 +390,7 @@
 .media-card__title {
   font-size: 0.8125rem;
   font-weight: 500;
-  color: #fff;
+  color: var(--text);
   margin: 0;
   line-height: 1.2;
   white-space: nowrap;
@@ -373,11 +434,11 @@
   align-items: center;
   justify-content: space-between;
   font-size: 0.6875rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .media-card__year {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--muted);
   font-weight: 400;
 }
 
@@ -385,7 +446,7 @@
   display: flex;
   align-items: center;
   gap: 3px;
-  color: #f5c518;
+  color: var(--rating);
 }
 
 .media-card__rating svg {

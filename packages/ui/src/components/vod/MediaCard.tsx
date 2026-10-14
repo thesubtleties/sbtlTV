@@ -151,7 +151,7 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
             </button>
           )}
           <div className="media-card__play-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="rgba(255,255,255,0.55)">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style={{ fill: 'color-mix(in srgb, var(--muted) 65%, var(--button))' }}>
               <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
               <path d="M6 4v16a1 1 0 0 0 1.524 .852l13 -8a1 1 0 0 0 0 -1.704l-13 -8a1 1 0 0 0 -1.524 .852z" />
             </svg>

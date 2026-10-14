@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { data } from '../../data/client';
 import { useCacheClearing, useSetCacheClearing, useUpdateSettings } from '../../stores/uiStore';
+import { Button, OptionRow, Section, Segmented, SettingsTab } from './ui';
 
 interface DataRefreshTabProps {
   vodRefreshHours: number;
@@ -41,104 +42,65 @@ export function DataRefreshTab({
     }
   }
 
+  const vodOptions = [
+    { id: '0', label: 'Manual' }, { id: '6', label: '6h' }, { id: '12', label: '12h' },
+    { id: '24', label: 'Daily' }, { id: '48', label: '2 days' }, { id: '168', label: 'Weekly' },
+  ];
+  const epgOptions = [
+    { id: '0', label: 'Manual' }, { id: '3', label: '3h' }, { id: '6', label: '6h' },
+    { id: '12', label: '12h' }, { id: '24', label: 'Daily' },
+  ];
+  const describe = (hours: number, what: string) => hours === 0
+    ? `${what} refreshes only when you sync it yourself.`
+    : `${what} refreshes at startup when it is more than ${hours === 168 ? 'a week' : hours === 48 ? '2 days' : hours === 24 ? 'a day' : `${hours} hours`} old.`;
+
   return (
-    <div className="settings-tab-content">
-      <div className="settings-section">
-        <div className="section-header">
-          <h3>Data Refresh</h3>
-        </div>
-        <p className="section-description">
-          Configure how often data is automatically refreshed on app startup.
-          Set to "Manual only" to disable automatic refresh.
-        </p>
+    <SettingsTab>
+      <Section title="Data refresh" description="How often sbtlTV refreshes your sources' data when it starts.">
+        <OptionRow title="Movies & series" help={describe(vodRefreshHours, 'The movie and series library')}>
+          <Segmented
+            compact
+            value={String(vodRefreshHours)}
+            options={vodOptions}
+            onChange={(id) => {
+              const hours = Number(id);
+              onVodRefreshChange(hours);
+              void saveRefreshSettings(hours, epgRefreshHours);
+            }}
+          />
+        </OptionRow>
+        <OptionRow title="TV guide" help={describe(epgRefreshHours, 'The program guide')}>
+          <Segmented
+            compact
+            value={String(epgRefreshHours)}
+            options={epgOptions}
+            onChange={(id) => {
+              const hours = Number(id);
+              onEpgRefreshChange(hours);
+              void saveRefreshSettings(vodRefreshHours, hours);
+            }}
+          />
+        </OptionRow>
+      </Section>
 
-        <div className="refresh-settings">
-          <div className="form-group inline">
-            <label>VOD (Movies & Series)</label>
-            <select
-              value={vodRefreshHours}
-              onChange={(e) => {
-                const val = parseInt(e.target.value);
-                onVodRefreshChange(val);
-                saveRefreshSettings(val, epgRefreshHours);
-              }}
-            >
-              <option value={0}>Manual only</option>
-              <option value={6}>Every 6 hours</option>
-              <option value={12}>Every 12 hours</option>
-              <option value={24}>Every 24 hours</option>
-              <option value={48}>Every 2 days</option>
-              <option value={168}>Every week</option>
-            </select>
-          </div>
-
-          <div className="form-group inline">
-            <label>EPG (TV Guide)</label>
-            <select
-              value={epgRefreshHours}
-              onChange={(e) => {
-                const val = parseInt(e.target.value);
-                onEpgRefreshChange(val);
-                saveRefreshSettings(vodRefreshHours, val);
-              }}
-            >
-              <option value={0}>Manual only</option>
-              <option value={3}>Every 3 hours</option>
-              <option value={6}>Every 6 hours</option>
-              <option value={12}>Every 12 hours</option>
-              <option value={24}>Every 24 hours</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="settings-section" style={{ marginTop: '1.5rem' }}>
-        <div className="section-header">
-          <h3>Clear Cache</h3>
-        </div>
-        <p className="section-description">
-          Clear all cached channel, EPG, and VOD data. Use this if you're experiencing
-          issues like duplicate entries, stale EPG, or data not updating properly.
-          Your sources and settings will be preserved.
-        </p>
-
-        <div style={{ marginTop: '0.75rem' }}>
+      <Section
+        title="Clear cache"
+        description="Removes all cached channels, guide data and movies and series, then syncs every source again. Use it for duplicate entries, a stale guide, or data that will not update. Sources, settings, watch progress and favorites stay."
+      >
+        <div className="st-confirm">
           {isClearing ? (
-            <button className="sync-btn danger" disabled>
-              Clearing...
-            </button>
+            <Button variant="danger" disabled>Clearing…</Button>
           ) : !showConfirm ? (
-            <button
-              className="sync-btn danger"
-              onClick={() => setShowConfirm(true)}
-            >
-              Clear All Cached Data
-            </button>
+            <Button variant="danger" onClick={() => setShowConfirm(true)}>Clear cached data</Button>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <span style={{ color: '#ff9900', fontSize: '0.85rem' }}>
-                Delete all cached data?
-              </span>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button
-                  className="sync-btn danger"
-                  onClick={handleClearCache}
-                  disabled={isClearing}
-                >
-                  {isClearing ? 'Clearing...' : 'Yes, Clear'}
-                </button>
-                <button
-                  className="sync-btn"
-                  onClick={() => setShowConfirm(false)}
-                  disabled={isClearing}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+            <>
+              <span className="st-confirm__question">Delete all cached data and sync again?</span>
+              <Button variant="danger" onClick={() => void handleClearCache()}>Yes, clear</Button>
+              <Button onClick={() => setShowConfirm(false)}>Cancel</Button>
+            </>
           )}
         </div>
-      </div>
-    </div>
+      </Section>
+    </SettingsTab>
   );
 }

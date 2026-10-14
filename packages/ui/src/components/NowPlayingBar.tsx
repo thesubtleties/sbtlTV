@@ -1,9 +1,10 @@
-import { type ChangeEvent, useEffect, useState, useRef, useCallback } from 'react';
+import { type ChangeEvent, type CSSProperties, useEffect, useState, useRef, useCallback } from 'react';
 import type { StoredChannel } from '../db';
 import type { VodPlayInfo } from '../types/media';
 import { useCurrentProgram } from '../hooks/useChannels';
 import { useMatchup } from '../hooks/useMatchup';
 import { usePlaybackStore } from '../stores/playbackStore';
+import { CaptionsControl } from './CaptionsControl';
 import './NowPlayingBar.css';
 
 interface NowPlayingBarProps {
@@ -322,7 +323,7 @@ export function NowPlayingBar({
             {/* Playback controls */}
             <div className="npb-controls">
               <button
-                className="npb-btn"
+                className="npb-btn npb-btn--primary"
                 onClick={onTogglePlay}
                 disabled={!canControl}
                 title={playing ? 'Pause (Space)' : 'Play (Space)'}
@@ -361,6 +362,7 @@ export function NowPlayingBar({
 
             {/* Volume controls */}
             <div className="npb-volume">
+              <CaptionsControl disabled={!canControl} />
               <button
                 className="npb-btn npb-volume-btn"
                 onClick={onToggleMute}
@@ -375,6 +377,7 @@ export function NowPlayingBar({
                 min="0"
                 max="100"
                 value={volume}
+                style={{ '--volume': `${volume}%` } as CSSProperties}
                 onChange={onVolumeChange}
                 onMouseDown={onVolumeDragStart}
                 onMouseUp={onVolumeDragEnd}

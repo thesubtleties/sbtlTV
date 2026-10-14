@@ -4,7 +4,7 @@
   flex-direction: column;
   height: 100%;
   min-height: 0; /* Critical for nested flex */
-  background: #0d0d0d;
+  background: var(--bg);
 }
 
 /* Dark scrollbar styling - matches EPG */
@@ -17,18 +17,18 @@
 }
 
 .vod-browse ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill-3);
   border-radius: 3px;
 }
 
 .vod-browse ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--fill-5);
 }
 
 /* Firefox */
 .vod-browse {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  scrollbar-color: var(--fill-3) transparent;
 }
 
 .vod-browse__header {
@@ -36,19 +36,19 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--line);
 }
 
 .vod-browse__title {
   font-size: 1.25rem;
   font-weight: 500;
-  color: #fff;
+  color: var(--text);
   margin: 0;
 }
 
 .vod-browse__count {
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 /* Virtuoso Grid */
@@ -87,15 +87,15 @@
   justify-content: center;
   gap: 12px;
   padding: 24px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
   font-size: 0.9rem;
 }
 
 .vod-browse__spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #fff;
+  border: 2px solid var(--edge);
+  border-top-color: var(--text);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -120,19 +120,19 @@
 .vod-browse__empty-state svg {
   width: 64px;
   height: 64px;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--faint);
   margin-bottom: 16px;
 }
 
 .vod-browse__empty-state h3 {
   font-size: 1.25rem;
   font-weight: 500;
-  color: #fff;
+  color: var(--text);
   margin: 0 0 8px 0;
 }
 
 .vod-browse__empty-state p {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
   margin: 0;
   font-size: 0.9rem;
 }

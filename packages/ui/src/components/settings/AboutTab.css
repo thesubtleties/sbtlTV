@@ -20,13 +20,13 @@
 }
 
 .about-tab__title {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-3);
   font-size: 1.1rem;
   font-weight: 500;
 }
 
 .about-tab__version {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--faint);
   font-weight: 400;
 }
 
@@ -38,13 +38,8 @@
 }
 
 .about-tab__update-btn {
-  padding: 8px 20px;
+  padding: 0 20px;
   flex: none;
-}
-
-.about-tab__update-btn--restart {
-  background: var(--accent-color, #4a9eff);
-  color: #fff;
 }
 
 .about-tab__status {
@@ -58,8 +53,12 @@
 }
 
 .about-tab__auto-update {
-  margin-top: 0.25rem;
-  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-2);
 }
 
 .about-tab__footer {
@@ -76,13 +75,13 @@
 }
 
 .about-tab__link {
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--faint);
   transition: color 0.15s ease;
   display: flex;
 }
 
 .about-tab__link:hover {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-2);
 }
 
 .about-tab__license {

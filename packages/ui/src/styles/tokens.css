@@ -1,0 +1,81 @@
+/*
+ * Design tokens derived from the palette roles (palettes.css). Components use
+ * these, never literal colors; black shadows and scrims over video are the
+ * exception, since they stay black in every palette.
+ */
+
+:root {
+  /* Text, strongest to weakest */
+  --text: var(--fg);
+  --text-2: color-mix(in srgb, var(--fg) 60%, var(--muted));
+  --text-3: color-mix(in srgb, var(--fg) 20%, var(--muted));
+  --faint: color-mix(in srgb, var(--muted) 70%, transparent);
+
+  /* Hairlines */
+  --line-faint: color-mix(in srgb, var(--line) 50%, transparent);
+  --line-2: color-mix(in srgb, var(--line), var(--edge));
+  --edge-2: color-mix(in srgb, var(--edge) 88%, var(--fg));
+
+  /* Translucent fills over any surface, weakest to strongest */
+  --fill-1: color-mix(in srgb, var(--fg) 3%, transparent);
+  --fill-2: color-mix(in srgb, var(--fg) 6%, transparent);
+  --fill-3: color-mix(in srgb, var(--fg) 10%, transparent);
+  --fill-4: color-mix(in srgb, var(--fg) 15%, transparent);
+  --fill-5: color-mix(in srgb, var(--fg) 22%, transparent);
+
+  /* Raised opaque surface (selects, menus) */
+  --surface-2: color-mix(in srgb, var(--surface), var(--fg) 6%);
+
+  /* Accent */
+  --accent-faint: color-mix(in srgb, var(--accent) 8%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 35%, transparent);
+  --accent-strong: color-mix(in srgb, var(--accent) 55%, transparent);
+  --accent-edge: color-mix(in srgb, var(--accent) 77%, black);
+  /* Glass accent button: accent-tinted, translucent over a blur, light text.
+     Calmer than a solid fill with saturated accents (cyan, gruvbox yellow). */
+  --accent-glass: color-mix(in srgb, var(--accent) 26%, color-mix(in srgb, var(--overlay-base) 55%, transparent));
+  --accent-glass-hover: color-mix(in srgb, var(--accent) 38%, color-mix(in srgb, var(--overlay-base) 55%, transparent));
+
+  /* Status */
+  --danger-soft: color-mix(in srgb, var(--danger) 16%, transparent);
+  --danger-line: color-mix(in srgb, var(--danger) 45%, transparent);
+  --danger-text: color-mix(in srgb, var(--danger) 40%, var(--fg));
+  --success: var(--teal);
+  --success-soft: color-mix(in srgb, var(--success) 20%, transparent);
+  --success-line: color-mix(in srgb, var(--success) 50%, transparent);
+  --warning: #ff9900;
+  --warning-soft: color-mix(in srgb, var(--warning) 15%, transparent);
+  --rating: #f5c518;
+
+  /* Corners: firm, not bubbly (one place to tune the whole app) */
+  --r-control: 6px;
+  --r-inner: 4px;
+  --r-card: 6px;
+  --r-panel: 10px;
+
+  /* Type */
+  --font-sans: 'Fira Sans', system-ui, sans-serif;
+  --font-condensed: 'Fira Sans Condensed', var(--font-sans);
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  color-scheme: dark;
+}
+
+/* Form controls do not inherit the page font by default. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+:root[data-typeface='system'] {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-condensed: var(--font-sans);
+}
+
+:root[data-typeface='mono'] {
+  --font-sans: var(--font-mono);
+  --font-condensed: var(--font-mono);
+}

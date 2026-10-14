@@ -1,14 +1,14 @@
 /* Individual program block in the EPG grid */
 .program-block {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
+  top: 5px;
+  bottom: 5px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 4px;
+  background: var(--fill-1);
+  border-radius: 6px;
   border-left: 2px solid transparent;
   cursor: pointer;
   overflow: hidden;
@@ -18,28 +18,28 @@
 }
 
 .program-block:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fill-3);
 }
 
-/* Current program (contains "now") */
+/* Current program (contains "now"): the guide's one accent moment */
 .program-block.current {
-  background: rgba(0, 212, 255, 0.08);
-  border-left-color: #00d4ff;
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
 }
 
 .program-block.current:hover {
-  background: rgba(0, 212, 255, 0.12);
+  background: var(--accent-line);
 }
 
 /* Empty state (no EPG data) */
 .program-block.empty {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--fill-1);
   border-left-color: transparent;
   cursor: default;
 }
 
 .program-block.empty .program-block-title {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--faint);
   font-style: italic;
 }
 
@@ -48,7 +48,7 @@
    left edge, which every real block carries, wakes and fades. Each block runs
    on its own period and phase (set inline by ProgramLane). */
 .program-block.loading {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--fill-2);
   opacity: 0.4;
   border-left-color: transparent;
   cursor: default;
@@ -57,14 +57,14 @@
 
 @keyframes program-edge-wake {
   0%, 45%, 100% { border-left-color: transparent; }
-  20% { border-left-color: rgba(255, 255, 255, 0.22); }
+  20% { border-left-color: var(--edge); }
 }
 
 /* Morph: a placeholder takes its program's title, then carries it into the
    program's real position. The 480ms values match MORPH_MS in
    programLaneModel.ts; the opacity fade is CSS-only. */
 .program-block.morph {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--fill-2);
   opacity: 0.4;
   border-left-color: transparent;
   cursor: default;
@@ -78,12 +78,12 @@
 
 .program-block.morph.become {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--fill-1);
 }
 
 .program-block.morph.current {
-  background: rgba(0, 212, 255, 0.08);
-  border-left-color: #00d4ff;
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
 }
 
 .program-block.morph.spare {
@@ -111,7 +111,7 @@
 }
 
 @keyframes program-block-in {
-  from { opacity: 0; background-color: rgba(255, 255, 255, 0.02); }
+  from { opacity: 0; background-color: var(--fill-1); }
   to { opacity: 1; }
 }
 
@@ -130,8 +130,10 @@
 
 /* Program title */
 .program-block-title {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.8);
+  font-family: var(--font-condensed);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -139,13 +141,14 @@
 }
 
 .program-block.current .program-block-title {
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--text);
 }
 
 /* Program description (shown when block is wide enough) */
 .program-block-desc {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.4);
+  font-family: var(--font-condensed);
+  font-size: 12.5px;
+  color: var(--faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -154,5 +157,5 @@
 }
 
 .program-block.current .program-block-desc {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }

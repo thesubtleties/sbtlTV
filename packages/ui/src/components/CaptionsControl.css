@@ -1,0 +1,184 @@
+.cc {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.cc__btn {
+  position: relative;
+}
+
+/* On: only the icon lights up, in the accent the time track fills with, and
+   stays lit on hover. Two classes so .npb-btn (loaded later) does not win. */
+.npb-btn.cc__btn--on,
+.npb-btn.cc__btn--on:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+/* On, but main is still reading the first lines: the icon breathes until they show */
+.cc__btn--checking svg {
+  animation: cc-checking 1.4s ease-in-out infinite;
+}
+
+@keyframes cc-checking {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc__btn--checking svg {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+.cc__btn:disabled {
+  opacity: 0.4;
+}
+
+/* A delay is active */
+.cc__dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.cc__arrow {
+  width: 16px;
+  height: 32px;
+  margin-left: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-inner);
+}
+
+.cc__arrow svg {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cc__arrow:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--fill-2);
+}
+
+.cc__arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.cc__menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  min-width: 220px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--overlay-base) 94%, transparent);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--bg) 60%, transparent);
+  z-index: 20;
+}
+
+.cc__heading {
+  padding: 6px 10px 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cc__item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cc__item:hover {
+  background: var(--fill-2);
+}
+
+.cc__item--active {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.cc__divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--line);
+}
+
+.cc__delay {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  font-size: 13px;
+}
+
+.cc__delay-label {
+  flex: 1;
+  color: var(--text-2);
+}
+
+.cc__delay-value {
+  min-width: 44px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.cc__step,
+.cc__reset {
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--fill-1);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cc__step {
+  width: 26px;
+}
+
+.cc__reset {
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.cc__step:hover,
+.cc__reset:hover:not(:disabled) {
+  background: var(--fill-3);
+}
+
+.cc__reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

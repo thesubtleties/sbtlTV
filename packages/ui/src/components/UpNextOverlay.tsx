@@ -11,7 +11,7 @@ export function UpNextOverlay({ label, secondsLeft, onCancel, onPlayNow }: Props
   return (
     <div className="up-next">
       <div className="up-next__card">
-        <div className="up-next__title">Up Next</div>
+        <div className="up-next__title">Up next</div>
         <div className="up-next__label">{label}</div>
         <div className="up-next__count">Starting in {secondsLeft}s</div>
         <div className="up-next__actions">
