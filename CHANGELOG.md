@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.1] - 2026-10-14
+
+A privacy release.
+
+### Added
+- **Settings > Privacy** - what stays on your computer (including whether saved passwords and API keys are encrypted by your system), a Check button that shows the IP address outside services see, and who sbtlTV talks to and what each one sees, marked by whether it applies to you right now. The check asks Mullvad's public checker, only when clicked, and nothing is saved
+- **Privacy section in the README** with the same information
+
+### Changed
+- **Team logos on live games are off by default on new installs** - the logos load from ESPN, which then sees your IP address and which teams you are watching. Existing installs keep them as they were (on, unless you turned them off). Settings > EPG > Team logos now says where they come from
+
+### Improved
+- **Team logos** sit apart with "@" or "vs" between them, as the listing has it, instead of overlapping
+- **More games are recognized** - guide listings with a generic title ("College Football", "NFL Football") and the game in the description ("The Nevada Wolf Pack visit the UTEP Miners...", "The Broncos face the Seahawks...", "Raptors at Knicks from Madison Square Garden") now show the teams' logos too
+
+### Fixed
+- **A request to Google on first launch (Windows and Linux)** - Chromium downloaded a spell-check dictionary from Google. Spell checking is now off and nothing is fetched
+- **Login details in terminal and system log output** - 0.12.0 cleaned them from the debug log and error messages; links are now also cut to their host in what the player prints to a terminal or the system log, login values and Xtream paths are cleaned even when they are not part of a full link, and output split across chunks is cleaned as whole lines. The interface's debug messages are no longer printed to the console outside development builds
+- **A provider's unreadable reply could put login details in an error message** - the start of the reply is still shown to help diagnose it, with login values removed
+
+### Known issues
+- **Memory use can climb during in-window playback (macOS and Linux)** - it mostly levels off and is released when you change channel or title. Still being watched
+- **Widescreen SD channels still play small on macOS**
+
 ## [0.12.0] - 2026-10-14
 
 ### Added

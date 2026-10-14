@@ -140,6 +140,31 @@ export interface DesktopColors {
   caelestia: import('../styles/palettes').PaletteRoles | null;
 }
 
+/** Settings > Privacy: what IP outside services see (asks Mullvad's checker, only when called) */
+export interface IpCheckResult {
+  ip: string;
+  city: string | null;
+  country: string | null;
+  /** Who owns the address: an ISP, or a VPN's hosting company */
+  organization: string | null;
+  /** The Mullvad server the connection leaves from, when it is a Mullvad exit */
+  mullvadServer: string | null;
+}
+
+/** How saved passwords and API keys are protected on this computer */
+export interface StorageProtection {
+  platform: string;
+  /** The system offers encryption (on Linux this includes Chromium's 'basic_text' fallback) */
+  available: boolean;
+  /** Linux: 'kwallet', 'kwallet5', 'kwallet6', 'gnome_libsecret', 'basic_text' or 'unknown'; null elsewhere */
+  backend: string | null;
+}
+
+export interface PrivacyApi {
+  checkIp: () => Promise<{ success?: boolean; data?: IpCheckResult; error?: string }>;
+  storageProtection: () => Promise<StorageProtection>;
+}
+
 export interface AppearanceApi {
   getDesktopColors: () => Promise<DesktopColors>;
   onDesktopColorsChanged: (callback: (colors: DesktopColors) => void) => () => void;
@@ -175,7 +200,7 @@ export interface AppSettings {
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
-  sportsMatchupEnabled?: boolean;  // Show team logos in the bar on a live sports game (default true)
+  sportsMatchupEnabled?: boolean;  // Show team logos in the bar on a live sports game (default off: the logos load from ESPN)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a noticeable wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
@@ -296,6 +321,7 @@ declare global {
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
     appearance?: AppearanceApi;
+    privacy?: PrivacyApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
     debug?: DebugApi;

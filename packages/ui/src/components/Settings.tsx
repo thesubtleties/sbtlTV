@@ -11,6 +11,7 @@ import { MoviesTab } from './settings/MoviesTab';
 import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
+import { PrivacyTab } from './settings/PrivacyTab';
 import { VideoPlayerTab } from './settings/VideoPlayerTab';
 import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
@@ -65,7 +66,7 @@ export function Settings({ onClose }: SettingsProps) {
   const [guideOpacity, setGuideOpacity] = useState(0.95);
 
   // Sports matchup state
-  const [sportsMatchupEnabled, setSportsMatchupEnabled] = useState(true);
+  const [sportsMatchupEnabled, setSportsMatchupEnabled] = useState(false);
   const [guideMorphEnabled, setGuideMorphEnabled] = useState(true);
   const [autoplayNextEpisode, setAutoplayNextEpisode] = useState(true);
 
@@ -150,8 +151,8 @@ export function Settings({ onClose }: SettingsProps) {
     setChannelColumnWidth(s.channelColumnWidth ?? 300);
     setGuideOpacity(s.guideOpacity ?? 0.95);
 
-    // Load sports matchup setting (default ON)
-    setSportsMatchupEnabled(s.sportsMatchupEnabled ?? true);
+    // Load sports matchup setting (default off: the logos load from ESPN)
+    setSportsMatchupEnabled(s.sportsMatchupEnabled ?? false);
     setGuideMorphEnabled(s.guideMorphEnabled ?? true);
     setAutoplayNextEpisode(s.autoplayNextEpisode ?? true);
 
@@ -267,6 +268,16 @@ export function Settings({ onClose }: SettingsProps) {
           <SecurityTab
             allowLanSources={allowLanSources}
             onAllowLanSourcesChange={setAllowLanSources}
+          />
+        );
+      case 'privacy':
+        return (
+          <PrivacyTab
+            tmdbKeySet={tmdbApiKey.trim().length > 0}
+            posterDbKeySet={posterDbApiKey.trim().length > 0}
+            teamLogosEnabled={sportsMatchupEnabled}
+            autoUpdateEnabled={autoUpdateEnabled}
+            debugLoggingEnabled={debugLoggingEnabled}
           />
         );
       case 'appearance':

@@ -13,7 +13,7 @@ describe('url guard', () => {
     }
   });
   it('lets public hosts through and the private ones when LAN is allowed', () => {
-    expect(isBlockedUrl('http://kytv.xyz/player_api.php')).toBe(false);
+    expect(isBlockedUrl('http://provider.example/player_api.php')).toBe(false);
     expect(isBlockedUrl('http://172.32.0.1/')).toBe(false);
     expect(isBlockedUrl('http://8.8.8.8/')).toBe(false);
     expect(isBlockedUrl('http://[2606:4700::1111]/')).toBe(false);

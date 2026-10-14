@@ -3,6 +3,7 @@ import { safeStorage } from 'electron';
 import type { Source } from '@sbtltv/core';
 import { normalizeLinuxPlayerMode, type LinuxPlayerMode } from './linux-player-mode.js';
 import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitle-settings.js';
+import { settleTeamLogosDefault } from './settings-upgrades.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -44,7 +45,7 @@ interface AppSettings {
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
-  sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game (default true)
+  sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game (default off: the logos load from ESPN)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait (default true)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: 'compatibility' runs mpv in its own window (default 'native'); takes effect on restart
@@ -93,6 +94,7 @@ interface StoredSettings {
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game
+  sportsDefaultSettled?: boolean;  // The 0.12.1 team logos default has been applied (settings-upgrades.ts)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: video player used at next launch
@@ -217,6 +219,13 @@ export function deleteSource(id: string): void {
 /**
  * Get app settings (with TMDB API key decrypted)
  */
+/** One-time settings changes after an update (settings-upgrades.ts). Call once at startup, before settings are read. */
+export function applySettingsUpgrades(): void {
+  const stored = store.get('settings');
+  const change = settleTeamLogosDefault(stored, store.get('sources', []).length > 0);
+  if (change) store.set('settings', { ...stored, ...change });
+}
+
 export function getSettings(): AppSettings {
   const stored = store.get('settings');
   const result: AppSettings = {
@@ -244,7 +253,7 @@ export function getSettings(): AppSettings {
   result.guideOpacity = stored.guideOpacity ?? 0.95;
   result.liveSourceOrder = stored.liveSourceOrder;
   result.vodSourceOrder = stored.vodSourceOrder;
-  result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? true;
+  result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? false;
   result.guideMorphEnabled = stored.guideMorphEnabled ?? true;
   result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
   result.linuxPlayerMode = normalizeLinuxPlayerMode(stored.linuxPlayerMode);

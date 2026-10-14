@@ -7,6 +7,7 @@ import { utilityProcess, MessageChannelMain, type UtilityProcess, type WebConten
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Source, DataSettings, ControlMessage, ControlReply, SyncProgress } from '@sbtltv/core';
+import { createLineBuffer } from '../line-buffer.js';
 
 export interface DataHostOptions {
   dbPath: string;
@@ -49,8 +50,12 @@ export function startDataHost(opts: DataHostOptions): DataHost {
     ready = false;
     fatal = false;
     child = utilityProcess.fork(entry, [], { serviceName: 'sbtltv-data', stdio: 'pipe' });
-    child.stdout?.on('data', (d) => opts.log('data', String(d).trimEnd()));
-    child.stderr?.on('data', (d) => opts.log('data', `stderr: ${String(d).trimEnd()}`));
+    // Whole lines only, so a link split across chunks is still redacted as one.
+    const stdoutLines = createLineBuffer((line) => opts.log('data', line));
+    const stderrLines = createLineBuffer((line) => opts.log('data', `stderr: ${line}`));
+    child.stdout?.on('data', (d) => stdoutLines.push(String(d)));
+    child.stderr?.on('data', (d) => stderrLines.push(String(d)));
+    child.on('exit', () => { stdoutLines.flush(); stderrLines.flush(); });
     child.on('message', (m: ControlReply) => {
       switch (m.type) {
         case 'ready':
