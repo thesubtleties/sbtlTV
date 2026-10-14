@@ -12,7 +12,8 @@
     "build:native": "node scripts/build-native.cjs",
     "build:ts": "tsc",
     "clean": "node-gyp clean && rm -rf dist",
-    "prepare": "npm run build:ts"
+    "prepare": "npm run build:ts",
+    "test:redact": "c++ -std=c++17 -O2 -Wall -Wextra -o build/log_redact_test test/log_redact_test.cpp && ./build/log_redact_test"
   },
   "dependencies": {
     "node-addon-api": "^8.3.0"

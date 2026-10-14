@@ -5,3 +5,4 @@ export { EpgTab } from './EpgTab';
 export { MoviesTab } from './MoviesTab';
 export { SeriesTab } from './SeriesTab';
 export { PosterDbTab } from './PosterDbTab';
+export { PrivacyTab } from './PrivacyTab';

@@ -4,6 +4,7 @@
 
 #include "mpv_context.h"
 #include "mpv_api.h"
+#include "log_redact.h"
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -661,7 +662,7 @@ void MpvContext::handleEvent(mpv_event* event) {
         case MPV_EVENT_LOG_MESSAGE: {
             auto* msg = static_cast<mpv_event_log_message*>(event->data);
             // msg->text ends with a newline already.
-            std::cerr << "[mpv:" << msg->prefix << "] " << msg->text;
+            std::cerr << "[mpv:" << msg->prefix << "] " << redactUrls(msg->text);
             // Only report errors to JS
             if (msg->log_level <= MPV_LOG_LEVEL_ERROR) {
                 std::lock_guard<std::mutex> lock(m_callbackMutex);

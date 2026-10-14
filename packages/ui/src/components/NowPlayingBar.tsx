@@ -201,7 +201,7 @@ export function NowPlayingBar({
                 <div
                   className="npb-matchup"
                   role="img"
-                  aria-label={`${matchup.away.displayName} vs ${matchup.home.displayName}`}
+                  aria-label={`${matchup.away.displayName} ${matchup.separator === '@' ? 'at' : 'vs'} ${matchup.home.displayName}`}
                 >
                   <img
                     key={matchup.away.logoUrl}
@@ -210,6 +210,7 @@ export function NowPlayingBar({
                     className="npb-matchup-logo"
                     onError={() => setLogoError(true)}
                   />
+                  <span className="npb-matchup-sep" aria-hidden="true">{matchup.separator}</span>
                   <img
                     key={matchup.home.logoUrl}
                     src={matchup.home.logoUrl}

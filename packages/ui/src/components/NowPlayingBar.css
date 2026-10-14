@@ -380,10 +380,12 @@
   font-style: italic;
 }
 
-/* Sports matchup logos (replace the channel icon on a live game) */
+/* Sports matchup logos (replace the channel icon on a live game): away, "@" or
+   "vs" as the listing says, home. */
 .npb-matchup {
   display: flex;
   align-items: center;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -393,8 +395,13 @@
   object-fit: contain;
 }
 
-.npb-matchup-logo:last-child {
-  margin-left: -8px; /* gentle overlap */
+.npb-matchup-sep {
+  font-family: var(--font-condensed);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+  min-width: 14px;
+  text-align: center;
 }
 
 /* Responsive adjustments */

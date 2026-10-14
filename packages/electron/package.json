@@ -1,6 +1,6 @@
 {
   "name": "@sbtltv/electron",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Desktop IPTV player with mpv",
   "homepage": "https://github.com/thesubtleties/sbtlTV",
   "author": {
@@ -14,7 +14,7 @@
     "build": "tsc && node scripts/bundle-data.mjs",
     "dev": "electron . --dev",
     "start": "electron .",
-    "test": "tsc && node scripts/bundle-data.mjs && node --experimental-vm-modules --test dist/gpu-selection.test.js dist/preload-shared-texture.test.js dist/mpv-texture-bridge.test.js dist/data/schema.test.js dist/data/queries.test.js dist/data/writes.test.js dist/data/epg-source.test.js dist/data/sync-stages.test.js dist/data/scheduler.test.js dist/data/router.test.js dist/data/lanes.test.js dist/linux-player-mode.test.js dist/mpv-error-filter.test.js dist/status-throttle.test.js dist/desktop-colors.test.js dist/subtitle-settings.test.js dist/subtitle-mpv.test.js dist/caption-check.test.js dist/stream-health.test.js dist/stream-session.test.js dist/log-redact.test.js dist/caption-session.test.js",
+    "test": "tsc && node scripts/bundle-data.mjs && node --experimental-vm-modules --test dist/gpu-selection.test.js dist/preload-shared-texture.test.js dist/mpv-texture-bridge.test.js dist/data/schema.test.js dist/data/queries.test.js dist/data/writes.test.js dist/data/epg-source.test.js dist/data/sync-stages.test.js dist/data/scheduler.test.js dist/data/router.test.js dist/data/lanes.test.js dist/linux-player-mode.test.js dist/mpv-error-filter.test.js dist/status-throttle.test.js dist/desktop-colors.test.js dist/subtitle-settings.test.js dist/subtitle-mpv.test.js dist/caption-check.test.js dist/stream-health.test.js dist/stream-session.test.js dist/log-redact.test.js dist/ip-check.test.js dist/line-buffer.test.js dist/settings-upgrades.test.js dist/caption-session.test.js",
     "test:playback": "electron tests/native-playback.cjs",
     "typecheck": "tsc --noEmit",
     "pack": "electron-builder --dir",

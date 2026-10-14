@@ -69,10 +69,16 @@ const SPLIT_RE = /\s+(?:@|vs\.?|versus|at|[-–—])\s+/i;
 
 /** Split "A vs B" / "A @ B" into [a, b]; null if not exactly two sides. */
 export function splitSides(title: string): [string, string] | null {
+  return splitSidesWithSeparator(title)?.sides ?? null;
+}
+
+/** splitSides, plus whether the separator says who is at home ("@", "at") or not ("vs", a dash). */
+export function splitSidesWithSeparator(title: string): { sides: [string, string]; separator: '@' | 'vs' } | null {
   const parts = title.split(SPLIT_RE);
   if (parts.length !== 2) return null;
   const a = parts[0].trim();
   const b = parts[1].trim();
   if (!a || !b) return null;
-  return [a, b];
+  const sep = title.match(SPLIT_RE)![0].trim().toLowerCase();
+  return { sides: [a, b], separator: sep === '@' || sep === 'at' ? '@' : 'vs' };
 }

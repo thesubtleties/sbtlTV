@@ -1,0 +1,53 @@
+/* A service row: what it sees on the left, its status pill on the right */
+.privacy__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: start;
+}
+
+.privacy__status {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: var(--r-control);
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.privacy__status--always {
+  color: var(--text);
+}
+
+.privacy__status--on {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-faint);
+}
+
+.privacy__note {
+  color: var(--text-3);
+}
+
+.privacy__ip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.privacy__ip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.privacy__ip-row span {
+  color: var(--text-2);
+}
+
+.privacy__ip-row strong {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

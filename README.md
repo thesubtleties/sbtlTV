@@ -138,6 +138,27 @@ Enable logging in Settings → Debug for troubleshooting. Logs are saved to your
 - **macOS**: `~/Library/Application Support/sbtlTV`
 - **Linux**: `~/.config/sbtlTV`
 
+## Privacy
+
+sbtlTV has no account and no server of its own, and sends no analytics, tracking or crash reports. Settings > Privacy shows how this applies on your computer.
+
+**On your computer:** settings, watch history, favorites, watchlist, guide and library. Saved passwords and API keys are encrypted by your system (the macOS Keychain, Windows, or a Linux keyring such as KWallet or GNOME Keyring); on Linux without a keyring they are stored without strong encryption, and Settings > Privacy says so. The debug log is off by default; when on, it stays on your computer and links in it are cleaned of login details.
+
+**Who sees what:** sbtlTV connects directly to these. Like a web browser, each request also says it comes from sbtlTV and which system you use.
+
+| Who | When | What they see |
+|-----|------|---------------|
+| Your IPTV provider | Always | Your IP address, your account, and what you watch and when |
+| Guide (EPG) sources | Always | Your IP address and when the guide refreshes (your provider's guide, plus any guide URLs you add) |
+| Image hosts | Always | Your IP address and which images: channel logos and posters load from the addresses in your provider's data and from TMDB's image server |
+| GitHub | Always | Two public data files, no account (the movie/series match file for library syncs, and TMDB's browse lists when you have no TMDB key), and update checks when sbtlTV starts (can be turned off): your IP address and sbtlTV version |
+| TMDB | With your TMDB key | Your key, your IP address and the lists you browse. Without a key, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address |
+| RatingPosterDB | With your RPDB key | Your key, your IP address and which titles' posters you see |
+| ESPN | With team logos on (off by default on new installs) | Your IP address and which teams are playing on the channel you watch |
+| Mullvad | When you click Check in Settings > Privacy | Your IP address, to show you the address the others see (nothing is saved) |
+
+Your internet provider can see which of these sbtlTV connects to, and what you stream when a provider uses plain http. A VPN hides that from your internet provider, though not from the services above.
+
 ## Disclaimer
 
 This application is a media player only and does not provide any content. Users must provide their own IPTV service credentials from a legitimate provider. The developers are not responsible for how this software is used or for any content accessed through it.

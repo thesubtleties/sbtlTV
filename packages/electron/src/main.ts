@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage, session } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
@@ -12,6 +12,8 @@ import { selectChromiumGpuIdentity } from './gpu-selection.js';
 import { startDataHost, type DataHost } from './data/data-host.js';
 import { isTransientDecodeError } from './mpv-error-filter.js';
 import { redactUrls } from './log-redact.js';
+import { createLineBuffer } from './line-buffer.js';
+import { IP_CHECK_URL, IP_CHECK_MAX_BYTES, parseIpCheck } from './ip-check.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
@@ -161,7 +163,7 @@ let lastUncaughtReportAt = 0;
 process.on('uncaughtException', (error) => {
   const summary = error instanceof Error ? error.message : String(error);
   const detail = error instanceof Error ? error.stack ?? summary : summary;
-  console.error('[main] Uncaught exception:', detail);
+  console.error('[main] Uncaught exception:', redactUrls(detail));
   debugLog(`Uncaught exception: ${detail}`, 'system');
   const now = Date.now();
   if (now - lastUncaughtReportAt < 30_000) return;
@@ -376,6 +378,8 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      // No spell checking in the window (see the session settings in app.whenReady).
+      spellcheck: false,
     },
   });
 
@@ -694,21 +698,21 @@ async function initMpv(): Promise<void> {
       shell: false,
     });
 
-    mpvProcess.stdout?.on('data', (data: Buffer) => {
-      const str = data.toString().trim();
-      // Always log to debug file if enabled
-      if (str) debugLog(str, 'mpv-stdout');
+    // Whole lines only, so a link split across chunks is still redacted as one.
+    const stdoutLines = createLineBuffer((line) => {
+      debugLog(line, 'mpv-stdout');
       // Only console.log non-status lines
-      if (!str.includes('AV:') && !str.includes('A:') && !str.includes('V:')) {
-        console.log('[mpv stdout]', str);
+      if (!line.includes('AV:') && !line.includes('A:') && !line.includes('V:')) {
+        console.log('[mpv stdout]', redactUrls(line));
       }
     });
-
-    mpvProcess.stderr?.on('data', (data: Buffer) => {
-      const str = data.toString().trim();
-      if (str) debugLog(str, 'mpv-stderr');
-      console.log('[mpv stderr]', str);
+    const stderrLines = createLineBuffer((line) => {
+      debugLog(line, 'mpv-stderr');
+      console.log('[mpv stderr]', redactUrls(line));
     });
+    mpvProcess.stdout?.on('data', (data: Buffer) => stdoutLines.push(data.toString()));
+    mpvProcess.stderr?.on('data', (data: Buffer) => stderrLines.push(data.toString()));
+    mpvProcess.on('close', () => { stdoutLines.flush(); stderrLines.flush(); });
 
     mpvProcess.on('error', (error: Error) => {
       debugLog(`Process error: ${error.message}`, 'mpv');
@@ -1084,7 +1088,7 @@ async function connectToMpvSocket(): Promise<void> {
           const msg = JSON.parse(line);
           handleMpvMessage(msg);
         } catch {
-          console.error('[mpv] Failed to parse:', line);
+          console.error('[mpv] Failed to parse:', redactUrls(line));
         }
       }
     });
@@ -1470,7 +1474,7 @@ setInterval(() => {
   checkStreamHealth().catch((err) => {
     // Shown even with debug logging off, once per distinct message: a failing check is a watchdog that is not watching.
     const message = err instanceof Error ? err.message : String(err);
-    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', message);
+    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', redactUrls(message));
     lastHealthCheckError = message;
     debugLog(`Stream health check failed: ${message}`, 'mpv');
   });
@@ -1783,6 +1787,52 @@ ipcMain.handle('debug-open-log-folder', async () => {
   return { success: true };
 });
 
+// Settings > Privacy: what IP the outside services see. Only on request, one
+// call to Mullvad's public checker; the answer is shown, never stored or logged.
+// Settings > Privacy: how saved passwords and API keys are protected on this
+// computer (storage.ts encrypts with safeStorage, and falls back to plain
+// storage when the system offers no encryption).
+ipcMain.handle('privacy-storage-protection', () => {
+  const available = safeStorage.isEncryptionAvailable();
+  // Linux only: which keyring, or 'basic_text' (Chromium's fixed key, no real keyring).
+  const backend = process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : null;
+  return { platform: process.platform, available, backend };
+});
+
+// A failure is logged by its reason only, never with an address.
+ipcMain.handle('privacy-check-ip', async () => {
+  const failed = (message: string, reason: string) => {
+    debugLog(`IP check failed: ${reason}`, 'privacy');
+    return { error: message };
+  };
+  let body: string;
+  try {
+    const response = await electronNet.fetch(IP_CHECK_URL, {
+      cache: 'no-store',
+      credentials: 'omit',
+      // Only the app's name: no version or system details for this request.
+      headers: { 'User-Agent': 'sbtlTV' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return failed(`Mullvad's checker answered with an error (${response.status}). Try again in a moment.`, `HTTP ${response.status}`);
+    body = await response.text();
+  } catch (error) {
+    const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    return error instanceof Error && error.name === 'TimeoutError'
+      ? failed("Mullvad's checker did not answer in time. Try again in a moment.", reason)
+      : failed("Could not reach Mullvad's checker. Check your connection; a VPN or firewall may be blocking it.", reason);
+  }
+  if (body.length > IP_CHECK_MAX_BYTES) return failed("Mullvad's checker sent something unexpected.", `answer of ${body.length} bytes`);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return failed("Mullvad's checker sent something unexpected. A network login page (hotel, airport) can do this.", 'answer is not JSON');
+  }
+  const result = parseIpCheck(parsed);
+  return result ? { success: true, data: result } : failed("Mullvad's checker sent an answer without an IP address.", 'no IP address in the answer');
+});
+
 // Desktop colors for Settings > Appearance (system accent, Caelestia palette)
 ipcMain.handle('appearance-get-desktop-colors', () => readDesktopColors());
 
@@ -2064,6 +2114,23 @@ async function startPlayer(): Promise<boolean> {
 }
 
 app.whenReady().then(async () => {
+  // On Windows and Linux, Chromium downloads spell-check dictionaries from Google
+  // for the session's languages, even with spell checking off in the window. With
+  // no languages there is nothing to download. (macOS uses the system checker.)
+  // Neither of these may stop the app from starting: a failure is reported and startup goes on.
+  try {
+    session.defaultSession.setSpellCheckerLanguages([]);
+    session.defaultSession.setSpellCheckerEnabled(false);
+  } catch (error) {
+    console.error('[startup] Could not turn off the spell checker:', error instanceof Error ? error.message : error);
+  }
+  try {
+    storage.applySettingsUpgrades();
+  } catch (error) {
+    // Runs again next launch: nothing was marked done.
+    console.error('[startup] One-time settings update failed:', error instanceof Error ? error.message : error);
+  }
+
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
   initDebugLogging(settings.debugLoggingEnabled ?? false);
