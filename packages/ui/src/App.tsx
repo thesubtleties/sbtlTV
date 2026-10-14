@@ -195,6 +195,9 @@ function App() {
   const lastProgressSaveRef = useRef(0);
   // Where the current VOD play resumes; progress is not saved until playback gets there.
   const resumeTargetRef = useRef<number | null>(null);
+  // The saved position of the current VOD play could not be read: saving now would
+  // overwrite it with this play's, so nothing is saved for this play.
+  const progressBlockedRef = useRef(false);
   const durationRef = useRef(0);
   durationRef.current = duration;
   // The load the subtitle store is bound to, and the VOD item it plays (null for live).
@@ -317,7 +320,7 @@ function App() {
         const info = vodInfoRef.current;
         const settled = resumeSettled(status.position, resumeTargetRef.current);
         if (settled) resumeTargetRef.current = null;
-        if (info?.streamId && settled) {
+        if (info?.streamId && settled && !progressBlockedRef.current) {
           const now = Date.now();
           if (now - lastProgressSaveRef.current >= 15000) {
             lastProgressSaveRef.current = now;
@@ -353,6 +356,7 @@ function App() {
     const offLoaded = window.mpv.onMediaLoaded((update) => {
       const store = useSubtitleStore.getState();
       if (update.reason === 'reload') {
+        setError(null);  // the Reconnecting toast speaks for the reload; the watchdog has the final word
         if (store.kind) store.rebindLoad(update.generation, subtitleDefaults()[store.kind], systemLocale());
         if (loadInfoRef.current) loadInfoRef.current = { ...loadInfoRef.current, generation: update.generation };
       } else {
@@ -463,7 +467,7 @@ function App() {
     // Save progress immediately before stopping
     const info = vodInfoRef.current;
     const stopPosition = usePlaybackStore.getState().position;
-    if (info && resumeSettled(stopPosition, resumeTargetRef.current)) saveVodProgress(info, stopPosition, duration);
+    if (info && !progressBlockedRef.current && resumeSettled(stopPosition, resumeTargetRef.current)) saveVodProgress(info, stopPosition, duration);
     // Null vodInfoRef BEFORE clearing the guard so a status tick during the stop await can't re-fire autoplay.
     vodInfoRef.current = null;
     setUpNext(null);
@@ -474,6 +478,7 @@ function App() {
     setPlaying(false);
     setCurrentChannel(null);
     setVodInfo(null);
+    lastPlayRef.current = null;
     useSubtitleStore.getState().clear();
   };
 
@@ -522,7 +527,9 @@ function App() {
       seasonNum: info.seasonNum,
       episodeNum: info.episodeNum,
     };
+    let lookupOk = true;
     const lookupFailed = (what: string) => (err: unknown) => {
+      lookupOk = false;
       debugLog(`  ${what} lookup failed, starting without it: ${err instanceof Error ? err.message : err}`);
       return null;
     };
@@ -552,6 +559,15 @@ function App() {
       setVodInfo(updatedInfo);
       vodInfoRef.current = updatedInfo;
       lastProgressSaveRef.current = 0; // Reset throttle for new content
+      progressBlockedRef.current = !lookupOk;
+      if (!lookupOk) {
+        useToastStore.getState().addToast({
+          kind: 'error',
+          title: "Couldn't read where you left off",
+          message: "Playing from the start. Your saved spot is kept; this time's progress won't be saved.",
+          duration: 8000,
+        });
+      }
       setPosition(0);   // reset position UI immediately; mpv status refines it (resume seeks on duration)
       setDuration(0);
       setPlaying(true);
@@ -680,7 +696,7 @@ function App() {
       const edit = state.userDelayEdit;
       if (!edit || edit === prev.userDelayEdit) return;
       const load = loadInfoRef.current;
-      if (!load?.vodInfo || load.generation !== edit.generation) return;
+      if (!load?.vodInfo || load.generation !== edit.generation || progressBlockedRef.current) return;
       const info = load.vodInfo;
       const position = usePlaybackStore.getState().position;
       const duration = durationRef.current;
