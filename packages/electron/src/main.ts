@@ -2120,6 +2120,8 @@ app.whenReady().then(async () => {
   session.defaultSession.setSpellCheckerLanguages([]);
   session.defaultSession.setSpellCheckerEnabled(false);
 
+  storage.applySettingsUpgrades();
+
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
   initDebugLogging(settings.debugLoggingEnabled ?? false);

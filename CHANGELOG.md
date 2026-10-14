@@ -11,7 +11,7 @@ A privacy release.
 - **Privacy section in the README** with the same information
 
 ### Changed
-- **Team logos on live games are off by default** - the logos load from ESPN, which then sees your IP address and which teams you are watching. Turn them on in Settings > EPG > Team logos; the setting now says where they come from
+- **Team logos on live games are off by default on new installs** - the logos load from ESPN, which then sees your IP address and which teams you are watching. Existing installs keep them as they were (on, unless you turned them off). Settings > EPG > Team logos now says where they come from
 
 ### Improved
 - **Team logos** sit apart with "@" or "vs" between them, as the listing has it, instead of overlapping

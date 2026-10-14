@@ -8,7 +8,7 @@ A privacy release.
 
 ## Changed
 
-- **Team logos on live games are off by default** - they load from ESPN. Turn them on in Settings > EPG > Team logos.
+- **Team logos on live games are off by default on new installs** - they load from ESPN. If you already use sbtlTV they stay as they were. Settings > EPG > Team logos.
 
 ## Improved
 

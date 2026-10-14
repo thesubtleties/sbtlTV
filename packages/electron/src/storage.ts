@@ -3,6 +3,7 @@ import { safeStorage } from 'electron';
 import type { Source } from '@sbtltv/core';
 import { normalizeLinuxPlayerMode, type LinuxPlayerMode } from './linux-player-mode.js';
 import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitle-settings.js';
+import { settleTeamLogosDefault } from './settings-upgrades.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -93,6 +94,7 @@ interface StoredSettings {
   liveSourceOrder?: string[];   // Source IDs in priority order for live TV
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game
+  sportsDefaultSettled?: boolean;  // The 0.12.1 team logos default has been applied (settings-upgrades.ts)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: video player used at next launch
@@ -217,6 +219,13 @@ export function deleteSource(id: string): void {
 /**
  * Get app settings (with TMDB API key decrypted)
  */
+/** One-time settings changes after an update (settings-upgrades.ts). Call once at startup, before settings are read. */
+export function applySettingsUpgrades(): void {
+  const stored = store.get('settings');
+  const change = settleTeamLogosDefault(stored, store.get('sources', []).length > 0);
+  if (change) store.set('settings', { ...stored, ...change });
+}
+
 export function getSettings(): AppSettings {
   const stored = store.get('settings');
   const result: AppSettings = {

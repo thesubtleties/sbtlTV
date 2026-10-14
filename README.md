@@ -154,7 +154,7 @@ sbtlTV has no account and no server of its own, and sends no analytics, tracking
 | GitHub | Always | Two public data files, no account (the movie/series match file for library syncs, and TMDB's browse lists when you have no TMDB key), and update checks when sbtlTV starts (can be turned off): your IP address and sbtlTV version |
 | TMDB | With your TMDB key | Your key, your IP address and the lists you browse. Without a key, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address |
 | RatingPosterDB | With your RPDB key | Your key, your IP address and which titles' posters you see |
-| ESPN | With team logos on (off by default) | Your IP address and which teams are playing on the channel you watch |
+| ESPN | With team logos on (off by default on new installs) | Your IP address and which teams are playing on the channel you watch |
 | Mullvad | When you click Check in Settings > Privacy | Your IP address, to show you the address the others see (nothing is saved) |
 
 Your internet provider can see which of these sbtlTV connects to, and what you stream when a provider uses plain http. A VPN hides that from your internet provider, though not from the services above.
