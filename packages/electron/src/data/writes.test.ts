@@ -23,6 +23,20 @@ test('replaceChannels swaps one source and leaves the other alone', () => {
   assert.deepEqual({ ...meta }, { epg_url: 'http://x/xmltv.php', channel_count: 1, category_count: 1 });
 });
 
+test('replaceChannels keeps guide links for channels that survive (a failed guide sync after it leaves the guide showing)', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.prepare("insert into epg_links values ('s1_11', 'epg1', 'abc.us', 's1', 'exact', 'exact_id')").run();
+  replaceChannels(db, 's1', {
+    categories: [],
+    channels: [{ stream_id: 's1_10', source_id: 's1', name: 'CBS', stream_icon: '', epg_channel_id: 'cbs.us', category_ids: [], direct_url: 'http://x/10' }],
+  });
+  assert.equal(count(db, "select count(*) c from epg_links where stream_id='s1_10'"), 1);
+  assert.equal(count(db, "select count(*) c from epg_links where stream_id='s1_11'"), 0);
+  assert.equal(count(db, "select count(*) c from epg_links where source_id='s2'"), 1);
+  const rows = runQuery(db, { id: 1, type: 'programsInRange', streamIds: ['s1_10'], windowStartMs: 2500, windowEndMs: 3500 }) as { title: string }[];
+  assert.ok(rows.length > 0);
+});
+
 test('replaceChannels is atomic: a bad row leaves the old data in place', () => {
   const db = new DatabaseSync(':memory:'); seedFixture(db);
   assert.throws(() => replaceChannels(db, 's1', {
