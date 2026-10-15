@@ -158,6 +158,8 @@ export interface PlatformApi {
   isLinuxNonAppImage: boolean;
   supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
+  /** Installed RAM in bytes (rewind size limit) */
+  totalMemory: () => Promise<number>;
 }
 
 // Expose window control API
@@ -307,6 +309,7 @@ contextBridge.exposeInMainWorld('platform', {
   isLinuxNonAppImage,
   supportsAutoUpdate: !isPortable && !isLinuxNonAppImage,
   getVersion: () => ipcRenderer.invoke('get-app-version'),
+  totalMemory: () => ipcRenderer.invoke('system-total-memory'),
 } satisfies PlatformApi);
 
 // Expose debug API for logging

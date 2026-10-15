@@ -206,6 +206,8 @@ export interface AppSettings {
   linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video
   subtitles?: SubtitleSettings;  // Caption defaults (live / movies & series) and subtitle look
+  rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
+  rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
 }
 
 export interface Source {
@@ -257,6 +259,8 @@ export interface PlatformApi {
   isLinuxNonAppImage: boolean;
   supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
+  /** Installed RAM in bytes (rewind size limit) */
+  totalMemory: () => Promise<number>;
 }
 
 export interface DebugApi {

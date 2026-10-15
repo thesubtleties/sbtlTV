@@ -1838,6 +1838,7 @@ ipcMain.handle('appearance-get-desktop-colors', () => readDesktopColors());
 
 // App version
 ipcMain.handle('get-app-version', () => app.getVersion());
+ipcMain.handle('system-total-memory', () => os.totalmem());
 
 // Auto-updater IPC handlers
 let updateDownloaded = false;
