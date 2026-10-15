@@ -6,6 +6,11 @@
 #include <string>
 #include <vector>
 #include "mpv_context.h"
+#if defined(__linux__)
+#include <malloc.h>
+#elif defined(__APPLE__)
+#include <malloc/malloc.h>
+#endif
 
 // Request high-performance GPU on Windows (NVIDIA Optimus / AMD PowerXpress)
 // These exports tell the GPU scheduler to prefer the discrete GPU
@@ -317,6 +322,19 @@ Napi::Value GetProperty(const Napi::CallbackInfo& info) {
     return Napi::String::New(env, value);
 }
 
+// Give freed heap memory back to the system. libmpv lives in this process and
+// the allocator keeps what a live rewind buffer used after the stream ends.
+Napi::Value TrimMemory(const Napi::CallbackInfo& info) {
+#if defined(__linux__) && defined(__GLIBC__)
+    return Napi::Boolean::New(info.Env(), malloc_trim(0) != 0);
+#elif defined(__APPLE__)
+    malloc_zone_pressure_relief(nullptr, 0);
+    return Napi::Boolean::New(info.Env(), true);
+#else
+    return Napi::Boolean::New(info.Env(), false);
+#endif
+}
+
 // Set frame callback
 Napi::Value OnFrame(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
@@ -470,6 +488,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("toggleMute", Napi::Function::New(env, ToggleMute));
     exports.Set("getStatus", Napi::Function::New(env, GetStatus));
     exports.Set("getProperty", Napi::Function::New(env, GetProperty));
+    exports.Set("trimMemory", Napi::Function::New(env, TrimMemory));
     exports.Set("command", Napi::Function::New(env, Command));
     exports.Set("onFrame", Napi::Function::New(env, OnFrame));
     exports.Set("onStatus", Napi::Function::New(env, OnStatus));

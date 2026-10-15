@@ -519,7 +519,8 @@ bool MpvContext::load(const std::string& url, const std::string& options) {
     if (!m_mpv) return false;
 
     if (!options.empty()) {
-        const char* cmd[] = {"loadfile", url.c_str(), "replace", options.c_str(), nullptr};
+        // mpv >= 0.38: loadfile <url> <flags> <index> <options>; index -1 = no index
+        const char* cmd[] = {"loadfile", url.c_str(), "replace", "-1", options.c_str(), nullptr};
         int result = mpvApi().command(m_mpv, cmd);
         return result >= 0;
     }

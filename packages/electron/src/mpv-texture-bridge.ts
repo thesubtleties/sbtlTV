@@ -391,6 +391,11 @@ export class MpvTextureBridge {
     return this.mpv?.getProperty(name);
   }
 
+  /** Return freed heap memory to the system after a live rewind buffer is gone. */
+  trimMemory(): boolean {
+    return this.mpv?.trimMemory() ?? false;
+  }
+
   /**
    * One-line decode diagnostic: which hwdec is active, the codec, and mpv's
    * own drop counters (output-side and decoder-side). Reads properties, so

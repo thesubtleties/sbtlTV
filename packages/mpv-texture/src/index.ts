@@ -162,6 +162,7 @@ interface NativeAddon {
   toggleMute(): void;
   getStatus(): MpvStatus | undefined;
   getProperty(name: string): string | undefined;
+  trimMemory(): boolean;
   command(...args: string[]): boolean;
   onFrame(callback: (info: TextureInfo) => void): void;
   onStatus(callback: (status: MpvStatus) => void): void;
@@ -343,6 +344,11 @@ export class MpvTexture {
   getProperty(name: string): string | undefined {
     if (!this._initialized) return undefined;
     return addon.getProperty(name);
+  }
+
+  /** Return freed heap memory to the system (Linux glibc, macOS); false where unsupported. */
+  trimMemory(): boolean {
+    return typeof addon.trimMemory === 'function' ? addon.trimMemory() : false;
   }
 
   /**
