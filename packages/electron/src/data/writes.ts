@@ -35,7 +35,9 @@ const named = (...candidates: Array<string | number | null | undefined>): string
 export function replaceChannels(db: DatabaseSync, sourceId: string, input: { categories: Category[]; channels: Channel[]; epgUrl?: string }): DataTable[] {
   return tx(db, () => {
     db.prepare(`delete from channel_categories where stream_id in (select stream_id from channels where source_id = ?)`).run(sourceId);
-    db.prepare(`delete from epg_links where source_id = ?`).run(sourceId);
+    // Links of channels that are still there stay until the next guide sync replaces
+    // them: if that guide fetch fails, those channels keep showing their guide.
+    db.prepare(`delete from epg_links where source_id = ? and stream_id not in (select value from json_each(?))`).run(sourceId, j(input.channels.map((ch) => ch.stream_id)));
     db.prepare(`delete from channels where source_id = ?`).run(sourceId);
     db.prepare(`delete from categories where source_id = ?`).run(sourceId);
     const insCat = db.prepare(`insert into categories(category_id, source_id, name, position) values (?, ?, ?, ?)`);
