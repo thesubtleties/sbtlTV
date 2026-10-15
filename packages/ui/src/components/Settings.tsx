@@ -17,14 +17,17 @@ import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
 import { AppearanceTab } from './settings/AppearanceTab';
 import { SubtitlesTab } from './settings/SubtitlesTab';
+import { LivePlaybackTab } from './settings/LivePlaybackTab';
 import './Settings.css';
 
 interface SettingsProps {
   onClose: () => void;
+  /** Open on this tab (e.g. the rewind tip opens Live playback) */
+  initialTab?: SettingsTabId;
 }
 
-export function Settings({ onClose }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTabId>('sources');
+export function Settings({ onClose, initialTab }: SettingsProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'sources');
   const [sources, setSources] = useState<Source[]>([]);
   const [isEncryptionAvailable, setIsEncryptionAvailable] = useState(true);
 
@@ -284,6 +287,8 @@ export function Settings({ onClose }: SettingsProps) {
         return <AppearanceTab />;
       case 'subtitles':
         return <SubtitlesTab />;
+      case 'liveplayback':
+        return <LivePlaybackTab />;
       case 'player':
         return (
           <VideoPlayerTab

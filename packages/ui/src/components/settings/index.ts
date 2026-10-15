@@ -6,3 +6,4 @@ export { MoviesTab } from './MoviesTab';
 export { SeriesTab } from './SeriesTab';
 export { PosterDbTab } from './PosterDbTab';
 export { PrivacyTab } from './PrivacyTab';
+export { LivePlaybackTab } from './LivePlaybackTab';

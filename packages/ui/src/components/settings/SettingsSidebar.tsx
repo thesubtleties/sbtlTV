@@ -11,6 +11,7 @@ export type SettingsTabId =
   | 'posterdb'
   | 'appearance'
   | 'subtitles'
+  | 'liveplayback'
   | 'player'
   | 'security'
   | 'privacy'
@@ -33,23 +34,29 @@ const SETTINGS_CATEGORIES: SettingsCategory[] = [
       { id: 'sources', label: 'Sources' },
       { id: 'priority', label: 'Priority' },
       { id: 'refresh', label: 'Data Refresh' },
-      { id: 'tmdb', label: 'TMDB' },
-      { id: 'posterdb', label: 'Poster DB' },
     ],
   },
   {
-    label: 'Library',
+    label: 'Live TV',
     tabs: [
-      { id: 'channels', label: 'EPG' },
+      { id: 'channels', label: 'Guide' },
+      { id: 'liveplayback', label: 'Live playback' },
+    ],
+  },
+  {
+    label: 'Movies & Series',
+    tabs: [
       { id: 'movies', label: 'Movies' },
       { id: 'series', label: 'Series' },
+      { id: 'subtitles', label: 'Subtitles' },
+      { id: 'tmdb', label: 'TMDB' },
+      { id: 'posterdb', label: 'Poster DB' },
     ],
   },
   {
     label: 'System',
     tabs: [
       { id: 'appearance', label: 'Appearance' },
-      { id: 'subtitles', label: 'Subtitles' },
       { id: 'player', label: 'Video Player' },
       { id: 'security', label: 'Security' },
       { id: 'privacy', label: 'Privacy' },
@@ -89,11 +96,6 @@ export function SettingsSidebar({
             if (tab.id === 'priority' && !hasMultipleSources) {
               return null;
             }
-            // The player settings exist only on Linux
-            if (tab.id === 'player' && !window.platform?.isLinux) {
-              return null;
-            }
-
             return (
               <button
                 key={tab.id}
