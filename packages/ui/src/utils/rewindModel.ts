@@ -33,11 +33,21 @@ export interface RewindBar {
 
 const clampPct = (x: number) => Math.min(100, Math.max(0, x));
 
-export function rewindBar({ state, anchor, position, program }: {
+/**
+ * Where "live" is: mpv plays a cushion (lagS) behind the newest data it holds;
+ * jumping to the very edge would leave it nothing to play and it would stall.
+ */
+export function liveTarget(state: RewindStateUpdate, lagS: number): number {
+  return Math.max(state.rangeStart, state.liveEdge - lagS);
+}
+
+export function rewindBar({ state, anchor, position, program, lagS = 0 }: {
   state: RewindStateUpdate; anchor: ClockAnchor; position: number; program: { startMs: number; endMs: number } | null;
+  /** mpv's natural distance behind the newest data (see liveTarget) */
+  lagS?: number;
 }): RewindBar {
   const startWall = wallAt(anchor, state.rangeStart);
-  const liveWall = wallAt(anchor, state.liveEdge);
+  const liveWall = wallAt(anchor, liveTarget(state, lagS));
   const headWall = wallAt(anchor, position);
   const show = program && program.endMs > program.startMs ? program : null;
   const from = show ? show.startMs : startWall;
@@ -66,8 +76,8 @@ function clock(seconds: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
 
-export function pillText(state: RewindStateUpdate, position: number): { live: boolean; text: string } {
-  const behind = state.liveEdge - position;
+export function pillText(state: RewindStateUpdate, position: number, lagS = 0): { live: boolean; text: string } {
+  const behind = liveTarget(state, lagS) - position;
   if (behind < LIVE_SLACK_S) return { live: true, text: 'LIVE' };
   return { live: false, text: `−${clock(behind)} · LIVE` };
 }

@@ -4,6 +4,9 @@ import type { VodPlayInfo } from '../types/media';
 import { useCurrentProgram } from '../hooks/useChannels';
 import { useMatchup } from '../hooks/useMatchup';
 import { usePlaybackStore } from '../stores/playbackStore';
+import { useRewindStore } from '../stores/rewindStore';
+import { liveTarget, pillText, wallAt } from '../utils/rewindModel';
+import { LiveRewindBar } from './LiveRewindBar';
 import { CaptionsControl } from './CaptionsControl';
 import './NowPlayingBar.css';
 
@@ -30,6 +33,10 @@ interface NowPlayingBarProps {
   showNextEpisode?: boolean;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /** Rewind live TV is on in Settings */
+  liveRewind?: boolean;
+  /** Changes when a seek key hit the oldest rewind point */
+  rewindBump?: number;
 }
 
 // Format seconds to "H:MM:SS" or "M:SS"
@@ -67,10 +74,20 @@ export function NowPlayingBar({
   showNextEpisode,
   isFullscreen,
   onToggleFullscreen,
+  liveRewind,
+  rewindBump,
 }: NowPlayingBarProps) {
   const position = usePlaybackStore((state) => state.position);
   const canControl = mpvReady && channel !== null;
-  const currentProgram = useCurrentProgram(channel?.stream_id ?? null);
+  const rewindState = useRewindStore((s) => s.state);
+  const rewindAnchor = useRewindStore((s) => s.anchor);
+  const rewindLag = useRewindStore((s) => s.lagS);
+  const rewindActive = !isVod && !!liveRewind && rewindState !== null && rewindAnchor !== null;
+  // With rewind, what is on screen is the programme at the playhead, not the one airing now.
+  const playheadMs = rewindActive ? wallAt(rewindAnchor!, position) : undefined;
+  const playheadRef = useRef(playheadMs);
+  playheadRef.current = playheadMs;
+  const currentProgram = useCurrentProgram(channel?.stream_id ?? null, playheadMs);
   const matchup = useMatchup(channel, currentProgram);
   // If either team logo fails to load, fall back to the channel icon (never a hole).
   const [logoError, setLogoError] = useState(false);
@@ -96,7 +113,7 @@ export function NowPlayingBar({
     }
 
     const updateProgress = () => {
-      const now = new Date().getTime();
+      const now = playheadRef.current ?? Date.now();
       const start = new Date(currentProgram.start).getTime();
       const end = new Date(currentProgram.end).getTime();
       const duration = end - start;
@@ -309,12 +326,24 @@ export function NowPlayingBar({
               </div>
             ) : (
               <div className="npb-progress-section">
-                <div className="npb-progress-bar">
-                  <div
-                    className="npb-progress-fill"
-                    style={{ width: currentProgram ? `${progress}%` : '0%' }}
+                {rewindActive ? (
+                  <LiveRewindBar
+                    state={rewindState!}
+                    anchor={rewindAnchor!}
+                    position={position}
+                    program={currentProgram ? { startMs: new Date(currentProgram.start).getTime(), endMs: new Date(currentProgram.end).getTime() } : null}
+                    onSeek={onSeek}
+                    bump={rewindBump}
+                    lagS={rewindLag}
                   />
-                </div>
+                ) : (
+                  <div className="npb-progress-bar">
+                    <div
+                      className="npb-progress-fill"
+                      style={{ width: currentProgram ? `${progress}%` : '0%' }}
+                    />
+                  </div>
+                )}
                 <span className="npb-time-remaining">
                   {timeRemaining || '--'}
                 </span>
@@ -341,14 +370,17 @@ export function NowPlayingBar({
                   <NextIcon />
                 </button>
               )}
-              <button
-                className="npb-btn"
-                onClick={onStop}
-                disabled={!canControl}
-                title="Stop"
-              >
-                <StopIcon />
-              </button>
+              {/* No Stop on live with rewind: it would throw the buffer away (leave by changing channel) */}
+              {!rewindActive && (
+                <button
+                  className="npb-btn"
+                  onClick={onStop}
+                  disabled={!canControl}
+                  title="Stop"
+                >
+                  <StopIcon />
+                </button>
+              )}
               {onToggleFullscreen && (
                 <button
                   className="npb-btn"
@@ -360,6 +392,19 @@ export function NowPlayingBar({
                 </button>
               )}
             </div>
+
+            {rewindActive && (() => {
+              const pill = pillText(rewindState!, position, rewindLag);
+              return (
+                <button
+                  className={`npb-live-pill${pill.live ? ' npb-live-pill--live' : ''}`}
+                  onClick={() => { if (!pill.live) onSeek?.(liveTarget(rewindState!, rewindLag)); }}
+                  title={pill.live ? 'Watching live' : 'Back to live (End)'}
+                >
+                  {pill.text}
+                </button>
+              );
+            })()}
 
             {/* Volume controls */}
             <div className="npb-volume">

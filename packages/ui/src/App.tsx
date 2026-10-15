@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { MpvStatus } from './types/electron';
 import { Settings } from './components/Settings';
 import { Sidebar, type View } from './components/Sidebar';
-import { resolveSeek, resolveVolumeStep } from './hooks/playbackKeys';
+import { resolveSeek, resolveVolumeStep, resolveLiveJump } from './hooks/playbackKeys';
 import { NowPlayingBar } from './components/NowPlayingBar';
 import { CategoryStrip } from './components/CategoryStrip';
 import { ChannelPanel } from './components/ChannelPanel';
@@ -23,6 +23,8 @@ import { mergedEpisodesForSeries } from './hooks/useContinueWatching';
 import { buildNextEpisodePlayInfo } from './services/continue-watching/next-episode.playinfo';
 import { UpNextOverlay } from './components/UpNextOverlay';
 import { usePlaybackStore } from './stores/playbackStore';
+import { useRewindStore } from './stores/rewindStore';
+import { liveTarget } from './utils/rewindModel';
 import { useSubtitleStore, type PendingDelay } from './stores/subtitleStore';
 import { resumeSettled } from './hooks/resumeSettle';
 import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
@@ -46,6 +48,12 @@ function debugLog(message: string, category = 'play'): void {
  * Live TV: .ts → .m3u8 → .m3u
  * VOD: provider extension → .m3u8 → .ts
  */
+/** The live rewind buffer in stream seconds, or null when rewind is not active. */
+function liveRewindRange(): { start: number; end: number } | null {
+  const { state, lagS } = useRewindStore.getState();
+  return state ? { start: state.rangeStart, end: liveTarget(state, lagS) } : null;
+}
+
 function getStreamFallbacks(url: string, isLive: boolean): string[] {
   try {
     // Parse URL properly to preserve query params (often used for auth tokens)
@@ -249,6 +257,9 @@ function App() {
   // Playback keys (seek, volume) read live state from a ref because the key
   // handler is registered once on mount.
   const playbackRef = useRef({ duration: 0, volume: 100, activeView: 'none' as View, categoriesOpen: false });
+  // Rewind live TV: on in Settings, and the nudge when a seek key hits the oldest point.
+  const rewindLiveOn = (useUIStore((s) => s.settings.rewindLiveBytes) ?? 0) > 0;
+  const [rewindBump, setRewindBump] = useState(0);
   useEffect(() => {
     playbackRef.current = { duration, volume, activeView, categoriesOpen };
   }, [duration, volume, activeView, categoriesOpen]);
@@ -372,10 +383,15 @@ function App() {
       resumeTargetRef.current = update.resumeAt > 0 ? update.resumeAt : null;
     });
 
+    // Rewind live TV: the reachable range, once a second while it is on.
+    const offRewind = window.mpv.onRewindState((update) => useRewindStore.getState().apply(update, Date.now(), usePlaybackStore.getState().position));
+
     // Stall recovery in main: a quiet toast while it reloads, one plain message if it gives up.
     const offRecovery = window.mpv.onStreamRecovery((update) => {
       if (update.state === 'reconnecting') {
-        useToastStore.getState().addToast({ kind: 'info', title: 'Reconnecting…', message: 'The stream stopped; trying again.', duration: 4000 });
+        // A reload is a new stream: a rewind buffer starts over.
+        const rewinding = useRewindStore.getState().state !== null;
+        useToastStore.getState().addToast({ kind: 'info', title: 'Reconnecting…', message: rewinding ? 'Connection dropped — rewind starts over from here.' : 'The stream stopped; trying again.', duration: 4000 });
       } else {
         setError(update.live
           ? 'This channel stopped responding. Try it again in a moment, or pick another channel.'
@@ -386,6 +402,7 @@ function App() {
     return () => {
       offLoaded();
       offRecovery();
+      offRewind();
       window.mpv?.removeAllListeners();
     };
   }, []);
@@ -488,6 +505,7 @@ function App() {
   const handleSeek = async (seconds: number) => {
     if (!window.mpv) return;
     seekingRef.current = true;
+    useRewindStore.getState().noteSeek();
     setPosition(seconds); // Optimistic update
     await window.mpv.seek(seconds);
     // Brief delay before accepting mpv updates again
@@ -754,7 +772,17 @@ function App() {
         case 'ArrowDown': {
           // mpv's seek keys; resolveSeek returns null while the guide or a library
           // view is open (they own the arrows) or for live streams (no duration).
-          const target = resolveSeek(e.key, { ...playbackRef.current, position: usePlaybackStore.getState().position });
+          const position = usePlaybackStore.getState().position;
+          const target = resolveSeek(e.key, { ...playbackRef.current, position, liveRange: liveRewindRange() });
+          if (target === null) break;
+          e.preventDefault();
+          // At the oldest rewind point already: a nudge of the playhead, no seek.
+          if (target === position && liveRewindRange()) { setRewindBump(Date.now()); break; }
+          handleSeek(target);
+          break;
+        }
+        case 'End': {
+          const target = resolveLiveJump(e.key, { ...playbackRef.current, position: usePlaybackStore.getState().position, liveRange: liveRewindRange() });
           if (target === null) break;
           e.preventDefault();
           handleSeek(target);
@@ -912,6 +940,8 @@ function App() {
         showNextEpisode={vodInfo?.type === 'series'}
         isFullscreen={isFullscreen}
         onToggleFullscreen={linuxExternalPlayer ? undefined : handleToggleFullscreen}
+        liveRewind={rewindLiveOn}
+        rewindBump={rewindBump}
       />
 
       {upNext && (

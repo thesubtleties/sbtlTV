@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { anchorFor, wallAt, rewindBar, pillText, estimateText, presetsUnderCap, stepCustomGb } from './rewindModel';
+import { anchorFor, wallAt, rewindBar, pillText, estimateText, presetsUnderCap, stepCustomGb, liveTarget } from './rewindModel';
 
 const GIB = 1024 ** 3;
 const MIN = 60_000;
@@ -65,5 +65,21 @@ describe('size text and choices', () => {
     expect(stepCustomGb(3.7, 16 * GIB)).toBe(3.5);
     expect(stepCustomGb(0.1, 16 * GIB)).toBe(0.5);
     expect(stepCustomGb(40, 16 * GIB)).toBe(16);
+  });
+});
+
+describe('live lag (mpv plays a cushion behind the newest data)', () => {
+  it('pill: LIVE when within 3 s of edge minus lag', () => {
+    expect(pillText(state, 900 - 12, 11)).toEqual({ live: true, text: 'LIVE' });
+    expect(pillText(state, 900 - 11 - 30, 11)).toEqual({ live: false, text: '−0:30 · LIVE' });
+  });
+  it('the live target keeps the cushion and never goes before the range', () => {
+    expect(liveTarget(state, 11)).toBe(889);
+    expect(liveTarget({ ...state, liveEdge: 5 }, 11)).toBe(0);
+  });
+  it('the bar ends the reachable stretch at the live point', () => {
+    const bar = rewindBar({ state, anchor, position: 889, program: { startMs: t0, endMs: t0 + 60 * MIN }, lagS: 60 });
+    expect(bar.edgePct).toBeCloseTo(56.67, 1);   // 8:34
+    expect(bar.tintTo).toBeCloseTo(56.67, 1);
   });
 });

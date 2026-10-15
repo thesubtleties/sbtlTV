@@ -452,3 +452,123 @@
     display: none;
   }
 }
+
+/* Live rewind bar */
+.npb-progress-bar.npb-rewind {
+  position: relative;
+  overflow: visible;
+  cursor: pointer;
+}
+
+.npb-rewind__gone {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 60%, transparent) 1.2px, transparent 1.5px) 0 50% / 6px 4px repeat-x;
+}
+
+.npb-rewind__tint {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent-soft);
+}
+
+.npb-rewind__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+}
+
+.npb-rewind__tick {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--accent-strong);
+}
+
+.npb-rewind__edge {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--fg) 55%, transparent);
+}
+
+/* The playhead is always shown on the rewind bar (the VOD bar shows it on hover) */
+.npb-rewind .npb-rewind__head {
+  transform: translate(-50%, -50%) scale(1);
+  box-shadow: 0 0 0 3px var(--accent-line);
+}
+
+.npb-rewind--bump .npb-rewind__head {
+  animation: npb-rewind-bump 0.3s ease;
+}
+
+@keyframes npb-rewind-bump {
+  30% { transform: translate(calc(-50% - 4px), -50%) scale(1); }
+  60% { transform: translate(calc(-50% + 2px), -50%) scale(1); }
+}
+
+.npb-rewind__cap {
+  position: absolute;
+  top: 9px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.npb-rewind__earlier {
+  position: absolute;
+  left: -12px;
+  top: -6px;
+  font-size: 11px;
+  color: var(--accent-strong);
+}
+
+.npb-live-pill {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-condensed);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent);
+}
+
+.npb-live-pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+.npb-live-pill--live {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: default;
+}
+
+.npb-live-pill--live::before {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
