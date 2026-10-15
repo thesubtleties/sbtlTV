@@ -8,6 +8,8 @@ export interface Toast {
   title: string;
   message?: string;
   duration?: number; // ms to auto-dismiss; undefined = sticky (progress)
+  /** One button (e.g. Open Settings); clicking it also dismisses the toast */
+  action?: { label: string; onClick: () => void };
 }
 
 const MAX_TOASTS = 4;

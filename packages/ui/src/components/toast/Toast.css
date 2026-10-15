@@ -121,3 +121,16 @@
     animation: none;
   }
 }
+
+.toast__action {
+  align-self: center;
+  padding: 4px 10px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-control);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}

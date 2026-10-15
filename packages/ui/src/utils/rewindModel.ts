@@ -111,3 +111,8 @@ export function stepCustomGb(gb: number, capBytes: number): number {
   const stepped = Math.floor(gb * 2) / 2;
   return Math.min(capGb, Math.max(0.5, stepped));
 }
+
+/** The one-time "turn on rewind" tip: the first time live TV is paused with rewind off. */
+export function shouldShowRewindTip({ pausingLive, rewindBytes, tipShown }: { pausingLive: boolean; rewindBytes: number; tipShown: boolean }): boolean {
+  return pausingLive && rewindBytes <= 0 && !tipShown;
+}

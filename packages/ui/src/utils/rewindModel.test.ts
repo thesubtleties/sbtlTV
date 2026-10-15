@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { anchorFor, wallAt, rewindBar, pillText, estimateText, presetsUnderCap, stepCustomGb, liveTarget } from './rewindModel';
+import { anchorFor, wallAt, rewindBar, pillText, estimateText, presetsUnderCap, stepCustomGb, liveTarget, shouldShowRewindTip } from './rewindModel';
 
 const GIB = 1024 ** 3;
 const MIN = 60_000;
@@ -81,5 +81,17 @@ describe('live lag (mpv plays a cushion behind the newest data)', () => {
     const bar = rewindBar({ state, anchor, position: 889, program: { startMs: t0, endMs: t0 + 60 * MIN }, lagS: 60 });
     expect(bar.edgePct).toBeCloseTo(56.67, 1);   // 8:34
     expect(bar.tintTo).toBeCloseTo(56.67, 1);
+  });
+});
+
+describe('one-time rewind tip', () => {
+  const base = { pausingLive: true, rewindBytes: 0, tipShown: false };
+  it('shows on the first pause of live TV with rewind off', () => {
+    expect(shouldShowRewindTip(base)).toBe(true);
+  });
+  it('never when shown before, rewind is on, or it is not live being paused', () => {
+    expect(shouldShowRewindTip({ ...base, tipShown: true })).toBe(false);
+    expect(shouldShowRewindTip({ ...base, rewindBytes: 512 * 1024 ** 2 })).toBe(false);
+    expect(shouldShowRewindTip({ ...base, pausingLive: false })).toBe(false);
   });
 });

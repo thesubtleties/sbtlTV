@@ -24,7 +24,9 @@ import { buildNextEpisodePlayInfo } from './services/continue-watching/next-epis
 import { UpNextOverlay } from './components/UpNextOverlay';
 import { usePlaybackStore } from './stores/playbackStore';
 import { useRewindStore } from './stores/rewindStore';
-import { liveTarget } from './utils/rewindModel';
+import { liveTarget, shouldShowRewindTip } from './utils/rewindModel';
+import { saveSettings } from './utils/saveSettings';
+import type { SettingsTabId } from './components/settings/SettingsSidebar';
 import { useSubtitleStore, type PendingDelay } from './stores/subtitleStore';
 import { resumeSettled } from './hooks/resumeSettle';
 import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
@@ -260,6 +262,8 @@ function App() {
   // Rewind live TV: on in Settings, and the nudge when a seek key hits the oldest point.
   const rewindLiveOn = (useUIStore((s) => s.settings.rewindLiveBytes) ?? 0) > 0;
   const [rewindBump, setRewindBump] = useState(0);
+  // Settings opened on a specific tab (the rewind tip), else its default.
+  const [settingsTab, setSettingsTab] = useState<SettingsTabId | undefined>(undefined);
   useEffect(() => {
     playbackRef.current = { duration, volume, activeView, categoriesOpen };
   }, [duration, volume, activeView, categoriesOpen]);
@@ -457,7 +461,18 @@ function App() {
 
   const handleTogglePlay = async () => {
     if (!window.mpv) return;
+    const pausingLive = playing && currentChannel !== null && currentChannel.stream_id !== 'vod';
     await window.mpv.togglePause();
+    // Once ever: pausing live TV with rewind off offers the setting.
+    const s = useUIStore.getState().settings;
+    if (shouldShowRewindTip({ pausingLive, rewindBytes: s.rewindLiveBytes ?? 0, tipShown: s.rewindTipShown === true })) {
+      useUIStore.getState().updateSettings({ rewindTipShown: true });
+      void saveSettings({ rewindTipShown: true });
+      useToastStore.getState().addToast({
+        kind: 'info', title: 'Want to rewind live TV?', message: 'Turn it on in Settings.', duration: 10000,
+        action: { label: 'Open Settings', onClick: () => { setSettingsTab('liveplayback'); setActiveView('settings'); } },
+      });
+    }
   };
 
   const handleVolumeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -985,7 +1000,7 @@ function App() {
       />
 
       {/* Settings Panel */}
-      {activeView === 'settings' && <Settings onClose={() => setActiveView('none')} />}
+      {activeView === 'settings' && <Settings initialTab={settingsTab} onClose={() => { setActiveView('none'); setSettingsTab(undefined); }} />}
 
       {/* Movies Page */}
       {activeView === 'movies' && (
