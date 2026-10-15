@@ -45,6 +45,17 @@ export type StreamRecoveryUpdate =
  * renderer's request, reload: the stall watchdog, restore: the compatibility
  * restart). Subtitles and progress saving follow the announced generation.
  */
+/** Live with rewind on: what can be reached, sent by main once a second */
+export interface RewindStateUpdate {
+  generation: number;
+  /** Oldest reachable stream time (s) */
+  rangeStart: number;
+  /** Live edge, stream time (s) */
+  liveEdge: number;
+  /** Measured input rate, bytes per second */
+  bytesPerSecond: number;
+}
+
 export interface MediaLoadedUpdate {
   generation: number;
   live: boolean;
@@ -74,6 +85,8 @@ export interface MpvApi {
   /** Stall recovery: reconnecting (toast), failed (give up) */
   onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => () => void;
   onMediaLoaded: (callback: (update: MediaLoadedUpdate) => void) => () => void;
+  /** Live with rewind: the reachable range once a second; null when rewind is not active */
+  onRewindState: (callback: (update: RewindStateUpdate | null) => void) => () => void;
   removeAllListeners: () => void;
 }
 
