@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveSeek, resolveVolumeStep } from './playbackKeys';
+import { resolveSeek, resolveVolumeStep, resolveLiveJump } from './playbackKeys';
 
 const watching = { position: 100, duration: 600, volume: 50, activeView: 'none', categoriesOpen: false };
 
@@ -41,5 +41,23 @@ describe('resolveVolumeStep', () => {
 
   it('rounds fractional volumes reported by mpv', () => {
     expect(resolveVolumeStep(49.6, 5)).toBe(55);
+  });
+});
+
+describe('live rewind keys', () => {
+  const live = { position: 100, duration: 0, volume: 50, activeView: 'none', categoriesOpen: false, liveRange: { start: 20, end: 300 } };
+  it('arrows seek inside the buffer', () => {
+    expect(resolveSeek('ArrowLeft', live)).toBe(95);
+    expect(resolveSeek('ArrowDown', { ...live, position: 50 })).toBe(20);   // clamped to the oldest point
+    expect(resolveSeek('ArrowUp', { ...live, position: 280 })).toBe(300);   // clamped to live
+  });
+  it('arrows stay inert on live without rewind', () => {
+    expect(resolveSeek('ArrowLeft', { ...live, liveRange: null })).toBeNull();
+  });
+  it('End jumps to live only with rewind on and the video in front', () => {
+    expect(resolveLiveJump('End', live)).toBe(300);
+    expect(resolveLiveJump('End', { ...live, liveRange: null })).toBeNull();
+    expect(resolveLiveJump('End', { ...live, activeView: 'guide' })).toBeNull();
+    expect(resolveLiveJump('Home', live)).toBeNull();
   });
 });
