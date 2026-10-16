@@ -55,7 +55,10 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
       <div className="npb-scrubber-handle npb-rewind__head" style={{ left: `${bar.headPct}%` }} />
       {hoverPct !== null && (
         <>
-          <div className="npb-rewind__cap" style={{ left: `${bar.tickPct}%` }}>from {timeFmt.format(wallAt(anchor, state.rangeStart))}</div>
+          {/* Centred under the tick, but kept inside the bar near either end */}
+          <div className="npb-rewind__cap" style={{ left: `${bar.tickPct}%`, transform: bar.tickPct < 10 ? 'none' : bar.tickPct > 90 ? 'translateX(-100%)' : undefined }}>
+            from {timeFmt.format(wallAt(anchor, state.rangeStart))}
+          </div>
           <div className="npb-time-tooltip" style={{ left: `${hoverPct}%` }}>
             {inReach(hoverPct) ? timeFmt.format(wallAtPct(hoverPct)) : outOfReach(hoverPct)}
           </div>
