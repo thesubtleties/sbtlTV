@@ -893,7 +893,7 @@ async function initNativeMpv(): Promise<boolean> {
       // hwdec probing, mid-GOP decode errors and skipped file metadata are
       // logged at error level but do not stop playback; the debug log keeps
       // them, the error card does not.
-      if (isTransientDecodeError(error)) {
+      if (isTransientDecodeError(error, Date.now() - lastJumpAt)) {
         debugLog(`mpv (not shown): ${error.trim()}`, 'mpv');
         return;
       }
@@ -1399,6 +1399,8 @@ let cachePoll: NodeJS.Timeout | null = null;
 const playerMemory = new PlayerMemoryTracker();
 /** A player restart in progress (memory release); loads wait for it. */
 let playerRestart: Promise<void> | null = null;
+/** When playback last jumped (seek, rewind nudge, load): a broken audio frame right after is expected. */
+let lastJumpAt = 0;
 /** Bumped by every stop: a load that was waiting on a restart must not start after it. */
 let stopCount = 0;
 /** Paused with the forward buffer this full: move the paused point on so mpv keeps reading. */
@@ -1459,6 +1461,7 @@ function startCacheWatch(generation: number, live: boolean, rewind: boolean, max
         const paused = await readMpvProperty('pause');
         if (paused === 'yes' || paused === true) {
           debugLog(`rewind: paused past the buffer; moving the paused point ${PAUSED_NUDGE_SECONDS}s on`, 'mpv');
+          lastJumpAt = Date.now();
           if (useNativeMpv && mpvBridge) mpvBridge.command('seek', String(PAUSED_NUDGE_SECONDS), 'relative');
           else await sendMpvCommand('seek', [PAUSED_NUDGE_SECONDS, 'relative']).catch(() => {});
         }
@@ -1597,6 +1600,7 @@ async function loadMedia(request: StreamLoadRequest & { requestId?: number }): P
     return { error: 'Native playback must be reset' };
   }
   const url = request.url;
+  lastJumpAt = Date.now();
   const { generation, resumeAt } = stream.begin(request, Date.now(), playerRaw);
   debugLog(`mpv-load called (${request.reason})${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
   // The renderer binds subtitles and progress saving to this, whoever started the load;
@@ -1805,6 +1809,7 @@ ipcMain.handle('mpv-toggle-mute', async () => {
 
 ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
+  lastJumpAt = Date.now();
   if (cacheWatch?.rewind) {
     // Rewind seeks stay inside the buffer; before its range is known there is nothing to seek in.
     if (!cacheWatch.range) return { success: true };

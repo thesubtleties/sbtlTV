@@ -6,7 +6,8 @@
  * and file metadata ffmpeg skips while the video plays normally.
  *
  * Only the messages listed below are filtered; anything else, including every
- * audio error and any decoder that fails to open, keeps its card. Every error
+ * audio error (except a broken frame right after a jump) and any decoder that
+ * fails to open, keeps its card. Every error
  * line still reaches stderr from the addon regardless.
  */
 
@@ -39,7 +40,18 @@ const TRANSIENT_PATTERNS = [
   /^ffmpeg\/demuxer: [\w,]+: Referenced QT chapter track not found/,
 ];
 
-export function isTransientDecodeError(message: string): boolean {
+// A jump inside a stream (seek, rewind, End, a new load) lands mid-way through
+// an AAC frame: the decoder rejects that one frame and the next decodes. Only
+// right after a jump, so an audio decoder that keeps failing still gets its card.
+const AFTER_JUMP_PATTERNS = [
+  /^ffmpeg\/audio: aac: (env_facs_q \d+ is invalid|Reserved bit set|Number of bands \(\d+\) exceeds limit|channel element \d+\.\d+ is not allocated|Input buffer exhausted before END element found|Prediction is not allowed in AAC-LC|invalid band type|Too large remapped id)/,
+  /^ad: Error decoding audio\./,
+];
+const AFTER_JUMP_MS = 3000;
+
+/** msSinceJump: time since the last seek or load (undefined: none known). */
+export function isTransientDecodeError(message: string, msSinceJump?: number): boolean {
   const text = message.trimStart();
-  return TRANSIENT_PATTERNS.some((pattern) => pattern.test(text));
+  if (TRANSIENT_PATTERNS.some((pattern) => pattern.test(text))) return true;
+  return msSinceJump !== undefined && msSinceJump < AFTER_JUMP_MS && AFTER_JUMP_PATTERNS.some((pattern) => pattern.test(text));
 }
