@@ -147,6 +147,10 @@ jobs:
         # The feed is latest-mac.yml, or beta-mac.yml for a beta version.
         run: |
           for feed in release/*-mac.yml; do
+            if [ ! -e "$feed" ]; then
+              echo "::error::No macOS update feed (release/*-mac.yml) to pin"
+              exit 1
+            fi
             if grep -q '^minimumSystemVersion:' "$feed"; then
               sed -i '' 's/^minimumSystemVersion:.*/minimumSystemVersion: 22.0.0/' "$feed"
             else

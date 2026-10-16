@@ -63,7 +63,7 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
         } else {
           setUpdaterState({ phase: 'error', message: result.error.split('\n')[0] });
         }
-      } else if (result.data && result.data.version !== version) {
+      } else if (result.data) {
         // autoUpdater.autoDownload is enabled in main, so download starts
         // immediately — updater events will update progress and completion
         setUpdaterState({ phase: 'downloading', percent: 0, version: result.data.version });
@@ -75,7 +75,7 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
       debugLog(`Check failed: ${err instanceof Error ? err.message : String(err)}`);
       setUpdaterState({ phase: 'error', message: 'Failed to check for updates' });
     }
-  }, [version, setUpdaterState]);
+  }, [setUpdaterState]);
 
   async function handleInstall() {
     if (!window.updater) return;

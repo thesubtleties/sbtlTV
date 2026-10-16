@@ -27,7 +27,7 @@ interface StoredSource {
   encryptedPassword?: string; // Base64 encoded encrypted buffer
 }
 
-interface AppSettings {
+export interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   tmdbApiKey?: string;  // Decrypted value returned to callers

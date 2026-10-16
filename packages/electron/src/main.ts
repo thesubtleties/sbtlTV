@@ -2104,7 +2104,10 @@ ipcMain.handle('updater-check', async () => {
   try {
     applyUpdateChannel();
     const result = await autoUpdater.checkForUpdates();
-    return { success: true, data: result?.updateInfo };
+    // The updater returns the newest release's info even when it will not
+    // install it (an older stable than a running beta), so only pass it on
+    // when there is an update to download.
+    return { success: true, data: result?.isUpdateAvailable ? result.updateInfo : undefined };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Check failed';
     // Clean up common 404 error (no releases published yet)
