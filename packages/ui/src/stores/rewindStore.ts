@@ -29,6 +29,8 @@ interface RewindStore {
   /** The load media-loaded announced last; reports from other loads are stale */
   expectedGeneration: number | null;
   lastReportMs: number;
+  /** The channel's rate, smoothed across reports (each moves it 10 %), for the setting's estimate */
+  rateBps: number;
   /** At live: nothing since tuning in or jumping to live has put the viewer behind (pause, seek back) */
   atLive: boolean;
   /** Reports in a row with the reported edge off the clock by more than EDGE_TRACK_S */
@@ -43,7 +45,7 @@ interface RewindStore {
   notePause: () => void;
 }
 
-const cleared = { state: null, anchor: null, lagS: LAG_FLOOR_S, lagFrozen: false, playingReports: 0, lastReportMs: 0, driftReports: 0, atLive: true };
+const cleared = { state: null, anchor: null, lagS: LAG_FLOOR_S, lagFrozen: false, playingReports: 0, lastReportMs: 0, driftReports: 0, atLive: true, rateBps: 0 };
 
 export const useRewindStore = create<RewindStore>((set, get) => ({
   ...cleared,
@@ -58,6 +60,7 @@ export const useRewindStore = create<RewindStore>((set, get) => ({
       const measuring = playing && position > 0;
       set({
         state: update, anchor: anchorFor(update, nowMs), lastReportMs: nowMs, lagFrozen: false, driftReports: 0, atLive: true,
+        rateBps: update.bytesPerSecond,
         playingReports: measuring ? 1 : 0,
         lagS: measuring ? Math.max(LAG_FLOOR_S, update.liveEdge - position) : LAG_FLOOR_S,
       });
@@ -76,7 +79,8 @@ export const useRewindStore = create<RewindStore>((set, get) => ({
       playingReports += 1;
       if (playingReports > LAG_MEASURE_PLAYING_S) lagFrozen = true;
     }
-    set({ state: update, anchor, lastReportMs: nowMs, lagS, lagFrozen, playingReports, driftReports: reanchor ? 0 : driftReports });
+    const rateBps = prev.rateBps > 0 ? prev.rateBps * 0.9 + update.bytesPerSecond * 0.1 : update.bytesPerSecond;
+    set({ state: update, anchor, lastReportMs: nowMs, lagS, lagFrozen, playingReports, driftReports: reanchor ? 0 : driftReports, rateBps });
   },
   noteSeek: (target) => {
     const { state, lagS } = get();

@@ -54,7 +54,8 @@ describe('pill', () => {
 describe('size text and choices', () => {
   it('estimates in whole minutes at 5 and 20 Mbps, for the half of the size that is stream data', () => {
     expect(estimateText(512 * 1024 ** 2)).toBe('About 7 min of an HD channel, or 1 min of 4K.');
-    expect(estimateText(3.5 * GIB)).toBe('About 50 min of an HD channel, or 12 min of 4K.');
+    expect(estimateText(3.5 * GIB)).toBe('About 50 min of an HD channel, or 15 min of 4K.');   // 12.5 → nearest 5 from 10 min up
+    expect(estimateText(1.6 * GIB, 500_000)).toBe('About 30 min on this channel.');                 // 28.6 → 30
     expect(estimateText(2 * GIB, 400_000)).toBe('About 45 min on this channel.');   // 44.7 → nearest 5 from 30 min up
     expect(estimateText(8 * GIB, 400_000)).toBe('About 3 h on this channel.');      // 178.9 min → 180
   });

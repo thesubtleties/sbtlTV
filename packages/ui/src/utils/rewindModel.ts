@@ -89,10 +89,10 @@ export function pillText(state: RewindStateUpdate, position: number, lagS = 0, a
   return { live: false, text: `−${clock(behind)} · LIVE` };
 }
 
-/** Whole minutes; from 30 min up, the nearest 5 (the channel's rate moves, so finer would only flicker). */
+/** Whole minutes; from 10 min up, the nearest 5 (the channel's rate moves, so finer would only flicker). */
 function minutes(bytes: number, bps: number): string {
   const exact = bytes / bps / 60;
-  const total = exact >= 30 ? Math.round(exact / 5) * 5 : Math.floor(exact);
+  const total = exact >= 10 ? Math.round(exact / 5) * 5 : Math.floor(exact);
   const h = Math.floor(total / 60);
   const m = total % 60;
   return h > 0 ? (m > 0 ? `${h} h ${m} min` : `${h} h`) : `${m} min`;

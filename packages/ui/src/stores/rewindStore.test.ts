@@ -86,6 +86,13 @@ describe('rewind store', () => {
     s.apply({ generation: 2, rangeStart: 0, liveEdge: 5, bytesPerSecond: 1 }, 9_000, 2, true);  // new load
     expect(useRewindStore.getState().atLive).toBe(true);
   });
+  it('smooths the channel rate across reports', () => {
+    const s = useRewindStore.getState();
+    s.apply({ generation: 1, rangeStart: 0, liveEdge: 100, bytesPerSecond: 500_000 }, 0, 90, true);
+    expect(useRewindStore.getState().rateBps).toBe(500_000);
+    s.apply({ generation: 1, rangeStart: 0, liveEdge: 101, bytesPerSecond: 600_000 }, 1_000, 91, true);
+    expect(useRewindStore.getState().rateBps).toBe(510_000);              // 10 % of the new reading
+  });
   it('null clears', () => {
     useRewindStore.getState().apply({ generation: 1, rangeStart: 0, liveEdge: 10, bytesPerSecond: 1 }, 1_000);
     useRewindStore.getState().apply(null, 2_000);

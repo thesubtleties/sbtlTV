@@ -12,7 +12,7 @@ const GIB = 1024 ** 3;
 export function LivePlaybackTab() {
   const updateSettings = useUpdateSettings();
   const bytes = useUIStore((s) => s.settings.rewindLiveBytes) ?? 0;
-  const channelRate = useRewindStore((s) => s.state?.bytesPerSecond);
+  const channelRate = useRewindStore((s) => (s.state ? s.rateBps : undefined));
   const { subtitles, updateSubtitles } = useSubtitleSettings();
   // The largest size this computer allows (main computes it and clamps to it when saving); null while asking.
   const [capBytes, setCapBytes] = useState<number | null>(null);
