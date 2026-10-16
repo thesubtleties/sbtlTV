@@ -397,3 +397,16 @@
     transition: none !important;
   }
 }
+
+/* Rewind live TV: custom size */
+.st-rewind-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.st-rewind-custom .st-input {
+  width: 80px;
+}

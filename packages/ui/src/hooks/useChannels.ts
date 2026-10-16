@@ -98,13 +98,13 @@ export function useCategoriesWithCounts(): CategoryWithCount[] {
   return useMemo(() => categories.map((c) => ({ ...c, channelCount: c.channel_count ?? 0 })), [categories]);
 }
 
-// Hook to get current program for a channel
-export function useCurrentProgram(streamId: string | null): StoredProgram | null {
-  const nowMinute = Math.floor(Date.now() / 60_000) * 60_000;
+/** The programme on a channel now, or at atMs (the rewind playhead's clock time). */
+export function useCurrentProgram(streamId: string | null, atMs?: number): StoredProgram | null {
+  const minute = Math.floor((atMs ?? Date.now()) / 60_000) * 60_000;
   const { data } = useDataQuery(
-    streamId ? { type: 'currentProgram', streamId, nowMs: nowMinute } : null,
+    streamId ? { type: 'currentProgram', streamId, nowMs: minute } : null,
     ['epg_programs', 'epg_links'],
-    [streamId, nowMinute],
+    [streamId, minute],
   );
   return data ?? null;
 }

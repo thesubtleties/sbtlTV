@@ -47,6 +47,16 @@ type StreamRecoveryUpdate =
  * renderer's request, reload: the stall watchdog, restore: the compatibility
  * restart). Subtitles and progress saving follow the announced generation.
  */
+interface RewindStateUpdate {
+  generation: number;
+  /** Oldest reachable stream time (s) */
+  rangeStart: number;
+  /** Live edge, stream time (s) */
+  liveEdge: number;
+  /** Measured input rate, bytes per second */
+  bytesPerSecond: number;
+}
+
 interface MediaLoadedUpdate {
   generation: number;
   live: boolean;
@@ -76,6 +86,8 @@ export interface MpvApi {
   /** Stall recovery: reconnecting (toast), failed (give up) */
   onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => () => void;
   onMediaLoaded: (callback: (update: MediaLoadedUpdate) => void) => () => void;
+  /** Live with rewind: the reachable range once a second; null when rewind is not active */
+  onRewindState: (callback: (update: RewindStateUpdate | null) => void) => () => void;
   removeAllListeners: () => void;
 }
 
@@ -158,6 +170,8 @@ export interface PlatformApi {
   isLinuxNonAppImage: boolean;
   supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
+  /** The largest Rewind live TV size this computer allows, in bytes (0 = not enough memory) */
+  rewindCapBytes: () => Promise<number>;
 }
 
 // Expose window control API
@@ -213,6 +227,11 @@ contextBridge.exposeInMainWorld('mpv', {
     const listener = (_event: IpcRendererEvent, data: MediaLoadedUpdate) => callback(data);
     ipcRenderer.on('media-loaded', listener);
     return () => { ipcRenderer.removeListener('media-loaded', listener); };
+  },
+  onRewindState: (callback: (update: RewindStateUpdate | null) => void) => {
+    const listener = (_event: IpcRendererEvent, data: RewindStateUpdate | null) => callback(data);
+    ipcRenderer.on('rewind-state', listener);
+    return () => { ipcRenderer.removeListener('rewind-state', listener); };
   },
 
   // Cleanup
@@ -307,6 +326,7 @@ contextBridge.exposeInMainWorld('platform', {
   isLinuxNonAppImage,
   supportsAutoUpdate: !isPortable && !isLinuxNonAppImage,
   getVersion: () => ipcRenderer.invoke('get-app-version'),
+  rewindCapBytes: () => ipcRenderer.invoke('rewind-cap-bytes'),
 } satisfies PlatformApi);
 
 // Expose debug API for logging

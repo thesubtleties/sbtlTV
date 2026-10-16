@@ -18,6 +18,8 @@ test('decoder and hwdec probe noise is transient', () => {
     'libmpv_render/drmprime-overlay: Cannot retrieve DRM resources: Bad file descriptor\n',
     'ffmpeg/demuxer: mov,mp4,m4a,3gp,3g2,mj2: Referenced QT chapter track not found\n',
     'ffmpeg: NULL: missing picture in access unit with size 44711\n',
+    // mpv dropped some of its own log lines (we read them too slowly): playback is unaffected.
+    'overflow: log message buffer overflow: 1 messages skipped\n',
     // Provider cuts: ffmpeg reconnects (live) or re-requests from the offset (movies)
     'ffmpeg: http: Stream ends prematurely at 35947348, should be 2155869476\n',
     'ffmpeg: http: Stream ends prematurely at 9234124, should be 18446744073709551615\n',
@@ -43,6 +45,21 @@ test('stream, network and audio failures still reach the banner', () => {
     'ffmpeg/video: hevc: Unsupported profile\n',
     'libmpv_render: Failed to create the render context.\n',
   ]) {
+    assert.equal(isTransientDecodeError(message), false, message);
+  }
+});
+
+test('a broken AAC frame right after a jump (seek, load) is transient; the same error later is not', () => {
+  for (const message of [
+    'ffmpeg/audio: aac: env_facs_q 254 is invalid\n',
+    'ffmpeg/audio: aac: Reserved bit set.\n',
+    'ffmpeg/audio: aac: Number of bands (41) exceeds limit (40).\n',
+    'ffmpeg/audio: aac: channel element 1.0 is not allocated\n',
+    'ffmpeg/audio: aac: Input buffer exhausted before END element found\n',
+    'ad: Error decoding audio.\n',
+  ]) {
+    assert.equal(isTransientDecodeError(message, 800), true, message);
+    assert.equal(isTransientDecodeError(message, 10_000), false, message);
     assert.equal(isTransientDecodeError(message), false, message);
   }
 });

@@ -4,6 +4,8 @@ import type { Source } from '@sbtltv/core';
 import { normalizeLinuxPlayerMode, type LinuxPlayerMode } from './linux-player-mode.js';
 import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitle-settings.js';
 import { settleTeamLogosDefault } from './settings-upgrades.js';
+import { normalizeRewindBytes } from './rewind.js';
+import os from 'node:os';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -52,6 +54,8 @@ interface AppSettings {
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video (immediate); default false
   appearance?: Appearance;  // Palette and typeface (default sbtl / fira)
   subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
+  rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
+  rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
 }
 
 export type { LinuxPlayerMode };
@@ -101,6 +105,8 @@ interface StoredSettings {
   linuxPerformanceMode?: boolean;  // Linux only: cheaper rendering for slower GPUs
   appearance?: Appearance;
   subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
+  rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
+  rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
 }
 
 const store = new Store<StoreSchema>({
@@ -260,6 +266,8 @@ export function getSettings(): AppSettings {
   result.linuxPerformanceMode = stored.linuxPerformanceMode === true;
   result.appearance = normalizeAppearance(stored.appearance);
   result.subtitles = normalizeSubtitleSettings(stored.subtitles);
+  result.rewindLiveBytes = normalizeRewindBytes(stored.rewindLiveBytes, os.totalmem());
+  result.rewindTipShown = stored.rewindTipShown === true;
   return result;
 }
 
@@ -269,6 +277,11 @@ export function getSettings(): AppSettings {
  */
 export function getLinuxPlayerMode(): LinuxPlayerMode {
   return normalizeLinuxPlayerMode(store.get('settings').linuxPlayerMode);
+}
+
+/** Rewind size for the next live load; read per load, so no key decryption (unlike getSettings). */
+export function getRewindLiveBytes(): number {
+  return normalizeRewindBytes(store.get('settings').rewindLiveBytes, os.totalmem());
 }
 
 /**
@@ -281,6 +294,8 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   if (settings.theme !== undefined) updated.theme = settings.theme;
   if (settings.appearance !== undefined) updated.appearance = normalizeAppearance(settings.appearance);
   if (settings.subtitles !== undefined) updated.subtitles = normalizeSubtitleSettings({ ...current.subtitles, ...settings.subtitles });
+  if (settings.rewindLiveBytes !== undefined) updated.rewindLiveBytes = normalizeRewindBytes(settings.rewindLiveBytes, os.totalmem());
+  if (settings.rewindTipShown !== undefined) updated.rewindTipShown = settings.rewindTipShown === true;
   if (settings.lastSourceId !== undefined) updated.lastSourceId = settings.lastSourceId;
   if (settings.tmdbApiKey !== undefined) {
     updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;
