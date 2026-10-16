@@ -38,7 +38,6 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
     return rect && rect.width > 0 ? Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width) * 100)) : 0;
   };
   const inReach = (pct: number) => pct >= bar.tintFrom && pct <= bar.tintTo;
-  const outOfReach = (pct: number) => (pct < bar.tintFrom ? (state.rangeStart > 0 ? 'Earlier than rewind keeps' : 'Before you tuned in') : 'Not aired yet');
 
   // Drag the playhead (or press anywhere on the reachable part): it follows the
   // pointer inside what can be played, and the seek happens once, on release.
@@ -48,7 +47,7 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
   return (
     <div
       ref={ref}
-      className={`npb-progress-bar npb-rewind${bumping ? ' npb-rewind--bump' : ''}${dragPct !== null ? ' npb-rewind--dragging' : ''}`}
+      className={`npb-progress-bar npb-rewind${bumping ? ' npb-rewind--bump' : ''}${dragPct !== null ? ' npb-rewind--dragging' : ''}${hoverPct !== null && inReach(hoverPct) ? ' npb-rewind--over-reach' : ''}`}
       onPointerDown={(e) => {
         const pct = pctAt(e.clientX);
         const onHead = Math.abs(pct - bar.headPct) < 2;
@@ -84,9 +83,10 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
           <div className="npb-rewind__cap" style={{ left: `${bar.tickPct}%`, transform: bar.tickPct < 10 ? 'none' : bar.tickPct > 90 ? 'translateX(-100%)' : undefined }}>
             from {timeFmt.format(wallAt(anchor, state.rangeStart))}
           </div>
-          <div className="npb-time-tooltip" style={{ left: `${tooltipPct}%` }}>
-            {inReach(tooltipPct) ? timeFmt.format(wallAtPct(tooltipPct)) : outOfReach(tooltipPct)}
-          </div>
+          {/* Times only where you can go; the dotted and not-yet-aired parts explain themselves */}
+          {inReach(tooltipPct) && (
+            <div className="npb-time-tooltip" style={{ left: `${tooltipPct}%` }}>{timeFmt.format(wallAtPct(tooltipPct))}</div>
+          )}
         </>
       )}
     </div>

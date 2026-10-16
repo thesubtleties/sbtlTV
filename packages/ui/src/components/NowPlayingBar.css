@@ -457,6 +457,11 @@
 .npb-progress-bar.npb-rewind {
   position: relative;
   overflow: visible;
+  cursor: default;
+}
+
+/* Only the part you can move to looks clickable */
+.npb-progress-bar.npb-rewind--over-reach {
   cursor: pointer;
 }
 
@@ -577,7 +582,7 @@
   cursor: grab;
 }
 
-.npb-rewind--dragging,
+.npb-progress-bar.npb-rewind--dragging,
 .npb-rewind--dragging .npb-rewind__head {
   cursor: grabbing;
 }
