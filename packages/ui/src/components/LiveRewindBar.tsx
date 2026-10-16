@@ -20,6 +20,9 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
   const [hoverPct, setHoverPct] = useState<number | null>(null);
   /** Where the playhead is being dragged to (percent of the bar); null when not dragging */
   const [dragPct, setDragPct] = useState<number | null>(null);
+  // The same, for handlers that may run before the next render (fast trackpad drags).
+  const dragRef = useRef<number | null>(null);
+  const setDrag = (pct: number | null) => { dragRef.current = pct; setDragPct(pct); };
   const [bumping, setBumping] = useState(false);
   useEffect(() => {
     if (!bump) return;
@@ -42,6 +45,12 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
   // Drag the playhead (or press anywhere on the reachable part): it follows the
   // pointer inside what can be played, and the seek happens once, on release.
   const nav = showNav({ state, anchor, lagS, program: bar.spansBuffer ? null : program });
+  function endDrag() {
+    const pct = dragRef.current;
+    if (pct === null) return;
+    setDrag(null);
+    onSeek?.(streamAtPct(pct));
+  }
   const headPct = dragPct ?? bar.headPct;
   const tooltipPct = dragPct ?? hoverPct;
 
@@ -55,20 +64,21 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
         if (e.button !== 0 || (!inReach(pct) && !onHead)) return;
         // Keep tracking outside the bar; a pointer the browser no longer tracks just drags without capture.
         try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
-        setDragPct(clampToReach(pct, bar));
+        setDrag(clampToReach(pct, bar));
       }}
       onPointerMove={(e) => {
         const pct = pctAt(e.clientX);
         setHoverPct(pct);
-        if (dragPct !== null) setDragPct(clampToReach(pct, bar));
+        if (dragRef.current !== null) setDrag(clampToReach(pct, bar));
       }}
       onPointerUp={(e) => {
-        if (dragPct === null) return;
-        const target = clampToReach(pctAt(e.clientX), bar);
-        setDragPct(null);
-        onSeek?.(streamAtPct(target));
+        if (dragRef.current === null) return;
+        dragRef.current = clampToReach(pctAt(e.clientX), bar);
+        endDrag();
       }}
-      onPointerCancel={() => setDragPct(null)}
+      // However a drag ends (macOS can cancel a trackpad drag, or capture can be lost), the video goes where the dot is.
+      onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
       onMouseLeave={() => setHoverPct(null)}
     >
       {/* Earlier / later show: the bar shows one show at a time; these move to the next one in the buffer */}
