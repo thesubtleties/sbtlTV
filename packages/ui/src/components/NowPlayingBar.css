@@ -572,3 +572,16 @@
   background: var(--accent);
   box-shadow: 0 0 6px var(--accent);
 }
+
+.npb-rewind .npb-rewind__head {
+  cursor: grab;
+}
+
+.npb-rewind--dragging,
+.npb-rewind--dragging .npb-rewind__head {
+  cursor: grabbing;
+}
+
+.npb-rewind--dragging .npb-rewind__head {
+  transform: translate(-50%, -50%) scale(1.2);
+}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RewindStateUpdate } from '../types/electron';
-import { liveTarget, rewindBar, wallAt, type ClockAnchor } from '../utils/rewindModel';
+import { clampToReach, liveTarget, rewindBar, wallAt, type ClockAnchor } from '../utils/rewindModel';
 
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 
@@ -18,6 +18,8 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [hoverPct, setHoverPct] = useState<number | null>(null);
+  /** Where the playhead is being dragged to (percent of the bar); null when not dragging */
+  const [dragPct, setDragPct] = useState<number | null>(null);
   const [bumping, setBumping] = useState(false);
   useEffect(() => {
     if (!bump) return;
@@ -38,29 +40,52 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
   const inReach = (pct: number) => pct >= bar.tintFrom && pct <= bar.tintTo;
   const outOfReach = (pct: number) => (pct < bar.tintFrom ? (state.rangeStart > 0 ? 'Earlier than rewind keeps' : 'Before you tuned in') : 'Not aired yet');
 
+  // Drag the playhead (or press anywhere on the reachable part): it follows the
+  // pointer inside what can be played, and the seek happens once, on release.
+  const headPct = dragPct ?? bar.headPct;
+  const tooltipPct = dragPct ?? hoverPct;
+
   return (
     <div
       ref={ref}
-      className={`npb-progress-bar npb-rewind${bumping ? ' npb-rewind--bump' : ''}`}
-      onMouseMove={(e) => setHoverPct(pctAt(e.clientX))}
+      className={`npb-progress-bar npb-rewind${bumping ? ' npb-rewind--bump' : ''}${dragPct !== null ? ' npb-rewind--dragging' : ''}`}
+      onPointerDown={(e) => {
+        const pct = pctAt(e.clientX);
+        const onHead = Math.abs(pct - bar.headPct) < 2;
+        if (e.button !== 0 || (!inReach(pct) && !onHead)) return;
+        // Keep tracking outside the bar; a pointer the browser no longer tracks just drags without capture.
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
+        setDragPct(clampToReach(pct, bar));
+      }}
+      onPointerMove={(e) => {
+        const pct = pctAt(e.clientX);
+        setHoverPct(pct);
+        if (dragPct !== null) setDragPct(clampToReach(pct, bar));
+      }}
+      onPointerUp={(e) => {
+        if (dragPct === null) return;
+        const target = clampToReach(pctAt(e.clientX), bar);
+        setDragPct(null);
+        onSeek?.(streamAtPct(target));
+      }}
+      onPointerCancel={() => setDragPct(null)}
       onMouseLeave={() => setHoverPct(null)}
-      onClick={(e) => { const pct = pctAt(e.clientX); if (inReach(pct)) onSeek?.(streamAtPct(pct)); }}
     >
       {bar.reachesEarlierShow && <span className="npb-rewind__earlier">‹</span>}
       <div className="npb-rewind__gone" style={{ width: `${bar.gonePct}%` }} />
       <div className="npb-rewind__tint" style={{ left: `${bar.tintFrom}%`, width: `${Math.max(0, bar.tintTo - bar.tintFrom)}%` }} />
-      <div className="npb-rewind__fill" style={{ left: `${bar.tintFrom}%`, width: `${Math.max(0, bar.fillTo - bar.tintFrom)}%` }} />
+      <div className="npb-rewind__fill" style={{ left: `${bar.tintFrom}%`, width: `${Math.max(0, headPct - bar.tintFrom)}%` }} />
       <div className="npb-rewind__tick" style={{ left: `${bar.tickPct}%` }} />
       <div className="npb-rewind__edge" style={{ left: `${bar.edgePct}%` }} />
-      <div className="npb-scrubber-handle npb-rewind__head" style={{ left: `${bar.headPct}%` }} />
-      {hoverPct !== null && (
+      <div className="npb-scrubber-handle npb-rewind__head" style={{ left: `${headPct}%` }} />
+      {tooltipPct !== null && (
         <>
           {/* Centred under the tick, but kept inside the bar near either end */}
           <div className="npb-rewind__cap" style={{ left: `${bar.tickPct}%`, transform: bar.tickPct < 10 ? 'none' : bar.tickPct > 90 ? 'translateX(-100%)' : undefined }}>
             from {timeFmt.format(wallAt(anchor, state.rangeStart))}
           </div>
-          <div className="npb-time-tooltip" style={{ left: `${hoverPct}%` }}>
-            {inReach(hoverPct) ? timeFmt.format(wallAtPct(hoverPct)) : outOfReach(hoverPct)}
+          <div className="npb-time-tooltip" style={{ left: `${tooltipPct}%` }}>
+            {inReach(tooltipPct) ? timeFmt.format(wallAtPct(tooltipPct)) : outOfReach(tooltipPct)}
           </div>
         </>
       )}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { anchorFor, wallAt, rewindBar, pillText, estimateText, presetsUnderCap, stepCustomGb, liveTarget, shouldShowRewindTip } from './rewindModel';
+import { anchorFor, wallAt, rewindBar, pillText, estimateText, presetsUnderCap, stepCustomGb, liveTarget, shouldShowRewindTip, clampToReach } from './rewindModel';
 
 const GIB = 1024 ** 3;
 const MIN = 60_000;
@@ -93,5 +93,14 @@ describe('one-time rewind tip', () => {
     expect(shouldShowRewindTip({ ...base, tipShown: true })).toBe(false);
     expect(shouldShowRewindTip({ ...base, rewindBytes: 512 * 1024 ** 2 })).toBe(false);
     expect(shouldShowRewindTip({ ...base, pausingLive: false })).toBe(false);
+  });
+});
+
+describe('dragging the playhead', () => {
+  const bar = { tintFrom: 30, tintTo: 60 } as Parameters<typeof clampToReach>[1];
+  it('stays inside the reachable stretch', () => {
+    expect(clampToReach(10, bar)).toBe(30);
+    expect(clampToReach(45, bar)).toBe(45);
+    expect(clampToReach(90, bar)).toBe(60);
   });
 });

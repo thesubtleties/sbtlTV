@@ -120,3 +120,8 @@ export function stepCustomGb(gb: number, capBytes: number): number {
 export function shouldShowRewindTip({ pausingLive, rewindBytes, tipShown }: { pausingLive: boolean; rewindBytes: number; tipShown: boolean }): boolean {
   return pausingLive && rewindBytes <= 0 && !tipShown;
 }
+
+/** A dragged playhead stays on the part of the bar that can be played. */
+export function clampToReach(pct: number, bar: Pick<RewindBar, 'tintFrom' | 'tintTo'>): number {
+  return Math.min(Math.max(pct, bar.tintFrom), bar.tintTo);
+}
