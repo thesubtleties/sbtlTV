@@ -458,6 +458,10 @@
   position: relative;
   overflow: visible;
   cursor: default;
+  /* The playhead is dragged here: no text selection, native drag or touch panning may take the pointer */
+  user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;
 }
 
 /* Only the part you can move to looks clickable */

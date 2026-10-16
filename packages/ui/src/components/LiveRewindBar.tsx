@@ -62,6 +62,8 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
         const pct = pctAt(e.clientX);
         const onHead = Math.abs(pct - bar.headPct) < 2;
         if (e.button !== 0 || (!inReach(pct) && !onHead)) return;
+        // Otherwise the browser turns press-and-drag into its own drag or text selection and cancels the pointer.
+        e.preventDefault();
         // Keep tracking outside the bar; a pointer the browser no longer tracks just drags without capture.
         try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
         setDrag(clampToReach(pct, bar));
