@@ -139,7 +139,7 @@ export interface StorageResult<T = void> {
   data?: T;
 }
 
-export type PaletteId = 'sbtl' | 'mocha' | 'pi' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula' | 'caelestia';
+export type PaletteId = 'sbtl' | 'sbtl-light' | 'mocha' | 'pi' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula' | 'caelestia';
 export type Typeface = 'fira' | 'mono' | 'system';
 export interface Appearance {
   palette: PaletteId;

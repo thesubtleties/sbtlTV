@@ -60,7 +60,7 @@ interface AppSettings {
 
 export type { LinuxPlayerMode };
 
-export const PALETTES = ['sbtl', 'mocha', 'pi', 'catppuccin', 'tokyonight', 'kanagawa', 'gruvbox', 'nord', 'rosepine', 'everforest', 'dracula', 'caelestia'] as const;
+export const PALETTES = ['sbtl', 'sbtl-light', 'mocha', 'pi', 'catppuccin', 'tokyonight', 'kanagawa', 'gruvbox', 'nord', 'rosepine', 'everforest', 'dracula', 'caelestia'] as const;
 export const TYPEFACES = ['fira', 'mono', 'system'] as const;
 export const ACCENTS = ['palette', 'system'] as const;
 export interface Appearance {

@@ -79,7 +79,7 @@
   font-size: 0.9rem;
   font-weight: 500;
   color: var(--text);
-  background: rgba(0, 0, 0, 0.4);
+  background: color-mix(in srgb, var(--scrim) 40%, transparent);
   border: 1px solid var(--line-2);
   border-radius: var(--r-control);
   cursor: pointer;
@@ -88,7 +88,7 @@
 }
 
 .series-detail__back:hover {
-  background: rgba(0, 0, 0, 0.6);
+  background: color-mix(in srgb, var(--scrim) 60%, transparent);
   border-color: var(--edge);
 }
 
@@ -104,7 +104,7 @@
   width: 36px;
   height: 36px;
   color: var(--text);
-  background: rgba(0, 0, 0, 0.4);
+  background: color-mix(in srgb, var(--scrim) 40%, transparent);
   border: 1px solid var(--line-2);
   border-radius: var(--r-control);
   cursor: pointer;
@@ -113,7 +113,7 @@
 }
 
 .series-detail__collapse:hover {
-  background: rgba(0, 0, 0, 0.6);
+  background: color-mix(in srgb, var(--scrim) 60%, transparent);
   border-color: var(--edge);
 }
 
