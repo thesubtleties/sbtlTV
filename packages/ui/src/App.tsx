@@ -532,7 +532,7 @@ function App() {
   const handleSeek = async (seconds: number) => {
     if (!window.mpv) return;
     seekingRef.current = true;
-    useRewindStore.getState().noteSeek();
+    useRewindStore.getState().noteSeek(seconds);
     setPosition(seconds); // Optimistic update
     await window.mpv.seek(seconds);
     // Brief delay before accepting mpv updates again

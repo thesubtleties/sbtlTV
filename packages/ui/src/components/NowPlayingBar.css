@@ -540,6 +540,9 @@
 
 .npb-live-pill {
   height: 24px;
+  /* Fixed width (fits "−00:00 · LIVE") so the controls beside it never shift as the text changes */
+  min-width: 100px;
+  justify-content: center;
   padding: 0 9px;
   border-radius: 12px;
   display: inline-flex;

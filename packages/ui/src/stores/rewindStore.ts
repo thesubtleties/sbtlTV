@@ -6,14 +6,16 @@
 
 import { create } from 'zustand';
 import type { RewindStateUpdate } from '../types/electron';
-import { anchorFor, type ClockAnchor } from '../utils/rewindModel';
+import { anchorFor, EDGE_TRACK_S, liveTarget, type ClockAnchor } from '../utils/rewindModel';
 
 /** Least cushion "live" keeps, so jumping to live never leaves mpv nothing to play. */
 const LAG_FLOOR_S = 3;
+/** Re-anchor after the reported edge has stayed this far off the clock for DRIFT_REPORTS reports (bursts pass). */
+const DRIFT_REPORTS = 3;
+/** A jump this big (encoder restart) re-anchors at once. */
+const CLOCK_JUMP_S = 30;
 /** mpv's cushion settles within the first seconds of playing; measuring later would pick up stalls and drift. */
 const LAG_MEASURE_PLAYING_S = 30;
-/** The stream clock moved this much more (or less) than the wall clock between two reports: re-anchor. */
-const CLOCK_JUMP_S = 30;
 
 interface RewindStore {
   state: RewindStateUpdate | null;
@@ -27,17 +29,21 @@ interface RewindStore {
   /** The load media-loaded announced last; reports from other loads are stale */
   expectedGeneration: number | null;
   lastReportMs: number;
+  /** At live: nothing since tuning in or jumping to live has put the viewer behind (pause, seek back) */
+  atLive: boolean;
+  /** Reports in a row with the reported edge off the clock by more than EDGE_TRACK_S */
+  driftReports: number;
   /** A new load was announced: reports from earlier loads are ignored from now on. */
   beginLoad: (generation: number) => void;
   /** A new generation re-anchors stream time to the clock; null = rewind not active. */
   apply: (update: RewindStateUpdate | null, nowMs: number, position?: number, playing?: boolean) => void;
-  /** The user seeked: from now on the distance behind live is theirs, not mpv's cushion. */
-  noteSeek: () => void;
+  /** The user seeked: from now on the distance behind live is theirs, not mpv's cushion. Up to the live point is live. */
+  noteSeek: (target?: number) => void;
   /** The user paused: the growing distance is theirs too. */
   notePause: () => void;
 }
 
-const cleared = { state: null, anchor: null, lagS: LAG_FLOOR_S, lagFrozen: false, playingReports: 0, lastReportMs: 0 };
+const cleared = { state: null, anchor: null, lagS: LAG_FLOOR_S, lagFrozen: false, playingReports: 0, lastReportMs: 0, driftReports: 0, atLive: true };
 
 export const useRewindStore = create<RewindStore>((set, get) => ({
   ...cleared,
@@ -51,24 +57,31 @@ export const useRewindStore = create<RewindStore>((set, get) => ({
     if (!sameLoad) {
       const measuring = playing && position > 0;
       set({
-        state: update, anchor: anchorFor(update, nowMs), lastReportMs: nowMs, lagFrozen: false,
+        state: update, anchor: anchorFor(update, nowMs), lastReportMs: nowMs, lagFrozen: false, driftReports: 0, atLive: true,
         playingReports: measuring ? 1 : 0,
         lagS: measuring ? Math.max(LAG_FLOOR_S, update.liveEdge - position) : LAG_FLOOR_S,
       });
       return;
     }
-    // The stream's timestamps jumped (encoder restart): the old anchor would put every time off by the jump.
-    const streamAdvance = update.liveEdge - prev.state!.liveEdge;
-    const wallAdvance = (nowMs - prev.lastReportMs) / 1000;
-    const anchor = Math.abs(streamAdvance - wallAdvance) > CLOCK_JUMP_S ? anchorFor(update, nowMs) : prev.anchor;
+    // Keep the clock-advanced edge (liveEdgeAt) close to what mpv reports: re-anchor when they drift
+    // apart (the provider's opening burst, a stream clock slightly off the wall clock, an encoder restart).
+    // A one-off burst passes; a drift that lasts, or a jump, moves the anchor.
+    const drift = Math.abs(prev.anchor!.streamT + (nowMs - prev.anchor!.wallMs) / 1000 - update.liveEdge);
+    const driftReports = drift > EDGE_TRACK_S ? prev.driftReports + 1 : 0;
+    const reanchor = drift > CLOCK_JUMP_S || driftReports >= DRIFT_REPORTS;
+    const anchor = reanchor ? anchorFor(update, nowMs) : prev.anchor;
     let { lagS, lagFrozen, playingReports } = prev;
     if (!lagFrozen && playing && position > 0) {
       lagS = Math.max(LAG_FLOOR_S, update.liveEdge - position);
       playingReports += 1;
       if (playingReports > LAG_MEASURE_PLAYING_S) lagFrozen = true;
     }
-    set({ state: update, anchor, lastReportMs: nowMs, lagS, lagFrozen, playingReports });
+    set({ state: update, anchor, lastReportMs: nowMs, lagS, lagFrozen, playingReports, driftReports: reanchor ? 0 : driftReports });
   },
-  noteSeek: () => set({ lagFrozen: true }),
-  notePause: () => set({ lagFrozen: true }),
+  noteSeek: (target) => {
+    const { state, lagS } = get();
+    const atLive = target !== undefined && state !== null && target >= liveTarget(state, lagS) - 1;
+    set({ lagFrozen: true, atLive });
+  },
+  notePause: () => set({ lagFrozen: true, atLive: false }),
 }));

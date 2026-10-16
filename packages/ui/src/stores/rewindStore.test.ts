@@ -60,6 +60,32 @@ describe('rewind store', () => {
     s.apply({ generation: 1, rangeStart: 0, liveEdge: 5_000, bytesPerSecond: 1 }, 2_000, 4_990, true); // +4900 s in 1 s
     expect(useRewindStore.getState().anchor).toEqual({ streamT: 5_000, wallMs: 2_000 });
   });
+  it('a burst in the reported edge does not move the clock anchor', () => {
+    const s = useRewindStore.getState();
+    s.apply({ generation: 1, rangeStart: 0, liveEdge: 100, bytesPerSecond: 1 }, 0, 90, true);
+    s.apply({ generation: 1, rangeStart: 0, liveEdge: 104, bytesPerSecond: 1 }, 1_000, 91, true);   // +3 s burst
+    s.apply({ generation: 1, rangeStart: 0, liveEdge: 102, bytesPerSecond: 1 }, 2_000, 92, true);   // back in step
+    expect(useRewindStore.getState().anchor).toEqual({ streamT: 100, wallMs: 0 });
+  });
+  it('a drift that persists for 3 reports re-anchors', () => {
+    const s = useRewindStore.getState();
+    s.apply({ generation: 1, rangeStart: 0, liveEdge: 100, bytesPerSecond: 1 }, 0, 90, true);
+    for (let i = 1; i <= 3; i++) s.apply({ generation: 1, rangeStart: 0, liveEdge: 100 + i + 6, bytesPerSecond: 1 }, i * 1000, 90 + i, true);
+    expect(useRewindStore.getState().anchor).toEqual({ streamT: 109, wallMs: 3_000 });
+  });
+  it('at live until the user pauses or seeks back; seeking up to live is live again', () => {
+    const s = useRewindStore.getState();
+    s.apply({ generation: 1, rangeStart: 0, liveEdge: 30, bytesPerSecond: 1 }, 1_000, 18, true);
+    expect(useRewindStore.getState().atLive).toBe(true);
+    s.noteSeek(10);                                   // back 8 s
+    expect(useRewindStore.getState().atLive).toBe(false);
+    s.noteSeek(18);                                   // the live point (edge 30 - lag 12)
+    expect(useRewindStore.getState().atLive).toBe(true);
+    s.notePause();
+    expect(useRewindStore.getState().atLive).toBe(false);
+    s.apply({ generation: 2, rangeStart: 0, liveEdge: 5, bytesPerSecond: 1 }, 9_000, 2, true);  // new load
+    expect(useRewindStore.getState().atLive).toBe(true);
+  });
   it('null clears', () => {
     useRewindStore.getState().apply({ generation: 1, rangeStart: 0, liveEdge: 10, bytesPerSecond: 1 }, 1_000);
     useRewindStore.getState().apply(null, 2_000);

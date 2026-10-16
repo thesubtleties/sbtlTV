@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { anchorFor, wallAt, rewindBar, pillText, estimateText, presetsUnderCap, stepCustomGb, liveTarget, shouldShowRewindTip, clampToReach } from './rewindModel';
+import { anchorFor, wallAt, rewindBar, pillText, estimateText, presetsUnderCap, stepCustomGb, liveTarget, shouldShowRewindTip, clampToReach, liveEdgeAt } from './rewindModel';
 
 const GIB = 1024 ** 3;
 const MIN = 60_000;
@@ -102,5 +102,27 @@ describe('dragging the playhead', () => {
     expect(clampToReach(10, bar)).toBe(30);
     expect(clampToReach(45, bar)).toBe(45);
     expect(clampToReach(90, bar)).toBe(60);
+  });
+});
+
+describe('live edge between reports', () => {
+  const a = { streamT: 100, wallMs: 0 };
+  it('advances with the clock, so the distance behind stays steady', () => {
+    expect(liveEdgeAt({ ...state, liveEdge: 100 }, a, 500)).toBeCloseTo(100.5);
+    expect(liveEdgeAt({ ...state, liveEdge: 101.3 }, a, 1000)).toBeCloseTo(101);   // a burst arrived early: still the clock
+  });
+  it('never strays more than 5 s from what mpv reports', () => {
+    expect(liveEdgeAt({ ...state, liveEdge: 100 }, a, 10_000)).toBe(105);          // stream stalled: don't run ahead
+    expect(liveEdgeAt({ ...state, liveEdge: 120 }, a, 10_000)).toBe(115);          // stream clock faster than the wall
+  });
+});
+
+describe('pill at live', () => {
+  it('says LIVE while at live, whatever the measured distance', () => {
+    expect(pillText(state, 900 - 20, 12, true)).toEqual({ live: true, text: 'LIVE' });
+  });
+  it('counts once behind, and is LIVE again within 2 s of the live point', () => {
+    expect(pillText(state, 900 - 12 - 30, 12, false)).toEqual({ live: false, text: '−0:30 · LIVE' });
+    expect(pillText(state, 900 - 12 - 1.5, 12, false)).toEqual({ live: true, text: 'LIVE' });
   });
 });

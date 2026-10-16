@@ -5,7 +5,8 @@ import type { RewindStateUpdate } from '../types/electron';
 const GIB = 1024 ** 3;
 const HD_BPS = 5_000_000 / 8;
 const UHD_BPS = 20_000_000 / 8;
-const LIVE_SLACK_S = 3;
+/** Caught up to within this of the live point: LIVE again. */
+const LIVE_SLACK_S = 2;
 
 export interface ClockAnchor { streamT: number; wallMs: number }
 
@@ -76,7 +77,13 @@ function clock(seconds: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
 
-export function pillText(state: RewindStateUpdate, position: number, lagS = 0): { live: boolean; text: string } {
+/**
+ * atLive: the user has not paused or seeked back since tuning in or jumping to
+ * live, so it says LIVE whatever the measured distance (mpv's cushion moves with
+ * network bursts; a number would flicker). Behind, it counts.
+ */
+export function pillText(state: RewindStateUpdate, position: number, lagS = 0, atLive = false): { live: boolean; text: string } {
+  if (atLive) return { live: true, text: 'LIVE' };
   const behind = liveTarget(state, lagS) - position;
   if (behind < LIVE_SLACK_S) return { live: true, text: 'LIVE' };
   return { live: false, text: `−${clock(behind)} · LIVE` };
@@ -124,4 +131,17 @@ export function shouldShowRewindTip({ pausingLive, rewindBytes, tipShown }: { pa
 /** A dragged playhead stays on the part of the bar that can be played. */
 export function clampToReach(pct: number, bar: Pick<RewindBar, 'tintFrom' | 'tintTo'>): number {
   return Math.min(Math.max(pct, bar.tintFrom), bar.tintTo);
+}
+
+/** How far the clock-advanced live edge may stray from mpv's last report. */
+export const EDGE_TRACK_S = 5;
+
+/**
+ * The live edge now: advanced with the clock since the anchor, so the distance
+ * behind stays steady between mpv's once-a-second reports (which arrive in
+ * network bursts), but never more than EDGE_TRACK_S from what mpv reported.
+ */
+export function liveEdgeAt(state: RewindStateUpdate, anchor: ClockAnchor, nowMs: number): number {
+  const clockEdge = anchor.streamT + (nowMs - anchor.wallMs) / 1000;
+  return Math.min(Math.max(clockEdge, state.liveEdge - EDGE_TRACK_S), state.liveEdge + EDGE_TRACK_S);
 }

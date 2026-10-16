@@ -5,7 +5,7 @@ import { useCurrentProgram } from '../hooks/useChannels';
 import { useMatchup } from '../hooks/useMatchup';
 import { usePlaybackStore } from '../stores/playbackStore';
 import { useRewindStore } from '../stores/rewindStore';
-import { liveTarget, pillText, wallAt } from '../utils/rewindModel';
+import { liveEdgeAt, liveTarget, pillText, wallAt } from '../utils/rewindModel';
 import { LiveRewindBar } from './LiveRewindBar';
 import { CaptionsControl } from './CaptionsControl';
 import './NowPlayingBar.css';
@@ -79,10 +79,13 @@ export function NowPlayingBar({
   const rewindState = useRewindStore((s) => s.state);
   const rewindAnchor = useRewindStore((s) => s.anchor);
   const rewindLag = useRewindStore((s) => s.lagS);
+  const rewindAtLive = useRewindStore((s) => s.atLive);
   // Follows the stream playing, not the setting: a change applies from the next channel (main reports rewind state per load).
   const rewindActive = !isVod && rewindState !== null && rewindAnchor !== null;
   // With rewind, what is on screen is the programme at the playhead, not the one airing now.
   const playheadMs = rewindActive ? wallAt(rewindAnchor!, position) : undefined;
+  // The live edge advanced with the clock between reports (re-rendered with every position update), so "−0:36" holds steady.
+  const liveState = rewindActive ? { ...rewindState!, liveEdge: liveEdgeAt(rewindState!, rewindAnchor!, Date.now()) } : null;
   const playheadRef = useRef(playheadMs);
   playheadRef.current = playheadMs;
   const currentProgram = useCurrentProgram(channel?.stream_id ?? null, playheadMs);
@@ -326,7 +329,7 @@ export function NowPlayingBar({
               <div className="npb-progress-section">
                 {rewindActive ? (
                   <LiveRewindBar
-                    state={rewindState!}
+                    state={liveState!}
                     anchor={rewindAnchor!}
                     position={position}
                     program={currentProgram ? { startMs: new Date(currentProgram.start).getTime(), endMs: new Date(currentProgram.end).getTime() } : null}
@@ -392,11 +395,11 @@ export function NowPlayingBar({
             </div>
 
             {rewindActive && (() => {
-              const pill = pillText(rewindState!, position, rewindLag);
+              const pill = pillText(liveState!, position, rewindLag, rewindAtLive);
               return (
                 <button
                   className={`npb-live-pill${pill.live ? ' npb-live-pill--live' : ''}`}
-                  onClick={() => { if (!pill.live) onSeek?.(liveTarget(rewindState!, rewindLag)); }}
+                  onClick={() => { if (!pill.live) onSeek?.(liveTarget(liveState!, rewindLag)); }}
                   title={pill.live ? 'Watching live' : 'Back to live (End)'}
                 >
                   {pill.text}
