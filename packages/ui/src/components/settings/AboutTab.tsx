@@ -20,6 +20,8 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
   const [version, setVersion] = useState<string>('');
   const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noAutoUpdate = !(window.platform?.supportsAutoUpdate ?? true);
+  const betaUpdates = useUIStore((s) => s.settings.betaUpdates === true);
+  const runningBeta = version.includes('-');
 
   useEffect(() => {
     window.platform?.getVersion().then(setVersion).catch((err) => {
@@ -95,6 +97,12 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
     updateSettings({ autoUpdateEnabled: enabled });
     if (!window.storage) return;
     await window.storage.updateSettings({ autoUpdateEnabled: enabled });
+  }
+
+  async function handleBetaUpdatesChange(enabled: boolean) {
+    updateSettings({ betaUpdates: enabled });
+    if (!window.storage) return;
+    await window.storage.updateSettings({ betaUpdates: enabled });
   }
 
   function renderUpdateButton() {
@@ -185,6 +193,17 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
                 <span>Check for updates automatically</span>
                 <OnOff value={autoUpdateEnabled} onChange={(enabled) => void handleAutoUpdateChange(enabled)} />
               </div>
+              <div className="about-tab__auto-update">
+                <span>Beta updates</span>
+                <OnOff value={betaUpdates} onChange={(enabled) => void handleBetaUpdatesChange(enabled)} />
+              </div>
+              <p className="st-hint about-tab__status-text">
+                {runningBeta
+                  ? betaUpdates
+                    ? "You're on a beta. You'll get new betas and stable releases."
+                    : "You're on a beta. You'll get new betas until the next stable release, then stable only."
+                  : 'Try new versions early. Betas can have rough edges.'}
+              </p>
             </>
           )}
         </div>

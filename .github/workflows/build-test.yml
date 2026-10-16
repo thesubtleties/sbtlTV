@@ -119,13 +119,16 @@ jobs:
       # mac.minimumSystemVersion in electron-builder.yml.
       - name: Pin macOS update feed minimum (Darwin 22 = macOS 13)
         if: matrix.platform == 'mac'
+        # The feed is latest-mac.yml, or beta-mac.yml for a beta version.
         run: |
-          if grep -q '^minimumSystemVersion:' release/latest-mac.yml; then
-            sed -i '' 's/^minimumSystemVersion:.*/minimumSystemVersion: 22.0.0/' release/latest-mac.yml
-          else
-            printf 'minimumSystemVersion: 22.0.0\n' >> release/latest-mac.yml
-          fi
-          grep -n '^minimumSystemVersion:' release/latest-mac.yml
+          for feed in release/*-mac.yml; do
+            if grep -q '^minimumSystemVersion:' "$feed"; then
+              sed -i '' 's/^minimumSystemVersion:.*/minimumSystemVersion: 22.0.0/' "$feed"
+            else
+              printf 'minimumSystemVersion: 22.0.0\n' >> "$feed"
+            fi
+            grep -n '^minimumSystemVersion:' "$feed"
+          done
 
       # Upload artifacts (mirrors release.yml artifact set)
       - name: Upload artifacts

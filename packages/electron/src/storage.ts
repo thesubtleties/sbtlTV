@@ -42,6 +42,7 @@ interface AppSettings {
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering (default: alphabetical)
   categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering (default: alphabetical)
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
+  betaUpdates?: boolean;        // Offer beta (pre-release) updates too (default false)
   categoryBarWidth?: number;    // Category strip content width in px (default 160)
   channelColumnWidth?: number;  // Guide channel-info column width in px (default 300)
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
@@ -92,6 +93,7 @@ interface StoredSettings {
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
   categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch
+  betaUpdates?: boolean;        // Offer beta (pre-release) updates too
   categoryBarWidth?: number;    // Category strip content width in px
   channelColumnWidth?: number;  // Guide channel-info column width in px
   guideOpacity?: number;        // Background opacity for EPG/category/title bar
@@ -254,6 +256,7 @@ export function getSettings(): AppSettings {
   result.channelSortOrder = stored.channelSortOrder ?? 'alphabetical';
   result.categorySortOrder = stored.categorySortOrder ?? 'alphabetical';
   result.autoUpdateEnabled = stored.autoUpdateEnabled ?? true;
+  result.betaUpdates = stored.betaUpdates ?? false;
   result.categoryBarWidth = stored.categoryBarWidth ?? 160;
   result.channelColumnWidth = stored.channelColumnWidth ?? 300;
   result.guideOpacity = stored.guideOpacity ?? 0.95;
@@ -324,6 +327,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.autoUpdateEnabled !== undefined) {
     updated.autoUpdateEnabled = settings.autoUpdateEnabled;
+  }
+  if (settings.betaUpdates !== undefined) {
+    updated.betaUpdates = settings.betaUpdates;
   }
   if (settings.categoryBarWidth !== undefined) {
     updated.categoryBarWidth = settings.categoryBarWidth;

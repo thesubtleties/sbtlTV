@@ -6,7 +6,44 @@ on:
       - 'v*'
 
 jobs:
+  # Fails before anything is built or published (see the Beta Ceremony in the
+  # release runbook): betas vX.Y.Z-beta.N come from dev, stables vX.Y.Z from
+  # main, and the tag must match the version in both package.json files.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag, branch and version agree
+        shell: bash
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            branch=dev
+          elif [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            branch=main
+          else
+            echo "::error::$tag is neither vX.Y.Z nor vX.Y.Z-beta.N"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$branch"; then
+            echo "::error::$tag ($GITHUB_SHA) is not on $branch; $([[ $branch == dev ]] && echo betas || echo stable releases) are tagged from $branch"
+            exit 1
+          fi
+          for file in package.json packages/electron/package.json; do
+            version=$(node -p "require('./$file').version")
+            if [[ "v$version" != "$tag" ]]; then
+              echo "::error::$file is $version but the tag is $tag"
+              exit 1
+            fi
+          done
+          echo "$tag: on $branch, versions match"
+
   build:
+    needs: guard
     strategy:
       fail-fast: false
       matrix:
@@ -107,13 +144,16 @@ jobs:
       # mac.minimumSystemVersion in electron-builder.yml.
       - name: Pin macOS update feed minimum (Darwin 22 = macOS 13)
         if: matrix.platform == 'mac'
+        # The feed is latest-mac.yml, or beta-mac.yml for a beta version.
         run: |
-          if grep -q '^minimumSystemVersion:' release/latest-mac.yml; then
-            sed -i '' 's/^minimumSystemVersion:.*/minimumSystemVersion: 22.0.0/' release/latest-mac.yml
-          else
-            printf 'minimumSystemVersion: 22.0.0\n' >> release/latest-mac.yml
-          fi
-          grep -n '^minimumSystemVersion:' release/latest-mac.yml
+          for feed in release/*-mac.yml; do
+            if grep -q '^minimumSystemVersion:' "$feed"; then
+              sed -i '' 's/^minimumSystemVersion:.*/minimumSystemVersion: 22.0.0/' "$feed"
+            else
+              printf 'minimumSystemVersion: 22.0.0\n' >> "$feed"
+            fi
+            grep -n '^minimumSystemVersion:' "$feed"
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
