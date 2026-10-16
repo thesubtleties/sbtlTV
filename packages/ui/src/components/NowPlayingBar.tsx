@@ -33,8 +33,6 @@ interface NowPlayingBarProps {
   showNextEpisode?: boolean;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
-  /** Rewind live TV is on in Settings */
-  liveRewind?: boolean;
   /** Changes when a seek key hit the oldest rewind point */
   rewindBump?: number;
 }
@@ -74,7 +72,6 @@ export function NowPlayingBar({
   showNextEpisode,
   isFullscreen,
   onToggleFullscreen,
-  liveRewind,
   rewindBump,
 }: NowPlayingBarProps) {
   const position = usePlaybackStore((state) => state.position);
@@ -82,7 +79,8 @@ export function NowPlayingBar({
   const rewindState = useRewindStore((s) => s.state);
   const rewindAnchor = useRewindStore((s) => s.anchor);
   const rewindLag = useRewindStore((s) => s.lagS);
-  const rewindActive = !isVod && !!liveRewind && rewindState !== null && rewindAnchor !== null;
+  // Follows the stream playing, not the setting: a change applies from the next channel (main reports rewind state per load).
+  const rewindActive = !isVod && rewindState !== null && rewindAnchor !== null;
   // With rewind, what is on screen is the programme at the playhead, not the one airing now.
   const playheadMs = rewindActive ? wallAt(rewindAnchor!, position) : undefined;
   const playheadRef = useRef(playheadMs);

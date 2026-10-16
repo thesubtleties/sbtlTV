@@ -228,3 +228,13 @@ test('a replacement bridge keeps counting generations, so the renderer accepts i
   await next.load('c');
   assert.deepEqual(h.clears, [1, 2, 3]);
 });
+
+test('a destroyed bridge stops listening to the window, so restarts do not pile up listeners', async () => {
+  const h = await createBridge();
+  assert.equal(h.webContents.listenerCount('destroyed'), 1);
+  await h.bridge.destroy();
+  assert.equal(h.webContents.listenerCount('destroyed'), 0);
+  const next = await h.another();
+  assert.equal(h.webContents.listenerCount('destroyed'), 1);
+  assert.equal(next.hasRetainedTransfers(), false);
+});

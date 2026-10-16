@@ -182,6 +182,11 @@ function App() {
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
+  // For handlers registered once (keys, IPC listeners): the latest playing state and channel.
+  const playingRef = useRef(false);
+  playingRef.current = playing;
+  const currentChannelRef = useRef<StoredChannel | null>(null);
+  currentChannelRef.current = currentChannel;
   const [vodInfo, setVodInfo] = useState<VodPlayInfo | null>(null);
 
   // UI state
@@ -259,11 +264,12 @@ function App() {
   // Playback keys (seek, volume) read live state from a ref because the key
   // handler is registered once on mount.
   const playbackRef = useRef({ duration: 0, volume: 100, activeView: 'none' as View, categoriesOpen: false });
-  // Rewind live TV: on in Settings, and the nudge when a seek key hits the oldest point.
-  const rewindLiveOn = (useUIStore((s) => s.settings.rewindLiveBytes) ?? 0) > 0;
+  // Rewind live TV: the nudge when a seek key hits the oldest point.
   const [rewindBump, setRewindBump] = useState(0);
   // Settings opened on a specific tab (the rewind tip), else its default.
   const [settingsTab, setSettingsTab] = useState<SettingsTabId | undefined>(undefined);
+  // Leaving Settings by any route (Escape, another view) forgets the tab the tip opened it on.
+  useEffect(() => { if (activeView !== 'settings') setSettingsTab(undefined); }, [activeView]);
   useEffect(() => {
     playbackRef.current = { duration, volume, activeView, categoriesOpen };
   }, [duration, volume, activeView, categoriesOpen]);
@@ -385,10 +391,12 @@ function App() {
       }
       // Progress is not saved until playback reaches where this load resumes.
       resumeTargetRef.current = update.resumeAt > 0 ? update.resumeAt : null;
+      // Rewind reports from earlier loads are stale from here on.
+      useRewindStore.getState().beginLoad(update.generation);
     });
 
     // Rewind live TV: the reachable range, once a second while it is on.
-    const offRewind = window.mpv.onRewindState((update) => useRewindStore.getState().apply(update, Date.now(), usePlaybackStore.getState().position));
+    const offRewind = window.mpv.onRewindState((update) => useRewindStore.getState().apply(update, Date.now(), usePlaybackStore.getState().position, playingRef.current));
 
     // Stall recovery in main: a quiet toast while it reloads, one plain message if it gives up.
     const offRecovery = window.mpv.onStreamRecovery((update) => {
@@ -461,7 +469,11 @@ function App() {
 
   const handleTogglePlay = async () => {
     if (!window.mpv) return;
-    const pausingLive = playing && currentChannel !== null && currentChannel.stream_id !== 'vod';
+    // Refs, not state: the key handler calls this from its first render.
+    const channel = currentChannelRef.current;
+    const pausingLive = playingRef.current && channel !== null && channel.stream_id !== 'vod';
+    // The distance a pause puts you behind live is yours, not mpv's cushion.
+    if (pausingLive) useRewindStore.getState().notePause();
     await window.mpv.togglePause();
     // Once ever: pausing live TV with rewind off offers the setting.
     const s = useUIStore.getState().settings;
@@ -792,7 +804,7 @@ function App() {
           if (target === null) break;
           e.preventDefault();
           // At the oldest rewind point already: a nudge of the playhead, no seek.
-          if (target === position && liveRewindRange()) { setRewindBump(Date.now()); break; }
+          if (Math.abs(target - position) < 0.5 && liveRewindRange()) { setRewindBump(Date.now()); break; }
           handleSeek(target);
           break;
         }
@@ -955,7 +967,6 @@ function App() {
         showNextEpisode={vodInfo?.type === 'series'}
         isFullscreen={isFullscreen}
         onToggleFullscreen={linuxExternalPlayer ? undefined : handleToggleFullscreen}
-        liveRewind={rewindLiveOn}
         rewindBump={rewindBump}
       />
 

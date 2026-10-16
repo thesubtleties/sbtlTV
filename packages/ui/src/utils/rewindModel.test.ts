@@ -52,10 +52,10 @@ describe('pill', () => {
 });
 
 describe('size text and choices', () => {
-  it('estimates in whole minutes at 5 and 20 Mbps', () => {
-    expect(estimateText(512 * 1024 ** 2)).toBe('About 14 min of an HD channel, or 3 min of 4K.');
-    expect(estimateText(3.5 * GIB)).toBe('About 1 h 40 min of an HD channel, or 25 min of 4K.');
-    expect(estimateText(2 * GIB, 400_000)).toBe('About 1 h 29 min on this channel.');
+  it('estimates in whole minutes at 5 and 20 Mbps, for the half of the size that is stream data', () => {
+    expect(estimateText(512 * 1024 ** 2)).toBe('About 7 min of an HD channel, or 1 min of 4K.');
+    expect(estimateText(3.5 * GIB)).toBe('About 50 min of an HD channel, or 12 min of 4K.');
+    expect(estimateText(2 * GIB, 400_000)).toBe('About 44 min on this channel.');
   });
   it('hides presets above the cap', () => {
     expect(presetsUnderCap(2 * GIB).map((p) => p.id)).toEqual(['512', '2048']);

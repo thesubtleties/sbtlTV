@@ -14,10 +14,10 @@ export function LivePlaybackTab() {
   const bytes = useUIStore((s) => s.settings.rewindLiveBytes) ?? 0;
   const channelRate = useRewindStore((s) => s.state?.bytesPerSecond);
   const { subtitles, updateSubtitles } = useSubtitleSettings();
-  // A quarter of RAM in 0.5 GB steps (main clamps to the same cap when saving).
-  const [capBytes, setCapBytes] = useState(0);
+  // The largest size this computer allows (main computes it and clamps to it when saving); null while asking.
+  const [capBytes, setCapBytes] = useState<number | null>(null);
   useEffect(() => {
-    void window.platform?.totalMemory().then((total) => setCapBytes(Math.floor(total / 4 / (GIB / 2)) * (GIB / 2)));
+    window.platform?.rewindCapBytes().then(setCapBytes, () => setCapBytes(0));
   }, []);
 
   const isPreset = REWIND_PRESETS.some((p) => p.bytes === bytes);
@@ -32,9 +32,11 @@ export function LivePlaybackTab() {
   }
 
   function commitCustom() {
-    const gb = Number(draftGb);
-    if (!Number.isFinite(gb) || capBytes === 0) { setDraftGb(String(bytes / GIB)); return; }
-    void setBytes(stepCustomGb(gb, capBytes) * GIB);
+    const gb = draftGb.trim() === '' ? NaN : Number(draftGb);
+    if (!Number.isFinite(gb) || !capBytes) { setDraftGb(String(bytes / GIB || 1)); return; }
+    const stepped = stepCustomGb(gb, capBytes);
+    setDraftGb(String(stepped));  // show what was saved, also when it equals what was there
+    void setBytes(stepped * GIB);
   }
 
   return (
@@ -42,23 +44,25 @@ export function LivePlaybackTab() {
       <Section title="Live playback">
         <OptionRow
           title="Rewind live TV"
-          help={bytes === 0
-            ? 'Live TV can still be paused; turn this on to rewind.'
-            : `${estimateText(bytes, channelRate)} Memory is used only while you watch live TV.`}
+          help={capBytes === 0
+            ? 'This computer does not have enough memory for rewind.'
+            : bytes === 0
+              ? 'Live TV can still be paused; turn this on to rewind.'
+              : `${estimateText(bytes, channelRate)} Starts with the next channel; memory is used only while you watch live TV.`}
         >
           <Segmented
             compact
             value={choice}
-            disabled={capBytes === 0}
-            options={[{ id: 'off', label: 'Off' }, ...presetsUnderCap(capBytes).map((p) => ({ id: p.id, label: p.label })), { id: 'custom', label: 'Custom' }]}
+            disabled={!capBytes}
+            options={[{ id: 'off', label: 'Off' }, ...presetsUnderCap(capBytes ?? 0).map((p) => ({ id: p.id, label: p.label })), { id: 'custom', label: 'Custom' }]}
             onChange={(id) => {
               if (id === 'off') { setCustomMode(false); void setBytes(0); return; }
-              if (id === 'custom') { setCustomMode(true); if (bytes === 0) void setBytes(Math.min(GIB, capBytes)); return; }
+              if (id === 'custom') { setCustomMode(true); if (bytes === 0 && capBytes) void setBytes(Math.min(GIB, capBytes)); return; }
               setCustomMode(false);
               void setBytes(REWIND_PRESETS.find((p) => p.id === id)!.bytes);
             }}
           />
-          {choice === 'custom' && (
+          {choice === 'custom' && !!capBytes && (
             <label className="st-rewind-custom">
               <TextField
                 type="number"

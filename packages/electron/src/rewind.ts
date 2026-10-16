@@ -4,9 +4,14 @@
 export const GIB = 1024 ** 3;
 export const REWIND_HALF_GIB = GIB / 2;
 
-/** The largest rewind size: a quarter of the computer's RAM, in 0.5 GB steps. */
+/**
+ * The largest rewind size: a quarter of the installed RAM, in 0.5 GB steps. The OS
+ * reports a little less than what is installed (an "8 GB" laptop says 7.6), so
+ * round up to the next 2 GB first.
+ */
 export function rewindCapBytes(totalMemBytes: number): number {
-  return Math.floor(totalMemBytes / 4 / REWIND_HALF_GIB) * REWIND_HALF_GIB;
+  const installed = Math.ceil(totalMemBytes / (2 * GIB)) * 2 * GIB;
+  return Math.floor(installed / 4 / REWIND_HALF_GIB) * REWIND_HALF_GIB;
 }
 
 /** Stored rewind size in bytes, 0 = Off. On means 0.5 GB steps, at least 0.5 GB, never above the cap. */
@@ -18,14 +23,33 @@ export function normalizeRewindBytes(value: unknown, totalMemBytes: number): num
   return Math.min(stepped, cap);
 }
 
+/** mpv's own cache defaults, for every load that does not rewind; the cache never goes to disk. */
+export const MPV_DEFAULT_CACHE: Readonly<Record<string, string>> = {
+  'demuxer-max-bytes': String(150 * 1024 ** 2),
+  'demuxer-max-back-bytes': String(50 * 1024 ** 2),
+  'demuxer-donate-buffer': 'yes',
+  // External mpv reads the user's mpv.conf: never let it put a stream on disk.
+  'cache-on-disk': 'no',
+};
+
 /**
- * Options for one loadfile: only live loads with rewind on get a back buffer.
- * donate-buffer=no makes the limit real (by default the back buffer borrows the
- * unused read-ahead); demuxer-max-bytes stays at mpv's default (smaller starves 4K).
+ * mpv cache properties to set before a load (as properties, not loadfile options:
+ * the 5-argument loadfile needs mpv 0.38, and Linux uses the system libmpv).
+ *
+ * Live with rewind: the whole size is the forward buffer and the back buffer
+ * borrows what is unused (donate). At live, almost nothing is ahead, so the past
+ * can fill it; paused, the waiting stream can fill it. Either way the total stays
+ * at the size. mpv holds about twice its own count in real memory, so it gets half
+ * the chosen size and the setting is close to real memory.
  */
-export function rewindLoadOptions(bytes: number, live: boolean): string {
-  if (!live || bytes <= 0) return '';
-  return `demuxer-max-back-bytes=${bytes},demuxer-donate-buffer=no`;
+export function rewindMpvProperties(bytes: number, live: boolean): Record<string, string> {
+  if (!live || bytes <= 0) return { ...MPV_DEFAULT_CACHE };
+  return {
+    'demuxer-max-bytes': String(Math.floor(bytes / 2)),
+    'demuxer-max-back-bytes': String(1024 ** 2),
+    'demuxer-donate-buffer': 'yes',
+    'cache-on-disk': 'no',
+  };
 }
 
 export interface CacheRange {
@@ -35,6 +59,8 @@ export interface CacheRange {
   liveEdge: number;
   /** What mpv holds in memory for this load */
   bufferedBytes: number;
+  /** The part of it ahead of the playhead (fills while paused) */
+  forwardBytes: number;
   /** mpv's measured input rate (bytes/s) */
   bytesPerSecond: number;
 }
@@ -53,15 +79,20 @@ export function parseCacheState(raw: unknown): CacheRange | null {
   for (const r of ranges) {
     const start = (r as Record<string, unknown> | null)?.start;
     const end = (r as Record<string, unknown> | null)?.end;
-    if (typeof start !== 'number' || typeof end !== 'number' || end < start) continue;
+    if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) || !Number.isFinite(end) || end < start) continue;
     if (!best || end > best.end) best = { start, end };
   }
   if (!best) return null;
   const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
-  return { rangeStart: best.start, liveEdge: best.end, bufferedBytes: num(state['total-bytes']), bytesPerSecond: num(state['raw-input-rate']) };
+  return { rangeStart: best.start, liveEdge: best.end, bufferedBytes: num(state['total-bytes']), forwardBytes: num(state['fw-bytes']), bytesPerSecond: num(state['raw-input-rate']) };
 }
 
-/** A seek target inside the buffer. */
+/**
+ * A seek target inside the buffer. The oldest point moves on every second while
+ * the buffer rolls, so stay 2 s inside it (at most half a tiny range).
+ */
 export function clampToRange(seconds: number, range: Pick<CacheRange, 'rangeStart' | 'liveEdge'>): number {
-  return Math.min(Math.max(seconds, range.rangeStart), range.liveEdge);
+  if (!Number.isFinite(seconds)) return range.liveEdge;
+  const margin = Math.min(2, (range.liveEdge - range.rangeStart) / 2);
+  return Math.min(Math.max(seconds, range.rangeStart + margin), range.liveEdge);
 }

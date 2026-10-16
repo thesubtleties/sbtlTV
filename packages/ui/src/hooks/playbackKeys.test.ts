@@ -51,6 +51,9 @@ describe('live rewind keys', () => {
     expect(resolveSeek('ArrowDown', { ...live, position: 50 })).toBe(20);   // clamped to the oldest point
     expect(resolveSeek('ArrowUp', { ...live, position: 280 })).toBe(300);   // clamped to live
   });
+  it('the rewind range wins even when the live stream reports a duration', () => {
+    expect(resolveSeek('ArrowDown', { ...live, duration: 40, position: 50 })).toBe(20);
+  });
   it('arrows stay inert on live without rewind', () => {
     expect(resolveSeek('ArrowLeft', { ...live, liveRange: null })).toBeNull();
   });

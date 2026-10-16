@@ -272,8 +272,8 @@ export interface PlatformApi {
   isLinuxNonAppImage: boolean;
   supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
-  /** Installed RAM in bytes (rewind size limit) */
-  totalMemory: () => Promise<number>;
+  /** The largest Rewind live TV size this computer allows, in bytes (0 = not enough memory) */
+  rewindCapBytes: () => Promise<number>;
 }
 
 export interface DebugApi {

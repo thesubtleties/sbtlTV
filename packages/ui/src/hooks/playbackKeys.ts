@@ -32,9 +32,9 @@ export function resolveSeek(key: string, state: PlaybackKeyState): number | null
   const delta = SEEK_KEY_DELTAS[key];
   if (delta === undefined) return null;
   if (state.activeView !== 'none' || state.categoriesOpen) return null;
+  if (state.liveRange) return Math.min(Math.max(state.liveRange.start, state.position + delta), state.liveRange.end);
   if (state.duration > 0) return Math.min(Math.max(0, state.position + delta), state.duration);
-  if (!state.liveRange) return null;
-  return Math.min(Math.max(state.liveRange.start, state.position + delta), state.liveRange.end);
+  return null;
 }
 
 /** End on live with rewind: the live edge; null otherwise. */

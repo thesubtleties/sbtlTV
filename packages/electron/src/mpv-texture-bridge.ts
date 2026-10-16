@@ -43,6 +43,12 @@ export class MpvTextureBridge {
   private rendererDisposed = false;
   private retainedTransfers = new Set<ReturnType<typeof sharedTexture.importSharedTexture>>();
   private destruction: Promise<void> | null = null;
+  /** The window's renderer this bridge listens to; the listener goes when the bridge does (player restarts reuse the window). */
+  private webContents: BrowserWindow['webContents'] | null = null;
+  private readonly onRendererDestroyed = () => {
+    this.rendererDisposed = true;
+    this.releaseRetainedTransfers();
+  };
   private resolveDestruction?: () => void;
   private rejectDestruction?: (error: unknown) => void;
   private statusCallback?: (status: MpvStatus) => void;
@@ -98,10 +104,8 @@ export class MpvTextureBridge {
     config?: MpvConfig
   ): Promise<boolean> {
     this.window = window;
-    window.webContents.once('destroyed', () => {
-      this.rendererDisposed = true;
-      this.releaseRetainedTransfers();
-    });
+    this.webContents = window.webContents;
+    this.webContents.once('destroyed', this.onRendererDestroyed);
 
     try {
       // Dynamic import of the native addon
@@ -500,6 +504,15 @@ export class MpvTextureBridge {
   /**
    * Destroy and clean up
    */
+  /**
+   * A frame transfer timed out and its texture is held until the renderer goes
+   * away: destroy() would not finish while the window stays, so a player restart
+   * in the same window must not be attempted.
+   */
+  hasRetainedTransfers(): boolean {
+    return this.retainedTransfers.size > 0;
+  }
+
   destroy(): Promise<void> {
     if (this.destruction) return this.destruction;
     this.destruction = new Promise<void>((resolve, reject) => {
@@ -535,6 +548,8 @@ export class MpvTextureBridge {
       return;
     }
     this.destroyFinalized = true;
+    this.webContents?.removeListener('destroyed', this.onRendererDestroyed);
+    this.webContents = null;
     const mpv = this.mpv;
     this.mpv = null;
     try {

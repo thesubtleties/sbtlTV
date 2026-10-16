@@ -26,3 +26,37 @@ export function shouldReleasePlayerMemory(e: PlayerMemoryEvent): boolean {
   if (e.peakBytes < PLAYER_MEMORY_RELEASE_BYTES) return false;
   return e.event === 'stop' || e.wasLive !== e.nextLive;
 }
+
+/**
+ * What mpv's pool may be holding: the most any stream cached since the player
+ * last started (the pool keeps the biggest, not only the last), and whether the
+ * stream now loaded is live. main.ts feeds it and asks before each switch or stop.
+ */
+export class PlayerMemoryTracker {
+  private highWaterBytes = 0;
+  private currentLive: boolean | null = null;
+
+  startStream(live: boolean): void {
+    this.currentLive = live;
+  }
+
+  noteCached(bytes: number): void {
+    if (Number.isFinite(bytes) && bytes > this.highWaterBytes) this.highWaterBytes = bytes;
+  }
+
+  shouldRelease(event: { event: 'stop' } | { event: 'load'; nextLive: boolean }): boolean {
+    if (this.currentLive === null) return false;
+    return event.event === 'stop'
+      ? shouldReleasePlayerMemory({ peakBytes: this.highWaterBytes, event: 'stop' })
+      : shouldReleasePlayerMemory({ peakBytes: this.highWaterBytes, event: 'load', wasLive: this.currentLive, nextLive: event.nextLive });
+  }
+
+  /** The player was restarted: its pool is gone. */
+  released(): void {
+    this.highWaterBytes = 0;
+  }
+
+  get peakBytes(): number {
+    return this.highWaterBytes;
+  }
+}

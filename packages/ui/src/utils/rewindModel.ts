@@ -89,10 +89,14 @@ function minutes(bytes: number, bps: number): string {
   return h > 0 ? `${h} h ${m} min` : `${m} min`;
 }
 
-/** The setting's help line: typical HD/4K, or the channel playing now when its rate is known. */
+/**
+ * The setting's help line: typical HD/4K, or the channel playing now when its rate is known.
+ * The size is memory; mpv gets half of it as stream data (it holds about twice its own count).
+ */
 export function estimateText(bytes: number, bytesPerSecond?: number): string {
-  if (bytesPerSecond && bytesPerSecond > 0) return `About ${minutes(bytes, bytesPerSecond)} on this channel.`;
-  return `About ${minutes(bytes, HD_BPS)} of an HD channel, or ${minutes(bytes, UHD_BPS)} of 4K.`;
+  const streamBytes = bytes / 2;
+  if (bytesPerSecond && bytesPerSecond > 0) return `About ${minutes(streamBytes, bytesPerSecond)} on this channel.`;
+  return `About ${minutes(streamBytes, HD_BPS)} of an HD channel, or ${minutes(streamBytes, UHD_BPS)} of 4K.`;
 }
 
 export const REWIND_PRESETS = [
