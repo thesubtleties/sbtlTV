@@ -174,7 +174,7 @@
   position: absolute;
   top: 50px;
   left: 20px;
-  background: rgba(0, 0, 0, 0.7);
+  background: color-mix(in srgb, var(--scrim) 70%, transparent);
   padding: 8px 16px;
   border-radius: 4px;
   font-size: 0.9rem;
@@ -186,7 +186,7 @@
   position: absolute;
   top: 50px;
   right: 40px;
-  background: rgba(0, 0, 0, 0.85);
+  background: color-mix(in srgb, var(--scrim) 85%, transparent);
   padding: 20px 30px;
   border-radius: var(--r-control);
   border-left: 4px solid var(--accent);

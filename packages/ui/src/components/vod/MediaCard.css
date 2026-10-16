@@ -114,7 +114,7 @@
 .media-card__overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0);
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -126,7 +126,7 @@
   /* The old hover darkness, kept only as a circle under the play icon
      (44px, its size) so the icon reads on bright posters while the rest
      of the poster stays at full brightness. */
-  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.3) 21.5px, transparent 22px);
+  background: radial-gradient(circle at center, color-mix(in srgb, var(--scrim) 30%, transparent) 21.5px, transparent 22px);
 }
 
 .media-card__play-icon {
@@ -202,7 +202,7 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(var(--fill-3), var(--fill-3)), rgba(0, 0, 0, 0.45);
+  background: linear-gradient(var(--fill-3), var(--fill-3)), color-mix(in srgb, var(--scrim) 45%, transparent);
   /* Primed like the play icon: the blur layer exists at 0px while hidden and
      only changes radius on hover, so it appears instantly */
   opacity: 0;
@@ -311,7 +311,7 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(var(--fill-3), var(--fill-3)), rgba(0, 0, 0, 0.45);
+  background: linear-gradient(var(--fill-3), var(--fill-3)), color-mix(in srgb, var(--scrim) 45%, transparent);
   opacity: 0;
   backdrop-filter: blur(0px);
   -webkit-backdrop-filter: blur(0px);
@@ -363,7 +363,7 @@
   font-weight: 600;
   white-space: nowrap;
   color: var(--text);
-  background: rgba(0, 0, 0, 0.55);
+  background: color-mix(in srgb, var(--scrim) 55%, transparent);
   border-radius: 6px;
   backdrop-filter: blur(4px);
   opacity: 0;
