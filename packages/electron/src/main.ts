@@ -10,7 +10,8 @@ import * as storage from './storage.js';
 import electronUpdater from 'electron-updater';
 import { selectChromiumGpuIdentity } from './gpu-selection.js';
 import { startDataHost, type DataHost } from './data/data-host.js';
-import { rewindLoadOptions, parseCacheState, clampToRange, REWIND_CLEANUP_THRESHOLD, type CacheRange } from './rewind.js';
+import { rewindLoadOptions, parseCacheState, clampToRange, type CacheRange } from './rewind.js';
+import { shouldReleasePlayerMemory } from './player-memory.js';
 import { once } from 'node:events';
 import { isTransientDecodeError } from './mpv-error-filter.js';
 import { redactUrls } from './log-redact.js';
@@ -452,6 +453,8 @@ let bridgeTeardown: Promise<void> | null = null;
 
 function killMpv(): void {
   isShuttingDown = true;
+  stopCachePoll();
+  cacheWatch = null;
   // The player is going away (window closed; on macOS the app stays): so does what it was playing.
   endPlayback({ invalidate: true });
 
@@ -1382,10 +1385,13 @@ ipcMain.handle('subtitle-set-delay', async (_event, generation: unknown, seconds
   return { success: true };
 });
 
-/** The live load now playing has a rewind buffer: its generation, last range, and the most it held. */
-let rewind: { generation: number; range: CacheRange | null; peakBytes: number } | null = null;
-let rewindPoll: NodeJS.Timeout | null = null;
-/** A soft player restart in progress (external mpv cleanup); loads wait for it. */
+/**
+ * The stream now loaded: its generation, kind, whether it rewinds, the last
+ * reachable range, and the most mpv cached for it (decides the memory release).
+ */
+let cacheWatch: { generation: number; live: boolean; rewind: boolean; range: CacheRange | null; peakBytes: number } | null = null;
+let cachePoll: NodeJS.Timeout | null = null;
+/** A player restart in progress (memory release); loads wait for it. */
 let playerRestart: Promise<void> | null = null;
 
 async function readCacheState(): Promise<CacheRange | null> {
@@ -1396,60 +1402,82 @@ async function readCacheState(): Promise<CacheRange | null> {
   return null;
 }
 
-function startRewindPolling(generation: number): void {
-  stopRewindPolling();
-  rewind = { generation, range: null, peakBytes: 0 };
+/** Watch a new load's cache: once a second with rewind (the bar needs it), else every 5 s (memory only). */
+function startCacheWatch(generation: number, live: boolean, rewind: boolean): void {
+  stopCachePoll();
+  cacheWatch = { generation, live, rewind, range: null, peakBytes: 0 };
   let reported = false;
-  rewindPoll = setInterval(() => {
+  cachePoll = setInterval(() => {
     void readCacheState().then(async (range) => {
-      if (!rewind || rewind.generation !== generation || !range) return;
+      if (!cacheWatch || cacheWatch.generation !== generation || !range) return;
+      cacheWatch.range = range;
+      cacheWatch.peakBytes = Math.max(cacheWatch.peakBytes, range.bufferedBytes);
+      if (!rewind) return;
       if (!reported) {
         // What mpv actually applied for this load (the options ride on loadfile).
         reported = true;
         const read = async (name: string) => (useNativeMpv && mpvBridge ? mpvBridge.getProperty(name) : await sendMpvCommand('get_property', [name]).catch(() => undefined));
         debugLog(`rewind: live load back buffer ${await read('demuxer-max-back-bytes')}, donate ${await read('demuxer-donate-buffer')}`, 'mpv');
       }
-      rewind.range = range;
-      rewind.peakBytes = Math.max(rewind.peakBytes, range.bufferedBytes);
       sendToRenderer('rewind-state', { generation, rangeStart: range.rangeStart, liveEdge: range.liveEdge, bytesPerSecond: range.bytesPerSecond });
     });
-  }, 1000);
+  }, rewind ? 1000 : 5000);
 }
 
-function stopRewindPolling(): void {
-  if (rewindPoll) clearInterval(rewindPoll);
-  rewindPoll = null;
+function stopCachePoll(): void {
+  if (cachePoll) clearInterval(cachePoll);
+  cachePoll = null;
 }
 
-/**
- * Live playback with a rewind buffer ended. Under the threshold nothing is
- * done (channel-sized buffers are cheap). External mpv restarts (before the next
- * load when one is coming); the in-window player trims the heap a moment after
- * the old stream is unloaded, since mpv frees its packets on its own thread.
- * Returns a callback to run after the next load, or null.
- */
-async function endLiveRewind(opts: { beforeLoad: boolean }): Promise<(() => void) | null> {
-  const peak = rewind?.peakBytes ?? 0;
-  stopRewindPolling();
-  rewind = null;
+/** The stream ended: stop watching and, when shouldReleasePlayerMemory says so, restart the player. */
+async function endCacheWatch(event: { event: 'stop' } | { event: 'load'; nextLive: boolean }): Promise<void> {
+  const watched = cacheWatch;
+  stopCachePoll();
+  cacheWatch = null;
   sendToRenderer('rewind-state', null);
-  if (peak < REWIND_CLEANUP_THRESHOLD) return null;
-  if (useNativeMpv && mpvBridge) {
-    const trim = () => setTimeout(() => {
-      const before = process.memoryUsage().rss;
-      const ok = mpvBridge?.trimMemory() ?? false;
-      debugLog(`rewind: trimmed heap after live (${ok}); rss ${(before / 1048576).toFixed(0)} -> ${(process.memoryUsage().rss / 1048576).toFixed(0)} MB, peak buffer ${(peak / 1048576).toFixed(0)} MB`, 'mpv');
-    }, 2000);
-    if (opts.beforeLoad) return trim;
-    trim();
-    return null;
-  }
-  await restartPlayer('live rewind buffer released');
-  return null;
+  if (!watched) return;
+  const release = shouldReleasePlayerMemory(event.event === 'stop'
+    ? { peakBytes: watched.peakBytes, event: 'stop' }
+    : { peakBytes: watched.peakBytes, event: 'load', wasLive: watched.live, nextLive: event.nextLive });
+  debugLog(`player memory: ${(watched.peakBytes / 1048576).toFixed(0)} MB cached at most; ${release ? 'restarting the player to release it' : 'kept'}`, 'mpv');
+  if (!release) return;
+  const why = `${event.event === 'stop' ? 'stop' : watched.live ? 'live to movie' : 'movie to live'} after ${(watched.peakBytes / 1048576).toFixed(0)} MB cached`;
+  await (useNativeMpv && mpvBridge ? restartNativePlayer(why) : restartPlayer(why));
 }
 
 /**
- * Tear the player down and start it again in the same window (not an app quit).
+ * A fresh in-window player in the same window (mpv keeps a finished stream's
+ * cache until it is destroyed; see player-memory.ts). Volume and mute carry over.
+ */
+function restartNativePlayer(why: string): Promise<void> {
+  if (playerRestart) return playerRestart;
+  playerRestart = (async () => {
+    const old = mpvBridge;
+    if (!old) return;
+    const { volume, muted } = mpvState;
+    const started = Date.now();
+    const before = process.memoryUsage().rss;
+    useNativeMpv = false;
+    mpvBridge = null;
+    await old.destroy();
+    nativeStatusThrottle?.reset();
+    Object.assign(mpvState, { playing: false, position: 0, duration: 0, width: 0, height: 0 });
+    Object.assign(playerRaw, { position: 0, duration: 0 });
+    if (!await initNativeMpv()) throw new Error(nativeInitError ?? 'the player could not be started again');
+    const bridge = mpvBridge as MpvTextureBridgeType | null;
+    bridge?.setVolume(volume);
+    if (bridge?.getStatus()?.muted !== muted) bridge?.toggleMute();
+    debugLog(`player restarted to release memory (${why}) in ${Date.now() - started} ms; rss ${(before / 1048576).toFixed(0)} -> ${(process.memoryUsage().rss / 1048576).toFixed(0)} MB`, 'mpv');
+  })().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    debugLog(`player restart failed: ${message}`, 'mpv');
+    void handleNativePipelineFailure(`Restarting the player failed: ${message}`);
+  }).finally(() => { playerRestart = null; });
+  return playerRestart;
+}
+
+/**
+ * Tear the external player down and start it again in the same window (not an app quit).
  * The old external process must have exited first: its exit handler clears the
  * module-level process and socket, which would otherwise hit the new ones.
  */
@@ -1470,9 +1498,9 @@ function restartPlayer(why: string): Promise<void> {
 
 async function loadMedia(request: StreamLoadRequest & { requestId?: number }): Promise<{ success?: boolean; error?: string }> {
   if (playerRestart) await playerRestart;
-  // Live with a rewind buffer is ending: an external player restarts before the
-  // next load (its memory goes with the process); native trims after (below).
-  const releaseAfterLoad = rewind !== null && !request.live ? await endLiveRewind({ beforeLoad: true }) : null;
+  // Switching between live TV and movies/series may restart the player first, to give back the last stream's cache.
+  await endCacheWatch({ event: 'load', nextLive: request.live });
+  if (playerRestart) await playerRestart;
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge && !mpvBridge.isInitialized()) {
     void handleNativePipelineFailure('Reset native playback before selecting another channel');
@@ -1486,9 +1514,7 @@ async function loadMedia(request: StreamLoadRequest & { requestId?: number }): P
   sendToRenderer('media-loaded', { generation, live: request.live, resumeAt, reason: request.reason, requestId: request.requestId ?? null });
   captions.beginLoad();
   const options = rewindLoadOptions(request.live ? storage.getRewindLiveBytes() : 0, request.live);
-  if (options) startRewindPolling(generation);
-  else { stopRewindPolling(); rewind = null; }
-  sendToRenderer('rewind-state', null);
+  startCacheWatch(generation, request.live, options !== '');
 
   // Route to native bridge if available — plain loadfile, no options string
   // (start= option is unreliable across mpv versions; seek-on-duration is used instead)
@@ -1496,7 +1522,6 @@ async function loadMedia(request: StreamLoadRequest & { requestId?: number }): P
     try {
       await mpvBridge.load(url, options);
       mpvBridge.play(); // ensure playback — pause can persist across loads after a prior EOF
-      releaseAfterLoad?.();
       debugLog('mpv-load SUCCESS (native)', 'mpv');
       return { success: true };
     } catch (error) {
@@ -1518,7 +1543,6 @@ async function loadMedia(request: StreamLoadRequest & { requestId?: number }): P
     // Ensure playback — mpv keeps pause=yes across loadfile after a prior file hit EOF
     // (e.g. autoplaying the next episode), so loadfile alone would load the new file paused.
     await sendMpvCommand('set_property', ['pause', false]);
-    releaseAfterLoad?.();
     debugLog('mpv-load SUCCESS', 'mpv');
     return { success: true };
   } catch (error) {
@@ -1689,7 +1713,7 @@ ipcMain.handle('mpv-toggle-mute', async () => {
 
 ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
-  if (rewind?.range) seconds = clampToRange(seconds, rewind.range);
+  if (cacheWatch?.rewind && cacheWatch.range) seconds = clampToRange(seconds, cacheWatch.range);
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.seek(seconds);
@@ -1712,8 +1736,8 @@ ipcMain.handle('mpv-stop', async () => {
   if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   debugLog('mpv-stop called', 'mpv');
   endPlayback({ invalidate: true });
-  // After the stop: an external player is restarted by this, so its socket must have sent the stop first.
-  const releaseRewind = () => { if (rewind) void endLiveRewind({ beforeLoad: false }); };
+  // After the stop: a restart (memory release) replaces the player, so the stop must have been sent first.
+  const releaseRewind = () => { void endCacheWatch({ event: 'stop' }); };
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.stop();

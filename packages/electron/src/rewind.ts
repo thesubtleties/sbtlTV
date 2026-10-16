@@ -3,8 +3,6 @@
 
 export const GIB = 1024 ** 3;
 export const REWIND_HALF_GIB = GIB / 2;
-/** Live ended with more than this buffered: give the memory back (see main.ts endLiveRewind). */
-export const REWIND_CLEANUP_THRESHOLD = 256 * 1024 ** 2;
 
 /** The largest rewind size: a quarter of the computer's RAM, in 0.5 GB steps. */
 export function rewindCapBytes(totalMemBytes: number): number {

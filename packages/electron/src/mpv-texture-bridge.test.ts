@@ -12,7 +12,8 @@ async function createBridge() {
   let frameCallback: ((frame: TextureInfo) => void) | undefined;
   let destroyed = false;
   let stops = 0;
-  const webContents = Object.assign(new EventEmitter(), { mainFrame: {}, send() {} });
+  const clears: unknown[] = [];
+  const webContents = Object.assign(new EventEmitter(), { mainFrame: {}, send(channel: string, data: unknown) { if (channel === 'video-clear') clears.push(data); } });
   const imports: Array<{
     release: () => void;
     releaseRenderer: () => void;
@@ -85,8 +86,15 @@ async function createBridge() {
   const bridge = new Bridge();
   await bridge.initialize({ webContents, isDestroyed: () => false } as unknown as Parameters<MpvTextureBridge['initialize']>[0]);
   bridge.onPipelineFailure(message => failures.push(message));
+  /** Another bridge from the same module, as main creates when it restarts the player. */
+  async function another() {
+    native.isInitialized = true;
+    const next = new Bridge();
+    await next.initialize({ webContents, isDestroyed: () => false } as unknown as Parameters<MpvTextureBridge['initialize']>[0]);
+    return next;
+  }
   return {
-    bridge, webContents, nativeReleases, failures, imports, sends, properties,
+    bridge, webContents, nativeReleases, failures, imports, sends, properties, clears, another,
     get destroyed() { return destroyed; },
     get stops() { return stops; },
     advance(ms: number) { now += ms; },
@@ -209,4 +217,14 @@ test('a transfer that rejects after renderer disposal releases exactly once', as
   assert.deepEqual(state.nativeReleases, [1]);
   await state.bridge.destroy();
   assert.deepEqual(state.nativeReleases, [1]);
+});
+
+test('a replacement bridge keeps counting generations, so the renderer accepts its frames', async () => {
+  const h = await createBridge();
+  await h.bridge.load('a');
+  await h.bridge.load('b');
+  await h.bridge.destroy();
+  const next = await h.another();
+  await next.load('c');
+  assert.deepEqual(h.clears, [1, 2, 3]);
 });

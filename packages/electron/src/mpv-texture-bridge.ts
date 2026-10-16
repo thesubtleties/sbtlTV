@@ -19,6 +19,13 @@ interface SharedTextureFrameMetadata {
 }
 
 /**
+ * Frame generations are counted for the whole process, not per bridge: the
+ * renderer drops frames from a generation older than the last it saw, so a
+ * replacement bridge (player restart) must keep counting upward.
+ */
+let lastFrameGeneration = 0;
+
+/**
  * MpvTextureBridge - Integrates mpv-texture with Electron's sharedTexture API
  */
 export class MpvTextureBridge {
@@ -29,7 +36,7 @@ export class MpvTextureBridge {
   private activeSends = 0;
   private readonly maxConcurrentSends = 2;
   private pendingFrame: QueuedFrame | null = null;
-  private frameGeneration = 0;
+  private frameGeneration = lastFrameGeneration;
   private outstandingTextureReferences = 0;
   private destroyRequested = false;
   private destroyFinalized = false;
@@ -316,7 +323,7 @@ export class MpvTextureBridge {
     if (!this.mpv || !this.initialized) {
       throw new Error('Bridge not initialized');
     }
-    this.frameGeneration++;
+    this.frameGeneration = ++lastFrameGeneration;
     // Clear stale frame in renderer and discard any queued frame.
     if (this.window && !this.window.isDestroyed()) {
       this.window.webContents.send('video-clear', this.frameGeneration);
@@ -389,11 +396,6 @@ export class MpvTextureBridge {
    */
   getProperty(name: string): string | undefined {
     return this.mpv?.getProperty(name);
-  }
-
-  /** Return freed heap memory to the system after a live rewind buffer is gone. */
-  trimMemory(): boolean {
-    return this.mpv?.trimMemory() ?? false;
   }
 
   /**
