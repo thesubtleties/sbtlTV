@@ -2073,6 +2073,16 @@ ipcMain.handle('rewind-cap-bytes', () => rewindCapBytes(os.totalmem()));
 // Auto-updater IPC handlers
 let updateDownloaded = false;
 
+/**
+ * Betas (GitHub pre-releases) are offered when the user turned on Beta
+ * updates, and always while running a beta, so a beta install moves on to the
+ * next beta and then the stable it leads to. Read before every check so the
+ * About toggle applies to the next one.
+ */
+function applyUpdateChannel(): void {
+  autoUpdater.allowPrerelease = storage.getSettings().betaUpdates === true || app.getVersion().includes('-');
+}
+
 ipcMain.handle('updater-install', () => {
   if (!updateDownloaded) {
     return { error: 'No update has been downloaded yet' };
@@ -2092,8 +2102,12 @@ ipcMain.handle('updater-check', async () => {
   if (process.env.PORTABLE_EXECUTABLE_DIR) return { error: 'portable' };
   if (process.platform === 'linux' && !process.env.APPIMAGE) return { error: 'no-auto-update' };
   try {
+    applyUpdateChannel();
     const result = await autoUpdater.checkForUpdates();
-    return { success: true, data: result?.updateInfo };
+    // The updater returns the newest release's info even when it will not
+    // install it (an older stable than a running beta), so only pass it on
+    // when there is an update to download.
+    return { success: true, data: result?.isUpdateAvailable ? result.updateInfo : undefined };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Check failed';
     // Clean up common 404 error (no releases published yet)
@@ -2461,6 +2475,7 @@ app.whenReady().then(async () => {
     });
 
     if (settings.autoUpdateEnabled ?? true) {
+      applyUpdateChannel();
       autoUpdater.checkForUpdates().catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         debugLog(`Update check: ${msg.split('\n')[0]}`, 'updater');

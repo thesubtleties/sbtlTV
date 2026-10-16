@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron/renderer';
 import type { Source } from '@sbtltv/core';
+import type { AppSettings } from './storage.js';
 
 // Types for the exposed APIs
 export interface MpvStatus {
@@ -106,22 +107,6 @@ export interface StorageResult<T = void> {
   success?: boolean;
   error?: string;
   data?: T;
-}
-
-export interface SubtitleSettings {
-  liveDefault: boolean;
-  vodDefault: boolean;
-  size: 'small' | 'medium' | 'large';
-  style: 'outline' | 'box' | 'shadow';
-  /** auto = the system language */
-  language: 'auto' | 'en' | 'es' | 'fr';
-}
-
-export interface AppSettings {
-  theme: 'dark' | 'light';
-  lastSourceId?: string;
-  autoUpdateEnabled?: boolean;
-  subtitles?: SubtitleSettings;
 }
 
 export interface M3UImportResult {
