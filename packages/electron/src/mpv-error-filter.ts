@@ -35,6 +35,9 @@ const TRANSIENT_PATTERNS = [
   /^libmpv_render\/[\w-]+: /,
   /^(vaapi|cuda): /,
   /^ffmpeg: CUDA: Could not dynamically load/,
+  // mpv dropped some of its own log lines because they were read too slowly
+  // (bursts during rewind seeks): only logging is affected, never playback.
+  /^overflow: log message buffer overflow/,
   // An MP4/MOV that lists a chapter track it does not contain: ffmpeg skips
   // the chapters and the video plays (seen in the field on macOS).
   /^ffmpeg\/demuxer: [\w,]+: Referenced QT chapter track not found/,

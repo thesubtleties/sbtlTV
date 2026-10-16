@@ -18,6 +18,8 @@ test('decoder and hwdec probe noise is transient', () => {
     'libmpv_render/drmprime-overlay: Cannot retrieve DRM resources: Bad file descriptor\n',
     'ffmpeg/demuxer: mov,mp4,m4a,3gp,3g2,mj2: Referenced QT chapter track not found\n',
     'ffmpeg: NULL: missing picture in access unit with size 44711\n',
+    // mpv dropped some of its own log lines (we read them too slowly): playback is unaffected.
+    'overflow: log message buffer overflow: 1 messages skipped\n',
     // Provider cuts: ffmpeg reconnects (live) or re-requests from the offset (movies)
     'ffmpeg: http: Stream ends prematurely at 35947348, should be 2155869476\n',
     'ffmpeg: http: Stream ends prematurely at 9234124, should be 18446744073709551615\n',

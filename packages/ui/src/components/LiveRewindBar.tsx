@@ -79,9 +79,9 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
       <div className="npb-scrubber-handle npb-rewind__head" style={{ left: `${headPct}%` }} />
       {tooltipPct !== null && (
         <>
-          {/* Centred under the tick, but kept inside the bar near either end */}
-          <div className="npb-rewind__cap" style={{ left: `${bar.tickPct}%`, transform: bar.tickPct < 10 ? 'none' : bar.tickPct > 90 ? 'translateX(-100%)' : undefined }}>
-            from {timeFmt.format(wallAt(anchor, state.rangeStart))}
+          {/* Ends where the rewindable part starts (left of it, clear of the cursor); without room it starts at the bar's edge */}
+          <div className="npb-rewind__cap" style={{ width: `${bar.tickPct}%` }}>
+            <span>from {timeFmt.format(wallAt(anchor, state.rangeStart))}</span>
           </div>
           {/* Times only where you can go; the dotted and not-yet-aired parts explain themselves */}
           {inReach(tooltipPct) && (

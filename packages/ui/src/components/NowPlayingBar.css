@@ -523,7 +523,12 @@
 .npb-rewind__cap {
   position: absolute;
   top: 9px;
-  transform: translateX(-50%);
+  left: 0;
+  display: flex;
+  /* Right-aligned to the tick; when the text is wider than the space, it starts at the bar's left edge */
+  justify-content: safe flex-end;
+  padding-right: 4px;
+  box-sizing: border-box;
   font-size: 10px;
   white-space: nowrap;
   color: var(--accent);
