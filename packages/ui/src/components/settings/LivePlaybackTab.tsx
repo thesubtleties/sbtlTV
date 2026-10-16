@@ -26,7 +26,11 @@ export function LivePlaybackTab() {
   const [draftGb, setDraftGb] = useState(String(bytes / GIB || 1));
   useEffect(() => { setDraftGb(String(bytes / GIB || 1)); }, [bytes]);
 
+  // Only after a change made here: the size a channel started with stays until the next channel.
+  const [changedNow, setChangedNow] = useState(false);
+
   async function setBytes(next: number) {
+    setChangedNow(true);
     updateSettings({ rewindLiveBytes: next });
     await saveSettings({ rewindLiveBytes: next });
   }
@@ -48,7 +52,7 @@ export function LivePlaybackTab() {
             ? 'This computer does not have enough memory for rewind.'
             : bytes === 0
               ? 'Live TV can still be paused; turn this on to rewind.'
-              : `${estimateText(bytes, channelRate)} Starts with the next channel; memory is used only while you watch live TV.`}
+              : `${estimateText(bytes, channelRate)} Memory is used only while you watch live TV.${changedNow ? ' Changes apply from the next channel.' : ''}`}
         >
           <Segmented
             compact
