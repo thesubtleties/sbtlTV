@@ -61,7 +61,7 @@ export interface CacheRange {
   bufferedBytes: number;
   /** The part of it ahead of the playhead (fills while paused) */
   forwardBytes: number;
-  /** mpv's measured input rate (bytes/s) */
+  /** The channel's rate (bytes/s): averaged over the cache once it holds 20 s, else mpv's instant input rate */
   bytesPerSecond: number;
 }
 
@@ -84,7 +84,11 @@ export function parseCacheState(raw: unknown): CacheRange | null {
   }
   if (!best) return null;
   const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
-  return { rangeStart: best.start, liveEdge: best.end, bufferedBytes: num(state['total-bytes']), forwardBytes: num(state['fw-bytes']), bytesPerSecond: num(state['raw-input-rate']) };
+  const bufferedBytes = num(state['total-bytes']);
+  const span = best.end - best.start;
+  // mpv's instant rate follows every network burst; the cache's own bytes per second is the channel's real rate.
+  const bytesPerSecond = span >= 20 && bufferedBytes > 0 ? bufferedBytes / span : num(state['raw-input-rate']);
+  return { rangeStart: best.start, liveEdge: best.end, bufferedBytes, forwardBytes: num(state['fw-bytes']), bytesPerSecond };
 }
 
 /**

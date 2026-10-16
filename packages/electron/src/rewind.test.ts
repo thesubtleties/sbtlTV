@@ -36,7 +36,7 @@ test('mpv cache properties: mpv defaults unless live with rewind; never on disk'
 
 test('cache state: object (external mpv) and JSON string (native)', () => {
   const obj = { 'seekable-ranges': [{ start: 14.03, end: 118.1 }], 'cache-end': 119.3, 'total-bytes': 48009136, 'fw-bytes': 6498000, 'raw-input-rate': 890779 };
-  assert.deepEqual(parseCacheState(obj), { rangeStart: 14.03, liveEdge: 118.1, bufferedBytes: 48009136, forwardBytes: 6498000, bytesPerSecond: 890779 });
+  assert.deepEqual(parseCacheState(obj), { rangeStart: 14.03, liveEdge: 118.1, bufferedBytes: 48009136, forwardBytes: 6498000, bytesPerSecond: 48009136 / (118.1 - 14.03) });
   assert.deepEqual(parseCacheState(JSON.stringify(obj)), parseCacheState(obj));
 });
 
@@ -52,7 +52,7 @@ test('cache state: missing or odd shapes give null, never throw', () => {
 
 test('cache state: several ranges use the one reaching the live edge', () => {
   const obj = { 'seekable-ranges': [{ start: 0, end: 10 }, { start: 30, end: 90 }], 'total-bytes': 1, 'raw-input-rate': 1 };
-  assert.deepEqual(parseCacheState(obj), { rangeStart: 30, liveEdge: 90, bufferedBytes: 1, forwardBytes: 0, bytesPerSecond: 1 });
+  assert.deepEqual(parseCacheState(obj), { rangeStart: 30, liveEdge: 90, bufferedBytes: 1, forwardBytes: 0, bytesPerSecond: 1 / 60 });
 });
 
 test('clamp seeks into the buffer, a little inside the rolling start', () => {
@@ -62,4 +62,11 @@ test('clamp seeks into the buffer, a little inside the rolling start', () => {
   assert.equal(clampToRange(500, r), 80);
   assert.equal(clampToRange(Number.NaN, r), 80);
   assert.equal(clampToRange(5, { rangeStart: 20, liveEdge: 21 }), 20.5);  // tiny range: margin capped at half
+});
+
+test('bytes per second: the average over what is cached once there is 20 s of it, else mpv\'s instant rate', () => {
+  const steady = { 'seekable-ranges': [{ start: 100, end: 400 }], 'total-bytes': 150_000_000, 'raw-input-rate': 9_999_999 };
+  assert.equal(parseCacheState(steady)?.bytesPerSecond, 500_000);          // 150 MB over 300 s
+  const early = { 'seekable-ranges': [{ start: 0, end: 10 }], 'total-bytes': 5_000_000, 'raw-input-rate': 640_000 };
+  assert.equal(parseCacheState(early)?.bytesPerSecond, 640_000);
 });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RewindStateUpdate } from '../types/electron';
-import { clampToReach, liveTarget, rewindBar, wallAt, type ClockAnchor } from '../utils/rewindModel';
+import { clampToReach, liveTarget, rewindBar, showNav, wallAt, type ClockAnchor } from '../utils/rewindModel';
 
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 
@@ -41,6 +41,7 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
 
   // Drag the playhead (or press anywhere on the reachable part): it follows the
   // pointer inside what can be played, and the seek happens once, on release.
+  const nav = showNav({ state, anchor, lagS, program: bar.spansBuffer ? null : program });
   const headPct = dragPct ?? bar.headPct;
   const tooltipPct = dragPct ?? hoverPct;
 
@@ -70,7 +71,23 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
       onPointerCancel={() => setDragPct(null)}
       onMouseLeave={() => setHoverPct(null)}
     >
-      {bar.reachesEarlierShow && <span className="npb-rewind__earlier">‹</span>}
+      {/* Earlier / later show: the bar shows one show at a time; these move to the next one in the buffer */}
+      {nav.earlier !== null && (
+        <button
+          className="npb-rewind__nav npb-rewind__nav--earlier"
+          aria-label="Earlier show" title="Earlier show"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onSeek?.(nav.earlier!); }}
+        >‹</button>
+      )}
+      {nav.later !== null && (
+        <button
+          className="npb-rewind__nav npb-rewind__nav--later"
+          aria-label="Later show" title="Later show"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onSeek?.(nav.later!); }}
+        >›</button>
+      )}
       <div className="npb-rewind__gone" style={{ width: `${bar.gonePct}%` }} />
       <div className="npb-rewind__tint" style={{ left: `${bar.tintFrom}%`, width: `${Math.max(0, bar.tintTo - bar.tintFrom)}%` }} />
       <div className="npb-rewind__fill" style={{ left: `${bar.tintFrom}%`, width: `${Math.max(0, headPct - bar.tintFrom)}%` }} />

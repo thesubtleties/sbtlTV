@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { anchorFor, wallAt, rewindBar, pillText, estimateText, presetsUnderCap, stepCustomGb, liveTarget, shouldShowRewindTip, clampToReach, liveEdgeAt } from './rewindModel';
+import { anchorFor, wallAt, rewindBar, pillText, estimateText, presetsUnderCap, stepCustomGb, liveTarget, shouldShowRewindTip, clampToReach, liveEdgeAt, showNav } from './rewindModel';
 
 const GIB = 1024 ** 3;
 const MIN = 60_000;
@@ -55,7 +55,8 @@ describe('size text and choices', () => {
   it('estimates in whole minutes at 5 and 20 Mbps, for the half of the size that is stream data', () => {
     expect(estimateText(512 * 1024 ** 2)).toBe('About 7 min of an HD channel, or 1 min of 4K.');
     expect(estimateText(3.5 * GIB)).toBe('About 50 min of an HD channel, or 12 min of 4K.');
-    expect(estimateText(2 * GIB, 400_000)).toBe('About 44 min on this channel.');
+    expect(estimateText(2 * GIB, 400_000)).toBe('About 45 min on this channel.');   // 44.7 → nearest 5 from 30 min up
+    expect(estimateText(8 * GIB, 400_000)).toBe('About 3 h on this channel.');      // 178.9 min → 180
   });
   it('hides presets above the cap', () => {
     expect(presetsUnderCap(2 * GIB).map((p) => p.id)).toEqual(['512', '2048']);
@@ -124,5 +125,25 @@ describe('pill at live', () => {
   it('counts once behind, and is LIVE again within 2 s of the live point', () => {
     expect(pillText(state, 900 - 12 - 30, 12, false)).toEqual({ live: false, text: '−0:30 · LIVE' });
     expect(pillText(state, 900 - 12 - 1.5, 12, false)).toEqual({ live: true, text: 'LIVE' });
+  });
+});
+
+describe('earlier / later show buttons', () => {
+  // Show 8:00-9:00 on screen; anchor: live edge 900 s = 8:35.
+  const show = { startMs: t0, endMs: t0 + 60 * MIN };
+  it('earlier: only when the buffer reaches before this show; goes to the oldest kept moment', () => {
+    const early = { ...state, rangeStart: 0, liveEdge: 3000 };          // range from 7:45, live 8:35
+    const a = anchorFor(early, t0 + 35 * MIN);
+    expect(showNav({ state: early, anchor: a, lagS: 0, program: show }).earlier).toBe(0);
+    expect(showNav({ state, anchor, lagS: 0, program: show }).earlier).toBeNull();   // range starts 8:20, inside
+  });
+  it('later: only when live is past this show; goes just after its end', () => {
+    const prevShow = { startMs: t0 - 60 * MIN, endMs: t0 };            // watching 7:00-8:00, live at 8:35
+    const nav = showNav({ state: { ...state, rangeStart: -3000 }, anchor, lagS: 0, program: prevShow });
+    expect(nav.later).toBeCloseTo(900 - 35 * 60 + 1);                   // stream time of 8:00, plus 1 s
+    expect(showNav({ state, anchor, lagS: 0, program: show }).later).toBeNull();
+  });
+  it('no guide data: no buttons', () => {
+    expect(showNav({ state, anchor, lagS: 0, program: null })).toEqual({ earlier: null, later: null });
   });
 });

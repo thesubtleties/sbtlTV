@@ -89,11 +89,13 @@ export function pillText(state: RewindStateUpdate, position: number, lagS = 0, a
   return { live: false, text: `−${clock(behind)} · LIVE` };
 }
 
+/** Whole minutes; from 30 min up, the nearest 5 (the channel's rate moves, so finer would only flicker). */
 function minutes(bytes: number, bps: number): string {
-  const total = Math.floor(bytes / bps / 60);
+  const exact = bytes / bps / 60;
+  const total = exact >= 30 ? Math.round(exact / 5) * 5 : Math.floor(exact);
   const h = Math.floor(total / 60);
   const m = total % 60;
-  return h > 0 ? `${h} h ${m} min` : `${m} min`;
+  return h > 0 ? (m > 0 ? `${h} h ${m} min` : `${h} h`) : `${m} min`;
 }
 
 /**
@@ -144,4 +146,22 @@ export const EDGE_TRACK_S = 5;
 export function liveEdgeAt(state: RewindStateUpdate, anchor: ClockAnchor, nowMs: number): number {
   const clockEdge = anchor.streamT + (nowMs - anchor.wallMs) / 1000;
   return Math.min(Math.max(clockEdge, state.liveEdge - EDGE_TRACK_S), state.liveEdge + EDGE_TRACK_S);
+}
+
+/**
+ * The ‹ / › buttons at the bar's ends (stream seconds to seek to, or null when
+ * there is nothing that way): earlier = the buffer reaches before the show on
+ * screen (go to the oldest kept moment); later = live has moved past the show on
+ * screen (go just after it ends).
+ */
+export function showNav({ state, anchor, lagS, program }: {
+  state: RewindStateUpdate; anchor: ClockAnchor; lagS: number; program: { startMs: number; endMs: number } | null;
+}): { earlier: number | null; later: number | null } {
+  if (!program || program.endMs <= program.startMs) return { earlier: null, later: null };
+  const live = liveTarget(state, lagS);
+  const streamAt = (ms: number) => anchor.streamT + (ms - anchor.wallMs) / 1000;
+  return {
+    earlier: wallAt(anchor, state.rangeStart) < program.startMs ? state.rangeStart : null,
+    later: wallAt(anchor, live) > program.endMs ? Math.min(streamAt(program.endMs) + 1, live) : null,
+  };
 }
