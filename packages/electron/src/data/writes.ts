@@ -32,7 +32,24 @@ const named = (...candidates: Array<string | number | null | undefined>): string
   return value === undefined ? '' : String(value);
 };
 
-export function replaceChannels(db: DatabaseSync, sourceId: string, input: { categories: Category[]; channels: Channel[]; epgUrl?: string }): DataTable[] {
+/**
+ * Some providers list a stream once per category it is in, and a category more than
+ * once (#133). Keep one of each: the first listing, with every category it was listed in.
+ */
+function uniqueListings(input: { categories: Category[]; channels: Channel[] }): { categories: Category[]; channels: Channel[] } {
+  const categories = new Map<string, Category>();
+  for (const c of input.categories) if (!categories.has(c.category_id)) categories.set(c.category_id, c);
+  const channels = new Map<string, Channel>();
+  for (const ch of input.channels) {
+    const first = channels.get(ch.stream_id);
+    if (first) first.category_ids = [...new Set([...first.category_ids, ...ch.category_ids])];
+    else channels.set(ch.stream_id, { ...ch, category_ids: [...ch.category_ids] });
+  }
+  return { categories: [...categories.values()], channels: [...channels.values()] };
+}
+
+export function replaceChannels(db: DatabaseSync, sourceId: string, listed: { categories: Category[]; channels: Channel[]; epgUrl?: string }): DataTable[] {
+  const input = { ...listed, ...uniqueListings(listed) };
   return tx(db, () => {
     db.prepare(`delete from channel_categories where stream_id in (select stream_id from channels where source_id = ?)`).run(sourceId);
     // Links of channels that are still there stay until the next guide sync replaces
