@@ -56,8 +56,12 @@
   flex: 1;
   min-height: 0; /* Allow flex shrink */
   /* Margin shrinks what Virtuoso measures - ensures column count matches */
-  margin-left: 75px;
+  margin-left: 51px;
   margin-right: 48px;
+  /* This is the scroll container, which clips: room inside it for the first
+     column's hover lift and glow. Virtuoso measures inside the padding, so
+     the columns are the same as with the full 75px margin. */
+  padding-left: 24px;
 }
 
 .vod-browse__grid-list {

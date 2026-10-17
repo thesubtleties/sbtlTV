@@ -1605,9 +1605,9 @@ async function loadMedia(request: StreamLoadRequest & { requestId?: number }): P
   debugLog(`mpv-load called (${request.reason})${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
   // The renderer binds subtitles and progress saving to this, whoever started the load;
   // sent before the load's first track update.
-  sendToRenderer('media-loaded', { generation, live: request.live, resumeAt, reason: request.reason, requestId: request.requestId ?? null });
-  captions.beginLoad();
   const rewindBytes = request.live ? storage.getRewindLiveBytes() : 0;
+  sendToRenderer('media-loaded', { generation, live: request.live, resumeAt, reason: request.reason, requestId: request.requestId ?? null, rewind: rewindBytes > 0 });
+  captions.beginLoad();
   const cacheProperties = rewindMpvProperties(rewindBytes, request.live);
   await applyCacheProperties(cacheProperties);
   startCacheWatch(generation, request.live, rewindBytes > 0, Number(cacheProperties['demuxer-max-bytes']));

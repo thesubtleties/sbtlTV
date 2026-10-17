@@ -192,7 +192,7 @@ function ChannelPanelImpl({
 
   // Format time
   const formatTime = useCallback((date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   }, []);
 
   // Generate time slots aligned to the grid
