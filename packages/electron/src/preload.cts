@@ -66,6 +66,8 @@ interface MediaLoadedUpdate {
   reason: 'play' | 'reload' | 'restore';
   /** The renderer's requestId for a play, else null */
   requestId: number | null;
+  /** Rewind live TV is on for this load (its first rewind-state comes about a second later) */
+  rewind: boolean;
 }
 
 export interface MpvApi {

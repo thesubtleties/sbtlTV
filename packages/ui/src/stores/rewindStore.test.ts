@@ -54,6 +54,16 @@ describe('rewind store', () => {
     s.apply({ generation: 2, rangeStart: 0, liveEdge: 5, bytesPerSecond: 1 }, 1_000, 2, true);
     expect(useRewindStore.getState().state?.generation).toBe(2);
   });
+  it('a load with rewind is expected before its first report, so the bar does not flash Stop', () => {
+    const s = useRewindStore.getState();
+    s.beginLoad(3, true);
+    expect(useRewindStore.getState().expected).toBe(true);
+    expect(useRewindStore.getState().state).toBeNull();
+    s.apply(null, 1_000);                      // rewind ended (stop)
+    expect(useRewindStore.getState().expected).toBe(false);
+    s.beginLoad(4, false);                     // a load without rewind
+    expect(useRewindStore.getState().expected).toBe(false);
+  });
   it('re-anchors when the stream clock jumps (encoder restart)', () => {
     const s = useRewindStore.getState();
     s.apply({ generation: 1, rangeStart: 0, liveEdge: 100, bytesPerSecond: 1 }, 1_000, 90, true);

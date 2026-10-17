@@ -82,6 +82,10 @@ export function NowPlayingBar({
   const rewindAtLive = useRewindStore((s) => s.atLive);
   // Follows the stream playing, not the setting: a change applies from the next channel (main reports rewind state per load).
   const rewindActive = !isVod && rewindState !== null && rewindAnchor !== null;
+  // Between a live load and its first rewind report (about a second): lay out the bar
+  // as it will be, so Stop does not flash and the controls do not jump.
+  const rewindExpected = useRewindStore((s) => s.expected);
+  const rewindPending = !isVod && !rewindActive && rewindExpected;
   // With rewind, what is on screen is the programme at the playhead, not the one airing now.
   const playheadMs = rewindActive ? wallAt(rewindAnchor!, position) : undefined;
   // The live edge advanced with the clock between reports (re-rendered with every position update), so "−0:36" holds steady.
@@ -372,7 +376,7 @@ export function NowPlayingBar({
                 </button>
               )}
               {/* No Stop on live with rewind: it would throw the buffer away (leave by changing channel) */}
-              {!rewindActive && (
+              {!rewindActive && !rewindPending && (
                 <button
                   className="npb-btn"
                   onClick={onStop}
@@ -394,6 +398,9 @@ export function NowPlayingBar({
               )}
             </div>
 
+            {rewindPending && (
+              <button className="npb-live-pill npb-live-pill--live" disabled title="Watching live">LIVE</button>
+            )}
             {rewindActive && (() => {
               const pill = pillText(liveState!, position, rewindLag, rewindAtLive);
               return (

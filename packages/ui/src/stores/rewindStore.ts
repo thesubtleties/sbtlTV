@@ -35,8 +35,10 @@ interface RewindStore {
   atLive: boolean;
   /** Reports in a row with the reported edge off the clock by more than EDGE_TRACK_S */
   driftReports: number;
+  /** This load has rewind (main said so at load), though its first report may not have come yet */
+  expected: boolean;
   /** A new load was announced: reports from earlier loads are ignored from now on. */
-  beginLoad: (generation: number) => void;
+  beginLoad: (generation: number, rewind?: boolean) => void;
   /** A new generation re-anchors stream time to the clock; null = rewind not active. */
   apply: (update: RewindStateUpdate | null, nowMs: number, position?: number, playing?: boolean) => void;
   /** The user seeked: from now on the distance behind live is theirs, not mpv's cushion. Up to the live point is live. */
@@ -45,12 +47,12 @@ interface RewindStore {
   notePause: () => void;
 }
 
-const cleared = { state: null, anchor: null, lagS: LAG_FLOOR_S, lagFrozen: false, playingReports: 0, lastReportMs: 0, driftReports: 0, atLive: true, rateBps: 0 };
+const cleared = { state: null, anchor: null, lagS: LAG_FLOOR_S, lagFrozen: false, playingReports: 0, lastReportMs: 0, driftReports: 0, atLive: true, rateBps: 0, expected: false };
 
 export const useRewindStore = create<RewindStore>((set, get) => ({
   ...cleared,
   expectedGeneration: null,
-  beginLoad: (generation) => set({ ...cleared, expectedGeneration: generation }),
+  beginLoad: (generation, rewind = false) => set({ ...cleared, expectedGeneration: generation, expected: rewind }),
   apply: (update, nowMs, position = 0, playing = true) => {
     if (!update) { set(cleared); return; }
     const prev = get();

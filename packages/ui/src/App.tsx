@@ -392,7 +392,7 @@ function App() {
       // Progress is not saved until playback reaches where this load resumes.
       resumeTargetRef.current = update.resumeAt > 0 ? update.resumeAt : null;
       // Rewind reports from earlier loads are stale from here on.
-      useRewindStore.getState().beginLoad(update.generation);
+      useRewindStore.getState().beginLoad(update.generation, update.rewind);
     });
 
     // Rewind live TV: the reachable range, once a second while it is on.
