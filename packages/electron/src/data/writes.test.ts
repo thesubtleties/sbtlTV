@@ -23,6 +23,28 @@ test('replaceChannels swaps one source and leaves the other alone', () => {
   assert.deepEqual({ ...meta }, { epg_url: 'http://x/xmltv.php', channel_count: 1, category_count: 1 });
 });
 
+test('replaceChannels stores a stream the provider lists twice once, in all its categories (#133)', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const hbo = { stream_id: 's1_30', source_id: 's1', name: 'HBO', stream_icon: '', epg_channel_id: 'hbo.us', direct_url: 'http://x/30', channel_num: 7 };
+  replaceChannels(db, 's1', {
+    categories: [
+      { category_id: 's1_movies', category_name: 'Movies', source_id: 's1', position: 0 },
+      { category_id: 's1_premium', category_name: 'Premium', source_id: 's1', position: 1 },
+      { category_id: 's1_movies', category_name: 'Movies', source_id: 's1', position: 0 },
+    ],
+    channels: [
+      { ...hbo, category_ids: ['s1_movies'] },
+      { ...hbo, name: 'HBO (again)', category_ids: ['s1_premium'] },
+    ],
+  });
+  assert.equal(count(db, "select count(*) c from channels where source_id='s1'"), 1);
+  assert.equal((db.prepare("select name from channels where stream_id='s1_30'").get() as { name: string }).name, 'HBO');
+  assert.equal(count(db, "select count(*) c from channel_categories where stream_id='s1_30'"), 2);
+  assert.equal(count(db, "select count(*) c from categories where source_id='s1'"), 2);
+  const meta = db.prepare("select channel_count, category_count from sources_meta where source_id='s1'").get() as { channel_count: number; category_count: number };
+  assert.deepEqual({ ...meta }, { channel_count: 1, category_count: 2 });
+});
+
 test('replaceChannels keeps guide links for channels that survive (a failed guide sync after it leaves the guide showing)', () => {
   const db = new DatabaseSync(':memory:'); seedFixture(db);
   db.prepare("insert into epg_links values ('s1_11', 'epg1', 'abc.us', 's1', 'exact', 'exact_id')").run();
