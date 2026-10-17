@@ -1,6 +1,10 @@
-# sbtlTV 0.13.0 beta 2
+# sbtlTV 0.13.0 beta 3
 
-The second beta of 0.13.0. If you are on beta 1, this one arrived through the updater; if something feels off, send the Debug log (Settings > Debug) with your report.
+The third beta of 0.13.0. If you are on an earlier beta, this one arrived through the updater; if something feels off, send the Debug log (Settings > Debug) with your report.
+
+## New in beta 3
+
+- **Adding some Xtream sources failed** with "UNIQUE constraint failed: channels.stream_id" - providers that list a channel once in each of its categories now load, with the channel in every one of those categories.
 
 ## New in beta 2
 
