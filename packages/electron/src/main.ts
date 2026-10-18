@@ -25,7 +25,16 @@ import { StreamSession, parseCompatibilityHandoff, type StreamLoadRequest, type 
 import { CaptionSession } from './caption-session.js';
 import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
 import { preferredCaptionLanguage } from './subtitle-settings.js';
+import { resolvePasswordStore } from './password-store.js';
 const { autoUpdater } = electronUpdater;
+
+// Before the keyring is opened: the AppImage updater relaunches without arguments,
+// which would drop a --password-store the user launches with (see password-store.ts).
+if (process.platform === 'linux') {
+  const { apply, remember } = resolvePasswordStore(process.argv, storage.getRememberedPasswordStore());
+  if (remember) storage.rememberPasswordStore(remember);
+  if (apply) app.commandLine.appendSwitch('password-store', apply);
+}
 
 // Provider addresses in logs become labels (see host-labels.ts). The debug log
 // keeps them only while the user has turned that on in Settings > Debug; it is

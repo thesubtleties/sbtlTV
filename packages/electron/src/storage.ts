@@ -13,6 +13,8 @@ interface StoreSchema {
   settings: StoredSettings;
   /** 2 = the debug log only ever had labelled addresses (older logs are deleted once) */
   debugLogFormat?: number;
+  /** Linux: the --password-store the app was last launched with (see password-store.ts) */
+  linuxPasswordStore?: string;
 }
 
 // Source as stored (password encrypted)
@@ -399,4 +401,13 @@ export function getDebugLogFormat(): number {
 
 export function setDebugLogFormat(format: number): void {
   store.set('debugLogFormat', format);
+}
+
+/** Linux: the keyring the app was last launched with (--password-store), or null. */
+export function getRememberedPasswordStore(): string | null {
+  return store.get('linuxPasswordStore') ?? null;
+}
+
+export function rememberPasswordStore(value: string): void {
+  store.set('linuxPasswordStore', value);
 }
