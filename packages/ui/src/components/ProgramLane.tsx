@@ -17,6 +17,8 @@ interface ProgramLaneProps {
   programs: StoredProgram[] | undefined;
   rowIndex: number;
   windowStart: Date;
+  /** What is on now (the guide's minute tick) */
+  now: Date;
   windowEnd: Date;
   pixelsPerHour: number;
   visibleHours: number;
@@ -61,6 +63,7 @@ export const ProgramLane = memo(function ProgramLane({
   rowIndex,
   windowStart,
   windowEnd,
+  now,
   pixelsPerHour,
   visibleHours,
   onPlay,
@@ -203,6 +206,7 @@ export const ProgramLane = memo(function ProgramLane({
               program={entry.program}
               windowStart={windowStart}
               windowEnd={windowEnd}
+              now={now}
               pixelsPerHour={pixelsPerHour}
               onClick={onPlay}
               className="program-block-in"
@@ -225,6 +229,7 @@ export const ProgramLane = memo(function ProgramLane({
           program={program}
           windowStart={windowStart}
           windowEnd={windowEnd}
+          now={now}
           pixelsPerHour={pixelsPerHour}
           onClick={onPlay}
           className={phase.entering ? 'program-block-in' : undefined}

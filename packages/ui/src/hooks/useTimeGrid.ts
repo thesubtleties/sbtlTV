@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 
 export interface TimeGridState {
+  // The current time, ticking on each minute (the clock, and what is on now)
+  now: Date;
   // The left edge of the visible time window
   anchor: Date;
   // True when showing current time at left edge
@@ -31,6 +33,11 @@ function clamp(value: number, min: number, max: number): number {
 // Get current time (for "now at left edge")
 function getNow(): Date {
   return new Date();
+}
+
+/** Time until just past the next minute (local minutes fall on whole UTC minutes). */
+export function msUntilNextMinute(nowMs: number): number {
+  return 60_000 - (nowMs % 60_000) + 50;
 }
 
 // Floor to the current hour
@@ -72,6 +79,21 @@ export function useTimeGrid({
   // When isAtNow=true, anchor is current time (now at left edge)
   const [anchor, setAnchor] = useState<Date>(() => getNow());
   const [isAtNow, setIsAtNow] = useState(true);
+  const [now, setNow] = useState<Date>(() => getNow());
+
+  // One tick per minute, on the minute: the clock, the left edge at "now" and
+  // what is on now all change together, when the shows do.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      timer = setTimeout(() => {
+        setNow(getNow());
+        schedule();
+      }, msUntilNextMinute(Date.now()));
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, []);
 
   // Calculate visible hours and pixels per hour based on available width
   const { visibleHours, pixelsPerHour } = useMemo(() => {
@@ -94,22 +116,10 @@ export function useTimeGrid({
   const loadStart = useMemo(() => addHours(anchor, -preloadBefore), [anchor, preloadBefore]);
   const loadEnd = useMemo(() => addHours(anchor, visibleHours + preloadAfter), [anchor, visibleHours, preloadAfter]);
 
-  // Update anchor to current time when at "now" view
+  // At "now", the left edge follows the clock, so the guide stays current while it is open.
   useEffect(() => {
-    if (!isAtNow) return;
-
-    // Update anchor to current time (now at left edge)
-    const updateNow = () => {
-      setAnchor(getNow());
-    };
-
-    // Update immediately
-    updateNow();
-
-    // Update every minute to keep the view current
-    const interval = setInterval(updateNow, 60000);
-    return () => clearInterval(interval);
-  }, [isAtNow]);
+    if (isAtNow) setAnchor(now);
+  }, [isAtNow, now]);
 
   // Navigation: go back one hour (snap to even hour)
   const goBack = useCallback(() => {
@@ -140,10 +150,11 @@ export function useTimeGrid({
   // Navigation: return to current time
   const goToNow = useCallback(() => {
     setIsAtNow(true);
-    setAnchor(getNow());
+    setNow(getNow());
   }, []);
 
   return {
+    now,
     anchor,
     isAtNow,
     visibleHours,

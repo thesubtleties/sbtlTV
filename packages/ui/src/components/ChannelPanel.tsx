@@ -35,7 +35,6 @@ function ChannelPanelImpl({
   const favoriteChannels = useFavoriteChannels();
   const channels = isFavoritesView ? favoriteChannels : regularChannels;
   const categories = useCategories();
-  const [currentTime, setCurrentTime] = useState(new Date());
   const [availableWidth, setAvailableWidth] = useState(800);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -137,6 +136,7 @@ function ChannelPanelImpl({
 
   // Time grid state and actions
   const {
+    now,
     isAtNow,
     visibleHours,
     pixelsPerHour,
@@ -152,12 +152,6 @@ function ChannelPanelImpl({
   // Programs are read only for the rows Virtuoso is rendering (see useGuideRowRange).
   const { handleRangeChange, loadedStreamIds } = useGuideRowRange(displayChannels);
   const programs = useProgramsInRange(loadedStreamIds, loadStart, loadEnd);
-
-  // Update current time every minute
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-    return () => clearInterval(timer);
-  }, []);
 
   // Keyboard navigation
   useEffect(() => {
@@ -232,7 +226,7 @@ function ChannelPanelImpl({
       {/* Top Bar - Time Display & Navigation */}
       <div className="guide-header">
         <div className="guide-header-left">
-          <span className="guide-current-time">{formatTime(currentTime)}</span>
+          <span className="guide-current-time">{formatTime(now)}</span>
           <span className="guide-category">{categoryName}</span>
           <span className="guide-channel-count">
             {searchQuery.trim() ? `${displayChannels.length} of ${channels.length}` : `${channels.length} channels`}
@@ -339,6 +333,7 @@ function ChannelPanelImpl({
               programs={programs.get(channel.stream_id)}
               windowStart={windowStart}
               windowEnd={windowEnd}
+              now={now}
               pixelsPerHour={pixelsPerHour}
               visibleHours={visibleHours}
               onPlay={onPlayChannel}
