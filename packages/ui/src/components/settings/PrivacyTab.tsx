@@ -137,7 +137,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, teamLogosEnabled, autoU
           sees="With your RPDB key: the key, your IP address and which titles' posters you see." />
         <Who title="ESPN" status={teamLogosEnabled ? 'on' : 'off'}
           sees="With team logos on: your IP address and which teams are playing on the channel you watch."
-          note="Settings > EPG > Team logos." />
+          note="Settings > Live TV > Guide > Team logos." />
         <Hint>Your internet provider can see which of these sbtlTV connects to, and what you stream when a provider uses plain http. A VPN hides that from your internet provider, though not from the services above.</Hint>
       </Section>
     </SettingsTab>

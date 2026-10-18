@@ -1,7 +1,8 @@
 /*
  * Design tokens derived from the palette roles (palettes.css). Components use
- * these, never literal colors; black shadows and scrims over video are the
- * exception, since they stay black in every palette.
+ * these, never literal colors; black shadows are the exception. Scrims (the
+ * see-through backings under text over video, posters and the app) use
+ * --scrim, which is black except in light palettes.
  */
 
 :root {

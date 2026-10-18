@@ -22,6 +22,11 @@ export function ToastItem({ toast }: { toast: Toast }) {
         <strong>{toast.title}</strong>
         {toast.message && <span>{toast.message}</span>}
       </div>
+      {toast.action && (
+        <button className="toast__action" onClick={() => { toast.action!.onClick(); dismiss(toast.id); }}>
+          {toast.action.label}
+        </button>
+      )}
       <button className="toast__dismiss" onClick={() => dismiss(toast.id)} aria-label="Dismiss">
         ✕
       </button>

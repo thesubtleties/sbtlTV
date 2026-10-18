@@ -84,7 +84,7 @@ export const ProgramBlock = memo(function ProgramBlock({
   // Format time for tooltip
   const formatTime = (date: Date | string) => {
     const d = date instanceof Date ? date : new Date(date);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   };
 
   if (!style.visible) {

@@ -4,7 +4,8 @@
  * on the root element (see useCssVariableSync).
  *
  * overlay-base is what the guide and other panels over video are tinted with,
- * at the guide opacity. progress is the watched-progress bar.
+ * at the guide opacity. progress is the watched-progress bar. scrim backs
+ * text laid over video, posters or the app (see tokens.css).
  */
 
 :root,
@@ -26,6 +27,7 @@
   --heart-base: rgb(255, 180, 180);
   --heart-hover: rgba(200, 50, 50, 0.85);
   --overlay-base: #000000;
+  --scrim: #000000;
   --progress: rgba(229, 9, 20, 0.65);
 }
 
@@ -41,4 +43,13 @@
    the theme rather than black. */
 :root[data-palette]:not([data-palette='sbtl']):not([data-palette='mocha']):not([data-palette='pi']) {
   --overlay-base: var(--card);
+}
+
+/* The light palette: light scrims and native controls, and status colors
+   deep enough to read on its off-white. */
+:root[data-palette='sbtl-light'] {
+  color-scheme: light;
+  --scrim: var(--card);
+  --warning: #b87d22;
+  --rating: #b8901a;
 }

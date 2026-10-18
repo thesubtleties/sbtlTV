@@ -45,6 +45,17 @@ export type StreamRecoveryUpdate =
  * renderer's request, reload: the stall watchdog, restore: the compatibility
  * restart). Subtitles and progress saving follow the announced generation.
  */
+/** Live with rewind on: what can be reached, sent by main once a second */
+export interface RewindStateUpdate {
+  generation: number;
+  /** Oldest reachable stream time (s) */
+  rangeStart: number;
+  /** Live edge, stream time (s) */
+  liveEdge: number;
+  /** Measured input rate, bytes per second */
+  bytesPerSecond: number;
+}
+
 export interface MediaLoadedUpdate {
   generation: number;
   live: boolean;
@@ -53,6 +64,8 @@ export interface MediaLoadedUpdate {
   reason: 'play' | 'reload' | 'restore';
   /** The renderer's requestId for a play, else null */
   requestId: number | null;
+  /** Rewind live TV is on for this load (its first rewind-state comes about a second later) */
+  rewind: boolean;
 }
 
 export interface MpvApi {
@@ -74,6 +87,8 @@ export interface MpvApi {
   /** Stall recovery: reconnecting (toast), failed (give up) */
   onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => () => void;
   onMediaLoaded: (callback: (update: MediaLoadedUpdate) => void) => () => void;
+  /** Live with rewind: the reachable range once a second; null when rewind is not active */
+  onRewindState: (callback: (update: RewindStateUpdate | null) => void) => () => void;
   removeAllListeners: () => void;
 }
 
@@ -126,7 +141,7 @@ export interface StorageResult<T = void> {
   data?: T;
 }
 
-export type PaletteId = 'sbtl' | 'mocha' | 'pi' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula' | 'caelestia';
+export type PaletteId = 'sbtl' | 'sbtl-light' | 'mocha' | 'pi' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula' | 'caelestia';
 export type Typeface = 'fira' | 'mono' | 'system';
 export interface Appearance {
   palette: PaletteId;
@@ -195,6 +210,7 @@ export interface AppSettings {
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
   categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering (default: alphabetical)
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
+  betaUpdates?: boolean;        // Offer beta (pre-release) updates too (default false)
   categoryBarWidth?: number;    // Category strip content width in px (default 160)
   channelColumnWidth?: number;  // Guide channel-info column width in px (default 300, clamped 220-520)
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
@@ -206,6 +222,8 @@ export interface AppSettings {
   linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video
   subtitles?: SubtitleSettings;  // Caption defaults (live / movies & series) and subtitle look
+  rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
+  rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
 }
 
 export interface Source {
@@ -257,6 +275,8 @@ export interface PlatformApi {
   isLinuxNonAppImage: boolean;
   supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
+  /** The largest Rewind live TV size this computer allows, in bytes (0 = not enough memory) */
+  rewindCapBytes: () => Promise<number>;
 }
 
 export interface DebugApi {

@@ -452,3 +452,177 @@
     display: none;
   }
 }
+
+/* Live rewind bar */
+.npb-progress-bar.npb-rewind {
+  position: relative;
+  overflow: visible;
+  cursor: default;
+  /* The playhead is dragged here: no text selection, native drag or touch panning may take the pointer */
+  user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;
+}
+
+/* Only the part you can move to looks clickable */
+.npb-progress-bar.npb-rewind--over-reach {
+  cursor: pointer;
+}
+
+.npb-rewind__gone {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 60%, transparent) 1.2px, transparent 1.5px) 0 50% / 6px 4px repeat-x;
+}
+
+.npb-rewind__tint {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent-soft);
+}
+
+.npb-rewind__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+}
+
+.npb-rewind__tick {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--accent-strong);
+}
+
+.npb-rewind__edge {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--fg) 55%, transparent);
+}
+
+/* The playhead is always shown on the rewind bar (the VOD bar shows it on hover) */
+.npb-rewind .npb-rewind__head {
+  transform: translate(-50%, -50%) scale(1);
+  box-shadow: 0 0 0 3px var(--accent-line);
+}
+
+.npb-rewind--bump .npb-rewind__head {
+  animation: npb-rewind-bump 0.3s ease;
+}
+
+@keyframes npb-rewind-bump {
+  30% { transform: translate(calc(-50% - 4px), -50%) scale(1); }
+  60% { transform: translate(calc(-50% + 2px), -50%) scale(1); }
+}
+
+.npb-rewind__cap {
+  position: absolute;
+  top: 9px;
+  left: 0;
+  display: flex;
+  /* Right-aligned to the tick; when the text is wider than the space, it starts at the bar's left edge */
+  justify-content: safe flex-end;
+  padding-right: 4px;
+  box-sizing: border-box;
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.npb-rewind__nav {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.npb-rewind__nav:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.npb-rewind__nav--earlier {
+  left: -18px;
+}
+
+.npb-rewind__nav--later {
+  right: -18px;
+}
+
+.npb-live-pill {
+  height: 24px;
+  /* Fixed width (fits "−00:00 · LIVE") so the controls beside it never shift as the text changes */
+  min-width: 100px;
+  justify-content: center;
+  padding: 0 9px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-condensed);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent);
+}
+
+.npb-live-pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+.npb-live-pill--live {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: default;
+}
+
+.npb-live-pill--live::before {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.npb-rewind .npb-rewind__head {
+  cursor: grab;
+}
+
+.npb-progress-bar.npb-rewind--dragging,
+.npb-rewind--dragging .npb-rewind__head {
+  cursor: grabbing;
+}
+
+.npb-rewind--dragging .npb-rewind__head {
+  transform: translate(-50%, -50%) scale(1.2);
+}

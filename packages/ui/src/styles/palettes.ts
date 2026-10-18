@@ -1,8 +1,8 @@
 /**
  * Color palettes: every palette sets the same roles, and tokens.css derives
  * the rest. sbtl is the default (its values are also in palettes.css for the
- * first paint); the others are shtl's dark palettes, from each scheme's
- * official colors. Caelestia's palette comes from the desktop at runtime.
+ * first paint); sbtl light is its light twin; the others are shtl's dark
+ * palettes, from each scheme's official colors. Caelestia's palette comes from the desktop at runtime.
  */
 
 export interface PaletteRoles {
@@ -38,11 +38,12 @@ function heartTones(hex: string): Pick<PaletteRoles, 'heart' | 'heartBase' | 'he
 }
 
 const HEART_SOURCE: Partial<Record<string, string>> = {
+  'sbtl-light': '#d97b7b',
   catppuccin: '#f38ba8', tokyonight: '#f7768e', kanagawa: '#e46876', gruvbox: '#fb4934',
   nord: '#bf616a', rosepine: '#eb6f92', everforest: '#e67e80', dracula: '#ff79c6',
 };
 
-export type BuiltInPaletteId = 'sbtl' | 'mocha' | 'pi' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula';
+export type BuiltInPaletteId = 'sbtl' | 'sbtl-light' | 'mocha' | 'pi' | 'catppuccin' | 'tokyonight' | 'kanagawa' | 'gruvbox' | 'nord' | 'rosepine' | 'everforest' | 'dracula';
 
 export const PALETTES: Record<BuiltInPaletteId, { label: string; roles: PaletteRoles }> = {
   sbtl: { label: 'sbtl', roles: {
@@ -50,6 +51,12 @@ export const PALETTES: Record<BuiltInPaletteId, { label: string; roles: PaletteR
     fg: '#ffffff', muted: 'rgba(255, 255, 255, 0.5)', accent: '#00d4ff', onAccent: '#0d0d0d', danger: '#ef4444', teal: '#22c55e',
     button: 'rgba(255, 255, 255, 0.85)', onButton: '#0d0d0d',
     heart: 'rgba(220, 60, 60, 0.8)', heartBase: 'rgb(255, 180, 180)', heartHover: 'rgba(200, 50, 50, 0.85)' } },
+  // sbtl light: the anti-theme, from sbtl.dev's colors. Slate on soft
+  // off-white ("clouds"), never stark white; muted tones that still read.
+  'sbtl-light': { label: 'sbtl light', roles: {
+    bg: '#f8f9fa', card: '#ecf0f1', surface: '#e2e7ea', line: 'rgba(44, 62, 80, 0.12)', edge: 'rgba(44, 62, 80, 0.22)',
+    fg: '#2c3e50', muted: '#6c7a89', accent: '#34495e', onAccent: '#f8f9fa', danger: '#c95f5f', teal: '#46907a',
+    button: '#34495e', onButton: '#f8f9fa' } },
   // Mocha: a black cat with bright green eyes, and a Halloween cat
   // (pumpkin-orange hearts).
   mocha: { label: 'Mocha', roles: {

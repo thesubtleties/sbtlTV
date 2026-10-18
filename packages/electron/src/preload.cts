@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron/renderer';
 import type { Source } from '@sbtltv/core';
+import type { AppSettings } from './storage.js';
 
 // Types for the exposed APIs
 export interface MpvStatus {
@@ -47,6 +48,16 @@ type StreamRecoveryUpdate =
  * renderer's request, reload: the stall watchdog, restore: the compatibility
  * restart). Subtitles and progress saving follow the announced generation.
  */
+interface RewindStateUpdate {
+  generation: number;
+  /** Oldest reachable stream time (s) */
+  rangeStart: number;
+  /** Live edge, stream time (s) */
+  liveEdge: number;
+  /** Measured input rate, bytes per second */
+  bytesPerSecond: number;
+}
+
 interface MediaLoadedUpdate {
   generation: number;
   live: boolean;
@@ -55,6 +66,8 @@ interface MediaLoadedUpdate {
   reason: 'play' | 'reload' | 'restore';
   /** The renderer's requestId for a play, else null */
   requestId: number | null;
+  /** Rewind live TV is on for this load (its first rewind-state comes about a second later) */
+  rewind: boolean;
 }
 
 export interface MpvApi {
@@ -76,6 +89,8 @@ export interface MpvApi {
   /** Stall recovery: reconnecting (toast), failed (give up) */
   onStreamRecovery: (callback: (update: StreamRecoveryUpdate) => void) => () => void;
   onMediaLoaded: (callback: (update: MediaLoadedUpdate) => void) => () => void;
+  /** Live with rewind: the reachable range once a second; null when rewind is not active */
+  onRewindState: (callback: (update: RewindStateUpdate | null) => void) => () => void;
   removeAllListeners: () => void;
 }
 
@@ -94,22 +109,6 @@ export interface StorageResult<T = void> {
   success?: boolean;
   error?: string;
   data?: T;
-}
-
-export interface SubtitleSettings {
-  liveDefault: boolean;
-  vodDefault: boolean;
-  size: 'small' | 'medium' | 'large';
-  style: 'outline' | 'box' | 'shadow';
-  /** auto = the system language */
-  language: 'auto' | 'en' | 'es' | 'fr';
-}
-
-export interface AppSettings {
-  theme: 'dark' | 'light';
-  lastSourceId?: string;
-  autoUpdateEnabled?: boolean;
-  subtitles?: SubtitleSettings;
 }
 
 export interface M3UImportResult {
@@ -158,6 +157,8 @@ export interface PlatformApi {
   isLinuxNonAppImage: boolean;
   supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
+  /** The largest Rewind live TV size this computer allows, in bytes (0 = not enough memory) */
+  rewindCapBytes: () => Promise<number>;
 }
 
 // Expose window control API
@@ -213,6 +214,11 @@ contextBridge.exposeInMainWorld('mpv', {
     const listener = (_event: IpcRendererEvent, data: MediaLoadedUpdate) => callback(data);
     ipcRenderer.on('media-loaded', listener);
     return () => { ipcRenderer.removeListener('media-loaded', listener); };
+  },
+  onRewindState: (callback: (update: RewindStateUpdate | null) => void) => {
+    const listener = (_event: IpcRendererEvent, data: RewindStateUpdate | null) => callback(data);
+    ipcRenderer.on('rewind-state', listener);
+    return () => { ipcRenderer.removeListener('rewind-state', listener); };
   },
 
   // Cleanup
@@ -307,6 +313,7 @@ contextBridge.exposeInMainWorld('platform', {
   isLinuxNonAppImage,
   supportsAutoUpdate: !isPortable && !isLinuxNonAppImage,
   getVersion: () => ipcRenderer.invoke('get-app-version'),
+  rewindCapBytes: () => ipcRenderer.invoke('rewind-cap-bytes'),
 } satisfies PlatformApi);
 
 // Expose debug API for logging

@@ -4,6 +4,8 @@ import type { Source } from '@sbtltv/core';
 import { normalizeLinuxPlayerMode, type LinuxPlayerMode } from './linux-player-mode.js';
 import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitle-settings.js';
 import { settleTeamLogosDefault } from './settings-upgrades.js';
+import { normalizeRewindBytes } from './rewind.js';
+import os from 'node:os';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -25,7 +27,7 @@ interface StoredSource {
   encryptedPassword?: string; // Base64 encoded encrypted buffer
 }
 
-interface AppSettings {
+export interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   tmdbApiKey?: string;  // Decrypted value returned to callers
@@ -40,6 +42,7 @@ interface AppSettings {
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering (default: alphabetical)
   categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering (default: alphabetical)
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
+  betaUpdates?: boolean;        // Offer beta (pre-release) updates too (default false)
   categoryBarWidth?: number;    // Category strip content width in px (default 160)
   channelColumnWidth?: number;  // Guide channel-info column width in px (default 300)
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
@@ -52,11 +55,13 @@ interface AppSettings {
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video (immediate); default false
   appearance?: Appearance;  // Palette and typeface (default sbtl / fira)
   subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
+  rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
+  rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
 }
 
 export type { LinuxPlayerMode };
 
-export const PALETTES = ['sbtl', 'mocha', 'pi', 'catppuccin', 'tokyonight', 'kanagawa', 'gruvbox', 'nord', 'rosepine', 'everforest', 'dracula', 'caelestia'] as const;
+export const PALETTES = ['sbtl', 'sbtl-light', 'mocha', 'pi', 'catppuccin', 'tokyonight', 'kanagawa', 'gruvbox', 'nord', 'rosepine', 'everforest', 'dracula', 'caelestia'] as const;
 export const TYPEFACES = ['fira', 'mono', 'system'] as const;
 export const ACCENTS = ['palette', 'system'] as const;
 export interface Appearance {
@@ -88,6 +93,7 @@ interface StoredSettings {
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
   categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch
+  betaUpdates?: boolean;        // Offer beta (pre-release) updates too
   categoryBarWidth?: number;    // Category strip content width in px
   channelColumnWidth?: number;  // Guide channel-info column width in px
   guideOpacity?: number;        // Background opacity for EPG/category/title bar
@@ -101,6 +107,8 @@ interface StoredSettings {
   linuxPerformanceMode?: boolean;  // Linux only: cheaper rendering for slower GPUs
   appearance?: Appearance;
   subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
+  rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
+  rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
 }
 
 const store = new Store<StoreSchema>({
@@ -248,6 +256,7 @@ export function getSettings(): AppSettings {
   result.channelSortOrder = stored.channelSortOrder ?? 'alphabetical';
   result.categorySortOrder = stored.categorySortOrder ?? 'alphabetical';
   result.autoUpdateEnabled = stored.autoUpdateEnabled ?? true;
+  result.betaUpdates = stored.betaUpdates ?? false;
   result.categoryBarWidth = stored.categoryBarWidth ?? 160;
   result.channelColumnWidth = stored.channelColumnWidth ?? 300;
   result.guideOpacity = stored.guideOpacity ?? 0.95;
@@ -260,6 +269,8 @@ export function getSettings(): AppSettings {
   result.linuxPerformanceMode = stored.linuxPerformanceMode === true;
   result.appearance = normalizeAppearance(stored.appearance);
   result.subtitles = normalizeSubtitleSettings(stored.subtitles);
+  result.rewindLiveBytes = normalizeRewindBytes(stored.rewindLiveBytes, os.totalmem());
+  result.rewindTipShown = stored.rewindTipShown === true;
   return result;
 }
 
@@ -269,6 +280,11 @@ export function getSettings(): AppSettings {
  */
 export function getLinuxPlayerMode(): LinuxPlayerMode {
   return normalizeLinuxPlayerMode(store.get('settings').linuxPlayerMode);
+}
+
+/** Rewind size for the next live load; read per load, so no key decryption (unlike getSettings). */
+export function getRewindLiveBytes(): number {
+  return normalizeRewindBytes(store.get('settings').rewindLiveBytes, os.totalmem());
 }
 
 /**
@@ -281,6 +297,8 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   if (settings.theme !== undefined) updated.theme = settings.theme;
   if (settings.appearance !== undefined) updated.appearance = normalizeAppearance(settings.appearance);
   if (settings.subtitles !== undefined) updated.subtitles = normalizeSubtitleSettings({ ...current.subtitles, ...settings.subtitles });
+  if (settings.rewindLiveBytes !== undefined) updated.rewindLiveBytes = normalizeRewindBytes(settings.rewindLiveBytes, os.totalmem());
+  if (settings.rewindTipShown !== undefined) updated.rewindTipShown = settings.rewindTipShown === true;
   if (settings.lastSourceId !== undefined) updated.lastSourceId = settings.lastSourceId;
   if (settings.tmdbApiKey !== undefined) {
     updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;
@@ -309,6 +327,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.autoUpdateEnabled !== undefined) {
     updated.autoUpdateEnabled = settings.autoUpdateEnabled;
+  }
+  if (settings.betaUpdates !== undefined) {
+    updated.betaUpdates = settings.betaUpdates;
   }
   if (settings.categoryBarWidth !== undefined) {
     updated.categoryBarWidth = settings.categoryBarWidth;

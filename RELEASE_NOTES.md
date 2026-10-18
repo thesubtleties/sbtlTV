@@ -1,26 +1,25 @@
-# sbtlTV 0.12.1
+# sbtlTV 0.13.0
 
-A privacy release.
+Rewind live TV, a light palette, and the first release tested through betas.
 
 ## Added
 
-- **Settings > Privacy** - what stays on your computer (including whether your saved passwords are encrypted), a Check button that shows the IP address outside services see, and who sbtlTV talks to and what each one sees.
+- **Rewind live TV** - pause, rewind and catch back up to live. Off by default: Settings > Live TV > Live playback > Rewind live TV, with 512 MB, 2 GB, 8 GB or a custom amount of memory, up to a quarter of your RAM. Drag the playhead or use the arrow keys; End or the LIVE pill goes back to live, and ‹ › jump to the earlier or later show. Changing channel starts the rewind over.
+- **sbtl light** - a light palette in Settings > Appearance: slate on a soft off-white, never stark white.
+- **Beta updates** - Settings > About. Off by default; turn it on to try new versions early. A beta updates to newer betas, then to the full release they lead to.
 
 ## Changed
 
-- **Team logos on live games are off by default on new installs** - they load from ESPN. If you already use sbtlTV they stay as they were. Settings > EPG > Team logos.
-
-## Improved
-
-- **Team logos** sit apart with "@" or "vs" between them, and more games are recognized from their guide descriptions.
+- **Settings are regrouped** into Content, Live TV, Movies & Series and System. Caption language, size and style now live in Video Player, which shows on every platform; the Live captions switch is in Live TV > Live playback.
+- **Guide times have no leading zero** - 8:35, not 08:35.
 
 ## Fixed
 
-- **No more request to Google on first launch** on Windows and Linux (Chromium's spell-check dictionary).
-- **Login details are cleaned from terminal and system log output too**, as in the debug log since 0.12.0.
-- **A provider's unreadable reply could put login details in an error message.**
+- **Memory kept after playback** - the player held on to everything it had cached (about 100 MB per few minutes of live TV) until you quit. It is now released when you stop, or when you switch between live TV and movies or series.
+- **Adding some Xtream sources failed** with "UNIQUE constraint failed: channels.stream_id" - providers that list a channel once in each of its categories now load.
+- **An empty guide after a channel re-sync** - if the guide refresh after it failed, every channel showed no programmes until the next one worked.
+- **The first poster in a Movies or Series list** had its hover glow cut off at the left edge.
 
 ## Known issues
 
-- **Memory use can climb during in-window playback on macOS and Linux** - it mostly levels off and is released when you change channel or title. Still being watched.
 - **Widescreen SD channels still play small on macOS.**

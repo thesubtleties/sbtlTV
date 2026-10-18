@@ -19,6 +19,13 @@ interface SharedTextureFrameMetadata {
 }
 
 /**
+ * Frame generations are counted for the whole process, not per bridge: the
+ * renderer drops frames from a generation older than the last it saw, so a
+ * replacement bridge (player restart) must keep counting upward.
+ */
+let lastFrameGeneration = 0;
+
+/**
  * MpvTextureBridge - Integrates mpv-texture with Electron's sharedTexture API
  */
 export class MpvTextureBridge {
@@ -29,13 +36,19 @@ export class MpvTextureBridge {
   private activeSends = 0;
   private readonly maxConcurrentSends = 2;
   private pendingFrame: QueuedFrame | null = null;
-  private frameGeneration = 0;
+  private frameGeneration = lastFrameGeneration;
   private outstandingTextureReferences = 0;
   private destroyRequested = false;
   private destroyFinalized = false;
   private rendererDisposed = false;
   private retainedTransfers = new Set<ReturnType<typeof sharedTexture.importSharedTexture>>();
   private destruction: Promise<void> | null = null;
+  /** The window's renderer this bridge listens to; the listener goes when the bridge does (player restarts reuse the window). */
+  private webContents: BrowserWindow['webContents'] | null = null;
+  private readonly onRendererDestroyed = () => {
+    this.rendererDisposed = true;
+    this.releaseRetainedTransfers();
+  };
   private resolveDestruction?: () => void;
   private rejectDestruction?: (error: unknown) => void;
   private statusCallback?: (status: MpvStatus) => void;
@@ -91,10 +104,8 @@ export class MpvTextureBridge {
     config?: MpvConfig
   ): Promise<boolean> {
     this.window = window;
-    window.webContents.once('destroyed', () => {
-      this.rendererDisposed = true;
-      this.releaseRetainedTransfers();
-    });
+    this.webContents = window.webContents;
+    this.webContents.once('destroyed', this.onRendererDestroyed);
 
     try {
       // Dynamic import of the native addon
@@ -316,7 +327,7 @@ export class MpvTextureBridge {
     if (!this.mpv || !this.initialized) {
       throw new Error('Bridge not initialized');
     }
-    this.frameGeneration++;
+    this.frameGeneration = ++lastFrameGeneration;
     // Clear stale frame in renderer and discard any queued frame.
     if (this.window && !this.window.isDestroyed()) {
       this.window.webContents.send('video-clear', this.frameGeneration);
@@ -493,6 +504,15 @@ export class MpvTextureBridge {
   /**
    * Destroy and clean up
    */
+  /**
+   * A frame transfer timed out and its texture is held until the renderer goes
+   * away: destroy() would not finish while the window stays, so a player restart
+   * in the same window must not be attempted.
+   */
+  hasRetainedTransfers(): boolean {
+    return this.retainedTransfers.size > 0;
+  }
+
   destroy(): Promise<void> {
     if (this.destruction) return this.destruction;
     this.destruction = new Promise<void>((resolve, reject) => {
@@ -528,6 +548,8 @@ export class MpvTextureBridge {
       return;
     }
     this.destroyFinalized = true;
+    this.webContents?.removeListener('destroyed', this.onRendererDestroyed);
+    this.webContents = null;
     const mpv = this.mpv;
     this.mpv = null;
     try {
