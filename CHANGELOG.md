@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.13.0] - 2026-10-17
+
+Rewind live TV, a light palette, and the first release tested through betas.
+
+### Added
+- **Rewind live TV** - pause, rewind and catch back up to live. Off by default: Settings > Live TV > Live playback > Rewind live TV, with 512 MB, 2 GB, 8 GB or a custom amount of memory, up to a quarter of your RAM. The player bar shows how far back you can go, with a LIVE pill (or how far behind live you are); drag the playhead or use the arrow keys, End or the pill goes back to live, and the buttons at either end jump to the earlier or later show. The title follows the show you are watching. A size change applies from the next channel, and changing channel starts the rewind over
+- **sbtl light** - a light palette in Settings > Appearance: slate on a soft off-white, never stark white, light all the way through, including the guide and player bar over video
+- **Beta updates** - Settings > About. Off by default; turn it on to try new versions early. A beta updates to newer betas, then to the full release they lead to
+
+### Changed
+- **Settings are regrouped** into Content, Live TV (Guide, Live playback), Movies & Series (Movies, Series, Subtitles, TMDB, Poster DB) and System. Caption language, size and style live in Video Player, which now shows on every platform; the Live captions switch is in Live TV > Live playback
+- **Guide times have no leading zero** - 8:35, not 08:35, like the rest of the app
+
+### Fixed
+- **Memory kept after playback** - the player held on to everything it had cached (about 100 MB per few minutes of live TV) until you quit. It is now released when you stop, or when you switch between live TV and movies or series
+- **Adding some Xtream sources failed** with "UNIQUE constraint failed: channels.stream_id" - providers that list a channel once in each of its categories now load, with the channel in every one of those categories (#133)
+- **An empty guide after a channel re-sync** - if the guide refresh after it failed, every channel showed no programmes until the next one worked (#90)
+- **The first poster in a Movies or Series list** had its hover glow cut off at the left edge
+
+### Known issues
+- **Widescreen SD channels still play small on macOS**
+
 ## [0.12.1] - 2026-10-14
 
 A privacy release.
