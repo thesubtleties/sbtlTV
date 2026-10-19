@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { SETUP_SETTING_KEYS, describeSetup, keptOnImport, settingsForExport, validateSetupBody } from './setup-body.js';
+
+const good = () => ({
+  app: '0.13.1', exportedAt: '2026-10-19T12:00:00.000Z', platform: 'linux',
+  includes: ['sources', 'logins', 'settings', 'apiKeys', 'favorites'],
+  sources: [
+    { id: 'a1', name: 'Provider', type: 'xtream', url: 'http://provider.example:8080', username: 'u', password: 'p', enabled: true },
+    { id: 'b2', name: 'Local', type: 'm3u', url: 'imported:Local', enabled: true, playlist: '#EXTM3U\n' },
+  ],
+  settings: { channelSortOrder: 'number', guideOpacity: 0.9, liveSourceOrder: ['a1', 'b2'] },
+  apiKeys: { tmdb: 'k' },
+  lists: { favorites: [{ id: 'channel_a1_1', type: 'channel', stream_id: 'a1_1', added: '2026-10-01T00:00:00.000Z' }] },
+});
+
+test('a well-formed body passes and keeps only what it declared', () => {
+  const body = validateSetupBody(good());
+  assert.equal(body.sources?.length, 2);
+  assert.equal(body.apiKeys?.tmdb, 'k');
+});
+
+test('unknown fields, unknown settings and secrets in settings are rejected', () => {
+  assert.throws(() => validateSetupBody({ ...good(), extra: 1 }), /invalid/);
+  assert.throws(() => validateSetupBody({ ...good(), settings: { linuxPlayerMode: 'compatibility' } }), /invalid/);
+  assert.throws(() => validateSetupBody({ ...good(), settings: { tmdbApiKey: 'x' } }), /invalid/);
+  assert.throws(() => validateSetupBody({ ...good(), sources: [{ ...good().sources[0], admin: true }] }), /invalid/);
+});
+
+test('source addresses must be http(s); a playlist only rides with an imported: source', () => {
+  for (const url of ['javascript:alert(1)', 'file:///etc/passwd', 'ftp://x', '']) {
+    assert.throws(() => validateSetupBody({ ...good(), sources: [{ ...good().sources[0], url }] }), /invalid/, url);
+  }
+  assert.throws(() => validateSetupBody({ ...good(), sources: [{ ...good().sources[0], playlist: '#EXTM3U' }] }), /invalid/);
+  assert.throws(() => validateSetupBody({ ...good(), sources: [{ ...good().sources[0], epg_url: 'file:///x' }] }), /invalid/);
+});
+
+test('sizes are capped: sources, playlists, lists, strings', () => {
+  const many = Array.from({ length: 201 }, (_, i) => ({ ...good().sources[0], id: `s${i}` }));
+  assert.throws(() => validateSetupBody({ ...good(), sources: many }), /invalid/);
+  const big = { ...good().sources[1], playlist: 'x'.repeat(64 * 1024 * 1024 + 1) };
+  assert.throws(() => validateSetupBody({ ...good(), sources: [big] }), /invalid/);
+  assert.throws(() => validateSetupBody({ ...good(), lists: { favorites: Array(200_001).fill({}) } }), /invalid/);
+  assert.throws(() => validateSetupBody({ ...good(), sources: [{ ...good().sources[0], name: 'n'.repeat(2001) }] }), /invalid/);
+  assert.throws(() => validateSetupBody({ ...good(), sources: [good().sources[0], good().sources[0]] }), /invalid/); // duplicate id
+});
+
+test('only the travelling settings are exported', () => {
+  const out = settingsForExport({ channelSortOrder: 'number', linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, tmdbApiKey: 'k', betaUpdates: true } as never);
+  assert.deepEqual(out, { channelSortOrder: 'number' });
+  assert.ok(!SETUP_SETTING_KEYS.includes('tmdbApiKey' as never));
+});
+
+test('an import keeps machine settings and internal markers, nothing it replaces', () => {
+  const stored = { theme: 'dark', channelSortOrder: 'number', linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, encryptedTmdbApiKey: 'x' };
+  assert.deepEqual(keptOnImport(stored), { linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5 });
+});
+
+test('the preview says what is inside without secrets', () => {
+  const p = describeSetup(validateSetupBody(good()));
+  assert.deepEqual(p.sources, [
+    { name: 'Provider', type: 'xtream', withLogin: true, fromFile: false },
+    { name: 'Local', type: 'm3u', withLogin: false, fromFile: true },
+  ]);
+  assert.equal(p.favorites, 1);
+  assert.equal(JSON.stringify(p).includes('"p"'), false);
+  assert.equal(JSON.stringify(p).includes('provider.example'), false);
+});
