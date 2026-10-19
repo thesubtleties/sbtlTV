@@ -14,3 +14,9 @@
   user-select: all;
   color: var(--text-primary, inherit);
 }
+
+.setup-preview__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}

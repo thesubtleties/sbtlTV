@@ -1,15 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const PATTERN = /^before-import-(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})\.sbtltv$/;
+const PATTERN = /^before-import-(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})?\.sbtltv$/;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const two = (n: number) => String(n).padStart(2, '0');
 
 export const CACHE_RESET_MARKER = 'reset-cache-on-start';
 export const PENDING_PLAYLISTS = 'pending-playlists.json';
 
+// Down to the second: a restore right after an import must not replace that import's backup.
 export function backupName(now: Date): string {
-  return `before-import-${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}.sbtltv`;
+  return `before-import-${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}.sbtltv`;
 }
 
 export function backupLabel(name: string): string | null {

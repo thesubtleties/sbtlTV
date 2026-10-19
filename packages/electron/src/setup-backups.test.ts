@@ -7,7 +7,7 @@ import { backupLabel, backupName, backupsToPrune, resetCacheIfMarked, CACHE_RESE
 
 test('backup names sort by time and read as labels', () => {
   const name = backupName(new Date(2026, 9, 19, 22, 14));
-  assert.equal(name, 'before-import-2026-10-19-2214.sbtltv');
+  assert.equal(name, 'before-import-2026-10-19-221400.sbtltv');
   assert.equal(backupLabel(name), 'Before import, 19 Oct 22:14');
   assert.equal(backupLabel('notes.txt'), null);
 });
@@ -28,4 +28,12 @@ test('the cache is reset on start only when marked, and only the cache files go'
   assert.equal(resetCacheIfMarked(dir), true);
   assert.deepEqual(fs.readdirSync(dir).sort(), ['sbtltv-config.json']);
   fs.rmSync(dir, { recursive: true });
+});
+
+test('two backups in the same minute do not overwrite each other', () => {
+  const a = backupName(new Date(2026, 9, 19, 12, 19, 5));
+  const b = backupName(new Date(2026, 9, 19, 12, 19, 40));
+  assert.notEqual(a, b);
+  assert.equal(backupLabel(a), 'Before import, 19 Oct 12:19');
+  assert.deepEqual(backupsToPrune([b, a, 'before-import-2026-10-19-1218.sbtltv', 'before-import-2026-10-19-1217.sbtltv']), ['before-import-2026-10-19-1217.sbtltv']);
 });

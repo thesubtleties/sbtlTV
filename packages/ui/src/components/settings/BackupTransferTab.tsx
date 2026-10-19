@@ -4,6 +4,7 @@ import type { SetupPart, SetupPreview } from '../../types/electron';
 import { useUIStore } from '../../stores/uiStore';
 import { readLists, replaceLists, type ListPart } from '../../services/setup/lists';
 import { rebuildFilePlaylists } from '../../services/setup/filePlaylists';
+import { setupSummary } from '../../services/setup/summary';
 import { Button, Hint, OnOff, OptionRow, Section, SettingsTab, TextField } from './ui';
 
 const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: boolean }[] = [
@@ -23,17 +24,6 @@ type ImportState =
   | { step: 'preview'; token: string; preview: SetupPreview }
   | { step: 'applying' }
   | { step: 'failed'; error: string; backupName: string | null };
-
-function summary(p: SetupPreview): string {
-  const parts: string[] = [];
-  if (p.sources.length) parts.push(`${p.sources.length} source${p.sources.length === 1 ? '' : 's'} (${p.sources.map((s) => `${s.name}${s.withLogin ? ' with login' : ''}`).join(', ')})`);
-  if (p.settings) parts.push('settings');
-  if (p.apiKeys) parts.push('API keys');
-  if (p.favorites) parts.push(`${p.favorites} favorites`);
-  if (p.watchlist) parts.push(`${p.watchlist} watchlist items`);
-  if (p.progress) parts.push(`watch progress for ${p.progress} titles`);
-  return parts.join(', ') || 'nothing';
-}
 
 export function BackupTransferTab() {
   const sources = useUIStore((s) => s.sources);
@@ -140,14 +130,16 @@ export function BackupTransferTab() {
           </form>
         )}
         {imp.step === 'preview' && (
-          <div className="st-confirm">
-            <p className="st-confirm__question">
-              From sbtlTV {imp.preview.app} on {imp.preview.platform}, {new Date(imp.preview.exportedAt).toLocaleString()}: {summary(imp.preview)}.
-            </p>
+          <div className="setup-preview">
+            <Hint>
+              From sbtlTV {imp.preview.app} on {imp.preview.platform}, {new Date(imp.preview.exportedAt).toLocaleString()}: {setupSummary(imp.preview)}.
+            </Hint>
             <Hint tone="warn">Importing replaces your current setup: sources, settings, favorites, watchlist and watch progress. Anything not in this file is cleared.</Hint>
             <OptionRow title="Back up my current setup first"><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
-            <Button variant="danger" onClick={() => void apply(imp.token)}>Replace and import</Button>{' '}
-            <Button onClick={() => setImp({ step: 'idle' })}>Cancel</Button>
+            <div className="setup-preview__actions">
+              <Button variant="danger" onClick={() => void apply(imp.token)}>Replace and import</Button>
+              <Button onClick={() => setImp({ step: 'idle' })}>Cancel</Button>
+            </div>
           </div>
         )}
         {imp.step === 'applying' && <Hint>Importing… sbtlTV restarts when it's done.</Hint>}
