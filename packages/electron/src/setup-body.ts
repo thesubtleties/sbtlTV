@@ -187,3 +187,28 @@ export function describeSetup(body: SetupBody): SetupPreview {
     progress: body.lists?.progress?.length ?? 0,
   };
 }
+
+const LIST_NAMES: Record<string, string> = { favorites: 'favorites', watchlist: 'watchlist', progress: 'watch progress' };
+
+/**
+ * Why this computer's own setup can't be exported, from validateSetupBody's
+ * message: which source and what, in words (the stored data broke a rule a file
+ * must follow, e.g. a source address that isn't http(s)).
+ */
+export function explainExportProblem(message: string, sources: { name: string }[]): string {
+  const source = /^invalid: sources\[(\d+)\]\.(\w+)/.exec(message);
+  if (source) {
+    const name = sources[Number(source[1])]?.name ?? 'A source';
+    const field = source[2];
+    const why = field === 'url' ? 'its address has to start with http:// or https://'
+      : field === 'epg_url' ? 'its guide address has to start with http:// or https://'
+      : field === 'playlist' ? 'its playlist is too large'
+      : 'one of its details is too long';
+    return `${name} can't be exported: ${why}.`;
+  }
+  const setting = /^invalid: settings\.(\w+)/.exec(message);
+  if (setting) return `A setting can't be exported (${setting[1]} has a value sbtlTV doesn't expect).`;
+  const list = /^invalid: lists\.(\w+)/.exec(message);
+  if (list) return `Your ${LIST_NAMES[list[1]] ?? list[1]} can't be exported: there are too many.`;
+  return `Your setup can't be exported (${message}).`;
+}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SETUP_SETTING_KEYS, describeSetup, keptOnImport, settingsForExport, validateSetupBody } from './setup-body.js';
+import { SETUP_SETTING_KEYS, describeSetup, explainExportProblem, keptOnImport, settingsForExport, validateSetupBody } from './setup-body.js';
 
 const good = () => ({
   app: '0.13.1', exportedAt: '2026-10-19T12:00:00.000Z', platform: 'linux',
@@ -85,4 +85,15 @@ test('settings values are typed and bounded, so a bad file cannot break the app 
   const ok = { liveSourceOrder: ['a1'], movieGenresEnabled: [28, 12], channelSortOrder: 'number', categorySortOrder: 'provider', theme: 'light',
     categoryBarWidth: 180, guideOpacity: 0.8, epgRefreshHours: 0, vodRefreshHours: 48, guideMorphEnabled: false, appearance: { palette: 'sbtl' }, subtitles: { size: 1 } };
   assert.deepEqual(validateSetupBody({ ...good(), settings: ok }).settings, ok);
+});
+
+test('an export the validator refuses says which source and what, not "invalid file"', () => {
+  const sources = [{ name: 'Provider' }, { name: 'Local' }];
+  assert.equal(explainExportProblem('invalid: sources[0].url', sources), 'Provider can\'t be exported: its address has to start with http:// or https://.');
+  assert.equal(explainExportProblem('invalid: sources[1].epg_url', sources), 'Local can\'t be exported: its guide address has to start with http:// or https://.');
+  assert.equal(explainExportProblem('invalid: sources[1].playlist', sources), 'Local can\'t be exported: its playlist is too large.');
+  assert.equal(explainExportProblem('invalid: sources[0].name', sources), 'Provider can\'t be exported: one of its details is too long.');
+  assert.equal(explainExportProblem('invalid: settings.guideOpacity', sources), 'A setting can\'t be exported (guideOpacity has a value sbtlTV doesn\'t expect).');
+  assert.equal(explainExportProblem('invalid: lists.favorites', sources), 'Your favorites can\'t be exported: there are too many.');
+  assert.equal(explainExportProblem('something else', sources), 'Your setup can\'t be exported (something else).');
 });

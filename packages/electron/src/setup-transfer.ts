@@ -9,7 +9,7 @@ import path from 'node:path';
 import * as storage from './storage.js';
 import { newPassphrase, normalisePassphrase } from './setup-passphrase.js';
 import { SetupFileError, openWithKeyring, openWithPassphrase, readHeader, sealWithKeyring, sealWithPassphrase } from './setup-file.js';
-import { describeSetup, settingsForExport, validateSetupBody, type SetupBody, type SetupPart, type UserLists } from './setup-body.js';
+import { describeSetup, explainExportProblem, settingsForExport, validateSetupBody, type SetupBody, type SetupPart, type UserLists } from './setup-body.js';
 import { CACHE_RESET_MARKER, PENDING_PLAYLISTS, backupLabel, backupName, backupsToPrune } from './setup-backups.js';
 
 const MAX_FILE = 512 * 1024 * 1024;
@@ -26,6 +26,7 @@ const UNREADABLE = "Saved passwords can't be read right now, so the export would
 function message(error: unknown): string {
   if (error instanceof SetupFileError) return MESSAGES[error.reason];
   if (error instanceof storage.SecretsUnreadable) return UNREADABLE;
+  if (error instanceof ExportProblem) return error.message;
   if (error instanceof Error && error.message.startsWith('invalid')) return MESSAGES.invalid;
   return error instanceof Error ? error.message : String(error);
 }
@@ -51,8 +52,15 @@ function buildBody(parts: SetupPart[], lists: UserLists, playlists: Record<strin
   if (parts.includes('progress') && lists.progress) l.progress = lists.progress;
   if (parts.includes('settings') && lists.lastCategory) l.lastCategory = lists.lastCategory;
   if (Object.keys(l).length) body.lists = l;
-  return validateSetupBody(body);  // what we write must be what we would accept
+  try {
+    return validateSetupBody(body);  // what we write must be what we would accept
+  } catch (error) {
+    throw new ExportProblem(explainExportProblem(error instanceof Error ? error.message : String(error), body.sources ?? []));
+  }
 }
+
+/** This computer's own setup breaks a rule a setup file must follow (message says which). */
+class ExportProblem extends Error {}
 
 const backupsDir = () => path.join(app.getPath('userData'), 'backups');
 
