@@ -7,7 +7,10 @@
 // terminal or the system journal). The app's copy is
 // packages/electron/src/log-redact.ts; keep the two in step:
 // - every :// starts a URL, whatever is glued in front of it, and runs to the
-//   next whitespace; it is cut to scheme://host/... (scheme://... when it holds an @);
+//   next whitespace; it is cut to scheme://[host]/... (scheme://... when it holds
+//   an @). Public services stay readable (kPublicHosts, the same list as
+//   PUBLIC_HOSTS in log-redact.ts). The app's copy uses source names and
+//   numbered labels; this one has no source names, so it writes [host];
 // - login values outside a URL ("username=bob") become "username=...";
 // - Xtream paths ("live/bob/s3cret/1.ts") become "live/.../1.ts".
 // Plain loops, one pass each: no backtracking on long lines.
@@ -28,6 +31,24 @@ inline std::string lower(const std::string& text) {
     std::string out(text);
     for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return out;
+}
+
+inline bool isPublicHost(const std::string& host) {
+    static const char* const kPublicHosts[] = {
+        "api.themoviedb.org", "image.tmdb.org", "api.ratingposterdb.com", "github.com",
+        "objects.githubusercontent.com", "raw.githubusercontent.com", "a.espncdn.com", "am.i.mullvad.net"};
+    for (const char* h : kPublicHosts) if (host == h) return true;
+    return false;
+}
+
+// The host of "host:port" or "[v6]:port", lowercased, without port or brackets.
+inline std::string hostOf(const std::string& hostPort) {
+    if (!hostPort.empty() && hostPort[0] == '[') {
+        const size_t close = hostPort.find(']');
+        return lower(close == std::string::npos ? hostPort.substr(1) : hostPort.substr(1, close - 1));
+    }
+    const size_t colon = hostPort.find(':');
+    return lower(colon == std::string::npos ? hostPort : hostPort.substr(0, colon));
 }
 
 inline std::string cutUrls(const std::string& text) {
@@ -53,7 +74,14 @@ inline std::string cutUrls(const std::string& text) {
             out += scheme + ellipsis();
         } else {
             const size_t hostEnd = rest.find_first_of("/?#");
-            out += hostEnd == std::string::npos ? scheme + rest : scheme + rest.substr(0, hostEnd) + "/" + ellipsis();
+            const std::string hostPort = hostEnd == std::string::npos ? rest : rest.substr(0, hostEnd);
+            const std::string host = hostOf(hostPort);
+            if (host.empty()) {
+                out += scheme + rest;
+            } else {
+                const std::string label = isPublicHost(host) ? host : "[host]";
+                out += hostEnd == std::string::npos ? scheme + label : scheme + label + "/" + ellipsis();
+            }
         }
         pos = end;
     }

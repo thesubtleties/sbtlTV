@@ -1,5 +1,5 @@
 // The native log redaction (src/native/log_redact.h), the same cases as
-// packages/electron/src/log-redact.test.ts. Run: pnpm --filter @sbtltv/mpv-texture test:redact
+// packages/electron/src/log-redact.test.ts, with the native [host] label. Run: pnpm --filter @sbtltv/mpv-texture test:redact
 #include "../src/native/log_redact.h"
 #include <cassert>
 #include <iostream>
@@ -11,14 +11,18 @@ int main() {
         return true;
     };
     bool ok = true;
-    ok &= check("Opening http://provider.example:8080/live/user/s3cret/1.ts\n", "Opening http://provider.example:8080/\xE2\x80\xA6\n");
+    ok &= check("Opening http://provider.example:8080/live/user/s3cret/1.ts\n", "Opening http://[host]/\xE2\x80\xA6\n");
     ok &= check("Failed to open http://user:p@ss@host.example/x", "Failed to open http://\xE2\x80\xA6");
-    ok &= check("a http://a.example/1 b https://b.example/2?x=1", "a http://a.example/\xE2\x80\xA6 b https://b.example/\xE2\x80\xA6");
-    ok &= check("x1http://provider.example/live/u/p/1.ts", "x1http://provider.example/\xE2\x80\xA6");
-    ok &= check("[http://provider.example/live/u/p/1.ts]", "[http://provider.example/\xE2\x80\xA6");
-    ok &= check("://provider.example/live/u/p/1.ts", "://provider.example/\xE2\x80\xA6");
-    ok &= check("host only http://host.example done", "host only http://host.example done");
-    ok &= check("quote 'http://h.example/u/pa\"s/1.ts' end", "quote 'http://h.example/\xE2\x80\xA6 end");
+    ok &= check("a http://a.example/1 b https://b.example/2?x=1", "a http://[host]/\xE2\x80\xA6 b https://[host]/\xE2\x80\xA6");
+    ok &= check("x1http://provider.example/live/u/p/1.ts", "x1http://[host]/\xE2\x80\xA6");
+    ok &= check("[http://provider.example/live/u/p/1.ts]", "[http://[host]/\xE2\x80\xA6");
+    ok &= check("://provider.example/live/u/p/1.ts", "://[host]/\xE2\x80\xA6");
+    ok &= check("host only http://host.example done", "host only http://[host] done");
+    ok &= check("quote 'http://h.example/u/pa\"s/1.ts' end", "quote 'http://[host]/\xE2\x80\xA6 end");
+    ok &= check("ipv6 http://[2001:db8::1]:8080/live/u/p/1.ts", "ipv6 http://[host]/\xE2\x80\xA6");
+    ok &= check("empty x:// host", "empty x:// host");
+    ok &= check("tmdb https://API.themoviedb.org/3/movie/1?api_key=k", "tmdb https://api.themoviedb.org/\xE2\x80\xA6");
+    ok &= check("logo https://a.espncdn.com/i/x.png", "logo https://a.espncdn.com/\xE2\x80\xA6");
     ok &= check("", "");
     ok &= check("GET player_api.php?username=bob&password=s3cret&action=x", "GET player_api.php?username=\xE2\x80\xA6&password=\xE2\x80\xA6&action=x");
     ok &= check("Opening 'live/bob/s3cret/12345.ts'", "Opening 'live/\xE2\x80\xA6/12345.ts'");
