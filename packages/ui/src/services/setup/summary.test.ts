@@ -11,4 +11,12 @@ describe('setupSummary', () => {
       .toBe('settings, API keys, 12 favorites, 8 watchlist items, watch progress for 3 titles');
     expect(setupSummary({ ...base, sources: [] })).toBe('nothing');
   });
+
+  it("says which sources need their password, and that an M3U's login is part of its playlist", () => {
+    expect(setupSummary({ ...base, sources: [
+      { name: 'Provider', type: 'xtream', withLogin: false, fromFile: false },
+      { name: 'Family', type: 'm3u', withLogin: false, fromFile: false },
+      { name: 'Local', type: 'm3u', withLogin: false, fromFile: true },
+    ] })).toBe('3 sources (Provider, password needed after importing; Family, M3U: login is part of the playlist; Local, M3U: login is part of the playlist)');
+  });
 });

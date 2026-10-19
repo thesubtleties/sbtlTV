@@ -9,7 +9,7 @@ import { Button, Hint, OnOff, OptionRow, Section, SettingsTab, TextField } from 
 
 const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: boolean }[] = [
   { id: 'sources', title: 'Sources', defaultOn: true },
-  { id: 'logins', title: 'With logins', help: 'Sharing logins uses a connection on that provider account', defaultOn: true },
+  { id: 'logins', title: 'With logins', help: "Passwords for Xtream sources. M3U playlists carry their login inside their addresses, so they're always included. Sharing logins uses a connection on that provider account.", defaultOn: true },
   { id: 'settings', title: 'Settings', defaultOn: true },
   { id: 'apiKeys', title: 'API keys', help: 'TMDB and RatingPosterDB', defaultOn: true },
   { id: 'favorites', title: 'Favorites', defaultOn: true },
@@ -145,7 +145,7 @@ export function BackupTransferTab() {
             <Hint>
               From sbtlTV {imp.preview.app} on {imp.preview.platform}, {new Date(imp.preview.exportedAt).toLocaleString()}: {setupSummary(imp.preview)}.
             </Hint>
-            <Hint tone="warn">Importing replaces your current setup: sources, settings, favorites, watchlist and watch progress. Anything not in this file is cleared.</Hint>
+            <Hint tone="warn">Importing replaces your current setup: sources, settings, API keys, favorites, watchlist and watch progress. Anything not in this file is cleared.</Hint>
             <OptionRow title="Back up my current setup first"><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
             <div className="setup-preview__actions">
               <Button variant="danger" onClick={() => void apply(imp.token)}>Replace and import</Button>
