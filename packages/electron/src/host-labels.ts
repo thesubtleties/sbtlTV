@@ -12,7 +12,7 @@ const MAX_NUMBERED = 1024;
 /** The longest a hostname can be (DNS): anything longer is labelled but never stored. */
 const MAX_HOST = 253;
 
-export interface SourceAddress { name: string; url?: string; epg_url?: string }
+export interface SourceAddress { id?: string; name: string; url?: string; epg_url?: string }
 
 function urlHost(url: string | undefined): string | null {
   if (!url) return null;
@@ -29,6 +29,8 @@ export class HostLabels {
   /** host -> the source's number in the Sources list */
   private readonly sources = new Map<string, number>();
   private names: { n: number; name: string }[] = [];
+  /** source id -> its number: data-process lines name a source by id */
+  private ids: [string, number][] = [];
   private readonly numbered = new Map<string, number>();
 
   /** The user's sources, in list order; call again whenever they change. */
@@ -36,6 +38,8 @@ export class HostLabels {
     const previous = [...this.sources.keys()];
     this.sources.clear();
     this.names = sources.map((source, i) => ({ n: i + 1, name: source.name }));
+    // Long ids only (UUIDs): a short one could match ordinary text.
+    this.ids = sources.flatMap((source, i): [string, number][] => (source.id && source.id.length >= 8 ? [[source.id, i + 1]] : []));
     sources.forEach((source, i) => {
       for (const url of [source.url, source.epg_url]) {
         const host = urlHost(url);
@@ -44,6 +48,13 @@ export class HostLabels {
     });
     // A removed source's host stays known (numbered), so an error still in flight is labelled.
     for (const host of previous) if (!this.sources.has(host)) this.labelFor(host);
+  }
+
+  /** Known source ids in `text` as their "[source N]". Linear in the text per source (a handful). */
+  labelSourceIds(text: string): string {
+    let out = text;
+    for (const [id, n] of this.ids) if (out.includes(id)) out = out.split(id).join(`[source ${n}]`);
+    return out;
   }
 
   /** Which source each "[source N]" is, for Settings > Debug (never written to the log). */

@@ -388,8 +388,8 @@ export function isEncryptionAvailable(): boolean {
 }
 
 /** Names and addresses of the sources (no logins, no keyring access): for log labels. */
-export function getSourceAddresses(): { name: string; url: string; epg_url?: string }[] {
-  return store.get('sources', []).map((s) => ({ name: s.name, url: s.url, epg_url: s.epg_url }));
+export function getSourceAddresses(): { id: string; name: string; url: string; epg_url?: string }[] {
+  return store.get('sources', []).map((s) => ({ id: s.id, name: s.name, url: s.url, epg_url: s.epg_url }));
 }
 
 /** Call `listener` whenever the stored sources change (any path that saves them). */
