@@ -15,6 +15,7 @@ import { PlayerMemoryTracker } from './player-memory.js';
 import { once } from 'node:events';
 import { isTransientDecodeError } from './mpv-error-filter.js';
 import { redactUrls } from './log-redact.js';
+import { HostLabels } from './host-labels.js';
 import { createLineBuffer } from './line-buffer.js';
 import { IP_CHECK_URL, IP_CHECK_MAX_BYTES, parseIpCheck } from './ip-check.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
@@ -26,6 +27,18 @@ import { CaptionSession } from './caption-session.js';
 import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
 import { preferredCaptionLanguage } from './subtitle-settings.js';
 const { autoUpdater } = electronUpdater;
+
+// Provider addresses in logs become labels (see host-labels.ts). The debug log
+// keeps them only while the user has turned that on in Settings > Debug; it is
+// never saved, so every launch starts with labels.
+const hostLabels = new HostLabels();
+hostLabels.setSources(storage.getSourceAddresses());
+let includeAddressesInLog = false;
+
+/** Text for the error card, a terminal or the system log: labels, always. */
+function redactForDisplay(text: string): string {
+  return redactUrls(text, hostLabels.labeller());
+}
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
 // which may not be available on all platforms
@@ -166,7 +179,7 @@ let lastUncaughtReportAt = 0;
 process.on('uncaughtException', (error) => {
   const summary = error instanceof Error ? error.message : String(error);
   const detail = error instanceof Error ? error.stack ?? summary : summary;
-  console.error('[main] Uncaught exception:', redactUrls(detail));
+  console.error('[main] Uncaught exception:', redactForDisplay(detail));
   debugLog(`Uncaught exception: ${detail}`, 'system');
   const now = Date.now();
   if (now - lastUncaughtReportAt < 30_000) return;
@@ -258,6 +271,7 @@ function initDebugLogging(enabled: boolean): void {
     }
     debugLog(`Platform: ${process.platform} ${process.arch}`);
     debugLog(`Electron: ${process.versions.electron}`);
+    debugLog(`Provider addresses: ${includeAddressesInLog ? 'included (turned on in Settings > Debug)' : 'replaced by labels'}`);
     debugLog(`Node: ${process.versions.node}`);
     debugLog('='.repeat(60));
   } else if (!enabled && debugLogStream) {
@@ -273,7 +287,7 @@ function debugLog(message: string, category = 'app'): void {
   try {
     const timestamp = new Date().toISOString();
     // Users attach this log to reports: no provider credentials (they ride in stream URLs).
-    const line = `[${timestamp}] [${category}] ${redactUrls(message)}\n`;
+    const line = `[${timestamp}] [${category}] ${redactUrls(message, hostLabels.labeller(includeAddressesInLog))}\n`;
     debugLogStream.write(line);
   } catch {
     // Silently fail - logging should never crash the app
@@ -709,12 +723,12 @@ async function initMpv(): Promise<void> {
       debugLog(line, 'mpv-stdout');
       // Only console.log non-status lines
       if (!line.includes('AV:') && !line.includes('A:') && !line.includes('V:')) {
-        console.log('[mpv stdout]', redactUrls(line));
+        console.log('[mpv stdout]', redactForDisplay(line));
       }
     });
     const stderrLines = createLineBuffer((line) => {
       debugLog(line, 'mpv-stderr');
-      console.log('[mpv stderr]', redactUrls(line));
+      console.log('[mpv stderr]', redactForDisplay(line));
     });
     mpvProcess.stdout?.on('data', (data: Buffer) => stdoutLines.push(data.toString()));
     mpvProcess.stderr?.on('data', (data: Buffer) => stderrLines.push(data.toString()));
@@ -1097,7 +1111,7 @@ async function connectToMpvSocket(): Promise<void> {
           const msg = JSON.parse(line);
           handleMpvMessage(msg);
         } catch {
-          console.error('[mpv] Failed to parse:', redactUrls(line));
+          console.error('[mpv] Failed to parse:', redactForDisplay(line));
         }
       }
     });
@@ -1225,7 +1239,7 @@ function sendToRenderer(channel: string, data: unknown): void {
 
 /** A message in the app's error card; its text goes to the debug log too, so reports can be matched. */
 function reportMpvError(message: string): void {
-  const text = redactUrls(message.trim());
+  const text = redactForDisplay(message.trim());
   debugLog(`banner: ${JSON.stringify(text)}`, 'mpv');
   sendToRenderer('mpv-error', text);
 }
@@ -1244,7 +1258,7 @@ function reportPlaybackFailure(message: string): void {
 /** One of mpv's own error lines: held back while a stall reload is opening the stream. */
 function reportMpvLogError(message: string): void {
   if (stream.holdsMpvErrors(mpvState.playing)) {
-    stream.lastHeldError = redactUrls(message.trim());  // before quoting: the URL ends at whitespace, not at the quote
+    stream.lastHeldError = redactForDisplay(message.trim());  // before quoting: the URL ends at whitespace, not at the quote
     debugLog(`banner held during reconnect: ${JSON.stringify(stream.lastHeldError)}`, 'mpv');
     return;
   }
@@ -1693,7 +1707,7 @@ setInterval(() => {
   checkStreamHealth().catch((err) => {
     // Shown even with debug logging off, once per distinct message: a failing check is a watchdog that is not watching.
     const message = err instanceof Error ? err.message : String(err);
-    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', redactUrls(message));
+    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', redactForDisplay(message));
     lastHealthCheckError = message;
     debugLog(`Stream health check failed: ${message}`, 'mpv');
   });
@@ -1905,6 +1919,7 @@ ipcMain.handle('storage-save-source', async (_event, source: Source) => {
   try {
     storage.saveSource(source);
     dataHost?.pushSources();
+    hostLabels.setSources(storage.getSourceAddresses());
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1915,6 +1930,7 @@ ipcMain.handle('storage-delete-source', async (_event, id: string) => {
   try {
     storage.deleteSource(id);
     dataHost?.pushSources();
+    hostLabels.setSources(storage.getSourceAddresses());
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1976,6 +1992,17 @@ ipcMain.handle('debug-get-log-path', async () => {
 });
 
 ipcMain.handle('debug-is-enabled', () => debugLoggingEnabled);
+ipcMain.handle('debug-get-include-addresses', () => includeAddressesInLog);
+ipcMain.handle('debug-set-include-addresses', (_event, on: unknown) => {
+  const next = on === true;
+  if (next !== includeAddressesInLog) {
+    includeAddressesInLog = next;
+    debugLog(next
+      ? 'Provider addresses are included in this log from here on (turned on in Settings > Debug)'
+      : 'Provider addresses are replaced by labels again');
+  }
+  return includeAddressesInLog;
+});
 
 ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
   debugLog(message, 'renderer');

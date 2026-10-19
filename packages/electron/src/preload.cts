@@ -146,6 +146,8 @@ export interface DebugApi {
   openLogFolder: () => Promise<StorageResult>;
   isEnabled: () => Promise<boolean>;
   onEnabledChanged: (callback: (enabled: boolean) => void) => () => void;
+  getIncludeAddresses: () => Promise<boolean>;
+  setIncludeAddresses: (on: boolean) => Promise<boolean>;
 }
 
 export interface PlatformApi {
@@ -322,6 +324,8 @@ contextBridge.exposeInMainWorld('debug', {
   logFromRenderer: (message: string) => ipcRenderer.invoke('debug-log-renderer', message),
   openLogFolder: () => ipcRenderer.invoke('debug-open-log-folder'),
   isEnabled: () => ipcRenderer.invoke('debug-is-enabled'),
+  getIncludeAddresses: () => ipcRenderer.invoke('debug-get-include-addresses'),
+  setIncludeAddresses: (on: boolean) => ipcRenderer.invoke('debug-set-include-addresses', on),
   onEnabledChanged: (callback: (enabled: boolean) => void) => {
     const listener = (_event: IpcRendererEvent, enabled: boolean) => callback(enabled);
     ipcRenderer.on('debug-logging-changed', listener);

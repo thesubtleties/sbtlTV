@@ -379,3 +379,8 @@ export function clearAll(): void {
 export function isEncryptionAvailable(): boolean {
   return safeStorage.isEncryptionAvailable();
 }
+
+/** Names and addresses of the sources (no logins, no keyring access): for log labels. */
+export function getSourceAddresses(): { name: string; url: string; epg_url?: string }[] {
+  return store.get('sources', []).map((s) => ({ name: s.name, url: s.url, epg_url: s.epg_url }));
+}
