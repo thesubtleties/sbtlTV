@@ -188,14 +188,87 @@ function cutUrls(text: string, hosts: HostLabeller): string {
   return out;
 }
 
-// Login details outside a full URL: query values ("username=bob") and Xtream
-// paths ("live/bob/s3cret/12345.ts"). Linear patterns (no nested repetition).
-const LOGIN_PARAM = /\b(username|user|password|pass|passwd|token|api_key|apikey|key)=[^&\t\n\v\f\r '"]+/gi;
+// Login details outside a full URL: query values ("username=bob"), JSON fields
+// ("password":"s3cret") and Xtream paths ("live/bob/s3cret/12345.ts"). Linear
+// patterns (no nested repetition). LOGIN_NAMES is mirrored in log_redact.h.
+const LOGIN_NAMES = 'username|user|password|pass|passwd|pwd|token|access_token|refresh_token|id_token|auth_token|api_key|apikey|key|secret|client_secret|auth';
+const LOGIN_PARAM = new RegExp(`\\b(${LOGIN_NAMES})=[^&\\t\\n\\v\\f\\r '"]+`, 'gi');
+// A JSON string value (escapes included: the unrolled form, linear).
+const LOGIN_JSON = new RegExp(`"(${LOGIN_NAMES})"(\\s*:\\s*)"[^"\\\\]*(?:\\\\.[^"\\\\]*)*"`, 'gi');
 const XTREAM_PATH = /\b(live|movie|series|timeshift)\/[^/\t\n\v\f\r '"]+\/[^/\t\n\v\f\r '"]+\//gi;
+
+function decodeLoosely(text: string): string {
+  try { return decodeURIComponent(text); } catch { return text.replace(/%40/gi, '@').replace(/%2F/gi, '/').replace(/%3A/gi, ':').replace(/%3F/gi, '?'); }
+}
+
+const isHex = (c: number) => (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102);
+const isWord = (c: number) => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95;
+
+/** A bare IPv6 address (not loopback): groups of up to 4 hex digits, one "::" or all 8 groups. The caller passes only hex digits and colons. */
+function isIpv6(token: string): boolean {
+  if (token === '::1') return false;
+  const double = token.indexOf('::');
+  if (double !== token.lastIndexOf('::') || token.includes(':::')) return false;
+  // A single colon at either end is not an address ("a:" in "a:b"); "::" at an end is.
+  if ((token.startsWith(':') && double !== 0) || (token.endsWith(':') && double !== token.length - 2)) return false;
+  const groups = token.split(':');
+  const colons = groups.length - 1;
+  if (colons < 2 || colons > 7 || (double === -1 && colons !== 7)) return false;
+  return groups.every((g) => g.length <= 4);
+}
+
+/** Bare IPv6 addresses outside URLs, labelled. Linear: each maximal run of hex digits and colons is looked at once. */
+function cutBareIpv6(text: string, hosts: HostLabeller): string {
+  if (!text.includes(':')) return text;
+  let out = '';
+  let pos = 0;
+  let i = 0;
+  while (i < text.length) {
+    const c = text.charCodeAt(i);
+    if (!(isHex(c) || c === 58)) { i++; continue; }
+    let end = i;
+    while (end < text.length && (isHex(text.charCodeAt(end)) || text.charCodeAt(end) === 58)) end++;
+    const bounded = (i === 0 || !isWord(text.charCodeAt(i - 1))) && (end === text.length || !isWord(text.charCodeAt(end)));
+    const token = text.slice(i, end);
+    if (bounded && isIpv6(token)) {
+      const label = hosts.forBare(token.toLowerCase(), true);
+      if (label !== null) { out += text.slice(pos, i) + label; pos = end; }
+    }
+    i = end;
+  }
+  return out + text.slice(pos);
+}
+
+const ENCODED_SEP = '%3a%2f%2f';
+const endsEncodedValue = (c: string) => isSpace(c) || c === '&' || c === '"' || c === "'";
+
+/** A whole URL percent-encoded inside another value (?url=http%3A%2F%2F…), cut like a plain one, to the end of that value. Linear. */
+function cutEncodedUrls(text: string, hosts: HostLabeller): string {
+  const lower = text.toLowerCase();
+  let at = lower.indexOf(ENCODED_SEP);
+  if (at === -1) return text;
+  let out = '';
+  let pos = 0;
+  while (at !== -1) {
+    let start = at;
+    while (start > pos && isSchemeChar(text[start - 1])) start--;
+    while (start < at && !/[A-Za-z]/.test(text[start])) start++;  // a scheme starts with a letter
+    if (start === at) { at = lower.indexOf(ENCODED_SEP, at + ENCODED_SEP.length); continue; }
+    let end = at + ENCODED_SEP.length;
+    while (end < text.length && !endsEncodedValue(text[end])) end++;
+    out += text.slice(pos, start) + cutUrl(`${text.slice(start, at)}://`, decodeLoosely(text.slice(at + ENCODED_SEP.length, end)), hosts);
+    pos = end;
+    at = lower.indexOf(ENCODED_SEP, end);
+  }
+  return out + text.slice(pos);
+}
 
 /** Text cleaned for a log: URLs cut to scheme://<host label>/…, known bare hosts labelled, login values and Xtream credentials replaced by …. */
 export function redactUrls(text: string, hosts: HostLabeller = PLAIN_HOSTS): string {
-  return cutUrls(text, hosts)
+  // JSON writes "http:\/\/host\/…": read it as a URL.
+  const unescaped = text.includes(':\\/\\/') ? text.split(':\\/\\/').join('://') : text;
+  return cutEncodedUrls(cutBareIpv6(cutUrls(unescaped, hosts), hosts), hosts)
+    .replace(LOGIN_JSON, (_m, name: string, colon: string) => `"${name}"${colon}"${ELLIPSIS}"`)
     .replace(LOGIN_PARAM, (_m, name: string) => `${name}=${ELLIPSIS}`)
     .replace(XTREAM_PATH, (_m, kind: string) => `${kind}/${ELLIPSIS}/`);
 }

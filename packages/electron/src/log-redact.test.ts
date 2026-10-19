@@ -137,3 +137,47 @@ test('without source names, what an error says is a host is still labelled', () 
   assert.equal(redactUrls('getaddrinfo ENOTFOUND api.themoviedb.org'), 'getaddrinfo ENOTFOUND api.themoviedb.org');
   assert.equal(redactUrls('listening on 127.0.0.1:9222'), 'listening on 127.0.0.1:9222');
 });
+
+test('more login names in queries: pwd, tokens of every kind, secrets', () => {
+  assert.equal(redactUrls('pwd=hunter2&x=1'), 'pwd=…&x=1');
+  assert.equal(redactUrls('access_token=abc refresh_token=def id_token=ghi auth_token=jkl'), 'access_token=… refresh_token=… id_token=… auth_token=…');
+  assert.equal(redactUrls('client_secret=s3 secret=s4 auth=s5'), 'client_secret=… secret=… auth=…');
+  // A longer word that merely ends like one is left alone
+  assert.equal(redactUrls('monkey=1 bypass=2'), 'monkey=1 bypass=2');
+});
+
+test('logins in JSON fields are replaced, whatever the spacing', () => {
+  assert.equal(redactUrls('{"username":"bob","password":"s3cret","ok":true}'), '{"username":"…","password":"…","ok":true}');
+  assert.equal(redactUrls('{ "Password" : "a b" , "access_token":"x" }'), '{ "Password" : "…" , "access_token":"…" }');
+  assert.equal(redactUrls('{"user_info":{"username":"bob","auth":1}}'), '{"user_info":{"username":"…","auth":1}}');
+  assert.equal(redactUrls('{"passwordless":"yes"}'), '{"passwordless":"yes"}');
+});
+
+test('percent-encoded URLs are cut like plain ones', () => {
+  assert.equal(redactUrls('url=http%3A%2F%2Fprovider.example%3A8080%2Flive%2Fu%2Fp%2F1.ts next'), 'url=http://[host]/… next');
+  assert.equal(redactUrls('HTTPS%3a%2f%2fprovider.example'), 'HTTPS://[host]');
+  assert.equal(redactUrls('u=http%3A%2F%2Fbob%3As3cret%40provider.example%2Fx'), 'u=http://…');
+});
+
+test('slash-escaped URLs (JSON) are cut like plain ones', () => {
+  assert.equal(redactUrls('{"url":"http:\\/\\/provider.example\\/live\\/u\\/p\\/1.ts"}'), '{"url":"http://[host]/…');
+  assert.equal(redactUrls('"stream":"https:\\/\\/user:pw@provider.example\\/x"'), '"stream":"https://…');
+});
+
+test('bare IPv6 addresses are labelled; times, MAC-like and loopback are not mistaken for hosts', () => {
+  assert.equal(redactUrls('connect to 2001:db8:85a3::8a2e:370:7334 failed'), 'connect to [host] failed');
+  assert.equal(redactUrls('peer fe80::1%eth0 and 2a00:1450:4001:82a::200e'), 'peer [host]%eth0 and [host]');
+  assert.equal(redactUrls('at 12:34:56 and 00:00:01.500'), 'at 12:34:56 and 00:00:01.500');
+  assert.equal(redactUrls('loopback ::1 stays'), 'loopback ::1 stays');
+});
+
+test('the new passes stay linear on hostile lines', () => {
+  const lines = [
+    '%3A%2F%2F'.repeat(20_000), ':\\/\\/'.repeat(30_000), '"password":'.repeat(20_000), 'a:'.repeat(100_000), '::'.repeat(100_000), 'access_token='.repeat(15_000),
+  ];
+  for (const line of lines) {
+    const t = performance.now();
+    redactUrls(line);
+    assert.ok(performance.now() - t < 200, `${line.slice(0, 12)}… took too long`);
+  }
+});
