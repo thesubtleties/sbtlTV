@@ -2116,19 +2116,27 @@ ipcMain.on('shared-texture-pipeline-failure', (event, message: unknown) => {
 async function gatherReportInputs(rawSyncStatus: unknown): Promise<ReportInputs> {
   const round = (bytes: number) => Math.round((bytes / 1024 ** 3) * 10) / 10;
   const gpus: ReportInputs['hardware']['gpus'] = [];
+  // PCI vendor ids -> names; the device id (hex) names the exact model.
+  const VENDORS: Record<number, string> = { 0x1002: 'AMD', 0x10de: 'NVIDIA', 0x8086: 'Intel', 0x106b: 'Apple', 0x5143: 'Qualcomm', 0x13b5: 'ARM', 0x1af4: 'Virtio' };
   try {
-    const info = (await app.getGPUInfo('complete')) as { gpuDevice?: { active?: boolean; driverVendor?: string; driverVersion?: string }[]; auxAttributes?: { glRenderer?: string; glVendor?: string; glVersion?: string } };
-    const aux = info.auxAttributes ?? {};
+    const info = (await app.getGPUInfo('complete')) as { gpuDevice?: { active?: boolean; vendorId?: number; deviceId?: number; driverVendor?: string; driverVersion?: string }[] };
     for (const d of info.gpuDevice ?? []) {
-      gpus.push({ active: d.active, driver: d.driverVendor, driverVersion: d.driverVersion, ...(d.active && { renderer: aux.glRenderer, vendor: aux.glVendor, gl: aux.glVersion }) });
+      gpus.push({
+        vendor: d.vendorId !== undefined ? (VENDORS[d.vendorId] ?? `0x${d.vendorId.toString(16)}`) : undefined,
+        device: d.deviceId !== undefined ? `0x${d.deviceId.toString(16).padStart(4, '0')}` : undefined,
+        active: d.active,
+        ...(d.driverVendor && { driver: d.driverVendor }),
+        ...(d.driverVersion && { driverVersion: d.driverVersion }),
+      });
     }
+    // The GPU the in-window player renders with (high-performance WebGL), by name.
     const webGl = (await getHighPerformanceWebGlRenderer()) as { renderer?: string; vendor?: string } | null;
-    if (webGl?.renderer && !gpus.some((g) => g.renderer === webGl.renderer)) gpus.push({ renderer: webGl.renderer, vendor: webGl.vendor });
+    if (webGl?.renderer) gpus.push({ renderer: webGl.renderer, vendor: webGl.vendor, usedFor: 'video (high-performance WebGL)' });
   } catch (error) {
     debugLog(`Bug report: GPU info unavailable (${error instanceof Error ? error.name : 'error'})`, 'app');
   }
   const bridge = useNativeMpv ? mpvBridge : null;
-  const prop = (name: string) => (bridge ? (bridge.getProperty(name) ?? 'unknown') : 'external mpv');
+  const prop = (name: string, empty = 'unknown') => (bridge ? (bridge.getProperty(name) ?? empty) : 'external mpv');
   let settings: ReportInputs['settings'] = 'unreadable';
   try { settings = storage.getSettings(); } catch { /* reported as unreadable */ }
   let sources: ReportInputs['sources'] = 'unreadable';
@@ -2143,7 +2151,7 @@ async function gatherReportInputs(rawSyncStatus: unknown): Promise<ReportInputs>
       why: compatibilityModeFromFlag ? 'launch flag' : compatibilityModeFromSetting ? 'setting' : process.platform === 'linux' ? 'default' : 'in-window',
       error: nativeInitError,
       // Linux only: there hwdec-current is an instant cached read (see the stream checks above).
-      hwdec: !bridge ? 'external mpv' : process.platform === 'linux' ? prop('hwdec-current') : 'not read',
+      hwdec: !bridge ? 'external mpv' : process.platform === 'linux' ? prop('hwdec-current', 'nothing playing') : 'not read',
       mpv: prop('mpv-version'),
       ffmpeg: prop('ffmpeg-version'),
     },
@@ -2153,7 +2161,7 @@ async function gatherReportInputs(rawSyncStatus: unknown): Promise<ReportInputs>
       ramGB: round(os.totalmem()),
       freeRamGB: round(os.freemem()),
       gpus,
-      displays: screen.getAllDisplays().map((d) => ({ width: d.size.width, height: d.size.height, scale: d.scaleFactor, hz: d.displayFrequency })),
+      displays: screen.getAllDisplays().map((d) => ({ width: d.size.width, height: d.size.height, scale: d.scaleFactor, hz: d.displayFrequency > 0 ? d.displayFrequency : null }))  // 0: not reported (e.g. Wayland),
     },
     keyring: {
       backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : null,

@@ -15,7 +15,7 @@ const inputs = (): ReportInputs => ({
   app: { version: '0.13.1', build: { sha: 'abc1234', run: '42', ref: 'dev' } },
   system: { platform: 'linux', arch: 'x64', osVersion: '6.12.1', electron: '44.3.0', chrome: '140', node: '24.1.0' },
   player: { mode: 'native', why: 'default', error: 'Native bridge failed opening http://prov.example:8080/live/bob/s3cret/1.ts', hwdec: 'vaapi', mpv: 'mpv 0.41.0', ffmpeg: '7.1' },
-  hardware: { cpu: 'AMD Ryzen 7 5800X', threads: 16, ramGB: 31.2, freeRamGB: 12.4, gpus: [{ renderer: 'AMD Radeon RX 6700 XT', vendor: 'AMD', driver: 'Mesa', driverVersion: '24.2.3', gl: '4.6', active: true }], displays: [{ width: 2560, height: 1440, scale: 1, hz: 144 }] },
+  hardware: { cpu: 'AMD Ryzen 7 5800X', threads: 16, ramGB: 31.2, freeRamGB: 12.4, gpus: [{ vendor: 'AMD', device: '0x73df', active: true }, { renderer: 'AMD Radeon RX 6700 XT', vendor: 'AMD', usedFor: 'video (high-performance WebGL)' }], displays: [{ width: 2560, height: 1440, scale: 1, hz: 144 }] },
   keyring: { backend: 'kwallet6', available: true, from: 'kept' },
   debugLoggingEnabled: true,
   addressesIncluded: false,
@@ -64,7 +64,8 @@ test('flags, hardware and player carried; free text cleaned', () => {
   const r = buildReport({ ...inputs(), addressesIncluded: true, debugLoggingEnabled: false }, clean, new Date()) as Record<string, any>;
   assert.equal(r.addressesIncluded, true);
   assert.equal(r.debugLoggingEnabled, false);
-  assert.equal(r.hardware.gpus[0].renderer, 'AMD Radeon RX 6700 XT');
+  assert.equal(r.hardware.gpus[1].renderer, 'AMD Radeon RX 6700 XT');
+  assert.equal(r.hardware.gpus[0].device, '0x73df');
   assert.equal(r.player.hwdec, 'vaapi');
   assert.equal(String(r.player.error).includes('s3cret'), false);
 });

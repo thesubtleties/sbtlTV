@@ -13,8 +13,8 @@ export interface ReportInputs {
   player: { mode: 'native' | 'compatibility'; why: string; error: string | null; hwdec: string; mpv: string; ffmpeg: string };
   hardware: {
     cpu: string; threads: number; ramGB: number; freeRamGB: number;
-    gpus: { renderer?: string; vendor?: string; driver?: string; driverVersion?: string; gl?: string; active?: boolean }[];
-    displays: { width: number; height: number; scale: number; hz: number }[];
+    gpus: { vendor?: string; device?: string; active?: boolean; renderer?: string; usedFor?: string; driver?: string; driverVersion?: string }[];
+    displays: { width: number; height: number; scale: number; hz: number | null }[];
   };
   keyring: { backend: string | null; available: boolean; from: string };
   debugLoggingEnabled: boolean;
