@@ -31,3 +31,12 @@ export function resetCacheIfMarked(userData: string): boolean {
   fs.rmSync(marker, { force: true });
   return true;
 }
+
+/** After a keyring switch: the backups were sealed with the old keyring and hold the dropped passwords. */
+export function removeBackups(dir: string): number {
+  let names: string[];
+  try { names = fs.readdirSync(dir); } catch { return 0; }
+  const backups = names.filter((n) => PATTERN.test(n));
+  for (const n of backups) fs.rmSync(path.join(dir, n), { force: true });
+  return backups.length;
+}

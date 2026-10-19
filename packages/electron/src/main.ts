@@ -26,7 +26,7 @@ import { CaptionSession } from './caption-session.js';
 import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
 import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
-import { resetCacheIfMarked } from './setup-backups.js';
+import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
 import { registerSetupTransfer } from './setup-transfer.js';
 const { autoUpdater } = electronUpdater;
 
@@ -2135,8 +2135,9 @@ ipcMain.handle('privacy-storage-protection', () => {
 ipcMain.handle('privacy-switch-keyring', (_event, keyring: unknown) => {
   if (process.platform !== 'linux' || !isKeyring(keyring)) return { error: 'Not a keyring' };
   if (launchPasswordStore) return { error: 'The keyring is set by --password-store when sbtlTV starts' };
-  debugLog(`Switching keyring to ${keyring}; saved passwords and API keys are dropped`, 'app');
+  debugLog(`Switching keyring to ${keyring}; saved passwords, API keys and setup backups are dropped`, 'app');
   storage.forgetSecrets();
+  removeBackups(path.join(app.getPath('userData'), 'backups'));
   storage.keepPasswordStore(keyring);
   restartApp();
   return { success: true };

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { backupLabel, backupName, backupsToPrune, resetCacheIfMarked, CACHE_RESET_MARKER } from './setup-backups.js';
+import { backupLabel, backupName, backupsToPrune, removeBackups, resetCacheIfMarked, CACHE_RESET_MARKER } from './setup-backups.js';
 
 test('backup names sort by time and read as labels', () => {
   const name = backupName(new Date(2026, 9, 19, 22, 14));
@@ -50,5 +50,14 @@ test('R8: the cache reset takes the -shm file too', () => {
   for (const f of ['sbtltv-data.sqlite', 'sbtltv-data.sqlite-shm', CACHE_RESET_MARKER]) fs.writeFileSync(path.join(dir, f), 'x');
   resetCacheIfMarked(dir);
   assert.deepEqual(fs.readdirSync(dir), []);
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('a keyring switch removes the setup backups (another keyring cannot open them), nothing else', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sbtltv-backups-'));
+  for (const f of ['before-import-2026-10-19-121905.sbtltv', 'before-import-2026-10-19-1219.sbtltv', 'notes.txt']) fs.writeFileSync(path.join(dir, f), 'x');
+  assert.equal(removeBackups(dir), 2);
+  assert.deepEqual(fs.readdirSync(dir), ['notes.txt']);
+  assert.equal(removeBackups(path.join(dir, 'missing')), 0);
   fs.rmSync(dir, { recursive: true });
 });
