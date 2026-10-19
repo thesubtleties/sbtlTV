@@ -9,7 +9,7 @@ import { Button, Hint, OnOff, OptionRow, Section, SettingsTab, TextField } from 
 
 const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: boolean }[] = [
   { id: 'sources', title: 'Sources', defaultOn: true },
-  { id: 'logins', title: 'With logins', help: "Xtream passwords. An M3U's login is part of its address, so it always goes with it. A shared login uses a connection on that account.", defaultOn: true },
+  { id: 'logins', title: 'With logins', help: "Xtream passwords. M3U logins are part of their addresses, so they always go along.", defaultOn: true },
   { id: 'settings', title: 'Settings', defaultOn: true },
   { id: 'apiKeys', title: 'API keys', help: 'TMDB and RatingPosterDB.', defaultOn: true },
   { id: 'favorites', title: 'Favorites', defaultOn: true },
@@ -123,7 +123,7 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
 
   return (
     <SettingsTab>
-      <Section title="Export setup" description="Your setup in one file, locked with a passphrase. Use it to set up another computer, or someone else's."
+      <Section title="Export setup" description="Your setup in one file, locked with a passphrase. For another computer, or someone else's."
         actions={<Button variant="primary" onClick={() => void exportSetup()} disabled={exporting || parts.size === 0 || imp.step === 'applying'}>{exporting ? 'Exporting…' : 'Export…'}</Button>}>
         {EXPORT_PARTS.map((p) => (
           <OptionRow key={p.id} title={p.title} help={p.help}>
@@ -150,7 +150,7 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
         actions={<Button onClick={() => void pick()} disabled={imp.step === 'applying'}>Import…</Button>}>
         {imp.step === 'passphrase' && (
           <form onSubmit={(e) => { e.preventDefault(); void unlock(imp.token); }}>
-            <OptionRow title="Passphrase" help="The five words shown when the file was exported.">
+            <OptionRow title="Passphrase" help="The five words from the export.">
               <TextField autoFocus aria-label="Passphrase" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} placeholder="word-word-word-word-word" />
             </OptionRow>
             {imp.error && <Hint tone="danger">{imp.error}</Hint>}
@@ -162,15 +162,15 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
             <Hint>
               From sbtlTV {imp.preview.app} on {platformName(imp.preview.platform)}{exportedOn(imp.preview.exportedAt)}: {setupSummary(imp.preview)}.
             </Hint>
-            <Hint tone="warn">{imp.restoring ? 'Restoring' : 'Importing'} replaces your current setup: sources, settings, API keys, favorites, watchlist and watch progress. Anything not in this file is cleared.</Hint>
-            <OptionRow title="Back up my current setup first"><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
+            <Hint tone="warn">Replaces your sources, settings, API keys, favorites, watchlist and watch progress. Anything not in the file is cleared.</Hint>
+            <OptionRow title="Back up my setup first"><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
             <div className="setup-preview__actions">
               <Button variant="danger" onClick={() => void apply(imp.token)}>{imp.restoring ? 'Replace and restore' : 'Replace and import'}</Button>
               <Button onClick={() => setImp({ step: 'idle' })}>Cancel</Button>
             </div>
           </div>
         )}
-        {imp.step === 'applying' && <Hint>Working… sbtlTV restarts when it's done.</Hint>}
+        {imp.step === 'applying' && <Hint>Working… sbtlTV restarts when done.</Hint>}
         {imp.step === 'failed' && (
           <>
             <Hint tone="danger">{imp.error}</Hint>
@@ -185,7 +185,7 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
       </Section>
 
       {backups.length > 0 && (
-        <Section title="Restore previous setup" description="Taken before an import when Back up my current setup first is on. The last three are kept on this computer, protected like your saved passwords.">
+        <Section title="Restore previous setup" description="Made before each import (with Back up first on). The last three stay on this computer.">
           {backups.map((b) => (
             <OptionRow key={b.name} title={b.label}>
               <Button onClick={() => void openBackup(b.name)} disabled={imp.step === 'applying'}>Restore…</Button>

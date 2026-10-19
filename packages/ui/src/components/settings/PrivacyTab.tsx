@@ -101,8 +101,8 @@ function KeyringRow({ protection }: { protection: StorageProtection }) {
       <OptionRow
         title="Keyring"
         help={protection.launchKeyring
-          ? `Set by --password-store=${protection.launchKeyring} where sbtlTV is started, which wins over this setting.`
-          : 'sbtlTV keeps using this keyring, so updates and desktop changes do not switch it.'}
+          ? `Set by --password-store=${protection.launchKeyring} at launch, which wins over this.`
+          : 'Stays the same through updates and desktop changes.'}
       >
         <Segmented
           compact
@@ -114,9 +114,7 @@ function KeyringRow({ protection }: { protection: StorageProtection }) {
       </OptionRow>
       {picked && (
         <Hint tone="warn">
-          Switching to {label(picked)} restarts sbtlTV. A keyring cannot read what another one saved, so your
-          provider passwords and API keys are removed and you enter them again after the restart.
-          Setup backups are removed too.{' '}
+          Switching to {label(picked)} restarts sbtlTV and removes your saved passwords, API keys and setup backups (another keyring can't read them). You enter the passwords again after.{' '}
           <Button variant="danger" onClick={() => void switchKeyring(picked)} disabled={switching}>
             {switching ? 'Restarting…' : 'Switch and restart'}
           </Button>{' '}
