@@ -53,11 +53,11 @@ export class LogPolicy {
   }
 
   forLog(text: string): string {
-    return redactUrls(text, this.hosts.labeller(this.includeAddresses));
+    return this.hosts.labelSourceIds(redactUrls(text, this.hosts.labeller(this.includeAddresses)));
   }
 
   forDisplay(text: string): string {
-    return redactUrls(text, this.hosts.labeller());
+    return this.hosts.labelSourceIds(redactUrls(text, this.hosts.labeller()));
   }
 
   forCard(text: string): string {

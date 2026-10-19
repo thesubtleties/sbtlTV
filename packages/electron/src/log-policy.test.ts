@@ -55,3 +55,21 @@ test('loads announce their host; sources and the legend follow changes', () => {
   assert.deepEqual(policy.legend(), [{ n: 1, name: 'a' }, { n: 2, name: 'b' }]);
   assert.equal(policy.forDisplay('http://b.example/x'), 'http://[source 2]/…');
 });
+
+test("a source's id in a log line reads as its [source N], matching the Debug tab legend", () => {
+  const policy = new LogPolicy([{ id: '3f2a9c1e-77b0-4d2e-9a51-0c4b8e6d1f20', name: 'lemo', url: 'http://lemo.example:8080' }]);
+  assert.equal(policy.forLog('Source 3f2a9c1e-77b0-4d2e-9a51-0c4b8e6d1f20 is stale, syncing...'), 'Source [source 1] is stale, syncing...');
+  assert.equal(policy.forDisplay('Sync FAILED for source 3f2a9c1e-77b0-4d2e-9a51-0c4b8e6d1f20: x'), 'Sync FAILED for source [source 1]: x');
+  // Unknown ids stay as they are (random, they say nothing)
+  assert.equal(policy.forLog('Source 00000000-0000-0000-0000-000000000000 is stale'), 'Source 00000000-0000-0000-0000-000000000000 is stale');
+});
+
+test("an encoded URL on a known source's subdomain is cut whole, logins and all, and stays the same when redacted again", () => {
+  const policy = new LogPolicy([{ name: 'S', url: 'http://src.example' }]);
+  const once = policy.forLog('u=http%3A%2F%2Fedge.src.example%2Flive%2Fbob%2Fs3cret%2F1.ts');
+  assert.equal(once.includes('s3cret') || once.includes('bob'), false, once);
+  assert.match(once, /^u=http:\/\/\[(source|host) \d+\]\/…$/);
+  const bare = policy.forLog('resolving enc2.example for url=http%3A%2F%2Fenc2.example%2Fx');
+  assert.equal(bare.includes('enc2.example'), false, bare);
+  assert.equal(policy.forLog(bare), bare);
+});

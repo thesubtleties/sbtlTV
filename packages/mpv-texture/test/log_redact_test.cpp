@@ -92,6 +92,31 @@ int main() {
     ok &= check("a monkey=banana", "a monkey=banana");
     { std::string big(200000, 'a'); auto t0 = std::chrono::steady_clock::now(); ok &= check(big, big);
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count(); std::cout << "200k line: " << ms << "ms\n"; ok &= ms < 200; }
+    // More login names (same list as log-redact.ts)
+    ok &= check("pwd=hunter2&x=1 access_token=abc refresh_token=d id_token=e auth_token=f", "pwd=\xE2\x80\xA6&x=1 access_token=\xE2\x80\xA6 refresh_token=\xE2\x80\xA6 id_token=\xE2\x80\xA6 auth_token=\xE2\x80\xA6");
+    ok &= check("client_secret=s secret=t auth=u", "client_secret=\xE2\x80\xA6 secret=\xE2\x80\xA6 auth=\xE2\x80\xA6");
+    ok &= check("monkey=1 bypass=2", "monkey=1 bypass=2");
+    // Bare IPv6 (not loopback; times and single colons are not addresses)
+    ok &= check("connect to 2001:db8:85a3::8a2e:370:7334 failed", "connect to [host] failed");
+    ok &= check("peer fe80::1%eth0 and 2a00:1450:4001:82a::200e", "peer [host]%eth0 and [host]");
+    ok &= check("at 12:34:56 and 00:00:01.500", "at 12:34:56 and 00:00:01.500");
+    ok &= check("loopback ::1 stays", "loopback ::1 stays");
+    ok &= check("surface::bar std::face::b", "surface::bar std::face::b");
+    { std::string big; for (int i = 0; i < 100000; i++) big += "a:"; auto t0 = std::chrono::steady_clock::now(); redactUrls(big);
+      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count(); std::cout << "200k colons: " << ms << "ms\n"; ok &= ms < 200; }
+    { std::string big(200000, ':'); auto t0 = std::chrono::steady_clock::now(); redactUrls(big);
+      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count(); std::cout << "200k '::': " << ms << "ms\n"; ok &= ms < 200; }
+    // IPv6 edges (same as log-redact.test.ts): only whole, well-formed addresses
+    for (const char* s : {"surface::bead and cafe::bead_x", "ratio 1::2::3", "x :1::2", "deadbeef::1", "1:2:3:4:5:6:7:8::9"}) ok &= check(s, s);
+    ok &= check("ipv6 http://[2001:db8::1]:8080/x and 2001:db8::1", "ipv6 http://[host]/\xE2\x80\xA6 and [host]");
+    // Node-style IPv6 errors and "::" that is not an address (same as log-redact.ts)
+    ok &= check("Failed to resolve hostname 2001:db8::1: Name or service not known", "Failed to resolve hostname [host]: Name or service not known");
+    ok &= check("connect to 2001:db8::1: Connection refused", "connect to [host]: Connection refused");
+    ok &= check("service_name: DE:: ZDF", "service_name: DE:: ZDF");
+    ok &= check("CA :: CBC and ::8080", "CA :: CBC and ::8080");
+    ok &= check("peer fe80::1 and 2001:db8:: up", "peer [host] and [host] up");
+    ok &= check("Failed to resolve hostname cafe: x", "Failed to resolve hostname [host]: x");
+    ok &= check("Failed to resolve hostname 2001:db8::1: x", "Failed to resolve hostname [host]: x");
     std::cout << (ok ? "all passed\n" : "failures\n");
     return ok ? 0 : 1;
 }

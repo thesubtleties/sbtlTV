@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { seedFixture } from './queries.test.js';
 import { runQuery } from './queries.js';
-import { replaceChannels, replaceEpg, replaceVod, replaceEpisodes, applyTmdbMatches, updateVodDetails, deleteSource, clearAll } from './writes.js';
+import { replaceChannels, replaceEpg, replaceVod, replaceEpisodes, applyTmdbMatches, updateVodDetails, deleteSource, clearAll, setSourceError } from './writes.js';
 
 const count = (db: DatabaseSync, sql: string) => (db.prepare(sql).get() as { c: number }).c;
 
@@ -242,4 +242,14 @@ test('entries the provider sent without a name are stored instead of failing the
     channels: [{ stream_id: 's1_42', source_id: 's1', name: 24 as unknown as string, stream_icon: '', epg_channel_id: '', category_ids: [], direct_url: 'http://x/42' }],
   });
   assert.equal((db.prepare("select name from channels where stream_id='s1_42'").get() as { name: string }).name, '24');
+});
+
+test('a stored sync error keeps where it failed but never a login (Settings shows it; a bug report carries it)', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  setSourceError(db, 's1', 'fetch failed: http://provider.example:8080/get.php?username=bob&password=s3cret (live/bob/s3cret/1.ts) {"password":"s3cret"}');
+  const error = (db.prepare(`select error from sources_meta where source_id = 's1'`).get() as { error: string }).error;
+  assert.equal(error.includes('s3cret') || error.includes('bob'), false, error);
+  assert.ok(error.includes('provider.example'), error);
+  setSourceError(db, 's1', null);
+  assert.equal((db.prepare(`select error from sources_meta where source_id = 's1'`).get() as { error: string | null }).error, null);
 });

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { redactUrls, hostOf, PUBLIC_HOSTS, type HostLabeller } from './log-redact.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { redactUrls, hostOf, cleanErrorText, PUBLIC_HOSTS, type HostLabeller } from './log-redact.js';
 
 test('stream URLs keep only the scheme and a host label (Xtream puts the username and password in the path)', () => {
   assert.equal(
@@ -136,4 +138,138 @@ test('without source names, what an error says is a host is still labelled', () 
   assert.equal(redactUrls('connect ECONNREFUSED 203.0.113.5:8080'), 'connect ECONNREFUSED [host]:8080');
   assert.equal(redactUrls('getaddrinfo ENOTFOUND api.themoviedb.org'), 'getaddrinfo ENOTFOUND api.themoviedb.org');
   assert.equal(redactUrls('listening on 127.0.0.1:9222'), 'listening on 127.0.0.1:9222');
+});
+
+test('more login names in queries: pwd, tokens of every kind, secrets', () => {
+  assert.equal(redactUrls('pwd=hunter2&x=1'), 'pwd=…&x=1');
+  assert.equal(redactUrls('access_token=abc refresh_token=def id_token=ghi auth_token=jkl'), 'access_token=… refresh_token=… id_token=… auth_token=…');
+  assert.equal(redactUrls('client_secret=s3 secret=s4 auth=s5'), 'client_secret=… secret=… auth=…');
+  // A longer word that merely ends like one is left alone
+  assert.equal(redactUrls('monkey=1 bypass=2'), 'monkey=1 bypass=2');
+});
+
+test('logins in JSON fields are replaced, whatever the spacing', () => {
+  assert.equal(redactUrls('{"username":"bob","password":"s3cret","ok":true}'), '{"username":"…","password":"…","ok":true}');
+  assert.equal(redactUrls('{ "Password" : "a b" , "access_token":"x" }'), '{ "Password" : "…" , "access_token":"…" }');
+  assert.equal(redactUrls('{"user_info":{"username":"bob","auth":1}}'), '{"user_info":{"username":"…","auth":1}}');
+  assert.equal(redactUrls('{"passwordless":"yes"}'), '{"passwordless":"yes"}');
+});
+
+test('percent-encoded URLs are cut like plain ones', () => {
+  assert.equal(redactUrls('url=http%3A%2F%2Fprovider.example%3A8080%2Flive%2Fu%2Fp%2F1.ts next'), 'url=http://[host]/… next');
+  assert.equal(redactUrls('HTTPS%3a%2f%2fprovider.example'), 'HTTPS://[host]');
+  assert.equal(redactUrls('u=http%3A%2F%2Fbob%3As3cret%40provider.example%2Fx'), 'u=http://…');
+});
+
+test('slash-escaped URLs (JSON) are cut like plain ones', () => {
+  assert.equal(redactUrls('{"url":"http:\\/\\/provider.example\\/live\\/u\\/p\\/1.ts"}'), '{"url":"http://[host]/…');
+  assert.equal(redactUrls('"stream":"https:\\/\\/user:pw@provider.example\\/x"'), '"stream":"https://…');
+});
+
+test('bare IPv6 addresses are labelled; times, MAC-like and loopback are not mistaken for hosts', () => {
+  assert.equal(redactUrls('connect to 2001:db8:85a3::8a2e:370:7334 failed'), 'connect to [host] failed');
+  assert.equal(redactUrls('peer fe80::1%eth0 and 2a00:1450:4001:82a::200e'), 'peer [host]%eth0 and [host]');
+  assert.equal(redactUrls('at 12:34:56 and 00:00:01.500'), 'at 12:34:56 and 00:00:01.500');
+  assert.equal(redactUrls('loopback ::1 stays'), 'loopback ::1 stays');
+});
+
+test('the new passes stay linear on hostile lines', () => {
+  const lines = [
+    '%3A%2F%2F'.repeat(20_000), ':\\/\\/'.repeat(30_000), '"password":'.repeat(20_000), 'a:'.repeat(100_000), '::'.repeat(100_000), 'access_token='.repeat(15_000),
+  ];
+  for (const line of lines) {
+    const t = performance.now();
+    redactUrls(line);
+    assert.ok(performance.now() - t < 200, `${line.slice(0, 12)}… took too long`);
+  }
+});
+
+test('an encoded URL after characters that change length when lowercased is still cut (no index drift)', () => {
+  const line = 'İİİİ url=http%3A%2F%2Fprovider.example%2Flive%2Fu%2Fp%2F1.ts end';
+  const out = redactUrls(line);
+  assert.equal(out, 'İİİİ url=http://[host]/… end');
+});
+
+test('logins inside an encoded query are cut, and double-encoded or \\u-escaped URLs too', () => {
+  assert.equal(redactUrls('next=%2Fget.php%3Fusername%3Dbob%26password%3Ds3cret%26type%3Dm3u'), 'next=%2Fget.php%3Fusername%3D…%26password%3D…%26type%3Dm3u');
+  assert.equal(redactUrls('u=http%253A%252F%252Fprovider.example%252Fx'), 'u=http://[host]/…');
+  assert.equal(redactUrls('{"u":"http:\\u002f\\u002fprovider.example\\u002flive"}'), '{"u":"http://[host]/…');
+});
+
+test('every login name is cut in all three shapes, and the native twin has exactly the same list', () => {
+  const names = ['username', 'user', 'password', 'pass', 'passwd', 'pwd', 'token', 'access_token', 'refresh_token', 'id_token', 'auth_token', 'api_key', 'apikey', 'key', 'secret', 'client_secret', 'auth'];
+  assert.equal(redactUrls(names.map((n) => `${n}=v`).join(' ')), names.map((n) => `${n}=…`).join(' '));
+  assert.equal(redactUrls(names.map((n) => `"${n}":"v"`).join(',')), names.map((n) => `"${n}":"…"`).join(','));
+  assert.equal(redactUrls(names.map((n) => `%26${n}%3Dv`).join('')), names.map((n) => `%26${n}%3D…`).join(''));
+  const header = readFileSync(fileURLToPath(new URL('../../mpv-texture/src/native/log_redact.h', import.meta.url)), 'utf8');
+  const kNames = /kNames\[\] = \{([^}]*)\}/.exec(header)![1].match(/"[^"]+"/g)!.map((q) => q.slice(1, -1));
+  assert.deepEqual([...kNames].sort(), [...names].sort());
+});
+
+test('encoded, escaped and JSON login shapes the first tests did not pin', () => {
+  // An encoded query at the start of a value (not after %3F or %26)
+  assert.equal(redactUrls('q=username%3Dbob%26password%3Ds3cret'), 'q=username%3D…%26password%3D…');
+  // Lower-case percent-encoding
+  assert.equal(redactUrls('next=%2fget.php%3fusername%3dbob%26password%3ds3cret'), 'next=%2fget.php%3fusername%3D…%26password%3D…');
+  // An escaped quote inside a JSON login does not end it
+  assert.equal(redactUrls('{"password":"a\\"b s3cret","ok":1}'), '{"password":"…","ok":1}');
+  // / with upper-case hex
+  assert.equal(redactUrls('{"u":"http:\\u002F\\u002Fprovider.example\\u002Flive\\u002Fbob"}'), '{"u":"http://[host]/…');
+  // Malformed percent-encoding: the loose decoder still sees the login before the host, and the path
+  assert.equal(redactUrls('u=http%3A%2F%2Fbob%3As3cret%40provider.example%2Flive%2F100%'), 'u=http://…');
+  assert.equal(redactUrls('u=http%3A%2F%2Fprovider.example%2Flive%2F100%'), 'u=http://[host]/…');
+  // An encoded URL ends with its value
+  assert.equal(redactUrls(`u=http%3A%2F%2Fh.example%2Fx&type=m3u {"u":"http%3A%2F%2Fh.example%2Fx","ok":1} 'http%3A%2F%2Fh.example%2Fx'!`),
+    `u=http://[host]/…&type=m3u {"u":"http://[host]/…","ok":1} 'http://[host]/…'!`);
+});
+
+test('IPv6: only whole, well-formed addresses; lowercased; a URL host is the URL pass\'s', () => {
+  for (const s of ['surface::bead and cafe::bead_x', 'ratio 1::2::3', 'x :1::2', 'deadbeef::1', '1:2:3:4:5:6:7:8::9']) assert.equal(redactUrls(s), s);
+  const seen: string[] = [];
+  redactUrls('FE80::1', { forUrl: (h) => h, forBare: (t) => { seen.push(t); return '[host]'; } });
+  assert.deepEqual(seen, ['fe80::1']);
+  const urlHosts: string[] = [];
+  const numbered: HostLabeller = { forUrl: (h) => { urlHosts.push(h); return '[host 1]'; }, forBare: () => '[host 2]' };
+  assert.equal(redactUrls('http://[2001:db8::1]:8080/x', numbered), 'http://[host 1]/…');
+  assert.deepEqual([...new Set(urlHosts)], ['2001:db8::1']);
+});
+
+test("IPv6 in Node's connection errors is labelled whole (after ECONNREFUSED/hostname, with a port, before a colon)", () => {
+  assert.equal(redactUrls('connect ECONNREFUSED 2001:db8::1:443'), 'connect ECONNREFUSED [host]');
+  assert.equal(redactUrls('connect ETIMEDOUT 2606:4700::6810:84e5:443'), 'connect ETIMEDOUT [host]');
+  assert.equal(redactUrls('Failed to resolve hostname 2001:db8::1: Name or service not known'), 'Failed to resolve hostname [host]: Name or service not known');
+  assert.equal(redactUrls('connect to 2001:db8::1: Connection refused'), 'connect to [host]: Connection refused');
+  assert.equal(redactUrls('x 1:2:3:4:5:6:7:8: err'), 'x [host]: err');
+});
+
+test('"::" separators and A-F prefixes are not addresses', () => {
+  for (const line of ['handleLoadStream: DE:: ARD HD (12345)', 'CA :: CBC', 'sync :: done', 'bare :: and ::8080']) {
+    assert.equal(redactUrls(line), line);
+  }
+  assert.equal(redactUrls('peer fe80::1 and 2001:db8:: up'), 'peer [host] and [host] up');
+});
+
+test('a hostname made of hex letters before a colon is still a host (only a real IPv6 run is left to the IPv6 pass)', () => {
+  assert.equal(redactUrls('getaddrinfo ENOTFOUND cafe: lookup failed'), 'getaddrinfo ENOTFOUND [host]: lookup failed');
+  assert.equal(redactUrls('connect ECONNREFUSED feed:8080'), 'connect ECONNREFUSED [host]:8080');
+  assert.equal(redactUrls('connect ECONNREFUSED 2001:db8::1:443'), 'connect ECONNREFUSED [host]');
+});
+
+test('an encoded "://" without a scheme is cut like a plain one', () => {
+  assert.equal(redactUrls('next=%3A%2F%2Fprovider.example%2Flive%2Fbob%2Fs3cret%2F1.ts'), 'next=://[host]/…');
+});
+
+test('an empty JSON login stays empty (it says the login is missing)', () => {
+  assert.equal(redactUrls('{"username":"","password":""}'), '{"username":"","password":""}');
+});
+
+test('error text for the screen keeps the host, never a login', () => {
+  const shown = cleanErrorText('Request cannot be constructed from a URL that includes credentials: http://bob:s3cret@provider.example:8080/series/bob/s3cret/1.mkv?token=t');
+  assert.equal(shown.includes('s3cret') || shown.includes('bob') || shown.includes('token=t'), false, shown);
+  assert.equal(cleanErrorText('fetch failed: http://provider.example:8080/get.php?username=u&password=p'), 'fetch failed: http://provider.example/…');
+});
+
+test('a JSON login ending in an escaped quote is not mistaken for an empty one', () => {
+  assert.equal(redactUrls('{"password":"s3cret\\""}'), '{"password":"…"}');
+  assert.equal(redactUrls('{"token":"a\\"\\""}'), '{"token":"…"}');
 });

@@ -11,7 +11,7 @@ import { downloadToTempFile, decompressToFile, parseXmltvFile } from './epg-sour
 // panel's built-in guide, the URL itself for an override.
 export async function syncEpg(ctx: StageContext, source: Source, channels: Channel[], epgUrl: string, epgSource: string): Promise<number> {
   ctx.progress({ sourceId: source.id, stage: 'epg', state: 'started' });
-  ctx.log('epg', `Starting EPG sync for source: ${source.name || source.id}`);
+  ctx.log('epg', `Starting EPG sync for source ${source.id}`);
   const urls = epgUrl.split(',').map((u) => u.trim()).filter(Boolean);
   const providerChannels = channels.map((c) => ({ epg_channel_id: c.epg_channel_id, name: c.name, stream_id: c.stream_id }));
   const allChannels = new Map<string, { id: string; displayNames: string[] }>();

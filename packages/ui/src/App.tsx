@@ -673,6 +673,7 @@ function App() {
       if (!window.storage) return;
       try {
         const result = await window.storage.getSettings();
+        if (result.error) throw new Error(result.error);
         if (result.data) {
           useUIStore.getState().hydrateSettings(result.data);
         } else {
@@ -681,6 +682,8 @@ function App() {
         }
       } catch (err) {
         console.error('[App] Failed to load settings:', err);
+        debugLog(`Loading settings failed: ${err instanceof Error ? err.message : String(err)}`, 'app');
+        useToastStore.getState().addToast({ kind: 'error', title: 'Could not read your settings', message: 'Defaults are in use for now. Details are in the debug log.', duration: 8000 });
         useUIStore.getState().hydrateSettings({} as any);
       }
     }
@@ -714,6 +717,8 @@ function App() {
   useEffect(() => {
     if (!window.storage) return;
     window.storage.getSources().then((result) => {
+      // Main answers a failed read with { error } rather than a rejection: same toast as below.
+      if (result.error) throw new Error(result.error);
       if (result.data) useUIStore.getState().hydrateSources(result.data);
       // After a setup import: playlists from files come back from the setup file (setup-transfer.ts).
       const sources = result.data ?? [];
