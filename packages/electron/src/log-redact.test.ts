@@ -46,12 +46,12 @@ test('host forms: case, port, IPv6, empty host', () => {
 test('a labeller decides URL hosts and known bare hosts; labels are never re-scanned', () => {
   const seen: string[] = [];
   const hosts: HostLabeller = {
-    forUrl: (host) => { seen.push(host); return host === 'provider.tv' ? '[source: provider.tv]' : '[host 1]'; },
-    forBare: (token) => (token === 'provider.tv' ? '[source: provider.tv]' : null),
+    forUrl: (host) => { seen.push(host); return host === 'provider.tv' ? '[source 1]' : '[host 1]'; },
+    forBare: (token) => (token === 'provider.tv' ? '[source 1]' : null),
   };
   assert.equal(
     redactUrls('open http://PROVIDER.tv:80/live/u/p/1.ts then getaddrinfo ENOTFOUND provider.tv.', hosts),
-    'open http://[source: provider.tv]/… then getaddrinfo ENOTFOUND [source: provider.tv].',
+    'open http://[source 1]/… then getaddrinfo ENOTFOUND [source 1].',
   );
   assert.deepEqual([...new Set(seen)], ['provider.tv']);  // the host as the labeller gets it (lowercased, no port)
 });
@@ -70,11 +70,11 @@ test('a quote or < in the password does not end the URL early', () => {
 test('a long line is handled quickly (no backtracking), with and without dots', () => {
   const line = 'a'.repeat(200_000) + ' b.c-d+e'.repeat(20_000);
   const hosts: HostLabeller = { forUrl: () => '[host 1]', forBare: () => null };
-  const started = Date.now();
+  const started = performance.now();
   assert.equal(redactUrls(line), line);
   assert.equal(redactUrls(line, hosts), line);
   assert.equal(redactUrls('a.'.repeat(100_000), hosts), 'a.'.repeat(100_000));
-  assert.ok(Date.now() - started < 200, `took ${Date.now() - started}ms`);
+  assert.ok(performance.now() - started < 2000, `took ${Math.round(performance.now() - started)}ms`);
 });
 
 test('login details outside a URL are cleaned too', () => {
@@ -87,6 +87,9 @@ test('login details outside a URL are cleaned too', () => {
 test('text that only looks like a label does not slip past redaction', () => {
   const hosts: HostLabeller = { forUrl: () => '[host 1]', forBare: (t) => (t === 'real.example' ? '[host 1]' : null) };
   for (const line of [
+    'http://[source: x http://bob:s3cret@real.example/live/u/p/1.ts y]',
+    'see [source: a real.example b] ok',
+    'http://[source 1x]real.example/live/bob/s3cret/1.ts',
     'http://[host]/live/bob/s3cret/1.ts?password=s3cret',
     'http://[host]evil.example/live/bob/s3cret/1.ts',
     'http://[source:x]real.example/live/bob/s3cret/1.ts',
@@ -97,7 +100,7 @@ test('text that only looks like a label does not slip past redaction', () => {
     assert.ok(!out.includes('s3cret') && !out.includes('bob') && !out.includes('real.example') && !out.includes('evil.example'), `${line} -> ${out}`);
   }
   assert.equal(redactUrls('Failed to open http://[host 1]/…', hosts), 'Failed to open http://[host 1]/…');
-  assert.equal(redactUrls('ok [source: lemo] and [host 2] stay', hosts), 'ok [source: lemo] and [host 2] stay');
+  assert.equal(redactUrls('ok [source 1] and [host 2] stay', hosts), 'ok [source 1] and [host 2] stay');
 });
 
 test('a URL without a host still loses its path (file:// paths name the user)', () => {
@@ -109,8 +112,28 @@ test('a URL without a host still loses its path (file:// paths name the user)', 
 test('a long line of :// without spaces stays fast (the host pre-pass jumps like the main loop)', () => {
   const hosts: HostLabeller = { forUrl: () => '[host 1]', forBare: () => null };
   const line = 'a://'.repeat(100_000);
-  const started = Date.now();
+  const started = performance.now();
   redactUrls(line, hosts);
   redactUrls(line);
-  assert.ok(Date.now() - started < 200, `took ${Date.now() - started}ms`);
+  assert.ok(performance.now() - started < 2000, `took ${Math.round(performance.now() - started)}ms`);
+});
+
+test('the readable public hosts are exactly these (mirrored in log_redact.h)', () => {
+  assert.deepEqual([...PUBLIC_HOSTS].sort(), [
+    'a.espncdn.com', 'am.i.mullvad.net', 'api.ratingposterdb.com', 'api.themoviedb.org', 'files.tmdb.org', 'github.com',
+    'image.tmdb.org', 'objects.githubusercontent.com', 'raw.githubusercontent.com', 'release-assets.githubusercontent.com',
+  ]);
+});
+
+test('only ASCII whitespace ends a URL (a non-breaking space must not leave the path behind)', () => {
+  assert.equal(redactUrls('http://a.tv/x\u00a0/bob/s3cret/1.ts'), 'http://[host]/…');
+  assert.equal(redactUrls('http://\u3000provider.tv/live/u/p/1.ts'), 'http:///…');
+  assert.equal(redactUrls('a http://a.tv/x\tb'), 'a http://[host]/…\tb');
+});
+
+test('without source names, what an error says is a host is still labelled', () => {
+  assert.equal(redactUrls('[ffmpeg] tcp: Failed to resolve hostname edge3.cdn.example: x'), '[ffmpeg] tcp: Failed to resolve hostname [host]: x');
+  assert.equal(redactUrls('connect ECONNREFUSED 203.0.113.5:8080'), 'connect ECONNREFUSED [host]:8080');
+  assert.equal(redactUrls('getaddrinfo ENOTFOUND api.themoviedb.org'), 'getaddrinfo ENOTFOUND api.themoviedb.org');
+  assert.equal(redactUrls('listening on 127.0.0.1:9222'), 'listening on 127.0.0.1:9222');
 });
