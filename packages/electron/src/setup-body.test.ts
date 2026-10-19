@@ -59,12 +59,14 @@ test('an import keeps machine settings and internal markers, nothing it replaces
 test('the preview says what is inside without secrets', () => {
   const p = describeSetup(validateSetupBody(good()));
   assert.deepEqual(p.sources, [
-    { name: 'Provider', type: 'xtream', withLogin: true, fromFile: false },
-    { name: 'Local', type: 'm3u', withLogin: false, fromFile: true },
+    { name: 'Provider', type: 'xtream', withLogin: true, fromFile: false, host: 'provider.example' },
+    { name: 'Local', type: 'm3u', withLogin: false, fromFile: true, host: null },
   ]);
   assert.equal(p.favorites, 1);
   assert.equal(JSON.stringify(p).includes('"p"'), false);
-  assert.equal(JSON.stringify(p).includes('provider.example'), false);
+  // Where each source connects, so the person importing can check it; never a path, query or login.
+  const m3u = describeSetup(validateSetupBody({ ...good(), sources: [{ id: 'm1', name: 'M', type: 'm3u', url: 'http://user:pw@lists.example:80/get.php?username=u&password=p', enabled: true }] }));
+  assert.equal(m3u.sources[0].host, 'lists.example');
 });
 
 test('a setup file cannot turn on LAN sources (that guard is this computer\'s choice)', () => {

@@ -20,7 +20,7 @@ export interface SetupBody {
 }
 export interface SetupPreview {
   app: string; exportedAt: string; platform: string;
-  sources: { name: string; type: string; withLogin: boolean; fromFile: boolean }[];
+  sources: { name: string; type: string; withLogin: boolean; fromFile: boolean; host: string | null }[];
   settings: boolean; apiKeys: boolean; favorites: number; watchlist: number; progress: number;
 }
 
@@ -176,10 +176,15 @@ export function keptOnImport<T extends Record<string, unknown>>(stored: T): Part
   return out as Partial<T>;
 }
 
+/** Where a source connects, for the preview: the hostname only (no port, path, query or login). */
+function hostOf(url: string): string | null {
+  try { return new URL(url).hostname || null; } catch { return null; }
+}
+
 export function describeSetup(body: SetupBody): SetupPreview {
   return {
     app: body.app, exportedAt: body.exportedAt, platform: body.platform,
-    sources: (body.sources ?? []).map((s) => ({ name: s.name, type: s.type, withLogin: !!s.password, fromFile: s.url.startsWith('imported:') })),
+    sources: (body.sources ?? []).map((s) => ({ name: s.name, type: s.type, withLogin: !!s.password, fromFile: s.url.startsWith('imported:'), host: hostOf(s.url) })),
     settings: body.settings !== undefined,
     apiKeys: !!(body.apiKeys?.tmdb || body.apiKeys?.posterDb),
     favorites: body.lists?.favorites?.length ?? 0,

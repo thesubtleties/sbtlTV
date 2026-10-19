@@ -5,9 +5,10 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 // An M3U carries its login in its addresses; an Xtream source shared without its
 // password needs it entered after importing.
 function sourceLine(s: SetupPreview['sources'][number]): string {
-  if (s.type === 'm3u') return `${s.name}, M3U: login is part of the playlist`;
-  if (s.type === 'xtream') return s.withLogin ? `${s.name} with login` : `${s.name}, password needed after importing`;
-  return s.name;
+  const where = s.host ? `${s.name} at ${s.host}` : s.fromFile ? `${s.name}, from a file` : s.name;
+  if (s.type === 'm3u') return `${where}, M3U: login is part of the playlist`;
+  if (s.type === 'xtream') return s.withLogin ? `${where}, with login` : `${where}, password needed after importing`;
+  return where;
 }
 
 /** What a setup file holds, in one line for the import preview. */

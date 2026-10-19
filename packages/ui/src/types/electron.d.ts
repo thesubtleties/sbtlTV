@@ -180,7 +180,7 @@ export interface StorageProtection {
 export type SetupPart = 'sources' | 'logins' | 'settings' | 'apiKeys' | 'favorites' | 'watchlist' | 'progress';
 export interface SetupPreview {
   app: string; exportedAt: string; platform: string;
-  sources: { name: string; type: string; withLogin: boolean; fromFile: boolean }[];
+  sources: { name: string; type: string; withLogin: boolean; fromFile: boolean; host: string | null }[];
   settings: boolean; apiKeys: boolean; favorites: number; watchlist: number; progress: number;
 }
 export interface SetupListsWire { favorites?: unknown[]; watchlist?: unknown[]; progress?: unknown[]; lastCategory?: string }
