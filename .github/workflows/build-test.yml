@@ -87,6 +87,11 @@ jobs:
           pnpm --filter @sbtltv/ui test
           pnpm --filter @sbtltv/electron test
 
+      # The native player's log redaction (C++; no compiler in the Windows leg's bash)
+      - name: Run native log redaction tests
+        if: matrix.platform == 'mac' || matrix.platform == 'linux'
+        run: pnpm --filter @sbtltv/mpv-texture test:redact
+
       - name: Build native addon
         if: matrix.platform == 'mac' || matrix.platform == 'linux'
         run: |

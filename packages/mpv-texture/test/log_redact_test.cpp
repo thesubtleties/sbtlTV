@@ -42,7 +42,7 @@ int main() {
             if (leaked) { std::cerr << "FAIL bypass\n in:  " << line << "\n got: " << out << "\n"; ok = false; }
         }
     }
-    ok &= check("ok [source: lemo] and [host 2] stay", "ok [source: lemo] and [host 2] stay");
+    ok &= check("ok [source 1] and [host 2] stay", "ok [source 1] and [host 2] stay");
     ok &= check("at file:///home/steven/secret/file.ts:10", "at file:///\xE2\x80\xA6");
     ok &= check("http://:8080/home/steven/a.ts", "http:///\xE2\x80\xA6");
     { const std::string out = redactUrls("{\"url\":\"http://qq.tv\",\"x\":1} later qq.tv");
@@ -55,6 +55,35 @@ int main() {
       auto t0 = std::chrono::steady_clock::now(); redactUrls(big);
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
       std::cout << "100k :// line: " << ms << "ms\n"; ok &= ms < 200; }
+    {
+        const char* const more[] = {
+            "http://[source: x http://bob:s3cret@real.example/live/u/p/1.ts y]",
+            "http://[source 1x]real.example/live/bob/s3cret/1.ts",
+        };
+        for (const char* line : more) {
+            const std::string out = redactUrls(line);
+            if (out.find("s3cret") != std::string::npos || out.find("bob") != std::string::npos || out.find("real.example") != std::string::npos) {
+                std::cerr << "FAIL bypass\n in:  " << line << "\n got: " << out << "\n"; ok = false;
+            }
+        }
+    }
+    log_redact_detail::resetSeenHostsForTest();
+    ok &= check("[ffmpeg] tcp: Failed to resolve hostname edge3.cdn.example: x", "[ffmpeg] tcp: Failed to resolve hostname [host]: x");
+    ok &= check("getaddrinfo EAI_AGAIN unseen.example", "getaddrinfo EAI_AGAIN [host]");
+    ok &= check("connect ECONNREFUSED 203.0.113.5:8080", "connect ECONNREFUSED [host]:8080");
+    ok &= check("peer 198.51.100.7 closed, local 127.0.0.1 fine", "peer [host] closed, local 127.0.0.1 fine");
+    ok &= check("getaddrinfo ENOTFOUND api.themoviedb.org", "getaddrinfo ENOTFOUND api.themoviedb.org");
+    ok &= check("Opening http://provider-x.example/a", "Opening http://[host]/\xE2\x80\xA6");
+    ok &= check("edge2.provider-x.example and PROVIDER-X.example", "[host] and [host]");
+    ok &= check("files https://files.tmdb.org/p/x.gz", "files https://files.tmdb.org/\xE2\x80\xA6");
+    // The cap must not stop a host on the same line, or one being loaded, from being labelled.
+    log_redact_detail::resetSeenHostsForTest();
+    for (int i = 0; i < 1100; i++) redactUrls("http://filler" + std::to_string(i) + ".example/x");
+    ok &= check("Opening http://late.example/x then late.example", "Opening http://[host]/\xE2\x80\xA6 then [host]");
+    noteUrl("http://loaded-after-cap.example/live/a/b/1.ts");
+    ok &= check("Failed to open loaded-after-cap.example", "Failed to open [host]");
+    { const std::string big = std::string(300, 'a') + ".example"; ok &= check("http://" + big + "/x", "http://[host]/\xE2\x80\xA6"); }
+    log_redact_detail::resetSeenHostsForTest();
     ok &= check("", "");
     ok &= check("GET player_api.php?username=bob&password=s3cret&action=x", "GET player_api.php?username=\xE2\x80\xA6&password=\xE2\x80\xA6&action=x");
     ok &= check("Opening 'live/bob/s3cret/12345.ts'", "Opening 'live/\xE2\x80\xA6/12345.ts'");

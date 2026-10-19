@@ -13,7 +13,7 @@
     "build:ts": "tsc",
     "clean": "node-gyp clean && rm -rf dist",
     "prepare": "npm run build:ts",
-    "test:redact": "c++ -std=c++17 -O2 -Wall -Wextra -o build/log_redact_test test/log_redact_test.cpp && ./build/log_redact_test"
+    "test:redact": "mkdir -p build && c++ -std=c++17 -O2 -Wall -Wextra -o build/log_redact_test test/log_redact_test.cpp && ./build/log_redact_test && c++ -std=c++17 -O2 -Wall -Wextra -pthread -o build/log_redact_exit_test test/log_redact_exit_test.cpp && for i in 1 2 3 4 5; do ./build/log_redact_exit_test || exit 1; done && echo exit test passed"
   },
   "dependencies": {
     "node-addon-api": "^8.3.0"
