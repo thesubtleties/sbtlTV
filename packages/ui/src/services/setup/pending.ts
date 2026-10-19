@@ -14,7 +14,8 @@ export async function resumePendingPlaylists(
 ): Promise<string[]> {
   const settled: string[] = [];
   for (const p of pending) {
-    if (!sourceIds.has(p.sourceId) || (await channelCount(p.sourceId)) > 0) {
+    // Nothing to bring back (no channel lines), the source is gone, or its channels are in.
+    if (!p.content.includes('#EXTINF') || !sourceIds.has(p.sourceId) || (await channelCount(p.sourceId)) > 0) {
       settled.push(p.sourceId);
       continue;
     }

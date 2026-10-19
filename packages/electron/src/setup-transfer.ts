@@ -174,7 +174,10 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
   });
 
   // Pending until the page reports the source has its channels (setup:settlePlaylists).
-  ipcMain.handle('setup:pendingPlaylists', () => readPending());
+  // Not while the old cache is still due to go: channels found there would settle a
+  // playlist that the next start's reset then deletes.
+  ipcMain.handle('setup:pendingPlaylists', () =>
+    fs.existsSync(path.join(app.getPath('userData'), CACHE_RESET_MARKER)) ? [] : readPending());
 
   ipcMain.handle('setup:settlePlaylists', (_e, sourceIds: unknown) => {
     if (!Array.isArray(sourceIds)) return;
