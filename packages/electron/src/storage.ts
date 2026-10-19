@@ -6,6 +6,9 @@ import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitle-set
 import { settleTeamLogosDefault } from './settings-upgrades.js';
 import { normalizeRewindBytes } from './rewind.js';
 import os from 'node:os';
+import { isKeyringSealed } from './secret-fallback.js';
+import { keptOnImport, type SetupSource } from './setup-body.js';
+import type { KeyProtector } from './setup-file.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -421,3 +424,43 @@ export function forgetSecrets(): void {
   const { encryptedTmdbApiKey: _tmdb, encryptedPosterDbApiKey: _posterDb, ...settings } = store.get('settings');
   store.set('settings', settings);
 }
+
+export class SecretsUnreadable extends Error {}
+
+/** Everything an export needs, every secret read now: an export never goes out half empty. */
+export function readSetupForExport(): { sources: Source[]; settings: AppSettings } {
+  if (!safeStorage.isEncryptionAvailable()) {
+    // The plain fallback would read keyring-sealed secrets as garbage (secret-fallback.ts).
+    const stored = store.get('settings');
+    const sealed = [...store.get('sources', []).map((s) => s.encryptedPassword), stored.encryptedTmdbApiKey, stored.encryptedPosterDbApiKey];
+    if (sealed.some((v) => v && isKeyringSealed(v))) throw new SecretsUnreadable('keyring out of reach');
+  }
+  try {
+    return { sources: getSources(), settings: getSettings() };
+  } catch (error) {
+    throw new SecretsUnreadable(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/**
+ * An import: sources and settings replaced by key (never store.clear(), so the
+ * kept keyring and the log format stay); machine settings and internal markers
+ * stay as they are on this computer. Secrets are encrypted with this computer's keyring.
+ */
+export function replaceSetup(input: { sources: SetupSource[]; settings: Partial<AppSettings>; apiKeys: { tmdb?: string; posterDb?: string } }): void {
+  const kept = keptOnImport(store.get('settings') as unknown as Record<string, unknown>);
+  store.set('settings', { theme: 'dark', vodRefreshHours: 24, epgRefreshHours: 6, ...kept } as StoredSettings);
+  updateSettings({ ...input.settings, tmdbApiKey: input.apiKeys.tmdb ?? '', posterDbApiKey: input.apiKeys.posterDb ?? '' });
+  store.set('sources', []);
+  for (const { playlist: _playlist, ...source } of input.sources) saveSource(source as Source);
+}
+
+/** Local backups: a random key sealed by this computer's keyring (as passwords are). */
+export const keyringProtector: KeyProtector = {
+  protect: (key) => encryptPassword(key.toString('base64')),
+  unprotect: (sealed) => {
+    const key = Buffer.from(decryptPassword(sealed), 'base64');
+    if (key.length !== 32) throw new Error('not this computer');
+    return key;
+  },
+};

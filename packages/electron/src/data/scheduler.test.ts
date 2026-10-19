@@ -27,3 +27,9 @@ test('zero refresh hours means never automatic', () => {
 test('disabled sources are skipped', () => {
   assert.deepEqual(dueSyncs([], [{ ...xt, enabled: false }], settings, 100 * H), []);
 });
+
+test('an Xtream source without a password is not synced until a login is entered', () => {
+  const { password: _password, ...noLogin } = xt;
+  assert.deepEqual(dueSyncs([], [noLogin], settings, 100 * H), []);
+  assert.equal(dueSyncs([], [xt], settings, 100 * H).length, 1);
+});

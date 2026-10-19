@@ -15,6 +15,7 @@ export type SettingsTabId =
   | 'player'
   | 'security'
   | 'privacy'
+  | 'backup'
   | 'debug'
   | 'about';
 
@@ -60,6 +61,7 @@ const SETTINGS_CATEGORIES: SettingsCategory[] = [
       { id: 'player', label: 'Video Player' },
       { id: 'security', label: 'Security' },
       { id: 'privacy', label: 'Privacy' },
+      { id: 'backup', label: 'Backup & transfer' },
       { id: 'debug', label: 'Debug' },
       { id: 'about', label: 'About' },
     ],

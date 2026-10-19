@@ -16,6 +16,7 @@ import { useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
 import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode } from './stores/uiStore';
 import { data } from './data/client';
+import { resumePendingPlaylists } from './services/setup/pending';
 import type { StoredChannel, StoredSeries } from './db';
 import type { VodPlayInfo } from './types/media';
 import { updateWatchProgress, getResumePosition, getSubtitleDelayCandidate } from './hooks/useWatchProgress';
@@ -714,6 +715,22 @@ function App() {
     if (!window.storage) return;
     window.storage.getSources().then((result) => {
       if (result.data) useUIStore.getState().hydrateSources(result.data);
+      // After a setup import: playlists from files come back from the setup file (setup-transfer.ts).
+      const sources = result.data ?? [];
+      void window.setup?.pendingPlaylists().then(async (pending) => {
+        if (!pending.length) return;
+        const settled = await resumePendingPlaylists(pending, new Set(sources.map((s) => s.id)),
+          (sourceId) => data.query({ type: 'channelCount', sourceIds: [sourceId] }) as Promise<number>,
+          async (p) => {
+            try {
+              await data.query({ type: 'importPlaylist', sourceId: p.sourceId, content: p.content });
+            } catch (err) {
+              debugLog(`Playlist from the imported setup failed: ${err instanceof Error ? err.message : String(err)}`, 'sync');
+              throw err;
+            }
+          });
+        if (settled.length) await window.setup?.settlePlaylists(settled);
+      });
     }).catch((err) => {
       debugLog(`Loading sources failed: ${err instanceof Error ? err.message : String(err)}`, 'sync');
       useToastStore.getState().addToast({ kind: 'error', title: 'Could not load sources', message: 'The app settings could not be read — details are in the debug log.', duration: 8000 });

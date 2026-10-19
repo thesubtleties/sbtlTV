@@ -5,7 +5,7 @@ import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
-import { useChannelSortOrder, useChannelColumnWidth } from '../stores/uiStore';
+import { useChannelSortOrder, useChannelColumnWidth, useSourceNeedsLogin } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import './ChannelPanel.css';
@@ -35,6 +35,7 @@ function ChannelPanelImpl({
   const favoriteChannels = useFavoriteChannels();
   const channels = isFavoritesView ? favoriteChannels : regularChannels;
   const categories = useCategories();
+  const waitingForLogin = useSourceNeedsLogin();
   const [availableWidth, setAvailableWidth] = useState(800);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -356,8 +357,14 @@ function ChannelPanelImpl({
                 ) : (
                   <>
                     <h3>No Channels</h3>
-                    <p>Sync your sources to load channels</p>
-                    <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                    {waitingForLogin ? (
+                      <p className="hint">A source needs its password before its channels can load: Settings → Sources</p>
+                    ) : (
+                      <>
+                        <p>Sync your sources to load channels</p>
+                        <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                      </>
+                    )}
                   </>
                 )}
               </div>

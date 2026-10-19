@@ -26,6 +26,8 @@ import { CaptionSession } from './caption-session.js';
 import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
 import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
+import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
+import { registerSetupTransfer } from './setup-transfer.js';
 const { autoUpdater } = electronUpdater;
 
 // Before the keyring is opened (Chromium picks it when the app is ready): keep
@@ -1058,6 +1060,15 @@ function relaunchApp(args: string[]): void {
     return;
   }
   app.relaunch(appImage ? { execPath: appImage, args } : { args });
+}
+
+// Restart now with the same arguments (keyring switch, setup import). A downloaded
+// update must not install on this quit: the installer and the relaunch would race
+// (Windows, macOS); it installs on the next ordinary quit instead.
+function restartApp(): void {
+  autoUpdater.autoInstallOnAppQuit = false;
+  relaunchApp(process.argv.slice(1));
+  app.quit();
 }
 
 function restartInCompatibilityMode(handoff: CompatibilityHandoff | null): void {
@@ -2124,12 +2135,19 @@ ipcMain.handle('privacy-storage-protection', () => {
 ipcMain.handle('privacy-switch-keyring', (_event, keyring: unknown) => {
   if (process.platform !== 'linux' || !isKeyring(keyring)) return { error: 'Not a keyring' };
   if (launchPasswordStore) return { error: 'The keyring is set by --password-store when sbtlTV starts' };
-  debugLog(`Switching keyring to ${keyring}; saved passwords and API keys are dropped`, 'app');
+  debugLog(`Switching keyring to ${keyring}; saved passwords, API keys and setup backups are dropped`, 'app');
   storage.forgetSecrets();
+  removeBackups(path.join(app.getPath('userData'), 'backups'));
   storage.keepPasswordStore(keyring);
-  relaunchApp(process.argv.slice(1));
-  app.quit();
+  restartApp();
   return { success: true };
+});
+
+// Settings > Backup & transfer (setup-transfer.ts)
+registerSetupTransfer({
+  window: () => mainWindow,
+  relaunch: () => restartApp(),
+  log: (m) => debugLog(m, 'setup'),
 });
 
 // A failure is logged by its reason only, never with an address.
@@ -2504,6 +2522,13 @@ app.whenReady().then(async () => {
   let compatibilityHandoff: CompatibilityHandoff | null = null;
   if (compatibilityModeRequested) compatibilityHandoff = consumeCompatibilityHandoff();
   else discardStaleCompatibilityHandoff();
+
+  // After an import (setup-transfer.ts): the old guide and library cache goes before it is opened.
+  try {
+    if (resetCacheIfMarked(app.getPath('userData'))) debugLog('Cache cleared after a setup import', 'app');
+  } catch (error) {
+    debugLog(`Could not clear the cache after an import: ${error instanceof Error ? error.message : error}`, 'app');
+  }
 
   // Before the window: the page asks for its data port as soon as it loads.
   dataHost = startDataHost({

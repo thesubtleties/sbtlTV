@@ -135,3 +135,14 @@ test('sourceIds filters every table that carries a source', () => {
   assert.equal(runQuery(db, { id: 4, type: 'channelCount', sourceIds: ['s2'] }), 1);
   assert.deepEqual(runQuery(db, { id: 5, type: 'vodCounts', sourceIds: ['s2'] }), { movies: 1, series: 0 });
 });
+
+test('playlistRows lists a source as one row per channel and group, for rebuilding a playlist', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const rows = runQuery(db, { id: 1, type: 'playlistRows', sourceId: 's1' }) as { name: string; group_name: string | null; direct_url: string; epg_channel_id: string | null }[];
+  assert.deepEqual(rows.map((r) => [r.group_name, r.name]), [['News', 'ABC'], ['News', 'CBS'], ['Sports', 'ABC']]);
+  assert.equal(rows[0].direct_url, 'http://x/11');
+  assert.equal(rows[0].epg_channel_id, 'abc.us');
+  db.exec(`insert into channels(stream_id, source_id, name, direct_url) values ('s1_99', 's1', 'Loose', 'http://x/99')`);
+  const withLoose = runQuery(db, { id: 2, type: 'playlistRows', sourceId: 's1' }) as { name: string; group_name: string | null }[];
+  assert.deepEqual([withLoose.at(-1)?.name, withLoose.at(-1)?.group_name], ['Loose', null]);
+});

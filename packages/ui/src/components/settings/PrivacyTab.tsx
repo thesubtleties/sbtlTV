@@ -115,7 +115,8 @@ function KeyringRow({ protection }: { protection: StorageProtection }) {
       {picked && (
         <Hint tone="warn">
           Switching to {label(picked)} restarts sbtlTV. A keyring cannot read what another one saved, so your
-          provider passwords and API keys are removed and you enter them again after the restart.{' '}
+          provider passwords and API keys are removed and you enter them again after the restart.
+          Setup backups are removed too.{' '}
           <Button variant="danger" onClick={() => void switchKeyring(picked)} disabled={switching}>
             {switching ? 'Restarting…' : 'Switch and restart'}
           </Button>{' '}

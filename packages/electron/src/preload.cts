@@ -261,6 +261,20 @@ contextBridge.exposeInMainWorld('privacy', {
   switchKeyring: (keyring: string): Promise<{ success?: boolean; error?: string }> => ipcRenderer.invoke('privacy-switch-keyring', keyring),
 });
 
+// Settings > Backup & transfer: the opened file stays in main, keyed by a token
+contextBridge.exposeInMainWorld('setup', {
+  exportSetup: (req: { parts: string[]; lists: unknown; playlists: Record<string, string> }) => ipcRenderer.invoke('setup:export', req),
+  pick: () => ipcRenderer.invoke('setup:pick'),
+  unlock: (token: string, passphrase: string) => ipcRenderer.invoke('setup:unlock', token, passphrase),
+  backups: () => ipcRenderer.invoke('setup:backups'),
+  openBackup: (name: string) => ipcRenderer.invoke('setup:openBackup', name),
+  apply: (token: string, opts: { backupFirst: boolean; currentLists: unknown; currentPlaylists: Record<string, string> }) => ipcRenderer.invoke('setup:apply', token, opts),
+  relaunch: () => ipcRenderer.invoke('setup:relaunch'),
+  showFile: () => ipcRenderer.invoke('setup:showFile'),
+  pendingPlaylists: () => ipcRenderer.invoke('setup:pendingPlaylists'),
+  settlePlaylists: (sourceIds: string[]) => ipcRenderer.invoke('setup:settlePlaylists', sourceIds),
+});
+
 // Colors the desktop provides, for Settings > Appearance
 interface DesktopColors {
   accent: string | null;

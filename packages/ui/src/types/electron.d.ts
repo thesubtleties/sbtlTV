@@ -177,6 +177,27 @@ export interface StorageProtection {
   launchKeyring: string | null;
 }
 
+export type SetupPart = 'sources' | 'logins' | 'settings' | 'apiKeys' | 'favorites' | 'watchlist' | 'progress';
+export interface SetupPreview {
+  app: string; exportedAt: string; platform: string;
+  sources: { name: string; type: string; withLogin: boolean; fromFile: boolean; host: string | null }[];
+  settings: boolean; apiKeys: boolean; favorites: number; watchlist: number; progress: number;
+}
+export interface SetupListsWire { favorites?: unknown[]; watchlist?: unknown[]; progress?: unknown[]; lastCategory?: string }
+type SetupResult<T> = { success: true; data: T } | { success: false; canceled: true } | { success?: undefined; error: string };
+export interface SetupApi {
+  exportSetup: (req: { parts: SetupPart[]; lists: SetupListsWire; playlists: Record<string, string> }) => Promise<SetupResult<{ passphrase: string; filePath: string }>>;
+  pick: () => Promise<SetupResult<{ token: string; needsPassphrase: boolean }>>;
+  unlock: (token: string, passphrase: string) => Promise<SetupResult<SetupPreview>>;
+  backups: () => Promise<{ success: true; data: { name: string; label: string }[] }>;
+  openBackup: (name: string) => Promise<SetupResult<{ token: string; preview: SetupPreview }>>;
+  apply: (token: string, opts: { backupFirst: boolean; currentLists: SetupListsWire; currentPlaylists: Record<string, string> }) => Promise<SetupResult<{ lists: SetupListsWire; backupName: string | null }> | { error: string; backupName: string | null }>;
+  relaunch: () => Promise<void>;
+  showFile: () => Promise<void>;
+  pendingPlaylists: () => Promise<{ sourceId: string; content: string }[]>;
+  settlePlaylists: (sourceIds: string[]) => Promise<void>;
+}
+
 export interface PrivacyApi {
   checkIp: () => Promise<{ success?: boolean; data?: IpCheckResult; error?: string }>;
   storageProtection: () => Promise<StorageProtection>;
@@ -349,6 +370,7 @@ declare global {
     storage?: StorageApi;
     appearance?: AppearanceApi;
     privacy?: PrivacyApi;
+    setup?: SetupApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
     debug?: DebugApi;

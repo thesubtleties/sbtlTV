@@ -64,6 +64,15 @@ export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
         : stmt(db, `select ${CHANNEL_COLS} from channels where stream_id in (select stream_id from channel_categories where category_id = $cat) and ${SRC} ${channelSort(req.sort)}`).all({ $cat: req.categoryId, $sources: j(req.sourceIds) });
       return withCategoryIds(db, (base as ChannelWire[]).map(fixChannel), 'channel');
     }
+    case 'playlistRows': {
+      return stmt(db, `
+        select ch.name, ch.stream_icon, ch.epg_channel_id, ch.channel_num, ch.direct_url, c.name as group_name
+        from channels ch
+        left join channel_categories cc on cc.stream_id = ch.stream_id
+        left join categories c on c.category_id = cc.category_id
+        where ch.source_id = $source and ch.direct_url is not null and ch.direct_url != ''
+        order by c.position is null, c.position, ch.channel_num is null, ch.channel_num, ch.name collate nocase`).all({ $source: req.sourceId });
+    }
     case 'channelsByIds': {
       const rows = stmt(db, `select ${CHANNEL_COLS} from channels where stream_id in (select value from json_each(?)) order by name collate nocase`).all(j(req.streamIds));
       return withCategoryIds(db, (rows as ChannelWire[]).map(fixChannel), 'channel');

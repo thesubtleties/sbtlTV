@@ -167,6 +167,8 @@ This application is a media player only and does not provide any content. Users 
 
 Video playback powered by [mpv](https://mpv.io/).
 
+Setup passphrases use the [EFF long wordlist](https://www.eff.org/dice) (Electronic Frontier Foundation, [CC BY 3.0 US](https://creativecommons.org/licenses/by/3.0/us/)).
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE)

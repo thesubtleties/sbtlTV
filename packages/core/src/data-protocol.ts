@@ -37,6 +37,9 @@ export interface SeriesRow extends Series {
 export interface EpisodeRow extends Episode { series_id: string }
 export interface VodCategoryRow { category_id: string; source_id: string; name: string; type: 'movie' | 'series' }
 
+/** One channel in one group, as a playlist line (setup export of a file-based M3U). */
+export interface PlaylistRow { name: string; stream_icon: string | null; epg_channel_id: string | null; channel_num: number | null; direct_url: string; group_name: string | null }
+
 // ---- Requests (renderer -> data process) ----
 export type DataRequest =
   | { id: number; type: 'categories'; sourceIds: string[] }                       // [] = all
@@ -52,6 +55,7 @@ export type DataRequest =
   | { id: number; type: 'episodes'; seriesIds: string[] }
   | { id: number; type: 'vodCategories'; kind: 'movie' | 'series'; sourceIds: string[] }
   | { id: number; type: 'vodCounts'; sourceIds: string[] }
+  | { id: number; type: 'playlistRows'; sourceId: string }   // a file-based playlist, to rebuild it (setup export)
   | { id: number; type: 'syncNow'; sourceId?: string; what: 'channels' | 'vod' | 'all' }
   | { id: number; type: 'syncEpisodes'; seriesId: string }
   | { id: number; type: 'rematchEpg'; sourceId: string }

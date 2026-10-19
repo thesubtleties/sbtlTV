@@ -1,0 +1,22 @@
+.setup-passphrase {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.setup-passphrase__words {
+  flex-basis: 100%;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 1.4rem;
+  letter-spacing: 0.02em;
+  user-select: all;
+  color: var(--text);
+}
+
+.setup-preview__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
