@@ -268,3 +268,8 @@ test('error text for the screen keeps the host, never a login', () => {
   assert.equal(shown.includes('s3cret') || shown.includes('bob') || shown.includes('token=t'), false, shown);
   assert.equal(cleanErrorText('fetch failed: http://provider.example:8080/get.php?username=u&password=p'), 'fetch failed: http://provider.example/…');
 });
+
+test('a JSON login ending in an escaped quote is not mistaken for an empty one', () => {
+  assert.equal(redactUrls('{"password":"s3cret\\""}'), '{"password":"…"}');
+  assert.equal(redactUrls('{"token":"a\\"\\""}'), '{"token":"…"}');
+});

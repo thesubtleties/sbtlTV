@@ -229,7 +229,7 @@ function cutUrls(text: string, hosts: HostLabeller): string {
 const LOGIN_NAMES = 'username|user|password|pass|passwd|pwd|token|access_token|refresh_token|id_token|auth_token|api_key|apikey|key|secret|client_secret|auth';
 const LOGIN_PARAM = new RegExp(`\\b(${LOGIN_NAMES})=[^&\\t\\n\\v\\f\\r '"]+`, 'gi');
 // A JSON string value (escapes included: the unrolled form, linear).
-const LOGIN_JSON = new RegExp(`"(${LOGIN_NAMES})"(\\s*:\\s*)"[^"\\\\]*(?:\\\\.[^"\\\\]*)*"`, 'gi');
+const LOGIN_JSON = new RegExp(`"(${LOGIN_NAMES})"(\\s*:\\s*)"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"`, 'gi');
 // A login value inside an encoded query ("username%3Dbob%26password%3Ds3cret"): up to the next encoded "&".
 const LOGIN_PARAM_ENCODED = new RegExp(`(?:\\b|(?<=%3F)|(?<=%26))(${LOGIN_NAMES})%3D[^&%\\t\\n\\v\\f\\r '"]*(?:%(?!26)[0-9A-Fa-f]{2}[^&%\\t\\n\\v\\f\\r '"]*)*`, 'gi');
 const XTREAM_PATH = /\b(live|movie|series|timeshift)\/[^/\t\n\v\f\r '"]+\/[^/\t\n\v\f\r '"]+\//gi;
@@ -332,7 +332,8 @@ export function redactUrls(text: string, hosts: HostLabeller = PLAIN_HOSTS): str
   // Encoded URLs first: the bare-host pass could otherwise label part of one ("%2F%2Fedge.src…")
   // and hide it from the encoded pass. What it writes ("scheme://<label>/…") cutUrls keeps as it is.
   return cutBareIpv6(cutUrls(cutEncodedUrls(unescaped, hosts), hosts), hosts)
-    .replace(LOGIN_JSON, (m, name: string, colon: string) => (m.endsWith('""') ? m : `"${name}"${colon}"${ELLIPSIS}"`))
+    // An empty value says the login is missing: kept. Anything else (escaped quotes too) goes.
+    .replace(LOGIN_JSON, (m, name: string, colon: string, value: string) => (value === '' ? m : `"${name}"${colon}"${ELLIPSIS}"`))
     .replace(LOGIN_PARAM, (_m, name: string) => `${name}=${ELLIPSIS}`)
     .replace(LOGIN_PARAM_ENCODED, (_m, name: string) => `${name}%3D${ELLIPSIS}`)
     .replace(XTREAM_PATH, (_m, kind: string) => `${kind}/${ELLIPSIS}/`);
