@@ -36,3 +36,18 @@ describe('buildM3U', () => {
     expect(text).not.toContain('x"y');
   });
 });
+
+describe('R8 buildM3U', () => {
+  const row = (o: object) => ({ name: 'A', stream_icon: null, epg_channel_id: null, channel_num: null, direct_url: 'http://s/1', group_name: null, ...o });
+  it('a quote in a group name is dropped, not left to cut the group short', () => {
+    expect(parseM3U(buildM3U([row({ group_name: 'G"1' })]), 's').categories.map((c) => c.category_name)).toEqual(['G1']);
+  });
+  it('channel number 0 survives', () => {
+    expect(parseM3U(buildM3U([row({ channel_num: 0 })]), 's').channels[0].channel_num).toBe(0);
+  });
+  it('a name from tvg-name with a comma or edge spaces keeps its stream id (favorites)', () => {
+    const before = parseM3U('#EXTM3U\n#EXTINF:-1 tvg-name="Fox, News",\nhttp://s/1\n#EXTINF:-1 tvg-name=" Padded ",\nhttp://s/2\n', 's').channels;
+    const after = parseM3U(buildM3U(before.map((c) => row({ name: c.name, direct_url: c.direct_url }))), 's').channels;
+    expect(after.map((c) => [c.stream_id, c.name])).toEqual(before.map((c) => [c.stream_id, c.name]));
+  });
+});

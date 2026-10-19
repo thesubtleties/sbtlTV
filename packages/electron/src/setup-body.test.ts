@@ -97,3 +97,27 @@ test('an export the validator refuses says which source and what, not "invalid f
   assert.equal(explainExportProblem('invalid: lists.favorites', sources), 'Your favorites can\'t be exported: there are too many.');
   assert.equal(explainExportProblem('something else', sources), 'Your setup can\'t be exported (something else).');
 });
+
+// ---- review 8 (tests lens): kill tests ----
+test('R8: stricter shapes: imported: only on m3u, id charset, typed flags, capped secrets, known parts and fields', () => {
+  const src = good().sources[0];
+  for (const s of [{ ...src, url: 'imported:x' }, { ...src, id: '../x' }, { ...src, id: 'a b' }, { ...src, auto_load_epg: 'yes' }, { ...src, password: 'p'.repeat(2001) }]) {
+    assert.throws(() => validateSetupBody({ ...good(), sources: [s] }), /invalid/, JSON.stringify(s).slice(0, 80));
+  }
+  assert.throws(() => validateSetupBody({ ...good(), includes: ['everything'] }), /invalid/);
+  assert.throws(() => validateSetupBody({ ...good(), apiKeys: { tmdb: 'k', other: 'x' } }), /invalid/);
+  assert.throws(() => validateSetupBody({ ...good(), lists: { history: [] } }), /invalid/);
+});
+
+test('R8: the rest of the settings are typed and capped too', () => {
+  const bad: Record<string, unknown>[] = [
+    { rpdbBackdropsEnabled: 'yes' }, { sportsMatchupEnabled: 1 }, { autoplayNextEpisode: 'no' },
+    { liveSourceOrder: Array(1001).fill('a') }, { lastSourceId: 'x'.repeat(201) }, { appearance: { palette: 'x'.repeat(10_000) } },
+  ];
+  for (const settings of bad) assert.throws(() => validateSetupBody({ ...good(), settings }), /invalid/, JSON.stringify(settings).slice(0, 60));
+});
+
+test('R8: the preview counts every part it shows', () => {
+  const p = describeSetup(validateSetupBody({ ...good(), settings: undefined, apiKeys: { posterDb: 'k' }, lists: { watchlist: [{ id: 'w' }], progress: [{ id: 'a' }, { id: 'b' }] } }));
+  assert.deepEqual([p.settings, p.apiKeys, p.favorites, p.watchlist, p.progress], [false, true, 0, 1, 2]);
+});

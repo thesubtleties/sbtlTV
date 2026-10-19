@@ -37,3 +37,18 @@ test('two backups in the same minute do not overwrite each other', () => {
   assert.equal(backupLabel(a), 'Before import, 19 Oct 12:19');
   assert.deepEqual(backupsToPrune([b, a, 'before-import-2026-10-19-1218.sbtltv', 'before-import-2026-10-19-1217.sbtltv']), ['before-import-2026-10-19-1217.sbtltv']);
 });
+
+// ---- review 8 (tests lens): kill tests ----
+test('R8: a backup label is only ever a bare backup name (setup:openBackup uses it as its path guard)', () => {
+  assert.equal(backupLabel('../../elsewhere/before-import-2026-10-19-1200.sbtltv'), null);
+  assert.equal(backupLabel('before-import-2026-10-19-1200.sbtltv.bak'), null);
+  assert.equal(backupLabel('x-before-import-2026-10-19-1200.sbtltv'), null);
+});
+
+test('R8: the cache reset takes the -shm file too', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sbtltv-reset-'));
+  for (const f of ['sbtltv-data.sqlite', 'sbtltv-data.sqlite-shm', CACHE_RESET_MARKER]) fs.writeFileSync(path.join(dir, f), 'x');
+  resetCacheIfMarked(dir);
+  assert.deepEqual(fs.readdirSync(dir), []);
+  fs.rmSync(dir, { recursive: true });
+});

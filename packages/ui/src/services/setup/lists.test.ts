@@ -38,3 +38,19 @@ describe('setup lists', () => {
     expect(all[0].added).toBeInstanceOf(Date);
   });
 });
+
+describe('R8 setup lists', () => {
+  it('replacing clears every list, then writes every list the file has', async () => {
+    await db.favorites.put({ id: 'channel_old', type: 'channel', stream_id: 'old', added: new Date() });
+    await db.watchProgress.put({ id: 'movie_old', type: 'movie', stream_id: 'old', position: 1, duration: 2, progress: 0.5, completed: false, updated_at: new Date() });
+    await replaceLists({ watchlist: [{ id: 'movie_2', type: 'movie', tmdb_id: 2, name: 'Alien', added: '2026-10-03T00:00:00.000Z' }] });
+    expect(await db.favorites.count()).toBe(0);
+    expect(await db.watchProgress.count()).toBe(0);
+    expect((await db.watchlist.get('movie_2'))?.added).toBeInstanceOf(Date);
+  });
+
+  it('the last category rides only when asked for', async () => {
+    await setLastCategory('s1_news');
+    expect((await readLists(['favorites'], false)).lastCategory).toBeUndefined();
+  });
+});

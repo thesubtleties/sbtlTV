@@ -17,7 +17,11 @@ export function buildM3U(rows: PlaylistRow[], epgUrl?: string): string {
     if (r.stream_icon) parts.push(`tvg-logo="${attr(r.stream_icon)}"`);
     if (r.channel_num != null) parts.push(`tvg-chno="${r.channel_num}"`);
     if (r.group_name) parts.push(`group-title="${attr(r.group_name)}"`);
-    lines.push(`${parts.join(' ')},${title(r.name)}`, r.direct_url.replace(/[\r\n]/g, ''));
+    // A name the parser cannot read back from the title (it cuts at the last comma
+    // and trims) came from tvg-name: put it back there, with an empty title.
+    const viaTvgName = r.name.includes(',') || r.name !== r.name.trim();
+    if (viaTvgName) parts.push(`tvg-name="${attr(r.name)}"`);
+    lines.push(`${parts.join(' ')},${viaTvgName ? '' : title(r.name)}`, r.direct_url.replace(/[\r\n]/g, ''));
   }
   return lines.join('\n') + '\n';
 }
