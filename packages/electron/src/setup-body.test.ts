@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SETUP_SETTING_KEYS, describeSetup, explainExportProblem, keptOnImport, settingsForExport, validateSetupBody } from './setup-body.js';
+import { SETUP_SETTING_KEYS, buildSetupBody, describeSetup, explainExportProblem, keptOnImport, settingsForExport, validateSetupBody } from './setup-body.js';
 
 const good = () => ({
   app: '0.13.1', exportedAt: '2026-10-19T12:00:00.000Z', platform: 'linux',
@@ -120,4 +120,37 @@ test('R8: the rest of the settings are typed and capped too', () => {
 test('R8: the preview counts every part it shows', () => {
   const p = describeSetup(validateSetupBody({ ...good(), settings: undefined, apiKeys: { posterDb: 'k' }, lists: { watchlist: [{ id: 'w' }], progress: [{ id: 'a' }, { id: 'b' }] } }));
   assert.deepEqual([p.settings, p.apiKeys, p.favorites, p.watchlist, p.progress], [false, true, 0, 1, 2]);
+});
+
+const storedSetup = () => ({
+  sources: [
+    { id: 'x1', name: 'Provider', type: 'xtream' as const, url: 'http://p.example', username: 'u', password: 'secret', enabled: true },
+    { id: 'f1', name: 'Local', type: 'm3u' as const, url: 'imported:Local', enabled: true },
+  ],
+  settings: { channelSortOrder: 'number', tmdbApiKey: 'tk', posterDbApiKey: 'pk', debugLoggingEnabled: true } as never,
+});
+const meta = { app: '0.13.1', exportedAt: '2026-10-19T12:00:00.000Z', platform: 'linux' };
+
+test('with logins off, no password goes in the file', () => {
+  const body = buildSetupBody(['sources', 'settings'], storedSetup(), {}, {}, meta);
+  assert.equal(JSON.stringify(body).includes('secret'), false);
+  assert.equal(body.sources?.[0].username, 'u');
+  assert.equal(buildSetupBody(['sources', 'logins'], storedSetup(), {}, {}, meta).sources?.[0].password, 'secret');
+});
+
+test('only ticked parts go in: no keys, lists or settings unless asked', () => {
+  const lists = { favorites: [{ id: 'channel_x1_1' }], watchlist: [{ id: 'movie_1' }], progress: [{ id: 'movie_x1_1' }], lastCategory: 'x1_news' };
+  const none = buildSetupBody(['sources'], storedSetup(), lists, {}, meta);
+  assert.equal(none.apiKeys, undefined); assert.equal(none.settings, undefined); assert.equal(none.lists, undefined);
+  const all = buildSetupBody(['settings', 'apiKeys', 'favorites', 'watchlist'], storedSetup(), lists, {}, meta);
+  assert.deepEqual(all.apiKeys, { tmdb: 'tk', posterDb: 'pk' });
+  assert.deepEqual(all.settings, { channelSortOrder: 'number' });
+  assert.deepEqual(Object.keys(all.lists ?? {}).sort(), ['favorites', 'lastCategory', 'watchlist']);
+  assert.equal(all.sources, undefined);
+});
+
+test('a file playlist still waiting to be imported travels as its pending content, not an empty rebuild', () => {
+  const body = buildSetupBody(['sources'], storedSetup(), {}, { f1: '#EXTM3U\n' }, meta, { f1: '#EXTM3U\n#EXTINF:-1,One\nhttp://s/1\n' });
+  assert.equal(body.sources?.[1].playlist, '#EXTM3U\n#EXTINF:-1,One\nhttp://s/1\n');
+  assert.equal(buildSetupBody(['sources'], storedSetup(), {}, { f1: '#EXTM3U\n' }, meta).sources?.[1].playlist, '#EXTM3U\n');
 });

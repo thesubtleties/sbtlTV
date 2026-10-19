@@ -9,7 +9,7 @@ import path from 'node:path';
 import * as storage from './storage.js';
 import { newPassphrase, normalisePassphrase } from './setup-passphrase.js';
 import { SetupFileError, openWithKeyring, openWithPassphrase, readHeader, sealWithKeyring, sealWithPassphrase } from './setup-file.js';
-import { describeSetup, explainExportProblem, settingsForExport, validateSetupBody, type SetupBody, type SetupPart, type UserLists } from './setup-body.js';
+import { buildSetupBody, describeSetup, explainExportProblem, validateSetupBody, type SetupBody, type SetupPart, type UserLists } from './setup-body.js';
 import { CACHE_RESET_MARKER, PENDING_PLAYLISTS, backupLabel, backupName, backupsToPrune } from './setup-backups.js';
 
 const MAX_FILE = 512 * 1024 * 1024;
@@ -32,26 +32,9 @@ function message(error: unknown): string {
 }
 
 function buildBody(parts: SetupPart[], lists: UserLists, playlists: Record<string, string>): SetupBody {
-  const { sources, settings } = storage.readSetupForExport();
-  const body: SetupBody = { app: app.getVersion(), exportedAt: new Date().toISOString(), platform: process.platform, includes: parts };
-  if (parts.includes('sources')) {
-    body.sources = sources.map((s) => ({
-      id: s.id, name: s.name, type: s.type, url: s.url, enabled: s.enabled,
-      ...(s.epg_url !== undefined && { epg_url: s.epg_url }),
-      ...(s.auto_load_epg !== undefined && { auto_load_epg: s.auto_load_epg }),
-      ...(s.username !== undefined && { username: s.username }),
-      ...(parts.includes('logins') && s.password && { password: s.password }),
-      ...(playlists[s.id] !== undefined && { playlist: playlists[s.id] }),
-    }));
-  }
-  if (parts.includes('settings')) body.settings = settingsForExport(settings);
-  if (parts.includes('apiKeys')) body.apiKeys = { ...(settings.tmdbApiKey && { tmdb: settings.tmdbApiKey }), ...(settings.posterDbApiKey && { posterDb: settings.posterDbApiKey }) };
-  const l: UserLists = {};
-  if (parts.includes('favorites') && lists.favorites) l.favorites = lists.favorites;
-  if (parts.includes('watchlist') && lists.watchlist) l.watchlist = lists.watchlist;
-  if (parts.includes('progress') && lists.progress) l.progress = lists.progress;
-  if (parts.includes('settings') && lists.lastCategory) l.lastCategory = lists.lastCategory;
-  if (Object.keys(l).length) body.lists = l;
+  const pending = Object.fromEntries(readPending().map((p) => [p.sourceId, p.content]));
+  const body = buildSetupBody(parts, storage.readSetupForExport(), lists, playlists,
+    { app: app.getVersion(), exportedAt: new Date().toISOString(), platform: process.platform }, pending);
   try {
     return validateSetupBody(body);  // what we write must be what we would accept
   } catch (error) {

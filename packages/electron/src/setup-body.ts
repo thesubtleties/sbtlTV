@@ -212,3 +212,42 @@ export function explainExportProblem(message: string, sources: { name: string }[
   if (list) return `Your ${LIST_NAMES[list[1]] ?? list[1]} can't be exported: there are too many.`;
   return `Your setup can't be exported (${message}).`;
 }
+
+/**
+ * The body of an export or a backup from this computer's setup: only the ticked
+ * parts; passwords only with 'logins'. A file playlist still waiting to be
+ * imported (pending) travels as that content, since its channels aren't stored yet.
+ */
+export function buildSetupBody(
+  parts: SetupPart[],
+  stored: { sources: SetupSource[]; settings: AppSettings },
+  lists: UserLists,
+  playlists: Record<string, string>,
+  meta: { app: string; exportedAt: string; platform: string },
+  pending: Record<string, string> = {},
+): SetupBody {
+  const { sources, settings } = stored;
+  const body: SetupBody = { ...meta, includes: parts };
+  if (parts.includes('sources')) {
+    body.sources = sources.map((s) => {
+      const playlist = pending[s.id] ?? playlists[s.id];
+      return {
+        id: s.id, name: s.name, type: s.type, url: s.url, enabled: s.enabled,
+        ...(s.epg_url !== undefined && { epg_url: s.epg_url }),
+        ...(s.auto_load_epg !== undefined && { auto_load_epg: s.auto_load_epg }),
+        ...(s.username !== undefined && { username: s.username }),
+        ...(parts.includes('logins') && s.password && { password: s.password }),
+        ...(playlist !== undefined && { playlist }),
+      };
+    });
+  }
+  if (parts.includes('settings')) body.settings = settingsForExport(settings);
+  if (parts.includes('apiKeys')) body.apiKeys = { ...(settings.tmdbApiKey && { tmdb: settings.tmdbApiKey }), ...(settings.posterDbApiKey && { posterDb: settings.posterDbApiKey }) };
+  const l: UserLists = {};
+  if (parts.includes('favorites') && lists.favorites) l.favorites = lists.favorites;
+  if (parts.includes('watchlist') && lists.watchlist) l.watchlist = lists.watchlist;
+  if (parts.includes('progress') && lists.progress) l.progress = lists.progress;
+  if (parts.includes('settings') && lists.lastCategory) l.lastCategory = lists.lastCategory;
+  if (Object.keys(l).length) body.lists = l;
+  return body;
+}
