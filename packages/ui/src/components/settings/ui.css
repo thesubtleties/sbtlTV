@@ -410,3 +410,15 @@
 .st-rewind-custom .st-input {
   width: 80px;
 }
+
+/* A second paragraph in an option's help */
+.opt-row__note {
+  display: block;
+  margin-top: 10px;
+  color: var(--faint);
+}
+
+/* A note that must be read, not skimmed */
+.opt-row__note--strong {
+  color: var(--text-2);
+}

@@ -39,7 +39,9 @@ const CONTROLS_AUTO_HIDE_MS = 3000;
 // Debug logging helper for UI playback
 function debugLog(message: string, category = 'play'): void {
   const logMsg = `[${category}] ${message}`;
-  console.log(logMsg);
+  // Development builds only: these lines hold stream URLs, which carry provider logins.
+  // Main writes them to the debug log with logins and addresses removed.
+  if (import.meta.env.DEV) console.log(logMsg);
   if (window.debug?.logFromRenderer) {
     window.debug.logFromRenderer(logMsg).catch(() => {});
   }

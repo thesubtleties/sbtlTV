@@ -12,6 +12,9 @@ export function DebugTab({
   onDebugLoggingChange,
 }: DebugTabProps) {
   const [logPath, setLogPath] = useState<string>('');
+  // Never saved: main starts every launch with labels.
+  const [includeAddresses, setIncludeAddresses] = useState(false);
+  const [legend, setLegend] = useState<{ n: number; name: string }[]>([]);
   const updateSettings = useUpdateSettings();
 
   useEffect(() => {
@@ -23,6 +26,8 @@ export function DebugTab({
         }
       });
     }
+    window.debug?.getIncludeAddresses?.().then(setIncludeAddresses).catch(() => {});
+    window.debug?.getSourceLegend?.().then(setLegend).catch(() => {});
   }, []);
 
   async function handleDebugLoggingChange(enabled: boolean) {
@@ -30,6 +35,11 @@ export function DebugTab({
     updateSettings({ debugLoggingEnabled: enabled });
     if (!window.storage) return;
     await window.storage.updateSettings({ debugLoggingEnabled: enabled });
+  }
+
+  async function handleIncludeAddressesChange(on: boolean) {
+    const applied = await window.debug?.setIncludeAddresses?.(on);
+    setIncludeAddresses(applied ?? false);
   }
 
   async function handleOpenLogFolder() {
@@ -55,12 +65,31 @@ export function DebugTab({
           <OnOff value={debugLoggingEnabled} onChange={(enabled) => void handleDebugLoggingChange(enabled)} />
         </OptionRow>
 
+        <OptionRow
+          title="Provider addresses in the debug log"
+          help={
+            <>
+              Only turn this on when you're sending the log to someone you trust, privately. Never post a log made with this on publicly.
+              <span className="opt-row__note opt-row__note--strong">
+                Your usernames and passwords are never written to the log, with this on or off. This only adds your provider's address.
+              </span>
+              {legend.length > 0 && (
+                <span className="opt-row__note">
+                  In the log your sources appear as {legend.map(({ n, name }) => `source ${n} (${name})`).join(', ')}; their names are not written to it.
+                </span>
+              )}
+            </>
+          }
+        >
+          <OnOff value={includeAddresses} onChange={(on) => void handleIncludeAddressesChange(on)} offLabel="Hidden" onLabel="Included" />
+        </OptionRow>
+
         {logPath && (
           <OptionRow
             title="Log file"
             help={
               <>
-                Logs can contain stream addresses, so only share them with people you trust.
+                Logs never contain your logins, and provider addresses appear as labels like "[source 1]" or "[host 2]" unless you include them above.
                 Report issues on{' '}
                 <a href="https://github.com/thesubtleties/sbtlTV/issues" target="_blank" rel="noopener noreferrer">GitHub</a>.
               </>

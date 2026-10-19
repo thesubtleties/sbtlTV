@@ -11,6 +11,8 @@ import os from 'node:os';
 interface StoreSchema {
   sources: StoredSource[];
   settings: StoredSettings;
+  /** 2 = the debug log only ever had labelled addresses (older logs are deleted once) */
+  debugLogFormat?: number;
 }
 
 // Source as stored (password encrypted)
@@ -378,4 +380,23 @@ export function clearAll(): void {
  */
 export function isEncryptionAvailable(): boolean {
   return safeStorage.isEncryptionAvailable();
+}
+
+/** Names and addresses of the sources (no logins, no keyring access): for log labels. */
+export function getSourceAddresses(): { name: string; url: string; epg_url?: string }[] {
+  return store.get('sources', []).map((s) => ({ name: s.name, url: s.url, epg_url: s.epg_url }));
+}
+
+/** Call `listener` whenever the stored sources change (any path that saves them). */
+export function onSourcesChanged(listener: () => void): void {
+  store.onDidChange('sources', () => listener());
+}
+
+/** Which debug log format is on disk (see retireLogsFromBeforeLabels in main.ts). */
+export function getDebugLogFormat(): number {
+  return store.get('debugLogFormat') ?? 0;
+}
+
+export function setDebugLogFormat(format: number): void {
+  store.set('debugLogFormat', format);
 }

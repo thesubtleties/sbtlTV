@@ -90,7 +90,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, teamLogosEnabled, autoU
         {protectionLine && <Hint tone={protectionLine.tone}>{protectionLine.text}</Hint>}
         <Hint>
           {debugLoggingEnabled
-            ? 'Debug logging is on. The log stays on this computer, and links in it are cleaned of login details.'
+            ? 'Debug logging is on. The log stays on this computer; logins are removed from it and provider addresses appear as labels.'
             : 'Debug logging is off.'}
         </Hint>
       </Section>

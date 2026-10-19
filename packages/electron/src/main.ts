@@ -14,7 +14,7 @@ import { rewindMpvProperties, rewindCapBytes, parseCacheState, clampToRange, typ
 import { PlayerMemoryTracker } from './player-memory.js';
 import { once } from 'node:events';
 import { isTransientDecodeError } from './mpv-error-filter.js';
-import { redactUrls } from './log-redact.js';
+import { LogPolicy } from './log-policy.js';
 import { createLineBuffer } from './line-buffer.js';
 import { IP_CHECK_URL, IP_CHECK_MAX_BYTES, parseIpCheck } from './ip-check.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
@@ -26,6 +26,30 @@ import { CaptionSession } from './caption-session.js';
 import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
 import { preferredCaptionLanguage } from './subtitle-settings.js';
 const { autoUpdater } = electronUpdater;
+
+// Provider addresses in logs become labels (see host-labels.ts). The debug log
+// keeps them only while the user has turned that on in Settings > Debug; it is
+// never saved, so every launch starts with labels.
+function sourceAddresses(): ReturnType<typeof storage.getSourceAddresses> {
+  try {
+    return storage.getSourceAddresses();
+  } catch {
+    return [];  // an unreadable config must not stop the app here; labels then number every host
+  }
+}
+const logPolicy = new LogPolicy(sourceAddresses());
+// Every change to the sources (Sources tab, file import, a setup import) keeps the labels current.
+storage.onSourcesChanged(() => logPolicy.setSources(sourceAddresses()));
+
+/** Text for a terminal or the system log: labels, always. */
+function redactForDisplay(text: string): string {
+  return logPolicy.forDisplay(text);
+}
+
+/** Text for the debug log: labels, or the addresses while the user has included them (Settings > Debug). */
+function redactForLog(text: string): string {
+  return logPolicy.forLog(text);
+}
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
 // which may not be available on all platforms
@@ -166,7 +190,7 @@ let lastUncaughtReportAt = 0;
 process.on('uncaughtException', (error) => {
   const summary = error instanceof Error ? error.message : String(error);
   const detail = error instanceof Error ? error.stack ?? summary : summary;
-  console.error('[main] Uncaught exception:', redactUrls(detail));
+  console.error('[main] Uncaught exception:', redactForDisplay(detail));
   debugLog(`Uncaught exception: ${detail}`, 'system');
   const now = Date.now();
   if (now - lastUncaughtReportAt < 30_000) return;
@@ -175,7 +199,7 @@ process.on('uncaughtException', (error) => {
     type: 'error',
     title: 'sbtlTV internal error',
     message: 'An internal error occurred. sbtlTV will keep running.',
-    detail: `${summary}\n\nDetails are in the debug log when debug logging is enabled (Settings > System).`,
+    detail: `${logPolicy.forCard(summary)}\n\nDetails are in the debug log when debug logging is enabled (Settings > Debug).`,
     buttons: ['OK'],
   }).catch(() => {});
 });
@@ -225,6 +249,22 @@ function rotateLogIfNeeded(): boolean {
   }
 }
 
+/**
+ * Logs written before provider addresses became labels (0.13.0 and earlier) can name
+ * the provider: they are deleted once, so a log attached to a report starts clean.
+ */
+function retireLogsFromBeforeLabels(): void {
+  if (storage.getDebugLogFormat() >= 2) return;
+  for (const file of [getDebugLogPath(), `${getDebugLogPath()}.old`]) {
+    try {
+      fs.rmSync(file, { force: true });
+    } catch {
+      return;  // try again next launch
+    }
+  }
+  storage.setDebugLogFormat(2);
+}
+
 function initDebugLogging(enabled: boolean): void {
   debugLoggingEnabled = enabled;
 
@@ -258,6 +298,7 @@ function initDebugLogging(enabled: boolean): void {
     }
     debugLog(`Platform: ${process.platform} ${process.arch}`);
     debugLog(`Electron: ${process.versions.electron}`);
+    debugLog(logPolicy.headerLine());
     debugLog(`Node: ${process.versions.node}`);
     debugLog('='.repeat(60));
   } else if (!enabled && debugLogStream) {
@@ -269,12 +310,23 @@ function initDebugLogging(enabled: boolean): void {
 }
 
 function debugLog(message: string, category = 'app'): void {
+  // Users attach this log to reports: no provider credentials (they ride in stream URLs), no provider addresses unless included.
+  // Redacted even while the log is off: that is also how hosts become known, so a later bare mention
+  // on the card or a terminal is labelled.
+  let line: string;
+  try {
+    line = redactForLog(message);
+  } catch {
+    return;  // logging must never crash the app
+  }
+  writeDebugLine(line, category);
+}
+
+/** A line that was already redacted with redactForLog (e.g. before JSON quoting): written as it is. */
+function writeDebugLine(redacted: string, category: string): void {
   if (!debugLoggingEnabled || !debugLogStream) return;
   try {
-    const timestamp = new Date().toISOString();
-    // Users attach this log to reports: no provider credentials (they ride in stream URLs).
-    const line = `[${timestamp}] [${category}] ${redactUrls(message)}\n`;
-    debugLogStream.write(line);
+    debugLogStream.write(`[${new Date().toISOString()}] [${category}] ${redacted}\n`);
   } catch {
     // Silently fail - logging should never crash the app
   }
@@ -709,12 +761,12 @@ async function initMpv(): Promise<void> {
       debugLog(line, 'mpv-stdout');
       // Only console.log non-status lines
       if (!line.includes('AV:') && !line.includes('A:') && !line.includes('V:')) {
-        console.log('[mpv stdout]', redactUrls(line));
+        console.log('[mpv stdout]', redactForDisplay(line));
       }
     });
     const stderrLines = createLineBuffer((line) => {
       debugLog(line, 'mpv-stderr');
-      console.log('[mpv stderr]', redactUrls(line));
+      console.log('[mpv stderr]', redactForDisplay(line));
     });
     mpvProcess.stdout?.on('data', (data: Buffer) => stdoutLines.push(data.toString()));
     mpvProcess.stderr?.on('data', (data: Buffer) => stderrLines.push(data.toString()));
@@ -1097,7 +1149,7 @@ async function connectToMpvSocket(): Promise<void> {
           const msg = JSON.parse(line);
           handleMpvMessage(msg);
         } catch {
-          console.error('[mpv] Failed to parse:', redactUrls(line));
+          console.error('[mpv] Failed to parse:', redactForDisplay(line));
         }
       }
     });
@@ -1225,8 +1277,9 @@ function sendToRenderer(channel: string, data: unknown): void {
 
 /** A message in the app's error card; its text goes to the debug log too, so reports can be matched. */
 function reportMpvError(message: string): void {
-  const text = redactUrls(message.trim());
-  debugLog(`banner: ${JSON.stringify(text)}`, 'mpv');
+  const text = logPolicy.forCard(message.trim());  // the card is only on the user's screen: real hostnames, never logins
+  // Redacted before quoting (a URL ends at whitespace, not at a quote), with the log's own rules.
+  writeDebugLine(`banner: ${JSON.stringify(redactForLog(message.trim()))}`, 'mpv');
   sendToRenderer('mpv-error', text);
 }
 
@@ -1244,8 +1297,9 @@ function reportPlaybackFailure(message: string): void {
 /** One of mpv's own error lines: held back while a stall reload is opening the stream. */
 function reportMpvLogError(message: string): void {
   if (stream.holdsMpvErrors(mpvState.playing)) {
-    stream.lastHeldError = redactUrls(message.trim());  // before quoting: the URL ends at whitespace, not at the quote
-    debugLog(`banner held during reconnect: ${JSON.stringify(stream.lastHeldError)}`, 'mpv');
+    // Redacted for the log before quoting (a URL ends at whitespace, not at a quote), and written as it is.
+    stream.lastHeldError = redactForLog(message.trim());
+    writeDebugLine(`banner held during reconnect: ${JSON.stringify(stream.lastHeldError)}`, 'mpv');
     return;
   }
   reportMpvError(message);
@@ -1600,6 +1654,7 @@ async function loadMedia(request: StreamLoadRequest & { requestId?: number }): P
     return { error: 'Native playback must be reset' };
   }
   const url = request.url;
+  logPolicy.noteUrl(url);  // before mpv names the host on its own ("Failed to resolve hostname …")
   lastJumpAt = Date.now();
   const { generation, resumeAt } = stream.begin(request, Date.now(), playerRaw);
   debugLog(`mpv-load called (${request.reason})${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
@@ -1683,7 +1738,7 @@ async function checkStreamHealth(): Promise<void> {
       stream.reloadInFlight = false;
     }
   } else if (action === 'give-up') {
-    debugLog(`Stream still stalled after ${STALL_MAX_RELOADS} reloads; giving up${stream.lastHeldError ? ` (last mpv error: ${JSON.stringify(stream.lastHeldError)})` : ''}`, 'mpv');
+    writeDebugLine(`Stream still stalled after ${STALL_MAX_RELOADS} reloads; giving up${stream.lastHeldError ? ` (last mpv error: ${JSON.stringify(stream.lastHeldError)})` : ''}`, 'mpv');
     sendToRenderer('stream-recovery', { state: 'failed', live: media.live });
     endRewindForLoad();
   }
@@ -1693,7 +1748,7 @@ setInterval(() => {
   checkStreamHealth().catch((err) => {
     // Shown even with debug logging off, once per distinct message: a failing check is a watchdog that is not watching.
     const message = err instanceof Error ? err.message : String(err);
-    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', redactUrls(message));
+    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', redactForDisplay(message));
     lastHealthCheckError = message;
     debugLog(`Stream health check failed: ${message}`, 'mpv');
   });
@@ -1976,6 +2031,13 @@ ipcMain.handle('debug-get-log-path', async () => {
 });
 
 ipcMain.handle('debug-is-enabled', () => debugLoggingEnabled);
+ipcMain.handle('debug-get-include-addresses', () => logPolicy.addressesIncluded);
+ipcMain.handle('debug-set-include-addresses', (_event, on: unknown) => {
+  const { included, logLine } = logPolicy.setIncludeAddresses(on);
+  if (logLine) debugLog(logLine);
+  return included;
+});
+ipcMain.handle('debug-get-source-legend', () => logPolicy.legend());
 
 ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
   debugLog(message, 'renderer');
@@ -2378,6 +2440,7 @@ app.whenReady().then(async () => {
 
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
+  retireLogsFromBeforeLabels();
   initDebugLogging(settings.debugLoggingEnabled ?? false);
   if (process.platform === 'linux') {
     const reason = compatibilityModeFromFlag ? 'launch flag' : compatibilityModeFromSetting ? 'setting' : 'default';

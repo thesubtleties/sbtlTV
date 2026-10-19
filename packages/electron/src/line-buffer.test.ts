@@ -8,9 +8,9 @@ test('line buffer: a link split across chunks is redacted as one line', () => {
   const buffer = createLineBuffer((line) => lines.push(redactUrls(line)));
   buffer.push('Opening http://provider.example/live/bo');
   buffer.push('b/s3cret/1.ts\nnext line\r\npart');
-  assert.deepEqual(lines, ['Opening http://provider.example/…', 'next line']);
+  assert.deepEqual(lines, ['Opening http://[host]/…', 'next line']);
   buffer.flush();
-  assert.deepEqual(lines, ['Opening http://provider.example/…', 'next line', 'part']);
+  assert.deepEqual(lines, ['Opening http://[host]/…', 'next line', 'part']);
 });
 
 test('line buffer: empty lines are skipped, and a very long line without a newline is handed on', () => {
