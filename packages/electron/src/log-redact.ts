@@ -195,6 +195,8 @@ const LOGIN_NAMES = 'username|user|password|pass|passwd|pwd|token|access_token|r
 const LOGIN_PARAM = new RegExp(`\\b(${LOGIN_NAMES})=[^&\\t\\n\\v\\f\\r '"]+`, 'gi');
 // A JSON string value (escapes included: the unrolled form, linear).
 const LOGIN_JSON = new RegExp(`"(${LOGIN_NAMES})"(\\s*:\\s*)"[^"\\\\]*(?:\\\\.[^"\\\\]*)*"`, 'gi');
+// A login value inside an encoded query ("username%3Dbob%26password%3Ds3cret"): up to the next encoded "&".
+const LOGIN_PARAM_ENCODED = new RegExp(`(?:\\b|(?<=%3F)|(?<=%26))(${LOGIN_NAMES})%3D[^&%\\t\\n\\v\\f\\r '"]*(?:%(?!26)[0-9A-Fa-f]{2}[^&%\\t\\n\\v\\f\\r '"]*)*`, 'gi');
 const XTREAM_PATH = /\b(live|movie|series|timeshift)\/[^/\t\n\v\f\r '"]+\/[^/\t\n\v\f\r '"]+\//gi;
 
 function decodeLoosely(text: string): string {
@@ -239,36 +241,60 @@ function cutBareIpv6(text: string, hosts: HostLabeller): string {
   return out + text.slice(pos);
 }
 
-const ENCODED_SEP = '%3a%2f%2f';
+// "://" percent-encoded once or twice (a URL inside a value inside a URL).
+const ENCODED_SEPS = ['%3a%2f%2f', '%253a%252f%252f'];
 const endsEncodedValue = (c: string) => isSpace(c) || c === '&' || c === '"' || c === "'";
+
+/** text[i..] starts with `lowerAscii`, ignoring ASCII case only (no lowercased copy, so indices never drift). */
+function startsWithAsciiCi(text: string, i: number, lowerAscii: string): boolean {
+  if (i + lowerAscii.length > text.length) return false;
+  for (let k = 0; k < lowerAscii.length; k++) {
+    let c = text.charCodeAt(i + k);
+    if (c >= 65 && c <= 90) c += 32;
+    if (c !== lowerAscii.charCodeAt(k)) return false;
+  }
+  return true;
+}
+
+/** The next encoded "://" at or after `from`: where it is and how long, or null. Each "%" is looked at once. */
+function nextEncodedSep(text: string, from: number): { at: number; len: number } | null {
+  for (let at = text.indexOf('%', from); at !== -1; at = text.indexOf('%', at + 1)) {
+    for (const sep of ENCODED_SEPS) if (startsWithAsciiCi(text, at, sep)) return { at, len: sep.length };
+  }
+  return null;
+}
 
 /** A whole URL percent-encoded inside another value (?url=http%3A%2F%2F…), cut like a plain one, to the end of that value. Linear. */
 function cutEncodedUrls(text: string, hosts: HostLabeller): string {
-  const lower = text.toLowerCase();
-  let at = lower.indexOf(ENCODED_SEP);
-  if (at === -1) return text;
+  let found = nextEncodedSep(text, 0);
+  if (!found) return text;
   let out = '';
   let pos = 0;
-  while (at !== -1) {
+  while (found) {
+    const { at, len } = found;
     let start = at;
     while (start > pos && isSchemeChar(text[start - 1])) start--;
     while (start < at && !/[A-Za-z]/.test(text[start])) start++;  // a scheme starts with a letter
-    if (start === at) { at = lower.indexOf(ENCODED_SEP, at + ENCODED_SEP.length); continue; }
-    let end = at + ENCODED_SEP.length;
+    if (start === at) { found = nextEncodedSep(text, at + len); continue; }
+    let end = at + len;
     while (end < text.length && !endsEncodedValue(text[end])) end++;
-    out += text.slice(pos, start) + cutUrl(`${text.slice(start, at)}://`, decodeLoosely(text.slice(at + ENCODED_SEP.length, end)), hosts);
+    let rest = decodeLoosely(text.slice(at + len, end));
+    if (len > ENCODED_SEPS[0].length) rest = decodeLoosely(rest);  // encoded twice
+    out += text.slice(pos, start) + cutUrl(`${text.slice(start, at)}://`, rest, hosts);
     pos = end;
-    at = lower.indexOf(ENCODED_SEP, end);
+    found = nextEncodedSep(text, end);
   }
   return out + text.slice(pos);
 }
 
 /** Text cleaned for a log: URLs cut to scheme://<host label>/…, known bare hosts labelled, login values and Xtream credentials replaced by …. */
 export function redactUrls(text: string, hosts: HostLabeller = PLAIN_HOSTS): string {
-  // JSON writes "http:\/\/host\/…": read it as a URL.
-  const unescaped = text.includes(':\\/\\/') ? text.split(':\\/\\/').join('://') : text;
+  // JSON writes "http:\/\/host\/…" (or /): read it as a URL.
+  let unescaped = text.includes(':\\/\\/') ? text.split(':\\/\\/').join('://') : text;
+  if (/:\\u002f\\u002f/i.test(unescaped)) unescaped = unescaped.replace(/\\u002f/gi, '/');
   return cutEncodedUrls(cutBareIpv6(cutUrls(unescaped, hosts), hosts), hosts)
     .replace(LOGIN_JSON, (_m, name: string, colon: string) => `"${name}"${colon}"${ELLIPSIS}"`)
     .replace(LOGIN_PARAM, (_m, name: string) => `${name}=${ELLIPSIS}`)
+    .replace(LOGIN_PARAM_ENCODED, (_m, name: string) => `${name}%3D${ELLIPSIS}`)
     .replace(XTREAM_PATH, (_m, kind: string) => `${kind}/${ELLIPSIS}/`);
 }

@@ -181,3 +181,15 @@ test('the new passes stay linear on hostile lines', () => {
     assert.ok(performance.now() - t < 200, `${line.slice(0, 12)}… took too long`);
   }
 });
+
+test('an encoded URL after characters that change length when lowercased is still cut (no index drift)', () => {
+  const line = 'İİİİ url=http%3A%2F%2Fprovider.example%2Flive%2Fu%2Fp%2F1.ts end';
+  const out = redactUrls(line);
+  assert.equal(out, 'İİİİ url=http://[host]/… end');
+});
+
+test('logins inside an encoded query are cut, and double-encoded or \\u-escaped URLs too', () => {
+  assert.equal(redactUrls('next=%2Fget.php%3Fusername%3Dbob%26password%3Ds3cret%26type%3Dm3u'), 'next=%2Fget.php%3Fusername%3D…%26password%3D…%26type%3Dm3u');
+  assert.equal(redactUrls('u=http%253A%252F%252Fprovider.example%252Fx'), 'u=http://[host]/…');
+  assert.equal(redactUrls('{"u":"http:\\u002f\\u002fprovider.example\\u002flive"}'), '{"u":"http://[host]/…');
+});
