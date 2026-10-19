@@ -23,6 +23,11 @@ int main() {
     ok &= check("empty x:// host", "empty x:// host");
     ok &= check("tmdb https://API.themoviedb.org/3/movie/1?api_key=k", "tmdb https://api.themoviedb.org/\xE2\x80\xA6");
     ok &= check("logo https://a.espncdn.com/i/x.png", "logo https://a.espncdn.com/\xE2\x80\xA6");
+    ok &= check("Opening http://seen-host.example/live/u/p/1.ts", "Opening http://[host]/\xE2\x80\xA6");
+    ok &= check("ffmpeg: tcp: Failed to resolve hostname seen-host.example: x", "ffmpeg: tcp: Failed to resolve hostname [host]: x");
+    ok &= check("never-in-a-url.example and libavcodec.so.61 v0.13.0", "never-in-a-url.example and libavcodec.so.61 v0.13.0");
+    ok &= check("Failed to open http://[host]/\xE2\x80\xA6", "Failed to open http://[host]/\xE2\x80\xA6");
+    { const std::string once = redactUrls("a http://seen-host.example/x then seen-host.example"); ok &= check(once, once); }
     ok &= check("", "");
     ok &= check("GET player_api.php?username=bob&password=s3cret&action=x", "GET player_api.php?username=\xE2\x80\xA6&password=\xE2\x80\xA6&action=x");
     ok &= check("Opening 'live/bob/s3cret/12345.ts'", "Opening 'live/\xE2\x80\xA6/12345.ts'");

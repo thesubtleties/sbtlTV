@@ -34,6 +34,12 @@ export class HostLabels {
     }
   }
 
+  /** A URL the app is about to open: its host is known from now on, so mpv naming it bare ("Failed to resolve hostname …") is labelled too. */
+  noteUrl(url: string): void {
+    const host = urlHost(url);
+    if (host && !PUBLIC_HOSTS.has(host) && !this.sources.has(host)) this.labelFor(host);
+  }
+
   private labelFor(host: string): string {
     const name = this.sources.get(host);
     if (name !== undefined) return `[source: ${name}]`;

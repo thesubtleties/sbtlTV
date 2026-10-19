@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cctype>
+#include <mutex>
 #include <string>
+#include <unordered_set>
 
 // Logs are cleaned of provider login details before they reach stderr (a
 // terminal or the system journal). The app's copy is
@@ -11,6 +13,8 @@
 //   an @). Public services stay readable (kPublicHosts, the same list as
 //   PUBLIC_HOSTS in log-redact.ts). The app's copy uses source names and
 //   numbered labels; this one has no source names, so it writes [host];
+// - a host seen in a URL is also replaced where it appears bare later on;
+// - text that is already redacted passes through unchanged;
 // - login values outside a URL ("username=bob") become "username=...";
 // - Xtream paths ("live/bob/s3cret/1.ts") become "live/.../1.ts".
 // Plain loops, one pass each: no backtracking on long lines.
@@ -41,6 +45,30 @@ inline bool isPublicHost(const std::string& host) {
     return false;
 }
 
+// Hosts seen in URLs this process (mpv logs from its own threads, hence the
+// mutex): a later bare mention ("Failed to resolve hostname <host>") is
+// labelled too. Capped so a flood of odd URLs cannot grow it without bound.
+inline std::mutex& seenHostsMutex() { static std::mutex m; return m; }
+inline std::unordered_set<std::string>& seenHosts() { static std::unordered_set<std::string> s; return s; }
+inline void noteHost(const std::string& host) {
+    std::lock_guard<std::mutex> lock(seenHostsMutex());
+    if (seenHosts().size() < 1024) seenHosts().insert(host);
+}
+inline bool isSeenHost(const std::string& host) {
+    std::lock_guard<std::mutex> lock(seenHostsMutex());
+    return seenHosts().count(host) != 0;
+}
+
+// A label written by redaction ("[host]", or the app's "[host 3]", "[source: x]")
+// starts at text[i]: text redacted twice stays the same.
+inline bool isLabelAt(const std::string& text, size_t i) {
+    return text.compare(i, 5, "[host") == 0 || text.compare(i, 8, "[source:") == 0;
+}
+
+inline bool isHostChar(char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '.';
+}
+
 // The host of "host:port" or "[v6]:port", lowercased, without port or brackets.
 inline std::string hostOf(const std::string& hostPort) {
     if (!hostPort.empty() && hostPort[0] == '[') {
@@ -49,6 +77,36 @@ inline std::string hostOf(const std::string& hostPort) {
     }
     const size_t colon = hostPort.find(':');
     return lower(colon == std::string::npos ? hostPort : hostPort.substr(0, colon));
+}
+
+// Seen hostnames outside URLs become [host]. One pass: each character is looked at once.
+inline std::string cutBareHosts(const std::string& text) {
+    if (text.find('.') == std::string::npos) return text;
+    std::string out;
+    size_t pos = 0;
+    size_t i = 0;
+    while (i < text.size()) {
+        if (isLabelAt(text, i)) {
+            const size_t close = text.find(']', i);
+            if (close != std::string::npos) { i = close + 1; continue; }
+        }
+        if (!isHostChar(text[i])) { i++; continue; }
+        size_t end = i;
+        while (end < text.size() && isHostChar(text[end])) end++;
+        size_t a = i;
+        size_t b = end;
+        while (a < b && (text[a] == '.' || text[a] == '-')) a++;
+        while (b > a && (text[b - 1] == '.' || text[b - 1] == '-')) b--;
+        const std::string token = text.substr(a, b - a);
+        if (token.find('.') != std::string::npos && isSeenHost(lower(token))) {
+            out.append(text, pos, a - pos);
+            out += "[host]";
+            pos = b;
+        }
+        i = end;
+    }
+    out.append(text, pos, std::string::npos);
+    return out;
 }
 
 inline std::string cutUrls(const std::string& text) {
@@ -60,18 +118,24 @@ inline std::string cutUrls(const std::string& text) {
     while (pos < text.size()) {
         const size_t sep = text.find("://", pos);
         if (sep == std::string::npos) {
-            out.append(text, pos, std::string::npos);
+            out += cutBareHosts(text.substr(pos));
             break;
         }
         size_t start = sep;
         while (start > pos && isSchemeChar(text[start - 1])) start--;
         size_t end = sep + 3;
+        if (isLabelAt(text, end)) {  // already redacted: the label (which may hold a space) stays as it is
+            const size_t close = text.find(']', end);
+            if (close != std::string::npos) end = close + 1;
+        }
         while (end < text.size() && !std::isspace(static_cast<unsigned char>(text[end]))) end++;
-        out.append(text, pos, start - pos);
+        out += cutBareHosts(text.substr(pos, start - pos));
         const std::string scheme = text.substr(start, sep + 3 - start);
         const std::string rest = text.substr(sep + 3, end - sep - 3);
         if (rest.find('@') != std::string::npos) {
             out += scheme + ellipsis();
+        } else if (isLabelAt(rest, 0)) {
+            out += scheme + rest;
         } else {
             const size_t hostEnd = rest.find_first_of("/?#");
             const std::string hostPort = hostEnd == std::string::npos ? rest : rest.substr(0, hostEnd);
@@ -79,7 +143,9 @@ inline std::string cutUrls(const std::string& text) {
             if (host.empty()) {
                 out += scheme + rest;
             } else {
-                const std::string label = isPublicHost(host) ? host : "[host]";
+                const bool isPublic = isPublicHost(host);
+                if (!isPublic) noteHost(host);
+                const std::string label = isPublic ? host : "[host]";
                 out += hostEnd == std::string::npos ? scheme + label : scheme + label + "/" + ellipsis();
             }
         }

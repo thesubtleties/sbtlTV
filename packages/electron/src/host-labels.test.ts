@@ -58,3 +58,23 @@ test('a source named like a host is not relabelled', () => {
   labels.setSources([{ name: 'provider.tv', url: 'http://provider.tv' }]);
   assert.equal(redactUrls('http://provider.tv/x and provider.tv', labels.labeller()), 'http://[source: provider.tv]/… and [source: provider.tv]');
 });
+
+test('a host announced at load (noteUrl) is labelled when mpv names it bare', () => {
+  const labels = new HostLabels();
+  const l = labels.labeller();
+  labels.noteUrl('http://sbtl-probe.invalid:8080/live/u/p/1.ts');
+  assert.equal(redactUrls('ffmpeg: tcp: Failed to resolve hostname sbtl-probe.invalid: Name or service not known', l),
+    'ffmpeg: tcp: Failed to resolve hostname [host 1]: Name or service not known');
+  labels.noteUrl('not a url');
+});
+
+test('redacting text that is already redacted changes nothing (the card text is logged again)', () => {
+  const labels = new HostLabels();
+  labels.setSources([{ name: 'provider.tv', url: 'http://provider.tv' }]);
+  const l = labels.labeller();
+  for (const line of ['stream: Failed to open http://cdn.example/live/u/p/1.ts', 'http://provider.tv/x and provider.tv', 'open http://[2001:db8::1]:80/x']) {
+    const once = redactUrls(line, l);
+    assert.equal(redactUrls(once, l), once);
+  }
+  assert.equal(redactUrls('Failed to open http://[host]/…'), 'Failed to open http://[host]/…');
+});
