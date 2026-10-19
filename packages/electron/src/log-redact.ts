@@ -45,8 +45,17 @@ export function hostOf(hostPort: string): string {
     const close = hostPort.indexOf(']');
     return (close === -1 ? hostPort.slice(1) : hostPort.slice(1, close)).toLowerCase();
   }
-  const colon = hostPort.indexOf(':');
-  return (colon === -1 ? hostPort : hostPort.slice(0, colon)).toLowerCase();
+  // The host is the leading run of hostname characters: a port, or text glued on ('qq.tv","x":1}'), is not part of it.
+  let end = 0;
+  while (end < hostPort.length && isHostChar(hostPort.charCodeAt(end))) end++;
+  return hostPort.slice(0, end).toLowerCase();
+}
+
+/** The host a URL's text after "://" names (after any user:pass@), or '' when there is none. */
+function urlHostOf(rest: string): string {
+  const authorityEnd = rest.search(/[/?#]/);
+  const authority = authorityEnd === -1 ? rest : rest.slice(0, authorityEnd);
+  return hostOf(authority.slice(authority.lastIndexOf('@') + 1));
 }
 
 const MAX_SOURCE_LABEL = 100;
@@ -111,7 +120,7 @@ function cutUrl(scheme: string, rest: string, hosts: HostLabeller): string {
   const hostEnd = rest.search(/[/?#]/);
   const hostPort = hostEnd === -1 ? rest : rest.slice(0, hostEnd);
   const host = hostOf(hostPort);
-  if (!host) return scheme + rest;
+  if (!host) return rest ? `${scheme}/${ELLIPSIS}` : scheme;  // no host (file:///home/…): the path still goes
   const label = hosts.forUrl(host);
   return hostEnd === -1 ? scheme + label : `${scheme}${label}/${ELLIPSIS}`;
 }
@@ -119,6 +128,14 @@ function cutUrl(scheme: string, rest: string, hosts: HostLabeller): string {
 /** Every URL cut to a host label; known bare hosts between URLs labelled too. Labels are never scanned again. */
 function cutUrls(text: string, hosts: HostLabeller): string {
   if (!text.includes('://')) return cutBareHosts(text, hosts);
+  // Every URL host on the line is made known first, so a bare mention before its URL is labelled too.
+  for (let at = text.indexOf('://'); at !== -1; at = text.indexOf('://', at + 3)) {
+    if (labelLengthAt(text, at + 3) > 0) continue;
+    let end = at + 3;
+    while (end < text.length && !isSpace(text[end])) end++;
+    const host = urlHostOf(text.slice(at + 3, end));
+    if (host) hosts.forUrl(host);
+  }
   let out = '';
   let pos = 0;
   while (pos < text.length) {

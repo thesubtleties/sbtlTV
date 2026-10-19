@@ -517,6 +517,7 @@ void MpvContext::destroy() {
 
 bool MpvContext::load(const std::string& url, const std::string& options) {
     if (!m_mpv) return false;
+    noteUrl(url);  // mpv may name the host bare before any line carries the URL
 
     if (!options.empty()) {
         // mpv >= 0.38: loadfile <url> <flags> <index> <options>; index -1 = no index

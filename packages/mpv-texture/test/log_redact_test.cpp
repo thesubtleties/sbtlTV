@@ -43,6 +43,14 @@ int main() {
         }
     }
     ok &= check("ok [source: lemo] and [host 2] stay", "ok [source: lemo] and [host 2] stay");
+    ok &= check("at file:///home/steven/secret/file.ts:10", "at file:///\xE2\x80\xA6");
+    ok &= check("http://:8080/home/steven/a.ts", "http:///\xE2\x80\xA6");
+    { const std::string out = redactUrls("{\"url\":\"http://qq.tv\",\"x\":1} later qq.tv");
+      if (out.find("qq.tv") != std::string::npos) { std::cerr << "FAIL json glued\n got: " << out << "\n"; ok = false; } }
+    { const std::string out = redactUrls("ENOTFOUND cdn.zzz.tv (http://cdn.zzz.tv/live/a/b/1.ts)");
+      if (out.find("cdn.zzz.tv") != std::string::npos) { std::cerr << "FAIL bare before url\n got: " << out << "\n"; ok = false; } }
+    noteUrl("http://user:pw@quiet-load.example:8080/live/a/b/1.ts");
+    ok &= check("[ffmpeg] tcp: Failed to resolve hostname quiet-load.example: x", "[ffmpeg] tcp: Failed to resolve hostname [host]: x");
     ok &= check("", "");
     ok &= check("GET player_api.php?username=bob&password=s3cret&action=x", "GET player_api.php?username=\xE2\x80\xA6&password=\xE2\x80\xA6&action=x");
     ok &= check("Opening 'live/bob/s3cret/12345.ts'", "Opening 'live/\xE2\x80\xA6/12345.ts'");

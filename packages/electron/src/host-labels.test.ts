@@ -50,7 +50,7 @@ test('labels follow the current sources (renamed or removed mid-session)', () =>
   labels.setSources([{ name: 'lemo 2', url: 'http://lemo.example' }]);
   assert.equal(redactUrls('http://lemo.example/x', l), 'http://[source: lemo 2]/…');
   labels.setSources([]);
-  assert.equal(redactUrls('http://lemo.example/x', l), 'http://[host 1]/…');
+  assert.match(redactUrls('http://lemo.example/x', l), /^http:\/\/\[host \d+\]\/…$/);
 });
 
 test('a source named like a host is not relabelled', () => {
@@ -77,4 +77,32 @@ test('redacting text that is already redacted changes nothing (the card text is 
     assert.equal(redactUrls(once, l), once);
   }
   assert.equal(redactUrls('Failed to open http://[host]/…'), 'Failed to open http://[host]/…');
+});
+
+test('a URL glued to JSON registers its real host, so a later bare mention is labelled', () => {
+  const labels = new HostLabels();
+  const out = redactUrls('{"url":"http://qq.tv","x":1} later qq.tv', labels.labeller());
+  assert.ok(!out.includes('qq.tv'), out);
+});
+
+test('a bare host before its URL on the same line is labelled', () => {
+  const labels = new HostLabels();
+  const out = redactUrls('ENOTFOUND cdn.zzz.tv (http://cdn.zzz.tv/live/a/b/1.ts)', labels.labeller());
+  assert.ok(!out.includes('cdn.zzz.tv'), out);
+});
+
+test('a removed source keeps its host known (an in-flight error still names it)', () => {
+  const labels = new HostLabels();
+  const l = labels.labeller();
+  labels.setSources([{ name: 'my', url: 'http://my.tv' }]);
+  labels.setSources([]);
+  assert.equal(redactUrls('getaddrinfo ENOTFOUND my.tv', l), 'getaddrinfo ENOTFOUND [host 1]');
+});
+
+test('numbered hosts are capped (a flood of URLs cannot grow memory without bound)', () => {
+  const labels = new HostLabels();
+  const l = labels.labeller();
+  for (let i = 0; i < 1100; i++) redactUrls(`http://h${i}.example/x`, l);
+  assert.equal(redactUrls('http://h1099.example/x', l), 'http://[host]/…');
+  assert.equal(redactUrls('http://h5.example/x', l), 'http://[host 6]/…');
 });

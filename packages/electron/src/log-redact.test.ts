@@ -53,7 +53,7 @@ test('a labeller decides URL hosts and known bare hosts; labels are never re-sca
     redactUrls('open http://PROVIDER.tv:80/live/u/p/1.ts then getaddrinfo ENOTFOUND provider.tv.', hosts),
     'open http://[source: provider.tv]/… then getaddrinfo ENOTFOUND [source: provider.tv].',
   );
-  assert.deepEqual(seen, ['provider.tv']);
+  assert.deepEqual([...new Set(seen)], ['provider.tv']);  // the host as the labeller gets it (lowercased, no port)
 });
 
 test('dotted words that are not known hosts are left alone', () => {
@@ -98,4 +98,10 @@ test('text that only looks like a label does not slip past redaction', () => {
   }
   assert.equal(redactUrls('Failed to open http://[host 1]/…', hosts), 'Failed to open http://[host 1]/…');
   assert.equal(redactUrls('ok [source: lemo] and [host 2] stay', hosts), 'ok [source: lemo] and [host 2] stay');
+});
+
+test('a URL without a host still loses its path (file:// paths name the user)', () => {
+  assert.equal(redactUrls('at file:///home/steven/secret/file.ts:10'), 'at file:///…');
+  assert.equal(redactUrls('x:///home/steven/a.ts'), 'x:///…');
+  assert.equal(redactUrls('http://:8080/home/steven/a.ts'), 'http:///…');
 });

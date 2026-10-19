@@ -6,6 +6,8 @@
  */
 import { PUBLIC_HOSTS, type HostLabeller } from './log-redact.js';
 
+const MAX_NUMBERED = 1024;
+
 export interface SourceAddress { name: string; url?: string; epg_url?: string }
 
 function urlHost(url: string | undefined): string | null {
@@ -25,6 +27,7 @@ export class HostLabels {
 
   /** The user's sources; call again whenever they change. */
   setSources(sources: readonly SourceAddress[]): void {
+    const previous = [...this.sources.keys()];
     this.sources.clear();
     for (const source of sources) {
       for (const url of [source.url, source.epg_url]) {
@@ -32,6 +35,8 @@ export class HostLabels {
         if (host && !PUBLIC_HOSTS.has(host)) this.sources.set(host, source.name);
       }
     }
+    // A removed source's host stays known (numbered), so an error still in flight is labelled.
+    for (const host of previous) if (!this.sources.has(host)) this.labelFor(host);
   }
 
   /** A URL the app is about to open: its host is known from now on, so mpv naming it bare ("Failed to resolve hostname …") is labelled too. */
@@ -45,6 +50,7 @@ export class HostLabels {
     if (name !== undefined) return `[source: ${name}]`;
     let n = this.numbered.get(host);
     if (n === undefined) {
+      if (this.numbered.size >= MAX_NUMBERED) return '[host]';  // a flood of URLs cannot grow this without bound
       n = this.numbered.size + 1;
       this.numbered.set(host, n);
     }

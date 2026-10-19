@@ -91,8 +91,23 @@ inline std::string hostOf(const std::string& hostPort) {
         const size_t close = hostPort.find(']');
         return lower(close == std::string::npos ? hostPort.substr(1) : hostPort.substr(1, close - 1));
     }
-    const size_t colon = hostPort.find(':');
-    return lower(colon == std::string::npos ? hostPort : hostPort.substr(0, colon));
+    // The host is the leading run of hostname characters: a port, or text glued on, is not part of it.
+    size_t end = 0;
+    while (end < hostPort.size() && isHostChar(hostPort[end])) end++;
+    return lower(hostPort.substr(0, end));
+}
+
+// The host a URL's text after "://" names (after any user:pass@), or "" when there is none.
+inline std::string urlHostOf(const std::string& rest) {
+    const size_t authorityEnd = rest.find_first_of("/?#");
+    const std::string authority = authorityEnd == std::string::npos ? rest : rest.substr(0, authorityEnd);
+    const size_t at = authority.rfind('@');
+    return hostOf(at == std::string::npos ? authority : authority.substr(at + 1));
+}
+
+inline void noteUrlHost(const std::string& rest) {
+    const std::string host = urlHostOf(rest);
+    if (!host.empty() && !isPublicHost(host)) noteHost(host);
 }
 
 // Seen hostnames outside URLs become [host]. One pass: each character is looked at once.
@@ -127,6 +142,13 @@ inline std::string cutUrls(const std::string& text) {
     const auto isSchemeChar = [](char c) {
         return std::isalnum(static_cast<unsigned char>(c)) || c == '+' || c == '.' || c == '-';
     };
+    // Every URL host on the line is made known first, so a bare mention before its URL is labelled too.
+    for (size_t at = text.find("://"); at != std::string::npos; at = text.find("://", at + 3)) {
+        if (labelLengthAt(text, at + 3) > 0) continue;
+        size_t end = at + 3;
+        while (end < text.size() && !std::isspace(static_cast<unsigned char>(text[end]))) end++;
+        noteUrlHost(text.substr(at + 3, end - at - 3));
+    }
     std::string out;
     size_t pos = 0;
     while (pos < text.size()) {
@@ -162,7 +184,7 @@ inline std::string cutUrls(const std::string& text) {
             const std::string hostPort = hostEnd == std::string::npos ? rest : rest.substr(0, hostEnd);
             const std::string host = hostOf(hostPort);
             if (host.empty()) {
-                out += scheme + rest;
+                out += rest.empty() ? scheme : scheme + "/" + ellipsis();  // no host (file:///home/...): the path still goes
             } else {
                 const bool isPublic = isPublicHost(host);
                 if (!isPublic) noteHost(host);
@@ -243,6 +265,15 @@ inline std::string cutXtreamPaths(const std::string& text) {
 }
 
 }  // namespace log_redact_detail
+
+// A URL the player is about to open: its host is known from now on, so mpv or
+// ffmpeg naming it bare ("Failed to resolve hostname ...") is labelled even when
+// no log line carried the URL first (debug logging off: warn level only).
+inline void noteUrl(const std::string& url) {
+    using namespace log_redact_detail;
+    const size_t sep = url.find("://");
+    if (sep != std::string::npos) noteUrlHost(url.substr(sep + 3));
+}
 
 inline std::string redactUrls(const std::string& text) {
     using namespace log_redact_detail;
