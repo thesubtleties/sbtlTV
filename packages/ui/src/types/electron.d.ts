@@ -173,11 +173,15 @@ export interface StorageProtection {
   available: boolean;
   /** Linux: 'kwallet', 'kwallet5', 'kwallet6', 'gnome_libsecret', 'basic_text' or 'unknown'; null elsewhere */
   backend: string | null;
+  /** Linux: the keyring a --password-store at launch forces (it wins over the setting); null otherwise */
+  launchKeyring: string | null;
 }
 
 export interface PrivacyApi {
   checkIp: () => Promise<{ success?: boolean; data?: IpCheckResult; error?: string }>;
   storageProtection: () => Promise<StorageProtection>;
+  /** Linux: drop saved passwords and API keys, keep this keyring, and restart */
+  switchKeyring: (keyring: string) => Promise<{ success?: boolean; error?: string }>;
 }
 
 export interface AppearanceApi {

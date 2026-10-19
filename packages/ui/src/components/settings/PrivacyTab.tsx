@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { IpCheckResult, StorageProtection } from '../../types/electron';
 import { debugLog } from '../../utils/debugLog';
-import { Button, Hint, Section, SettingsTab } from './ui';
+import { Button, Hint, OptionRow, Section, Segmented, SettingsTab } from './ui';
 import './PrivacyTab.css';
 
 interface PrivacyTabProps {
@@ -44,13 +44,87 @@ function protectionText(p: StorageProtection): { text: string; tone?: 'ok' | 'wa
   if (!strong) {
     return {
       tone: 'warn',
-      text: 'No system keyring was found, so saved passwords and API keys are stored without strong encryption. Setting up a keyring (KWallet or GNOME Keyring) and adding them again fixes this.',
+      text: p.platform === 'linux'
+        ? 'No system keyring is in use, so saved passwords and API keys are stored without strong encryption. To fix this, set up a keyring (KWallet or GNOME Keyring), choose it under Keyring below, and add them again.'
+        : 'No system keyring was found, so saved passwords and API keys are stored without strong encryption.',
     };
   }
   const by = p.platform === 'darwin' ? "your Mac's Keychain"
     : p.platform === 'win32' ? 'Windows, for your user account'
     : KEYRING_NAMES[p.backend ?? ''] ?? 'your system keyring';
   return { tone: 'ok', text: `Saved passwords and API keys are encrypted by ${by}.` };
+}
+
+/** Linux keyrings, as --password-store values (see password-store.ts in the electron package). */
+const KEYRING_OPTIONS = [
+  { id: 'gnome-libsecret', label: 'Secret Service' },
+  { id: 'kwallet6', label: 'KWallet 6' },
+  { id: 'kwallet5', label: 'KWallet 5' },
+  { id: 'kwallet', label: 'KWallet 4' },
+  { id: 'basic', label: 'None' },
+];
+
+/** The keyring in use as a --password-store value, from Chromium's backend name. */
+function keyringInUse(backend: string | null): string {
+  if (backend === 'gnome_libsecret') return 'gnome-libsecret';
+  if (backend === 'basic_text') return 'basic';
+  return backend ?? '';
+}
+
+/**
+ * Linux: which keyring encrypts saved passwords. sbtlTV keeps using the one it
+ * has, so updates and desktop changes cannot move it; switching here starts over
+ * with the new one.
+ */
+function KeyringRow({ protection }: { protection: StorageProtection }) {
+  const current = keyringInUse(protection.backend);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const label = (id: string) => KEYRING_OPTIONS.find((option) => option.id === id)?.label ?? id;
+
+  async function switchKeyring(keyring: string) {
+    if (!window.privacy) return;
+    setSwitching(true);
+    setError(null);
+    try {
+      const result = await window.privacy.switchKeyring(keyring);
+      if (result.error) throw new Error(result.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setSwitching(false);
+    }
+  }
+
+  return (
+    <>
+      <OptionRow
+        title="Keyring"
+        help={protection.launchKeyring
+          ? `Set by --password-store=${protection.launchKeyring} where sbtlTV is started, which wins over this setting.`
+          : 'sbtlTV keeps using this keyring, so updates and desktop changes do not switch it.'}
+      >
+        <Segmented
+          compact
+          value={picked ?? current}
+          options={KEYRING_OPTIONS}
+          onChange={(id) => setPicked(id === current ? null : id)}
+          disabled={!!protection.launchKeyring || switching}
+        />
+      </OptionRow>
+      {picked && (
+        <Hint tone="warn">
+          Switching to {label(picked)} restarts sbtlTV. A keyring cannot read what another one saved, so your
+          provider passwords and API keys are removed and you enter them again after the restart.{' '}
+          <Button variant="danger" onClick={() => void switchKeyring(picked)} disabled={switching}>
+            {switching ? 'Restarting…' : 'Switch and restart'}
+          </Button>{' '}
+          <Button onClick={() => setPicked(null)} disabled={switching}>Cancel</Button>
+        </Hint>
+      )}
+      {error && <Hint tone="danger">{error}</Hint>}
+    </>
+  );
 }
 
 /** What sbtlTV keeps, what IP the outside services see, and who sees what. */
@@ -88,6 +162,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, teamLogosEnabled, autoU
       >
         <Hint>Your settings, watch history, favorites, watchlist, guide and library are kept on this computer.</Hint>
         {protectionLine && <Hint tone={protectionLine.tone}>{protectionLine.text}</Hint>}
+        {protection?.platform === 'linux' && <KeyringRow protection={protection} />}
         <Hint>
           {debugLoggingEnabled
             ? 'Debug logging is on. The log stays on this computer; logins are removed from it and provider addresses appear as labels.'

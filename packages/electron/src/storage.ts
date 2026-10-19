@@ -13,6 +13,8 @@ interface StoreSchema {
   settings: StoredSettings;
   /** 2 = the debug log only ever had labelled addresses (older logs are deleted once) */
   debugLogFormat?: number;
+  /** Linux: the keyring sbtlTV keeps using, as a --password-store value (see password-store.ts) */
+  linuxPasswordStore?: string;
 }
 
 // Source as stored (password encrypted)
@@ -399,4 +401,23 @@ export function getDebugLogFormat(): number {
 
 export function setDebugLogFormat(format: number): void {
   store.set('debugLogFormat', format);
+}
+
+/** Linux: the keyring sbtlTV keeps using (a --password-store value), or null. */
+export function getKeptPasswordStore(): string | null {
+  return store.get('linuxPasswordStore') ?? null;
+}
+
+export function keepPasswordStore(value: string): void {
+  store.set('linuxPasswordStore', value);
+}
+
+/**
+ * Drop every saved password and API key: before switching keyrings, since one
+ * keyring cannot read what another saved. Everything else stays.
+ */
+export function forgetSecrets(): void {
+  store.set('sources', store.get('sources', []).map(({ encryptedPassword: _password, ...source }) => source));
+  const { encryptedTmdbApiKey: _tmdb, encryptedPosterDbApiKey: _posterDb, ...settings } = store.get('settings');
+  store.set('settings', settings);
 }
