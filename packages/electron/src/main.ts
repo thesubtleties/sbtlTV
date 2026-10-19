@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage, session } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage, screen, session } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
@@ -28,6 +28,8 @@ import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
 import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
 import { registerSetupTransfer } from './setup-transfer.js';
+import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
+import { makeZip } from './zip-writer.js';
 const { autoUpdater } = electronUpdater;
 
 // Before the keyring is opened (Chromium picks it when the app is ready): keep
@@ -87,6 +89,8 @@ const compatibilityModeRequested = compatibilityModeFromFlag || compatibilityMod
 let MpvTextureBridgeClass: (new () => MpvTextureBridgeType) | null = null;
 // Why the native path is unavailable this launch, shown in the Linux fallback dialog.
 let nativeInitError: string | null = null;
+// For the bug report (bug-report.ts): facts read once where they are known, never on a click.
+let reportFacts: { gpuSelection?: string; nativeMpv?: string; nativeFfmpeg?: string; externalMpv?: string; externalMpvSource?: string } = {};
 // True once the launch has decided between the native bridge and external mpv.
 // The renderer mounts before that decision, so 'mpv-get-mode' reports it.
 let playerModeSettled = false;
@@ -246,6 +250,15 @@ function syncPlaybackDiagnostics(): void {
 }
 const DEBUG_LOG_MAX_SIZE = 10 * 1024 * 1024; // 10MB max log size
 
+/** dist/build-info.json, which CI writes so a log or a bug report can be tied to an exact commit. */
+function readBuildInfo(): { sha?: string; run?: string; ref?: string } | 'local' {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')) as { sha?: string; run?: string; ref?: string };
+  } catch {
+    return 'local';
+  }
+}
+
 function getDebugLogPath(): string {
   const logDir = app.getPath('logs');
   return path.join(logDir, 'sbtltv-debug.log');
@@ -310,12 +323,8 @@ function initDebugLogging(enabled: boolean): void {
     debugLog('='.repeat(60));
     debugLog(`Debug logging started - sbtlTV v${app.getVersion()}`);
     // CI writes dist/build-info.json so a log can be tied to an exact commit.
-    try {
-      const info = JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')) as { sha?: string; run?: string; ref?: string };
-      debugLog(`Build: ${info.sha ?? '?'} (${info.ref ?? '?'}, run ${info.run ?? '?'})`);
-    } catch {
-      debugLog('Build: local');
-    }
+    const info = readBuildInfo();
+    debugLog(info === 'local' ? 'Build: local' : `Build: ${info.sha ?? '?'} (${info.ref ?? '?'}, run ${info.run ?? '?'})`);
     if (!rotationSucceeded) {
       debugLog('Warning: Log rotation failed, continuing with existing file', 'system');
     }
@@ -349,7 +358,7 @@ function debugLog(message: string, category = 'app'): void {
 function writeDebugLine(redacted: string, category: string): void {
   if (!debugLoggingEnabled || !debugLogStream) return;
   try {
-    debugLogStream.write(`[${new Date().toISOString()}] [${category}] ${redacted}\n`);
+    debugLogStream.write(formatLogLine(new Date().toISOString(), category, redacted));
   } catch {
     // Silently fail - logging should never crash the app
   }
@@ -434,6 +443,7 @@ async function getChromiumGpuIdentity(): Promise<{ vendorId?: number; deviceId?:
   // Selection errors must reach initNativeMpv's compatibility fallback.
   const gpu = selectChromiumGpuIdentity(devices, webGlRenderer);
   debugLog(`GPU selection source=${gpu.source}`, 'mpv');
+  reportFacts.gpuSelection = gpu.source;
   return gpu;
 }
 
@@ -709,6 +719,12 @@ async function initMpv(): Promise<void> {
     // Check mpv version for logging
     const mpvVersion = getMpvVersion(mpvBinary);
     const versionStr = mpvVersion ? `${mpvVersion[0]}.${mpvVersion[1]}` : 'unknown';
+    reportFacts.externalMpv = versionStr;
+    // Where it came from, never the path (it can hold the user's name).
+    const bundledRoot = app.isPackaged ? process.resourcesPath : __dirname;
+    reportFacts.externalMpvSource = mpvBinary.startsWith(bundledRoot) ? 'bundled'
+      : /^\/(opt\/homebrew|usr\/local)\//.test(mpvBinary) ? 'homebrew'
+      : mpvBinary.startsWith('/usr/') || mpvBinary.startsWith('C:\\Program Files') ? 'system' : 'other';
     console.log('[mpv] Version:', versionStr);
     debugLog(`Version: ${versionStr}`, 'mpv');
 
@@ -893,6 +909,8 @@ async function initNativeMpv(): Promise<boolean> {
 
     mpvBridge = bridge;
     useNativeMpv = true;
+    reportFacts.nativeMpv = bridge.getProperty('mpv-version') ?? 'unknown';
+    reportFacts.nativeFfmpeg = bridge.getProperty('ffmpeg-version') ?? 'unknown';
     syncPlaybackDiagnostics();
     setMpvOptions([...STREAM_BASE_OPTIONS, ...SUBTITLE_BASE_OPTIONS, ['sub-fonts-dir', subtitleFontsPath()]], 'native init');
     applySubtitleStyle('native init');
@@ -2102,6 +2120,167 @@ ipcMain.on('shared-texture-frame-ok', (event) => {
 ipcMain.on('shared-texture-pipeline-failure', (event, message: unknown) => {
   if (nativeRecoveryInProgress || event.sender !== mainWindow?.webContents || typeof message !== 'string') return;
   mpvBridge?.reportPipelineFailure(message);
+});
+
+// Settings > Debug > Bug report (bug-report.ts). Hardware is what helps to debug and
+// no more: no VRAM, never the computer's name or the user's name.
+async function gatherReportInputs(rawSyncStatus: unknown): Promise<ReportInputs> {
+  const round = (bytes: number) => Math.round((bytes / 1024 ** 3) * 10) / 10;
+  const gpus: ReportInputs['hardware']['gpus'] = [];
+  // PCI vendor ids -> names; the device id (hex) names the exact model.
+  const VENDORS: Record<number, string> = { 0x1002: 'AMD', 0x10de: 'NVIDIA', 0x8086: 'Intel', 0x106b: 'Apple', 0x5143: 'Qualcomm', 0x13b5: 'ARM', 0x1af4: 'Virtio' };
+  try {
+    const info = (await app.getGPUInfo('basic')) as { gpuDevice?: { active?: boolean; vendorId?: number; deviceId?: number; driverVendor?: string; driverVersion?: string }[] };
+    for (const d of info.gpuDevice ?? []) {
+      gpus.push({
+        vendor: d.vendorId !== undefined ? (VENDORS[d.vendorId] ?? `0x${d.vendorId.toString(16)}`) : undefined,
+        device: d.deviceId !== undefined ? `0x${d.deviceId.toString(16).padStart(4, '0')}` : undefined,
+        active: d.active,
+        ...(d.driverVendor && { driver: d.driverVendor }),
+        ...(d.driverVersion && { driverVersion: d.driverVersion }),
+      });
+    }
+  } catch (error) {
+    debugLog(`Bug report: GPU info unavailable (${error instanceof Error ? error.name : 'error'})`, 'app');
+  }
+  // The GPU the in-window player renders with (high-performance WebGL), by name.
+  const webGl = (await getHighPerformanceWebGlRenderer().catch(() => null)) as { renderer?: unknown; vendor?: unknown } | null;
+  if (typeof webGl?.renderer === 'string') {
+    gpus.push({ renderer: webGl.renderer.slice(0, 200), vendor: typeof webGl.vendor === 'string' ? webGl.vendor.slice(0, 200) : undefined, usedFor: 'video (high-performance WebGL)' });
+  }
+  let settings: ReportInputs['settings'] = 'unreadable';
+  try { settings = storage.getSettings(); } catch { /* reported as unreadable */ }
+  let sources: ReportInputs['sources'] = 'unreadable';
+  try {
+    sources = storage.getSources().map((s) => ({ id: s.id, type: s.type, enabled: s.enabled, epg_url: s.epg_url, auto_load_epg: s.auto_load_epg, hasLogin: !!s.password }));
+  } catch { /* reported as unreadable */ }
+  const bridge = useNativeMpv ? mpvBridge : null;
+  const linux = process.platform === 'linux';
+  let distro: string | undefined;
+  if (linux) {
+    try {
+      const release = fs.readFileSync('/etc/os-release', 'utf8');
+      const field = (name: string) => new RegExp(`^${name}="?([^"\n]*)"?$`, 'm').exec(release)?.[1];
+      distro = [field('ID'), field('VERSION_ID')].filter(Boolean).join(' ') || undefined;
+    } catch { /* not there */ }
+  }
+  const install = !app.isPackaged ? 'dev'
+    : linux ? (process.env.APPIMAGE ? 'AppImage' : 'package (deb)')
+    : process.platform === 'win32' ? (process.env.PORTABLE_EXECUTABLE_DIR ? 'portable' : 'installer')
+    : 'app';
+  const windowDisplay = mainWindow && !mainWindow.isDestroyed() ? screen.getDisplayMatching(mainWindow.getBounds()) : screen.getPrimaryDisplay();
+  return {
+    app: { version: app.getVersion(), build: readBuildInfo() },
+    system: {
+      platform: process.platform, arch: process.arch, osVersion: process.getSystemVersion(),
+      electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node,
+      install,
+      ...(linux && { distro, session: process.env.XDG_SESSION_TYPE, desktop: process.env.XDG_CURRENT_DESKTOP }),
+    },
+    player: {
+      mode: useNativeMpv ? 'in-window' : 'external mpv',
+      why: compatibilityModeFromFlag ? 'restarted in compatibility mode after a playback failure'
+        : compatibilityModeFromSetting ? 'compatibility mode chosen in Settings'
+        : !USE_NATIVE_MPV ? 'external mpv on this system'
+        : !useNativeMpv && nativeInitError ? 'the in-window player could not start'
+        : useNativeMpv ? 'default' : 'not started yet',
+      error: nativeInitError,
+      // Linux only: there hwdec-current is an instant cached read (see the stream checks above).
+      hwdec: !bridge ? 'external mpv' : linux ? (bridge.getProperty('hwdec-current') ?? 'nothing playing') : 'not read on this system',
+      mpv: useNativeMpv ? (reportFacts.nativeMpv ?? 'unknown') : (reportFacts.externalMpv ? `${reportFacts.externalMpv} (${reportFacts.externalMpvSource})` : 'not started yet'),
+      ffmpeg: useNativeMpv ? (reportFacts.nativeFfmpeg ?? 'unknown') : 'external mpv',
+      ...(reportFacts.gpuSelection && { gpuSelection: reportFacts.gpuSelection }),
+    },
+    hardware: {
+      cpu: os.cpus()[0]?.model?.trim() ?? 'unknown',
+      threads: os.cpus().length,
+      ramGB: Math.round(os.totalmem() / 1024 ** 3),
+      gpus,
+      displays: {
+        count: screen.getAllDisplays().length,
+        window: { width: windowDisplay.size.width, height: windowDisplay.size.height, scale: windowDisplay.scaleFactor, hz: windowDisplay.displayFrequency > 0 ? windowDisplay.displayFrequency : null },
+      },
+    },
+    keyring: {
+      backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : null,
+      available: safeStorage.isEncryptionAvailable(),
+      from: process.platform === 'linux' ? keyringFrom : 'system',
+    },
+    debugLoggingEnabled,
+    addressesIncluded: logPolicy.addressesIncluded,
+    settings,
+    sources,
+    syncStatus: validateSyncStatus(rawSyncStatus),
+  };
+}
+
+const REPORT_LOG_MAX = 10 * 1024 * 1024;
+
+/** The last `max` bytes of a file, or null when it can't be read (logging off, never rotated). */
+function readTail(file: string, max: number): Buffer | null {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    const length = Math.min(size, max);
+    const buf = Buffer.alloc(length);
+    fs.readSync(fd, buf, 0, length, size - length);
+    return buf;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) fs.closeSync(fd);
+  }
+}
+
+async function reportJson(rawSyncStatus: unknown): Promise<string> {
+  // Always labels, whatever the "include addresses" switch says: a report goes to a public issue.
+  return JSON.stringify(buildReport(await gatherReportInputs(rawSyncStatus), (text) => logPolicy.forDisplay(text), new Date()), null, 2);
+}
+
+ipcMain.handle('debug-report-preview', async (_event, syncStatus: unknown) => {
+  try {
+    return { success: true, data: await reportJson(syncStatus) };
+  } catch (error) {
+    return { error: logPolicy.forDisplay(error instanceof Error ? error.message : String(error)) };
+  }
+});
+
+ipcMain.handle('debug-report-save', async (_event, syncStatus: unknown) => {
+  try {
+    const json = await reportJson(syncStatus);
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const choice = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, { title: 'Save bug report', defaultPath: path.join(app.getPath('documents'), `sbtltv-report-${today}.zip`), filters: [{ name: 'Zip', extensions: ['zip'] }] })
+      : { canceled: true, filePath: undefined };
+    if (choice.canceled || !choice.filePath) return { success: false, canceled: true };
+    const entries = [{ name: 'report.json', data: Buffer.from(json, 'utf8') }];
+    // The logs, labelled again by a fresh policy (lines written while addresses were included
+    // lose them; this session's numbering is untouched), last 10 MB each.
+    const fresh = new LogPolicy(sourceAddresses());
+    const logPath = getDebugLogPath();
+    // With no marker in what is kept: the current log follows the switch now; the previous one is assumed included (left out).
+    for (const [file, name, includedWithoutMarker] of [[logPath, 'debug.log', logPolicy.addressesIncluded], [`${logPath}.old`, 'debug-previous.log', true]] as const) {
+      const raw = readTail(file, REPORT_LOG_MAX);
+      if (raw) entries.push({ name, data: Buffer.from(reportLogText(raw, REPORT_LOG_MAX, (line) => fresh.forDisplay(line), includedWithoutMarker), 'utf8') });
+    }
+    // Written beside the target, then renamed: a failed save leaves no half-written zip.
+    const temp = `${choice.filePath}.part`;
+    try {
+      fs.writeFileSync(temp, makeZip(entries));
+      fs.renameSync(temp, choice.filePath);
+    } finally {
+      fs.rmSync(temp, { force: true });
+    }
+    shell.showItemInFolder(choice.filePath);
+    debugLog('Bug report saved', 'app');
+    return { success: true, data: { filePath: choice.filePath } };
+  } catch (error) {
+    // The reason only: file errors carry paths (the home folder).
+    debugLog(`Bug report could not be saved: ${(error as NodeJS.ErrnoException)?.code ?? (error instanceof Error ? error.name : 'error')}`, 'app');
+    return { error: 'The report could not be saved. Try another folder.' };
+  }
 });
 
 ipcMain.handle('debug-open-log-folder', async () => {

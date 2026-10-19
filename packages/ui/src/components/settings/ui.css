@@ -3,8 +3,10 @@
 .st-tab {
   display: flex;
   flex-direction: column;
-  padding: 22px 22px 28px;
+  padding: 22px 22px 40px;
   height: auto;
+  /* In the scrolling column, never shrink: a shrunk tab loses its bottom padding and the last row sits on the edge. */
+  flex-shrink: 0;
 }
 
 /* Sections: hairlines between them, not extra space */

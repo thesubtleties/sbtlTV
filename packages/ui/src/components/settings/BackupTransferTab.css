@@ -1,18 +1,49 @@
 .setup-passphrase {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent-line);
+  border-radius: 10px;
+  background: var(--accent-faint);
+}
+
+.setup-passphrase__label {
+  font-size: 0.78rem;
+  color: var(--text-2);
+}
+
+.setup-passphrase__key {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 10px;
+  margin-top: 6px;
 }
 
 .setup-passphrase__words {
-  flex-basis: 100%;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 1.4rem;
+  font-size: 1.25rem;
   letter-spacing: 0.02em;
   user-select: all;
   color: var(--text);
+}
+
+.setup-passphrase__note {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--text-2);
+}
+
+.setup-passphrase__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent-strong, var(--text));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 .setup-preview__actions {

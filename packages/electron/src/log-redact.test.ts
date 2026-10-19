@@ -273,3 +273,21 @@ test('a JSON login ending in an escaped quote is not mistaken for an empty one',
   assert.equal(redactUrls('{"password":"s3cret\\""}'), '{"password":"…"}');
   assert.equal(redactUrls('{"token":"a\\"\\""}'), '{"token":"…"}');
 });
+
+test("a user's folder in a path becomes ~ (the folder name is often the person's name)", () => {
+  assert.equal(redactUrls('Using binary: C:\\Users\\Alice Smith\\AppData\\Local\\Programs\\sbtlTV\\resources\\mpv\\mpv.exe'), 'Using binary: ~\\AppData\\Local\\Programs\\sbtlTV\\resources\\mpv\\mpv.exe');
+  assert.equal(redactUrls('dlopen /home/alice/sbtl/mpv_texture.node failed'), 'dlopen ~/sbtl/mpv_texture.node failed');
+  assert.equal(redactUrls("EACCES: open '/Users/bob/Library/Logs/x.log'"), "EACCES: open '~/Library/Logs/x.log'");
+  assert.equal(redactUrls('{"path":"c:\\\\users\\\\alice\\\\x"} and C:/Users/alice/y'), '{"path":"~\\\\x"} and ~/y');
+  assert.equal(redactUrls('/home/alice'), '~');
+  // Not a user's folder: left alone
+  assert.equal(redactUrls('/usr/share/fonts and /opt/homebrew/bin/mpv and myhome/alice'), '/usr/share/fonts and /opt/homebrew/bin/mpv and myhome/alice');
+});
+
+test('the path pass stays linear on hostile lines', () => {
+  for (const line of ['/home/'.repeat(40_000), 'C:\\Users\\'.repeat(25_000), '/Users/a'.repeat(30_000)]) {
+    const t = performance.now();
+    redactUrls(line);
+    assert.ok(performance.now() - t < 200);
+  }
+});

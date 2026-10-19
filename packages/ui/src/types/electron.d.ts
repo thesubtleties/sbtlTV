@@ -307,6 +307,10 @@ export interface PlatformApi {
 export interface DebugApi {
   getLogPath: () => Promise<StorageResult<string>>;
   logFromRenderer: (message: string) => Promise<StorageResult>;
+  /** Settings > Debug > Bug report: the report.json that would be saved */
+  reportPreview: (syncStatus: unknown) => Promise<{ success?: boolean; data?: string; error?: string }>;
+  /** Save the bug report zip (save dialog); shows it in its folder */
+  saveReport: (syncStatus: unknown) => Promise<{ success?: boolean; canceled?: boolean; data?: { filePath: string }; error?: string }>;
   openLogFolder: () => Promise<StorageResult>;
   isEnabled?: () => Promise<boolean>;
   onEnabledChanged?: (callback: (enabled: boolean) => void) => () => void;

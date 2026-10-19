@@ -419,6 +419,55 @@ inline std::string cutXtreamPaths(const std::string& text) {
     return out;
 }
 
+// A user's folder in a path ("/home/alice", "/Users/bob", "C:\\Users\\Alice Smith")
+// becomes ~: the name is often the person's. Windows names may hold spaces (up to the
+// next slash). Same rule as HOME_UNIX / HOME_WINDOWS in log-redact.ts. Linear.
+inline std::string cutHomePaths(const std::string& text) {
+    const auto isSlash = [](char c) { return c == '/' || c == '\\'; };
+    const auto startsWithCi = [&](size_t at, const char* word) {
+        const size_t len = std::char_traits<char>::length(word);
+        if (at + len > text.size()) return false;
+        for (size_t k = 0; k < len; k++) {
+            char c = text[at + k];
+            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
+            if (c != word[k]) return false;
+        }
+        return true;
+    };
+    std::string out;
+    size_t pos = 0;
+    size_t i = 0;
+    while (i < text.size()) {
+        const bool boundary = i == 0 || !(isWordChar(text[i - 1]) || text[i - 1] == '.' || text[i - 1] == '-');
+        size_t nameStart = 0;
+        bool windows = false;
+        if (boundary && text[i] == '/' && (text.compare(i, 6, "/home/") == 0 || text.compare(i, 7, "/Users/") == 0)) {
+            nameStart = i + (text[i + 1] == 'h' ? 6 : 7);
+        } else if (boundary && isAsciiAlpha(text[i]) && i + 1 < text.size() && text[i + 1] == ':') {
+            size_t j = i + 2;
+            const size_t slashes = j;
+            while (j < text.size() && isSlash(text[j])) j++;
+            if (j > slashes && startsWithCi(j, "users")) {
+                j += 5;
+                const size_t slashes2 = j;
+                while (j < text.size() && isSlash(text[j])) j++;
+                if (j > slashes2) { nameStart = j; windows = true; }
+            }
+        }
+        if (nameStart == 0) { i++; continue; }
+        size_t end = nameStart;
+        while (end < text.size() && !isSlash(text[end]) && text[end] != '\'' && text[end] != '"' &&
+               (windows ? (text[end] != '\r' && text[end] != '\n') : !isAsciiSpace(text[end]))) end++;
+        if (end == nameStart) { i++; continue; }
+        out.append(text, pos, i - pos);
+        out += '~';
+        pos = end;
+        i = end;
+    }
+    out.append(text, pos, std::string::npos);
+    return out;
+}
+
 }  // namespace log_redact_detail
 
 // A URL the player is about to open: its host is known from now on, so mpv or
@@ -434,5 +483,5 @@ inline void noteUrl(const std::string& url) {
 
 inline std::string redactUrls(const std::string& text) {
     using namespace log_redact_detail;
-    return cutXtreamPaths(cutLoginParams(cutBareIpv6(cutUrls(text))));
+    return cutHomePaths(cutXtreamPaths(cutLoginParams(cutBareIpv6(cutUrls(text)))));
 }
