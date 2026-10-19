@@ -13,6 +13,7 @@ import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
 import { PrivacyTab } from './settings/PrivacyTab';
 import { BackupTransferTab, type LastExport } from './settings/BackupTransferTab';
+import { useToastStore } from '../stores/toastStore';
 import { VideoPlayerTab } from './settings/VideoPlayerTab';
 import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
@@ -94,6 +95,10 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
       return;
     }
     const result = await window.storage.getSources();
+    if (result.error) {
+      useToastStore.getState().addToast({ kind: 'error', title: 'Could not load sources', message: 'Saved sources could not be read. Details are in the debug log.', duration: 8000 });
+      return;
+    }
     if (result.data) {
       setSources(result.data);
     }
