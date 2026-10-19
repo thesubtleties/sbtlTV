@@ -108,7 +108,7 @@ export function DebugTab({
   );
 }
 
-type ReportState = { kind: 'idle' } | { kind: 'busy' } | { kind: 'saved' } | { kind: 'error'; message: string };
+type ReportState = { kind: 'idle' } | { kind: 'busy' } | { kind: 'loading' } | { kind: 'saved' } | { kind: 'error'; message: string };
 
 /** A zip for a bug report: what it holds is shown first, the person attaches it themselves. */
 function BugReportSection({ loggingOn, addressesIncluded }: { loggingOn: boolean; addressesIncluded: boolean }) {
@@ -119,13 +119,19 @@ function BugReportSection({ loggingOn, addressesIncluded }: { loggingOn: boolean
 
   useEffect(() => { void window.platform?.getVersion().then(setVersion).catch(() => {}); }, []);
 
-  const syncStatus = () => data.query({ type: 'syncStatus' }).catch(() => []);
+  // null when the data process does not answer: the report then says so, not "never synced".
+  const syncStatus = () => data.query({ type: 'syncStatus' }).catch(() => null);
 
   async function togglePreview() {
     if (preview !== null) { setPreview(null); return; }
-    const r = await window.debug?.reportPreview(await syncStatus());
-    if (r?.data) setPreview(r.data);
-    else setState({ kind: 'error', message: r?.error ?? 'The report could not be put together.' });
+    setState({ kind: 'loading' });
+    try {
+      const r = await window.debug?.reportPreview(await syncStatus());
+      if (r?.data) { setPreview(r.data); setState({ kind: 'idle' }); }
+      else setState({ kind: 'error', message: r?.error ?? 'The report could not be put together.' });
+    } catch (error) {
+      setState({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   async function save() {
@@ -143,18 +149,25 @@ function BugReportSection({ loggingOn, addressesIncluded }: { loggingOn: boolean
   return (
     <Section
       title="Bug report"
-      description="A zip with what's needed to look into a problem: versions, your computer's hardware, settings, how your sources are doing, and the debug log. No logins, provider addresses or source names."
+      description="A zip with what's needed to look into a problem: versions, your computer's hardware, settings, how your sources are doing, and the debug log. No logins, provider addresses, source names or your user folder. Nothing is sent: you attach the file to an issue yourself."
     >
       {!loggingOn && <Hint>Turn on debug logging, make the problem happen again, then save the report.</Hint>}
-      {addressesIncluded && <Hint tone="warn">Provider addresses are included in this log (above). Only send it to someone you trust.</Hint>}
+      {addressesIncluded && <Hint tone="warn">Provider addresses are being written to the log file right now. The report zip never contains them; send the log file itself only to someone you trust.</Hint>}
       <div className="st-actions">
-        <Button onClick={() => void togglePreview()}>{preview === null ? "What's in it" : 'Hide'}</Button>
-        <Button variant="primary" onClick={() => void save()} disabled={state.kind === 'busy'}>{state.kind === 'busy' ? 'Saving…' : 'Save report file…'}</Button>
+        <Button onClick={() => void togglePreview()} disabled={state.kind === 'loading'} aria-expanded={preview !== null}>
+          {state.kind === 'loading' ? 'Putting it together…' : preview === null ? "What's in it" : 'Hide'}
+        </Button>
+        <Button variant="primary" onClick={() => void save()} disabled={state.kind === 'busy' || state.kind === 'loading'}>{state.kind === 'busy' ? 'Saving…' : 'Save report file…'}</Button>
         <a className="st-btn st-btn--default" href={issueUrl(version, platform)} target="_blank" rel="noopener noreferrer">Open a GitHub issue</a>
       </div>
-      {state.kind === 'saved' && <Hint tone="ok">Saved. Drag the zip into the GitHub issue.</Hint>}
+      {state.kind === 'saved' && <Hint tone="ok">Saved, and its folder is open. Open a GitHub issue and drag the zip into it.</Hint>}
       {state.kind === 'error' && <Hint tone="danger">{state.message}</Hint>}
-      {preview !== null && <pre className="st-report-preview">{preview}</pre>}
+      {preview !== null && (
+        <>
+          <Hint>This is report.json. The zip also has the debug log, with logins, addresses, source names and your user folder taken out.</Hint>
+          <pre className="st-report-preview">{preview}</pre>
+        </>
+      )}
     </Section>
   );
 }

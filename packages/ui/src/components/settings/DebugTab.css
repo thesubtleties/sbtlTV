@@ -6,6 +6,7 @@
 }
 
 .st-actions a.st-btn {
+  box-sizing: border-box;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
