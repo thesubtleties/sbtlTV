@@ -132,10 +132,15 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
         ))}
         {exported && (
           <div className="setup-passphrase">
-            <div className="setup-passphrase__words">{exported.passphrase}</div>
-            <Button onClick={() => void navigator.clipboard.writeText(exported.passphrase).then(() => setCopied(true), () => setExportError('Could not copy; select the words and copy them instead.'))}>{copied ? 'Copied' : 'Copy'}</Button>{' '}
-            <Button onClick={() => void window.setup?.showFile()}>Show file</Button>
-            <Hint>This passphrase isn't saved anywhere. You'll need it to open the file. Lost it? Just export again.</Hint>
+            <div className="setup-passphrase__label">Passphrase for {exported.filePath.split(/[\\/]/).pop()}</div>
+            <div className="setup-passphrase__key">
+              <span className="setup-passphrase__words">{exported.passphrase}</span>
+              <Button onClick={() => void navigator.clipboard.writeText(exported.passphrase).then(() => setCopied(true), () => setExportError('Could not copy; select the words and copy them instead.'))}>{copied ? 'Copied' : 'Copy'}</Button>
+            </div>
+            <div className="setup-passphrase__note">
+              Not saved anywhere. Lost it? Export again.{' '}
+              <button type="button" className="setup-passphrase__link" onClick={() => void window.setup?.showFile()}>Show file</button>
+            </div>
           </div>
         )}
         {exportError && <Hint tone="danger">{exportError}</Hint>}
