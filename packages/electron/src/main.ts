@@ -27,6 +27,7 @@ import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleS
 import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
 import { resetCacheIfMarked } from './setup-backups.js';
+import { registerSetupTransfer } from './setup-transfer.js';
 const { autoUpdater } = electronUpdater;
 
 // Before the keyring is opened (Chromium picks it when the app is ready): keep
@@ -2131,6 +2132,13 @@ ipcMain.handle('privacy-switch-keyring', (_event, keyring: unknown) => {
   relaunchApp(process.argv.slice(1));
   app.quit();
   return { success: true };
+});
+
+// Settings > Backup & transfer (setup-transfer.ts)
+registerSetupTransfer({
+  window: () => mainWindow,
+  relaunch: () => { relaunchApp(process.argv.slice(1)); app.quit(); },
+  log: (m) => debugLog(m, 'setup'),
 });
 
 // A failure is logged by its reason only, never with an address.
