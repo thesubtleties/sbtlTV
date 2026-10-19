@@ -166,10 +166,18 @@ export function validateSyncStatus(raw: unknown): ReportInputs['syncStatus'] {
   });
 }
 
+// The log policy's own lines (log-policy.ts) and the session header (main.ts): where
+// "Provider addresses in the debug log" was switched on and off.
+const ADDRESSES_ON = 'Provider addresses are included in this log from here on';
+const ADDRESSES_OFF = 'Provider addresses are replaced by labels again';
+const SESSION_START = 'Debug logging started';
+
 /**
  * A log as it goes into the report zip: its last `maxBytes` (starting at a whole
- * line), every line through `clean` again. The log on disk may hold provider
- * addresses written while the user included them; the zip never does.
+ * line), every line through `clean` again, and every line written while provider
+ * addresses were included left out (a bare host there can't be recognised later),
+ * with a note of how many. A new session starts with addresses off. If the kept
+ * part begins inside such a stretch (its first marker is "off"), that start goes too.
  */
 export function reportLogText(raw: Buffer, maxBytes: number, clean: (line: string) => string): string {
   let text = raw.toString('utf8');
@@ -178,5 +186,23 @@ export function reportLogText(raw: Buffer, maxBytes: number, clean: (line: strin
     const firstBreak = text.indexOf('\n');
     text = firstBreak === -1 ? '' : text.slice(firstBreak + 1);
   }
-  return text.split('\n').map((line) => (line ? clean(line) : line)).join('\n');
+  const lines = text.split('\n');
+  const firstMarker = lines.find((l) => l.includes(ADDRESSES_ON) || l.includes(ADDRESSES_OFF) || l.includes(SESSION_START));
+  let included = firstMarker !== undefined && firstMarker.includes(ADDRESSES_OFF);
+  let leftOut = 0;
+  const out: string[] = [];
+  const note = () => {
+    if (leftOut > 0) out.push(`… ${leftOut} line${leftOut === 1 ? '' : 's'} left out: written while provider addresses were included`);
+    leftOut = 0;
+  };
+  for (const line of lines) {
+    if (included) {
+      if (line.includes(ADDRESSES_OFF) || line.includes(SESSION_START)) { included = false; note(); }
+      else { leftOut++; continue; }
+    }
+    out.push(line ? clean(line) : line);
+    if (line.includes(ADDRESSES_ON)) included = true;
+  }
+  note();
+  return out.join('\n');
 }

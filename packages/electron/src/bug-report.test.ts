@@ -192,3 +192,22 @@ test('a log for the zip: its last part from a whole line, every line labelled ag
   assert.equal(tail, 'last\n');  // cut to the tail, starting at a whole line
   assert.equal(reportLogText(Buffer.alloc(0), 10, (l) => l), '');
 });
+
+test('lines written while provider addresses were included are left out of the zip (a bare host there cannot be recognised later)', () => {
+  const raw = Buffer.from([
+    '[2026-10-19T10:00:00Z] [app] Debug logging started - sbtlTV v0.13.1',
+    '[2026-10-19T10:00:01Z] [app] before',
+    '[2026-10-19T10:00:02Z] [app] Provider addresses are included in this log from here on (turned on in Settings > Debug)',
+    '[2026-10-19T10:00:03Z] [net] connecting to cdn9.example.net',
+    '[2026-10-19T10:00:04Z] [app] Provider addresses are replaced by labels again',
+    '[2026-10-19T10:00:05Z] [app] after',
+    '[2026-10-19T10:00:06Z] [app] Provider addresses are included in this log from here on (turned on in Settings > Debug)',
+    '[2026-10-19T10:00:07Z] [net] connecting to cdn10.example.net',
+    '[2026-10-19T11:00:00Z] [app] Debug logging started - sbtlTV v0.13.1',
+    '[2026-10-19T11:00:01Z] [app] next launch',
+  ].join('\n') + '\n');
+  const out = reportLogText(raw, 1_000_000, (l) => l);
+  assert.equal(out.includes('cdn9') || out.includes('cdn10'), false, out);
+  for (const kept of ['before', 'after', 'next launch']) assert.ok(out.includes(kept), kept);
+  assert.equal((out.match(/left out: written while provider addresses were included/g) ?? []).length, 2, out);
+});
