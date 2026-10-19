@@ -1062,6 +1062,15 @@ function relaunchApp(args: string[]): void {
   app.relaunch(appImage ? { execPath: appImage, args } : { args });
 }
 
+// Restart now with the same arguments (keyring switch, setup import). A downloaded
+// update must not install on this quit: the installer and the relaunch would race
+// (Windows, macOS); it installs on the next ordinary quit instead.
+function restartApp(): void {
+  autoUpdater.autoInstallOnAppQuit = false;
+  relaunchApp(process.argv.slice(1));
+  app.quit();
+}
+
 function restartInCompatibilityMode(handoff: CompatibilityHandoff | null): void {
   if (handoff) saveCompatibilityHandoff(handoff);
   const relaunchArgs = process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG);
@@ -2129,15 +2138,14 @@ ipcMain.handle('privacy-switch-keyring', (_event, keyring: unknown) => {
   debugLog(`Switching keyring to ${keyring}; saved passwords and API keys are dropped`, 'app');
   storage.forgetSecrets();
   storage.keepPasswordStore(keyring);
-  relaunchApp(process.argv.slice(1));
-  app.quit();
+  restartApp();
   return { success: true };
 });
 
 // Settings > Backup & transfer (setup-transfer.ts)
 registerSetupTransfer({
   window: () => mainWindow,
-  relaunch: () => { relaunchApp(process.argv.slice(1)); app.quit(); },
+  relaunch: () => restartApp(),
   log: (m) => debugLog(m, 'setup'),
 });
 
