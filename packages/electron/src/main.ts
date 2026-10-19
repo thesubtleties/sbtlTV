@@ -2260,9 +2260,10 @@ ipcMain.handle('debug-report-save', async (_event, syncStatus: unknown) => {
     // lose them; this session's numbering is untouched), last 10 MB each.
     const fresh = new LogPolicy(sourceAddresses());
     const logPath = getDebugLogPath();
-    for (const [file, name] of [[logPath, 'debug.log'], [`${logPath}.old`, 'debug-previous.log']] as const) {
+    // With no marker in what is kept: the current log follows the switch now; the previous one is assumed included (left out).
+    for (const [file, name, includedWithoutMarker] of [[logPath, 'debug.log', logPolicy.addressesIncluded], [`${logPath}.old`, 'debug-previous.log', true]] as const) {
       const raw = readTail(file, REPORT_LOG_MAX);
-      if (raw) entries.push({ name, data: Buffer.from(reportLogText(raw, REPORT_LOG_MAX, (line) => fresh.forDisplay(line)), 'utf8') });
+      if (raw) entries.push({ name, data: Buffer.from(reportLogText(raw, REPORT_LOG_MAX, (line) => fresh.forDisplay(line), includedWithoutMarker), 'utf8') });
     }
     // Written beside the target, then renamed: a failed save leaves no half-written zip.
     const temp = `${choice.filePath}.part`;

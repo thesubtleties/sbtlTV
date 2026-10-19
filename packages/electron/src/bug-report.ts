@@ -168,18 +168,23 @@ export function validateSyncStatus(raw: unknown): ReportInputs['syncStatus'] {
 
 // The log policy's own lines (log-policy.ts) and the session header (main.ts): where
 // "Provider addresses in the debug log" was switched on and off.
-const ADDRESSES_ON = 'Provider addresses are included in this log from here on';
-const ADDRESSES_OFF = 'Provider addresses are replaced by labels again';
+const ADDRESSES_ON = ['Provider addresses are included in this log from here on', 'Provider addresses: included'];
+const ADDRESSES_OFF = ['Provider addresses are replaced by labels again', 'Provider addresses: replaced by labels'];
 const SESSION_START = 'Debug logging started';
+const isOn = (line: string) => ADDRESSES_ON.some((m) => line.includes(m));
+const isOff = (line: string) => ADDRESSES_OFF.some((m) => line.includes(m));
 
 /**
  * A log as it goes into the report zip: its last `maxBytes` (starting at a whole
  * line), every line through `clean` again, and every line written while provider
  * addresses were included left out (a bare host there can't be recognised later),
- * with a note of how many. A new session starts with addresses off. If the kept
- * part begins inside such a stretch (its first marker is "off"), that start goes too.
+ * with a note of how many. Markers: the switch's own lines and each session header's
+ * "Provider addresses: …" line. Before the first marker in the kept part the state is
+ * unknown: the opposite of that marker, or, with no marker at all, `includedWithoutMarker`
+ * (main passes the switch's current state for the current log, true for the previous
+ * one). It fails closed: when in doubt, the lines are left out.
  */
-export function reportLogText(raw: Buffer, maxBytes: number, clean: (line: string) => string): string {
+export function reportLogText(raw: Buffer, maxBytes: number, clean: (line: string) => string, includedWithoutMarker = true): string {
   let text = raw.toString('utf8');
   if (raw.length > maxBytes) {
     text = raw.subarray(raw.length - maxBytes).toString('utf8');
@@ -187,8 +192,8 @@ export function reportLogText(raw: Buffer, maxBytes: number, clean: (line: strin
     text = firstBreak === -1 ? '' : text.slice(firstBreak + 1);
   }
   const lines = text.split('\n');
-  const firstMarker = lines.find((l) => l.includes(ADDRESSES_ON) || l.includes(ADDRESSES_OFF) || l.includes(SESSION_START));
-  let included = firstMarker !== undefined && firstMarker.includes(ADDRESSES_OFF);
+  const firstMarker = lines.find((l) => isOn(l) || isOff(l));
+  let included = firstMarker === undefined ? includedWithoutMarker : isOff(firstMarker);
   let leftOut = 0;
   const out: string[] = [];
   const note = () => {
@@ -197,11 +202,12 @@ export function reportLogText(raw: Buffer, maxBytes: number, clean: (line: strin
   };
   for (const line of lines) {
     if (included) {
-      if (line.includes(ADDRESSES_OFF) || line.includes(SESSION_START)) { included = false; note(); }
-      else { leftOut++; continue; }
+      // A session header resets the switch (it is never saved); its next line says which way.
+      if (isOff(line) || line.includes(SESSION_START)) { included = false; note(); }
+      else { if (line) leftOut++; continue; }
     }
     out.push(line ? clean(line) : line);
-    if (line.includes(ADDRESSES_ON)) included = true;
+    if (isOn(line)) included = true;
   }
   note();
   return out.join('\n');

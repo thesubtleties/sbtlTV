@@ -185,10 +185,10 @@ test('sync status in the shape the page actually sends (SourceMetaRow) keeps tim
 test('a log for the zip: its last part from a whole line, every line labelled again (an address written while they were included does not ship)', () => {
   const raw = Buffer.from('first line\n2026 [app] Failed http://prov.example:8080/live/bob/s3cret/1.ts\nC:\\Users\\Alice Smith\\x\nlast\n');
   const fresh = new LogPolicy([{ id: X, name: 'Acme Premium TV', url: 'http://prov.example:8080' }]);
-  const whole = reportLogText(raw, 1_000_000, (l) => fresh.forDisplay(l));
+  const whole = reportLogText(raw, 1_000_000, (l) => fresh.forDisplay(l), false);
   assert.equal(whole.includes('prov.example') || whole.includes('s3cret') || whole.includes('Alice'), false, whole);
   assert.ok(whole.startsWith('first line\n'));
-  const tail = reportLogText(raw, 20, (l) => l);
+  const tail = reportLogText(raw, 20, (l) => l, false);
   assert.equal(tail, 'last\n');  // cut to the tail, starting at a whole line
   assert.equal(reportLogText(Buffer.alloc(0), 10, (l) => l), '');
 });
@@ -210,4 +210,24 @@ test('lines written while provider addresses were included are left out of the z
   assert.equal(out.includes('cdn9') || out.includes('cdn10'), false, out);
   for (const kept of ['before', 'after', 'next launch']) assert.ok(out.includes(kept), kept);
   assert.equal((out.match(/left out: written while provider addresses were included/g) ?? []).length, 2, out);
+});
+
+test('the session header says whether addresses are included (logging switched off and on again keeps them on)', () => {
+  const raw = Buffer.from([
+    'Debug logging started - sbtlTV v0.13.1',
+    'Provider addresses: included (turned on in Settings > Debug)',
+    'connecting to cdn11.example.net',
+    'Debug logging started - sbtlTV v0.13.1',
+    'Provider addresses: replaced by labels',
+    'fine line',
+  ].join('\n'));
+  const out = reportLogText(raw, 1_000_000, (l) => l, false);
+  assert.equal(out.includes('cdn11'), false, out);
+  assert.ok(out.includes('fine line'));
+});
+
+test('a kept part with no marker at all follows what main knows (fails closed)', () => {
+  const raw = Buffer.from('connecting to cdn12.example.net\nmore\n');
+  assert.equal(reportLogText(raw, 1_000_000, (l) => l, true).includes('cdn12'), false);
+  assert.ok(reportLogText(raw, 1_000_000, (l) => l, false).includes('cdn12'));
 });
