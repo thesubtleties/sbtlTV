@@ -1,6 +1,9 @@
+import './DebugTab.css';
 import { useState, useEffect } from 'react';
 import { useUpdateSettings } from '../../stores/uiStore';
-import { Button, OnOff, OptionRow, Section, SettingsTab } from './ui';
+import { Button, Hint, OnOff, OptionRow, Section, SettingsTab } from './ui';
+import { data } from '../../data/client';
+import { issueUrl } from '../../services/report/issueUrl';
 
 interface DebugTabProps {
   debugLoggingEnabled: boolean;
@@ -100,6 +103,58 @@ export function DebugTab({
           </OptionRow>
         )}
       </Section>
+      <BugReportSection loggingOn={debugLoggingEnabled} addressesIncluded={includeAddresses} />
     </SettingsTab>
+  );
+}
+
+type ReportState = { kind: 'idle' } | { kind: 'busy' } | { kind: 'saved' } | { kind: 'error'; message: string };
+
+/** A zip for a bug report: what it holds is shown first, the person attaches it themselves. */
+function BugReportSection({ loggingOn, addressesIncluded }: { loggingOn: boolean; addressesIncluded: boolean }) {
+  const [preview, setPreview] = useState<string | null>(null);
+  const [state, setState] = useState<ReportState>({ kind: 'idle' });
+  const [version, setVersion] = useState('');
+  const platform = window.platform?.isMac ? 'darwin' : window.platform?.isWindows ? 'win32' : 'linux';
+
+  useEffect(() => { void window.platform?.getVersion().then(setVersion).catch(() => {}); }, []);
+
+  const syncStatus = () => data.query({ type: 'syncStatus' }).catch(() => []);
+
+  async function togglePreview() {
+    if (preview !== null) { setPreview(null); return; }
+    const r = await window.debug?.reportPreview(await syncStatus());
+    if (r?.data) setPreview(r.data);
+    else setState({ kind: 'error', message: r?.error ?? 'The report could not be put together.' });
+  }
+
+  async function save() {
+    if (!window.debug) return;
+    setState({ kind: 'busy' });
+    try {
+      const r = await window.debug.saveReport(await syncStatus());
+      if (r.error) setState({ kind: 'error', message: r.error });
+      else setState(r.success ? { kind: 'saved' } : { kind: 'idle' });
+    } catch (error) {
+      setState({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  return (
+    <Section
+      title="Bug report"
+      description="A zip with what's needed to look into a problem: versions, your computer's hardware, settings, how your sources are doing, and the debug log. No logins, provider addresses or source names."
+    >
+      {!loggingOn && <Hint>Turn on debug logging, make the problem happen again, then save the report.</Hint>}
+      {addressesIncluded && <Hint tone="warn">Provider addresses are included in this log (above). Only send it to someone you trust.</Hint>}
+      <div className="st-actions">
+        <Button onClick={() => void togglePreview()}>{preview === null ? "What's in it" : 'Hide'}</Button>
+        <Button variant="primary" onClick={() => void save()} disabled={state.kind === 'busy'}>{state.kind === 'busy' ? 'Saving…' : 'Save report file…'}</Button>
+        <a className="st-btn st-btn--default" href={issueUrl(version, platform)} target="_blank" rel="noopener noreferrer">Open a GitHub issue</a>
+      </div>
+      {state.kind === 'saved' && <Hint tone="ok">Saved. Drag the zip into the GitHub issue.</Hint>}
+      {state.kind === 'error' && <Hint tone="danger">{state.message}</Hint>}
+      {preview !== null && <pre className="st-report-preview">{preview}</pre>}
+    </Section>
   );
 }

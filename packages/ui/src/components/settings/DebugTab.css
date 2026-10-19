@@ -1,0 +1,26 @@
+.st-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.st-actions a.st-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.st-report-preview {
+  margin-top: 12px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre;
+  user-select: text;
+}
