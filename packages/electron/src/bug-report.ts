@@ -94,3 +94,18 @@ export function buildReport(inputs: ReportInputs, clean: (text: string) => strin
     sources: reportSources,
   };
 }
+
+const META_NUMBERS = ['last_channel_sync', 'last_epg_sync', 'last_vod_sync', 'channel_count', 'category_count', 'movie_count', 'series_count'] as const;
+
+/** The data process's sync status as the page sent it: known fields of the right type only, at most 500 rows. */
+export function validateSyncStatus(raw: unknown): ReportInputs['syncStatus'] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 500).flatMap((row) => {
+    if (!row || typeof row !== 'object' || typeof (row as { source_id?: unknown }).source_id !== 'string') return [];
+    const r = row as Record<string, unknown>;
+    const out: Record<string, unknown> = { source_id: (r.source_id as string).slice(0, 200) };
+    for (const k of META_NUMBERS) if (typeof r[k] === 'number' && Number.isFinite(r[k])) out[k] = r[k];
+    if (typeof r.error === 'string') out.error = r.error.slice(0, 2000);
+    return [out as ReportInputs['syncStatus'][number]];
+  });
+}

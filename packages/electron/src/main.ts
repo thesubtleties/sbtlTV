@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage, session } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage, screen, session } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
@@ -28,6 +28,8 @@ import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
 import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
 import { registerSetupTransfer } from './setup-transfer.js';
+import { buildReport, validateSyncStatus, type ReportInputs } from './bug-report.js';
+import { makeZip } from './zip-writer.js';
 const { autoUpdater } = electronUpdater;
 
 // Before the keyring is opened (Chromium picks it when the app is ready): keep
@@ -246,6 +248,15 @@ function syncPlaybackDiagnostics(): void {
 }
 const DEBUG_LOG_MAX_SIZE = 10 * 1024 * 1024; // 10MB max log size
 
+/** dist/build-info.json, which CI writes so a log or a bug report can be tied to an exact commit. */
+function readBuildInfo(): { sha?: string; run?: string; ref?: string } | 'local' {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')) as { sha?: string; run?: string; ref?: string };
+  } catch {
+    return 'local';
+  }
+}
+
 function getDebugLogPath(): string {
   const logDir = app.getPath('logs');
   return path.join(logDir, 'sbtltv-debug.log');
@@ -310,12 +321,8 @@ function initDebugLogging(enabled: boolean): void {
     debugLog('='.repeat(60));
     debugLog(`Debug logging started - sbtlTV v${app.getVersion()}`);
     // CI writes dist/build-info.json so a log can be tied to an exact commit.
-    try {
-      const info = JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')) as { sha?: string; run?: string; ref?: string };
-      debugLog(`Build: ${info.sha ?? '?'} (${info.ref ?? '?'}, run ${info.run ?? '?'})`);
-    } catch {
-      debugLog('Build: local');
-    }
+    const info = readBuildInfo();
+    debugLog(info === 'local' ? 'Build: local' : `Build: ${info.sha ?? '?'} (${info.ref ?? '?'}, run ${info.run ?? '?'})`);
     if (!rotationSucceeded) {
       debugLog('Warning: Log rotation failed, continuing with existing file', 'system');
     }
@@ -2102,6 +2109,99 @@ ipcMain.on('shared-texture-frame-ok', (event) => {
 ipcMain.on('shared-texture-pipeline-failure', (event, message: unknown) => {
   if (nativeRecoveryInProgress || event.sender !== mainWindow?.webContents || typeof message !== 'string') return;
   mpvBridge?.reportPipelineFailure(message);
+});
+
+// Settings > Debug > Bug report (bug-report.ts). Hardware is what helps to debug and
+// no more: no VRAM, never the computer's name or the user's name.
+async function gatherReportInputs(rawSyncStatus: unknown): Promise<ReportInputs> {
+  const round = (bytes: number) => Math.round((bytes / 1024 ** 3) * 10) / 10;
+  const gpus: ReportInputs['hardware']['gpus'] = [];
+  try {
+    const info = (await app.getGPUInfo('complete')) as { gpuDevice?: { active?: boolean; driverVendor?: string; driverVersion?: string }[]; auxAttributes?: { glRenderer?: string; glVendor?: string; glVersion?: string } };
+    const aux = info.auxAttributes ?? {};
+    for (const d of info.gpuDevice ?? []) {
+      gpus.push({ active: d.active, driver: d.driverVendor, driverVersion: d.driverVersion, ...(d.active && { renderer: aux.glRenderer, vendor: aux.glVendor, gl: aux.glVersion }) });
+    }
+    const webGl = (await getHighPerformanceWebGlRenderer()) as { renderer?: string; vendor?: string } | null;
+    if (webGl?.renderer && !gpus.some((g) => g.renderer === webGl.renderer)) gpus.push({ renderer: webGl.renderer, vendor: webGl.vendor });
+  } catch (error) {
+    debugLog(`Bug report: GPU info unavailable (${error instanceof Error ? error.name : 'error'})`, 'app');
+  }
+  const bridge = useNativeMpv ? mpvBridge : null;
+  const prop = (name: string) => (bridge ? (bridge.getProperty(name) ?? 'unknown') : 'external mpv');
+  let settings: ReportInputs['settings'] = 'unreadable';
+  try { settings = storage.getSettings(); } catch { /* reported as unreadable */ }
+  let sources: ReportInputs['sources'] = 'unreadable';
+  try {
+    sources = storage.getSources().map((s) => ({ id: s.id, type: s.type, enabled: s.enabled, epg_url: s.epg_url, auto_load_epg: s.auto_load_epg, hasLogin: !!s.password }));
+  } catch { /* reported as unreadable */ }
+  return {
+    app: { version: app.getVersion(), build: readBuildInfo() },
+    system: { platform: process.platform, arch: process.arch, osVersion: process.getSystemVersion(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
+    player: {
+      mode: compatibilityModeRequested ? 'compatibility' : 'native',
+      why: compatibilityModeFromFlag ? 'launch flag' : compatibilityModeFromSetting ? 'setting' : process.platform === 'linux' ? 'default' : 'in-window',
+      error: nativeInitError,
+      // Linux only: there hwdec-current is an instant cached read (see the stream checks above).
+      hwdec: !bridge ? 'external mpv' : process.platform === 'linux' ? prop('hwdec-current') : 'not read',
+      mpv: prop('mpv-version'),
+      ffmpeg: prop('ffmpeg-version'),
+    },
+    hardware: {
+      cpu: os.cpus()[0]?.model?.trim() ?? 'unknown',
+      threads: os.cpus().length,
+      ramGB: round(os.totalmem()),
+      freeRamGB: round(os.freemem()),
+      gpus,
+      displays: screen.getAllDisplays().map((d) => ({ width: d.size.width, height: d.size.height, scale: d.scaleFactor, hz: d.displayFrequency })),
+    },
+    keyring: {
+      backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : null,
+      available: safeStorage.isEncryptionAvailable(),
+      from: process.platform === 'linux' ? keyringFrom : 'system',
+    },
+    debugLoggingEnabled,
+    addressesIncluded: logPolicy.addressesIncluded,
+    settings,
+    sources,
+    syncStatus: validateSyncStatus(rawSyncStatus),
+  };
+}
+
+async function reportJson(rawSyncStatus: unknown): Promise<string> {
+  return JSON.stringify(buildReport(await gatherReportInputs(rawSyncStatus), (text) => logPolicy.forLog(text), new Date()), null, 2);
+}
+
+ipcMain.handle('debug-report-preview', async (_event, syncStatus: unknown) => {
+  try {
+    return { success: true, data: await reportJson(syncStatus) };
+  } catch (error) {
+    return { error: logPolicy.forDisplay(error instanceof Error ? error.message : String(error)) };
+  }
+});
+
+ipcMain.handle('debug-report-save', async (_event, syncStatus: unknown) => {
+  try {
+    const json = await reportJson(syncStatus);
+    const today = new Date().toISOString().slice(0, 10);
+    const choice = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, { title: 'Save bug report', defaultPath: path.join(app.getPath('documents'), `sbtltv-report-${today}.zip`), filters: [{ name: 'Zip', extensions: ['zip'] }] })
+      : { canceled: true, filePath: undefined };
+    if (choice.canceled || !choice.filePath) return { success: false, canceled: true };
+    const entries = [{ name: 'report.json', data: Buffer.from(json, 'utf8') }];
+    const logPath = getDebugLogPath();
+    for (const [file, name] of [[logPath, 'debug.log'], [`${logPath}.old`, 'debug-previous.log']] as const) {
+      try { entries.push({ name, data: fs.readFileSync(file) }); } catch { /* not there: logging was off or never rotated */ }
+    }
+    fs.writeFileSync(choice.filePath, makeZip(entries));
+    shell.showItemInFolder(choice.filePath);
+    debugLog('Bug report saved', 'app');
+    return { success: true, data: { filePath: choice.filePath } };
+  } catch (error) {
+    // The reason only: file errors carry paths (the home folder).
+    debugLog(`Bug report could not be saved: ${(error as NodeJS.ErrnoException)?.code ?? (error instanceof Error ? error.name : 'error')}`, 'app');
+    return { error: 'The report could not be saved. Try another folder.' };
+  }
 });
 
 ipcMain.handle('debug-open-log-folder', async () => {

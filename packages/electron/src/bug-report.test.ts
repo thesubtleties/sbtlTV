@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildReport, type ReportInputs } from './bug-report.js';
+import { buildReport, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { LogPolicy } from './log-policy.js';
 
 const X = '11111111-aaaa-4bbb-8ccc-222222222222';
@@ -73,4 +73,11 @@ test('unreadable settings or sources still give a report', () => {
   const r = buildReport({ ...inputs(), settings: 'unreadable', sources: 'unreadable' }, clean, new Date()) as Record<string, unknown>;
   assert.equal(r.settings, 'unreadable');
   assert.equal(r.sources, 'unreadable');
+});
+
+test('sync status from the page is checked: known fields of the right type only, capped', () => {
+  assert.deepEqual(validateSyncStatus('x'), []);
+  assert.deepEqual(validateSyncStatus([{ source_id: 'a', channel_count: 3, error: 'e', evil: '<b>', last_channel_sync: 'soon' }, { nope: 1 }, null]),
+    [{ source_id: 'a', channel_count: 3, error: 'e' }]);
+  assert.equal(validateSyncStatus(Array(600).fill({ source_id: 'a' })).length, 500);
 });

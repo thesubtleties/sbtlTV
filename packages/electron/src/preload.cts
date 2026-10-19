@@ -143,6 +143,10 @@ export interface FetchProxyApi {
 export interface DebugApi {
   getLogPath: () => Promise<StorageResult<string>>;
   logFromRenderer: (message: string) => Promise<StorageResult>;
+  /** Settings > Debug > Bug report: the report.json that would be saved */
+  reportPreview: (syncStatus: unknown) => Promise<{ success?: boolean; data?: string; error?: string }>;
+  /** Save the bug report zip (save dialog); shows it in its folder */
+  saveReport: (syncStatus: unknown) => Promise<{ success?: boolean; canceled?: boolean; data?: { filePath: string }; error?: string }>;
   openLogFolder: () => Promise<StorageResult>;
   isEnabled: () => Promise<boolean>;
   onEnabledChanged: (callback: (enabled: boolean) => void) => () => void;
@@ -338,6 +342,8 @@ contextBridge.exposeInMainWorld('platform', {
 contextBridge.exposeInMainWorld('debug', {
   getLogPath: () => ipcRenderer.invoke('debug-get-log-path'),
   logFromRenderer: (message: string) => ipcRenderer.invoke('debug-log-renderer', message),
+  reportPreview: (syncStatus: unknown) => ipcRenderer.invoke('debug-report-preview', syncStatus),
+  saveReport: (syncStatus: unknown) => ipcRenderer.invoke('debug-report-save', syncStatus),
   openLogFolder: () => ipcRenderer.invoke('debug-open-log-folder'),
   isEnabled: () => ipcRenderer.invoke('debug-is-enabled'),
   getIncludeAddresses: () => ipcRenderer.invoke('debug-get-include-addresses'),
