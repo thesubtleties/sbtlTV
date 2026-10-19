@@ -168,11 +168,21 @@ export function validateSyncStatus(raw: unknown): ReportInputs['syncStatus'] {
 
 // The log policy's own lines (log-policy.ts) and the session header (main.ts): where
 // "Provider addresses in the debug log" was switched on and off.
-const ADDRESSES_ON = ['Provider addresses are included in this log from here on', 'Provider addresses: included'];
+// Only the app's own lines count, whole: "[<time>] [app] <exactly the marker>". Text that merely
+// contains the words (a title, a page message, a forged line) never switches the state.
+const APP_LINE = /^\[[^\]\s]+\] \[app\] (.*)$/;
+const ADDRESSES_ON = ['Provider addresses are included in this log from here on (turned on in Settings > Debug)', 'Provider addresses: included (turned on in Settings > Debug)'];
 const ADDRESSES_OFF = ['Provider addresses are replaced by labels again', 'Provider addresses: replaced by labels'];
-const SESSION_START = 'Debug logging started';
-const isOn = (line: string) => ADDRESSES_ON.some((m) => line.includes(m));
-const isOff = (line: string) => ADDRESSES_OFF.some((m) => line.includes(m));
+const SESSION_START = /^Debug logging started - sbtlTV v\S+$/;
+const appMessage = (line: string) => APP_LINE.exec(line)?.[1] ?? null;
+const isOn = (line: string) => ADDRESSES_ON.includes(appMessage(line) ?? '');
+const isOff = (line: string) => ADDRESSES_OFF.includes(appMessage(line) ?? '');
+const isSessionStart = (line: string) => SESSION_START.test(appMessage(line) ?? '');
+
+/** A debug log line. A message's own line breaks are indented, so no message can start a line that looks like the app's. */
+export function formatLogLine(isoTime: string, category: string, message: string): string {
+  return `[${isoTime}] [${category}] ${message.replace(/\r?\n/g, '\n    ')}\n`;
+}
 
 /**
  * A log as it goes into the report zip: its last `maxBytes` (starting at a whole
@@ -203,7 +213,7 @@ export function reportLogText(raw: Buffer, maxBytes: number, clean: (line: strin
   for (const line of lines) {
     if (included) {
       // A session header resets the switch (it is never saved); its next line says which way.
-      if (isOff(line) || line.includes(SESSION_START)) { included = false; note(); }
+      if (isOff(line) || isSessionStart(line)) { included = false; note(); }
       else { if (line) leftOut++; continue; }
     }
     out.push(line ? clean(line) : line);

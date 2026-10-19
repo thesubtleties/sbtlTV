@@ -28,7 +28,7 @@ import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
 import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
 import { registerSetupTransfer } from './setup-transfer.js';
-import { buildReport, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
+import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { makeZip } from './zip-writer.js';
 const { autoUpdater } = electronUpdater;
 
@@ -358,7 +358,7 @@ function debugLog(message: string, category = 'app'): void {
 function writeDebugLine(redacted: string, category: string): void {
   if (!debugLoggingEnabled || !debugLogStream) return;
   try {
-    debugLogStream.write(`[${new Date().toISOString()}] [${category}] ${redacted}\n`);
+    debugLogStream.write(formatLogLine(new Date().toISOString(), category, redacted));
   } catch {
     // Silently fail - logging should never crash the app
   }

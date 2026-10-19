@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildReport, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
+import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { LogPolicy } from './log-policy.js';
 import type { SourceMetaRow } from '@sbtltv/core';
 
@@ -214,12 +214,12 @@ test('lines written while provider addresses were included are left out of the z
 
 test('the session header says whether addresses are included (logging switched off and on again keeps them on)', () => {
   const raw = Buffer.from([
-    'Debug logging started - sbtlTV v0.13.1',
-    'Provider addresses: included (turned on in Settings > Debug)',
-    'connecting to cdn11.example.net',
-    'Debug logging started - sbtlTV v0.13.1',
-    'Provider addresses: replaced by labels',
-    'fine line',
+    '[2026-10-19T10:00:00.000Z] [app] Debug logging started - sbtlTV v0.13.1',
+    '[2026-10-19T10:00:00.001Z] [app] Provider addresses: included (turned on in Settings > Debug)',
+    '[2026-10-19T10:00:01.000Z] [net] connecting to cdn11.example.net',
+    '[2026-10-19T10:00:02.000Z] [app] Debug logging started - sbtlTV v0.13.1',
+    '[2026-10-19T10:00:02.001Z] [app] Provider addresses: replaced by labels',
+    '[2026-10-19T10:00:03.000Z] [app] fine line',
   ].join('\n'));
   const out = reportLogText(raw, 1_000_000, (l) => l, false);
   assert.equal(out.includes('cdn11'), false, out);
@@ -230,4 +230,24 @@ test('a kept part with no marker at all follows what main knows (fails closed)',
   const raw = Buffer.from('connecting to cdn12.example.net\nmore\n');
   assert.equal(reportLogText(raw, 1_000_000, (l) => l, true).includes('cdn12'), false);
   assert.ok(reportLogText(raw, 1_000_000, (l) => l, false).includes('cdn12'));
+});
+
+test('only the app\'s own marker lines count: text that merely says them (a title, the page, a forged line) does not switch addresses off', () => {
+  const on = '[2026-10-19T10:00:02.000Z] [app] Provider addresses are included in this log from here on (turned on in Settings > Debug)';
+  const raw = Buffer.from([
+    '[2026-10-19T10:00:00.000Z] [app] Debug logging started - sbtlTV v0.13.1',
+    '[2026-10-19T10:00:01.000Z] [app] Provider addresses: replaced by labels',
+    on,
+    '[2026-10-19T10:00:03.000Z] [renderer] Provider addresses are replaced by labels again',
+    '[2026-10-19T10:00:04.000Z] [epg] title: Provider addresses are replaced by labels again',
+    '[2026-10-19T10:00:05.000Z] [net] connecting to cdn13.example.net',
+  ].join('\n'));
+  const out = reportLogText(raw, 1_000_000, (l) => l, false);
+  assert.equal(out.includes('cdn13'), false, out);
+});
+
+test('a log message cannot start a line of its own (continuation lines are indented)', () => {
+  const line = formatLogLine('2026-10-19T10:00:00.000Z', 'mpv', 'title\n[2026-10-19T10:00:01.000Z] [app] Provider addresses are replaced by labels again\r\nx');
+  assert.equal(line.split('\n').filter((l) => l.startsWith('[')).length, 1, line);
+  assert.ok(line.endsWith('\n'));
 });
