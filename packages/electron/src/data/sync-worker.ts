@@ -15,6 +15,7 @@ import { syncEpg } from './sync-epg.js';
 import { syncVod, syncEpisodes, matchTmdb } from './sync-vod.js';
 import { deleteSource, clearAll, updateVodDetails } from './writes.js';
 import type { SyncJob } from './router.js';
+import { cleanErrorText } from '../log-redact.js';
 
 if (!parentPort) throw new Error('sync-worker must run as a worker thread');
 const port = parentPort;
@@ -30,7 +31,8 @@ function ctx(): StageContext {
   return {
     db: db!, tempDir, allowLanSources: settings.allowLanSources,
     log: (category, message) => post({ type: 'log', category, message }),
-    progress: (progress: SyncProgress) => post({ type: 'progress', progress }),
+    // A failure's message reaches the page (an episode that failed to load shows it): logins never.
+    progress: (progress: SyncProgress) => post({ type: 'progress', progress: progress.message ? { ...progress, message: cleanErrorText(progress.message) } : progress }),
     changed: (tables: DataTable[], sourceId) => post({ type: 'changed', tables, sourceId }),
   };
 }

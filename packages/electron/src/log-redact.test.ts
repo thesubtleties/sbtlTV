@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { redactUrls, hostOf, PUBLIC_HOSTS, type HostLabeller } from './log-redact.js';
+import { redactUrls, hostOf, cleanErrorText, PUBLIC_HOSTS, type HostLabeller } from './log-redact.js';
 
 test('stream URLs keep only the scheme and a host label (Xtream puts the username and password in the path)', () => {
   assert.equal(
@@ -253,4 +253,18 @@ test('a hostname made of hex letters before a colon is still a host (only a real
   assert.equal(redactUrls('getaddrinfo ENOTFOUND cafe: lookup failed'), 'getaddrinfo ENOTFOUND [host]: lookup failed');
   assert.equal(redactUrls('connect ECONNREFUSED feed:8080'), 'connect ECONNREFUSED [host]:8080');
   assert.equal(redactUrls('connect ECONNREFUSED 2001:db8::1:443'), 'connect ECONNREFUSED [host]');
+});
+
+test('an encoded "://" without a scheme is cut like a plain one', () => {
+  assert.equal(redactUrls('next=%3A%2F%2Fprovider.example%2Flive%2Fbob%2Fs3cret%2F1.ts'), 'next=://[host]/…');
+});
+
+test('an empty JSON login stays empty (it says the login is missing)', () => {
+  assert.equal(redactUrls('{"username":"","password":""}'), '{"username":"","password":""}');
+});
+
+test('error text for the screen keeps the host, never a login', () => {
+  const shown = cleanErrorText('Request cannot be constructed from a URL that includes credentials: http://bob:s3cret@provider.example:8080/series/bob/s3cret/1.mkv?token=t');
+  assert.equal(shown.includes('s3cret') || shown.includes('bob') || shown.includes('token=t'), false, shown);
+  assert.equal(cleanErrorText('fetch failed: http://provider.example:8080/get.php?username=u&password=p'), 'fetch failed: http://provider.example/…');
 });

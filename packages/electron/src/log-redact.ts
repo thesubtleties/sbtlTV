@@ -311,12 +311,11 @@ function cutEncodedUrls(text: string, hosts: HostLabeller): string {
     let start = at;
     while (start > pos && isSchemeChar(text[start - 1])) start--;
     while (start < at && !/[A-Za-z]/.test(text[start])) start++;  // a scheme starts with a letter
-    if (start === at) { found = nextEncodedSep(text, at + len); continue; }
     let end = at + len;
     while (end < text.length && !endsEncodedValue(text[end])) end++;
     let rest = decodeLoosely(text.slice(at + len, end));
     if (len > ENCODED_SEPS[0].length) rest = decodeLoosely(rest);  // encoded twice
-    out += text.slice(pos, start) + cutUrl(`${text.slice(start, at)}://`, rest, hosts);
+    out += text.slice(pos, start) + cutUrl(`${text.slice(start, at)}://`, rest, hosts);  // no scheme: "://…" as a plain one
     pos = end;
     found = nextEncodedSep(text, end);
   }
@@ -331,8 +330,15 @@ export function redactUrls(text: string, hosts: HostLabeller = PLAIN_HOSTS): str
   // Encoded URLs first: the bare-host pass could otherwise label part of one ("%2F%2Fedge.src…")
   // and hide it from the encoded pass. What it writes ("scheme://<label>/…") cutUrls keeps as it is.
   return cutBareIpv6(cutUrls(cutEncodedUrls(unescaped, hosts), hosts), hosts)
-    .replace(LOGIN_JSON, (_m, name: string, colon: string) => `"${name}"${colon}"${ELLIPSIS}"`)
+    .replace(LOGIN_JSON, (m, name: string, colon: string) => (m.endsWith('""') ? m : `"${name}"${colon}"${ELLIPSIS}"`))
     .replace(LOGIN_PARAM, (_m, name: string) => `${name}=${ELLIPSIS}`)
     .replace(LOGIN_PARAM_ENCODED, (_m, name: string) => `${name}%3D${ELLIPSIS}`)
     .replace(XTREAM_PATH, (_m, kind: string) => `${kind}/${ELLIPSIS}/`);
+}
+
+/** Hosts kept, logins never: for error text the user sees (Settings, an episode that failed to load) and stored sync errors. */
+const KEEP_HOSTS: HostLabeller = { forUrl: (host) => host, forBare: () => null };
+
+export function cleanErrorText(text: string): string {
+  return redactUrls(text, KEEP_HOSTS);
 }
