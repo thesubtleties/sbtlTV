@@ -24,10 +24,14 @@ export interface SetupPreview {
   settings: boolean; apiKeys: boolean; favorites: number; watchlist: number; progress: number;
 }
 
-/** Settings that are about the person, not the computer: these travel. */
+/**
+ * Settings that are about the person, not the computer: these travel. Not
+ * allowLanSources: it lowers the guard on what sources may reach, and a file from
+ * someone else must not be able to turn that on.
+ */
 export const SETUP_SETTING_KEYS = [
   'theme', 'lastSourceId', 'vodRefreshHours', 'epgRefreshHours', 'movieGenresEnabled', 'seriesGenresEnabled',
-  'rpdbBackdropsEnabled', 'allowLanSources', 'channelSortOrder', 'categorySortOrder', 'categoryBarWidth',
+  'rpdbBackdropsEnabled', 'channelSortOrder', 'categorySortOrder', 'categoryBarWidth',
   'channelColumnWidth', 'guideOpacity', 'liveSourceOrder', 'vodSourceOrder', 'sportsMatchupEnabled',
   'guideMorphEnabled', 'autoplayNextEpisode', 'appearance', 'subtitles',
 ] as const satisfies readonly (keyof AppSettings)[];

@@ -66,3 +66,9 @@ test('the preview says what is inside without secrets', () => {
   assert.equal(JSON.stringify(p).includes('"p"'), false);
   assert.equal(JSON.stringify(p).includes('provider.example'), false);
 });
+
+test('a setup file cannot turn on LAN sources (that guard is this computer\'s choice)', () => {
+  assert.throws(() => validateSetupBody({ ...good(), settings: { allowLanSources: true } }), /invalid/);
+  assert.deepEqual(settingsForExport({ allowLanSources: true, guideOpacity: 0.9 } as never), { guideOpacity: 0.9 });
+  assert.deepEqual(keptOnImport({ allowLanSources: true, guideOpacity: 0.9 }), { allowLanSources: true });
+});
