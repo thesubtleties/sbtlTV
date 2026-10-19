@@ -191,6 +191,15 @@ inline std::string cutBareHosts(const std::string& text, const std::unordered_se
         if (!isHostChar(text[i])) { i++; continue; }
         size_t end = i;
         while (end < text.size() && isHostChar(text[end])) end++;
+        // A hex group followed by ':' is part of an IPv6 address: cutBareIpv6 labels it whole.
+        if (end < text.size() && text[end] == ':') {
+            bool hex = true;
+            for (size_t k = i; k < end && hex; k++) {
+                const char c = text[k];
+                hex = isAsciiDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+            }
+            if (hex) { i = end; continue; }
+        }
         size_t a = i;
         size_t b = end;
         while (a < b && (text[a] == '.' || text[a] == '-')) a++;
@@ -360,11 +369,13 @@ inline bool isIpv6(const std::string& token) {
     if (!token.empty() && token.back() == ':' && (dbl == std::string::npos || dbl != token.size() - 2)) return false;
     size_t colons = 0;
     size_t group = 0;
+    size_t groups = 0;  // groups with digits: "::", "DE::" and "::8080" are separators or prefixes, not addresses
     for (char c : token) {
         if (c == ':') { colons++; group = 0; continue; }
         if (++group > 4) return false;
+        if (group == 1) groups++;
     }
-    if (colons < 2 || colons > 7) return false;
+    if (colons < 2 || colons > 7 || groups < 2) return false;
     return dbl != std::string::npos || colons == 7;
 }
 
@@ -380,10 +391,12 @@ inline std::string cutBareIpv6(const std::string& text) {
         size_t end = i;
         while (end < text.size() && (isHexDigit(text[end]) || text[end] == ':')) end++;
         const bool bounded = (i == 0 || !isWordChar(text[i - 1])) && (end == text.size() || !isWordChar(text[end]));
-        if (bounded && isIpv6(text.substr(i, end - i))) {
+        // "addr: message": the colon after an address is not part of it.
+        const size_t stop = (end - i >= 2 && text[end - 1] == ':' && text[end - 2] != ':') ? end - 1 : end;
+        if (bounded && isIpv6(text.substr(i, stop - i))) {
             out.append(text, pos, i - pos);
             out += "[host]";
-            pos = end;
+            pos = stop;
         }
         i = end;
     }

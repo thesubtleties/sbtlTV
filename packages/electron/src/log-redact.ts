@@ -116,6 +116,8 @@ function cutBareHosts(text: string, hosts: HostLabeller): string {
     if (!isHostChar(text.charCodeAt(i))) { i++; continue; }
     let end = i;
     while (end < text.length && isHostChar(text.charCodeAt(end))) end++;
+    // A hex group followed by ':' is part of an IPv6 address: cutBareIpv6 labels it whole.
+    if (text[end] === ':' && /^[0-9A-Fa-f]+$/.test(text.slice(i, end))) { i = end; continue; }
     let a = i;
     let b = end;
     while (a < b && (text[a] === '.' || text[a] === '-')) a++;
@@ -216,7 +218,8 @@ function isIpv6(token: string): boolean {
   const groups = token.split(':');
   const colons = groups.length - 1;
   if (colons < 2 || colons > 7 || (double === -1 && colons !== 7)) return false;
-  return groups.every((g) => g.length <= 4);
+  // "::", "DE::" and "::8080" are separators or prefixes, not addresses: two groups at least.
+  return groups.every((g) => g.length <= 4) && groups.filter((g) => g !== '').length >= 2;
 }
 
 /** Bare IPv6 addresses outside URLs, labelled. Linear: each maximal run of hex digits and colons is looked at once. */
@@ -231,10 +234,12 @@ function cutBareIpv6(text: string, hosts: HostLabeller): string {
     let end = i;
     while (end < text.length && (isHex(text.charCodeAt(end)) || text.charCodeAt(end) === 58)) end++;
     const bounded = (i === 0 || !isWord(text.charCodeAt(i - 1))) && (end === text.length || !isWord(text.charCodeAt(end)));
-    const token = text.slice(i, end);
+    // "addr: message": the colon after an address is not part of it.
+    const stop = text[end - 1] === ':' && text[end - 2] !== ':' ? end - 1 : end;
+    const token = text.slice(i, stop);
     if (bounded && isIpv6(token)) {
       const label = hosts.forBare(token.toLowerCase(), true);
-      if (label !== null) { out += text.slice(pos, i) + label; pos = end; }
+      if (label !== null) { out += text.slice(pos, i) + label; pos = stop; }
     }
     i = end;
   }

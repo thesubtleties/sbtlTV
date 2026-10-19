@@ -233,3 +233,18 @@ test('IPv6: only whole, well-formed addresses; lowercased; a URL host is the URL
   assert.equal(redactUrls('http://[2001:db8::1]:8080/x', numbered), 'http://[host 1]/…');
   assert.deepEqual([...new Set(urlHosts)], ['2001:db8::1']);
 });
+
+test("IPv6 in Node's connection errors is labelled whole (after ECONNREFUSED/hostname, with a port, before a colon)", () => {
+  assert.equal(redactUrls('connect ECONNREFUSED 2001:db8::1:443'), 'connect ECONNREFUSED [host]');
+  assert.equal(redactUrls('connect ETIMEDOUT 2606:4700::6810:84e5:443'), 'connect ETIMEDOUT [host]');
+  assert.equal(redactUrls('Failed to resolve hostname 2001:db8::1: Name or service not known'), 'Failed to resolve hostname [host]: Name or service not known');
+  assert.equal(redactUrls('connect to 2001:db8::1: Connection refused'), 'connect to [host]: Connection refused');
+  assert.equal(redactUrls('x 1:2:3:4:5:6:7:8: err'), 'x [host]: err');
+});
+
+test('"::" separators and A-F prefixes are not addresses', () => {
+  for (const line of ['handleLoadStream: DE:: ARD HD (12345)', 'CA :: CBC', 'sync :: done', 'bare :: and ::8080']) {
+    assert.equal(redactUrls(line), line);
+  }
+  assert.equal(redactUrls('peer fe80::1 and 2001:db8:: up'), 'peer [host] and [host] up');
+});

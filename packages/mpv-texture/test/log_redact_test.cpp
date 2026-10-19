@@ -109,6 +109,12 @@ int main() {
     // IPv6 edges (same as log-redact.test.ts): only whole, well-formed addresses
     for (const char* s : {"surface::bead and cafe::bead_x", "ratio 1::2::3", "x :1::2", "deadbeef::1", "1:2:3:4:5:6:7:8::9"}) ok &= check(s, s);
     ok &= check("ipv6 http://[2001:db8::1]:8080/x and 2001:db8::1", "ipv6 http://[host]/\xE2\x80\xA6 and [host]");
+    // Node-style IPv6 errors and "::" that is not an address (same as log-redact.ts)
+    ok &= check("Failed to resolve hostname 2001:db8::1: Name or service not known", "Failed to resolve hostname [host]: Name or service not known");
+    ok &= check("connect to 2001:db8::1: Connection refused", "connect to [host]: Connection refused");
+    ok &= check("service_name: DE:: ZDF", "service_name: DE:: ZDF");
+    ok &= check("CA :: CBC and ::8080", "CA :: CBC and ::8080");
+    ok &= check("peer fe80::1 and 2001:db8:: up", "peer [host] and [host] up");
     std::cout << (ok ? "all passed\n" : "failures\n");
     return ok ? 0 : 1;
 }
