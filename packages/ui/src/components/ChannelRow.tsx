@@ -12,6 +12,8 @@ interface ChannelRowProps {
   programs: StoredProgram[] | undefined;
   windowStart: Date;
   windowEnd: Date;
+  /** The guide's minute tick: what is on now */
+  now: Date;
   pixelsPerHour: number;
   visibleHours: number;
   onPlay: (channel: StoredChannel) => void;
@@ -25,6 +27,7 @@ export const ChannelRow = memo(function ChannelRow({
   programs,
   windowStart,
   windowEnd,
+  now,
   pixelsPerHour,
   visibleHours,
   onPlay,
@@ -91,6 +94,7 @@ export const ChannelRow = memo(function ChannelRow({
           rowIndex={index}
           windowStart={windowStart}
           windowEnd={windowEnd}
+          now={now}
           pixelsPerHour={pixelsPerHour}
           visibleHours={visibleHours}
           onPlay={handlePlay}
