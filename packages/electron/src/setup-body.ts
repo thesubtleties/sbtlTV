@@ -212,10 +212,10 @@ export function explainExportProblem(message: string, sources: { name: string }[
     return `${name} can't be exported: ${why}.`;
   }
   const setting = /^invalid: settings\.(\w+)/.exec(message);
-  if (setting) return `A setting can't be exported (${setting[1]} has a value sbtlTV doesn't expect).`;
+  if (setting) return `A setting has a value sbtlTV can't export (${setting[1]}).`;
   const list = /^invalid: lists\.(\w+)/.exec(message);
   if (list) return `Your ${LIST_NAMES[list[1]] ?? list[1]} can't be exported: there are too many.`;
-  return `Your setup can't be exported (${message}).`;
+  return "Your setup can't be exported. Details are in the debug log.";
 }
 
 /**

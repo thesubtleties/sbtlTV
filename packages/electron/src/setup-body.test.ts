@@ -95,9 +95,9 @@ test('an export the validator refuses says which source and what, not "invalid f
   assert.equal(explainExportProblem('invalid: sources[1].epg_url', sources), 'Local can\'t be exported: its guide address has to start with http:// or https://.');
   assert.equal(explainExportProblem('invalid: sources[1].playlist', sources), 'Local can\'t be exported: its playlist is too large.');
   assert.equal(explainExportProblem('invalid: sources[0].name', sources), 'Provider can\'t be exported: one of its details is too long.');
-  assert.equal(explainExportProblem('invalid: settings.guideOpacity', sources), 'A setting can\'t be exported (guideOpacity has a value sbtlTV doesn\'t expect).');
+  assert.equal(explainExportProblem('invalid: settings.guideOpacity', sources), 'A setting has a value sbtlTV can\'t export (guideOpacity).');
   assert.equal(explainExportProblem('invalid: lists.favorites', sources), 'Your favorites can\'t be exported: there are too many.');
-  assert.equal(explainExportProblem('something else', sources), 'Your setup can\'t be exported (something else).');
+  assert.equal(explainExportProblem('something else', sources), 'Your setup can\'t be exported. Details are in the debug log.');
 });
 
 // ---- review 8 (tests lens): kill tests ----

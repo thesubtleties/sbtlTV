@@ -12,7 +12,7 @@
   font-size: 1.4rem;
   letter-spacing: 0.02em;
   user-select: all;
-  color: var(--text-primary, inherit);
+  color: var(--text);
 }
 
 .setup-preview__actions {

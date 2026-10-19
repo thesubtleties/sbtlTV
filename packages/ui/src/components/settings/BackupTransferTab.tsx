@@ -9,9 +9,9 @@ import { Button, Hint, OnOff, OptionRow, Section, SettingsTab, TextField } from 
 
 const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: boolean }[] = [
   { id: 'sources', title: 'Sources', defaultOn: true },
-  { id: 'logins', title: 'With logins', help: "Passwords for Xtream sources. M3U playlists carry their login inside their addresses, so they're always included. Sharing logins uses a connection on that provider account.", defaultOn: true },
+  { id: 'logins', title: 'With logins', help: "Xtream passwords. An M3U's login is part of its address, so it always goes with it. A shared login uses a connection on that account.", defaultOn: true },
   { id: 'settings', title: 'Settings', defaultOn: true },
-  { id: 'apiKeys', title: 'API keys', help: 'TMDB and RatingPosterDB', defaultOn: true },
+  { id: 'apiKeys', title: 'API keys', help: 'TMDB and RatingPosterDB.', defaultOn: true },
   { id: 'favorites', title: 'Favorites', defaultOn: true },
   { id: 'watchlist', title: 'Watchlist', defaultOn: true },
   { id: 'progress', title: 'Watch progress', defaultOn: false },
@@ -27,7 +27,7 @@ function exportedOn(iso: string): string {
 type ImportState =
   | { step: 'idle' }
   | { step: 'passphrase'; token: string; error?: string }
-  | { step: 'preview'; token: string; preview: SetupPreview }
+  | { step: 'preview'; token: string; preview: SetupPreview; restoring?: boolean }
   | { step: 'applying' }
   | { step: 'failed'; error: string; backupName: string | null };
 
@@ -94,7 +94,7 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
   async function openBackup(name: string) {
     const r = await window.setup!.openBackup(name);
     if ('error' in r) setImp({ step: 'failed', error: r.error, backupName: null });
-    else if (r.success) setImp({ step: 'preview', token: r.data.token, preview: r.data.preview });
+    else if (r.success) setImp({ step: 'preview', token: r.data.token, preview: r.data.preview, restoring: true });
   }
 
   async function apply(token: string, withBackup = backupFirst) {
@@ -123,8 +123,8 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
 
   return (
     <SettingsTab>
-      <Section title="Export setup" description="One file with your setup, locked with a passphrase, to set up another computer or someone in your family."
-        actions={<Button variant="primary" onClick={() => void exportSetup()} disabled={exporting || parts.size === 0}>{exporting ? 'Exporting…' : 'Export…'}</Button>}>
+      <Section title="Export setup" description="Your setup in one file, locked with a passphrase. Use it to set up another computer, or someone else's."
+        actions={<Button variant="primary" onClick={() => void exportSetup()} disabled={exporting || parts.size === 0 || imp.step === 'applying'}>{exporting ? 'Exporting…' : 'Export…'}</Button>}>
         {EXPORT_PARTS.map((p) => (
           <OptionRow key={p.id} title={p.title} help={p.help}>
             <OnOff value={parts.has(p.id)} onChange={(on) => toggle(p.id, on)} disabled={p.id === 'logins' && !parts.has('sources')} />
@@ -141,7 +141,7 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
         {exportError && <Hint tone="danger">{exportError}</Hint>}
       </Section>
 
-      <Section title="Import setup" description="Open a setup file from sbtlTV on another computer."
+      <Section title="Import setup" description="Open a setup file exported from sbtlTV."
         actions={<Button onClick={() => void pick()} disabled={imp.step === 'applying'}>Import…</Button>}>
         {imp.step === 'passphrase' && (
           <form onSubmit={(e) => { e.preventDefault(); void unlock(imp.token); }}>
@@ -157,15 +157,15 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
             <Hint>
               From sbtlTV {imp.preview.app} on {platformName(imp.preview.platform)}{exportedOn(imp.preview.exportedAt)}: {setupSummary(imp.preview)}.
             </Hint>
-            <Hint tone="warn">Importing replaces your current setup: sources, settings, API keys, favorites, watchlist and watch progress. Anything not in this file is cleared.</Hint>
+            <Hint tone="warn">{imp.restoring ? 'Restoring' : 'Importing'} replaces your current setup: sources, settings, API keys, favorites, watchlist and watch progress. Anything not in this file is cleared.</Hint>
             <OptionRow title="Back up my current setup first"><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
             <div className="setup-preview__actions">
-              <Button variant="danger" onClick={() => void apply(imp.token)}>Replace and import</Button>
+              <Button variant="danger" onClick={() => void apply(imp.token)}>{imp.restoring ? 'Replace and restore' : 'Replace and import'}</Button>
               <Button onClick={() => setImp({ step: 'idle' })}>Cancel</Button>
             </div>
           </div>
         )}
-        {imp.step === 'applying' && <Hint>Importing… sbtlTV restarts when it's done.</Hint>}
+        {imp.step === 'applying' && <Hint>Working… sbtlTV restarts when it's done.</Hint>}
         {imp.step === 'failed' && (
           <>
             <Hint tone="danger">{imp.error}</Hint>
@@ -180,7 +180,7 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
       </Section>
 
       {backups.length > 0 && (
-        <Section title="Restore previous setup" description="sbtlTV backs up your setup before every import. Backups stay on this computer and are protected like your saved passwords.">
+        <Section title="Restore previous setup" description="Taken before an import when Back up my current setup first is on. The last three are kept on this computer, protected like your saved passwords.">
           {backups.map((b) => (
             <OptionRow key={b.name} title={b.label}>
               <Button onClick={() => void openBackup(b.name)} disabled={imp.step === 'applying'}>Restore…</Button>

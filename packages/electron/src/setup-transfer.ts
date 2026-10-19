@@ -17,7 +17,7 @@ const MESSAGES: Record<string, string> = {
   invalid: "This file isn't a valid sbtlTV setup",
   newer: 'This setup was made by a newer sbtlTV. Update sbtlTV first.',
   'wrong-passphrase': "That passphrase doesn't open this file.",
-  'other-computer': "This backup can only be restored on the computer that made it, with the keyring it was made with.",
+  'other-computer': 'This backup can only be restored on the computer, and with the keyring, it was made with.',
   'needs-passphrase': "This file isn't a valid sbtlTV setup",
   'needs-keyring': "This file isn't a valid sbtlTV setup",
 };
@@ -38,12 +38,15 @@ function buildBody(parts: SetupPart[], lists: UserLists, playlists: Record<strin
   try {
     return validateSetupBody(body);  // what we write must be what we would accept
   } catch (error) {
-    throw new ExportProblem(explainExportProblem(error instanceof Error ? error.message : String(error), body.sources ?? []));
+    const detail = error instanceof Error ? error.message : String(error);  // field names only, never values
+    throw new ExportProblem(explainExportProblem(detail, body.sources ?? []), detail);
   }
 }
 
 /** This computer's own setup breaks a rule a setup file must follow (message says which). */
-class ExportProblem extends Error {}
+class ExportProblem extends Error {
+  constructor(message: string, readonly detail: string) { super(message); }
+}
 
 const backupsDir = () => path.join(app.getPath('userData'), 'backups');
 
@@ -76,7 +79,7 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
       return { success: true, data: { passphrase, filePath: choice.filePath } };
     } catch (error) {
       // The reason only: Node's file errors carry paths (the user's home folder).
-      deps.log(`Setup export failed: ${error instanceof storage.SecretsUnreadable ? 'secrets unreadable' : error instanceof ExportProblem ? 'setup has a value a file cannot carry' : (error as NodeJS.ErrnoException)?.code ?? (error instanceof Error ? error.name : 'unknown')}`);
+      deps.log(`Setup export failed: ${error instanceof storage.SecretsUnreadable ? 'secrets unreadable' : error instanceof ExportProblem ? error.detail : (error as NodeJS.ErrnoException)?.code ?? (error instanceof Error ? error.name : 'unknown')}`);
       return { error: message(error) };
     }
   });
@@ -149,7 +152,7 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
         for (const old of backupsToPrune(fs.readdirSync(backupsDir()))) fs.rmSync(path.join(backupsDir(), old), { force: true });
       }
     } catch (error) {
-      return { error: `Your current setup couldn't be backed up, so nothing was changed. ${message(error)}` };
+      return { error: `Your current setup couldn't be backed up, so nothing changed. ${message(error)}` };
     }
     try {
       storage.replaceSetup({ sources: body.sources ?? [], settings: body.settings ?? {}, apiKeys: body.apiKeys ?? {} });
