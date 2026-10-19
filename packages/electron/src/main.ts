@@ -14,8 +14,7 @@ import { rewindMpvProperties, rewindCapBytes, parseCacheState, clampToRange, typ
 import { PlayerMemoryTracker } from './player-memory.js';
 import { once } from 'node:events';
 import { isTransientDecodeError } from './mpv-error-filter.js';
-import { redactUrls } from './log-redact.js';
-import { HostLabels } from './host-labels.js';
+import { LogPolicy } from './log-policy.js';
 import { createLineBuffer } from './line-buffer.js';
 import { IP_CHECK_URL, IP_CHECK_MAX_BYTES, parseIpCheck } from './ip-check.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
@@ -31,18 +30,25 @@ const { autoUpdater } = electronUpdater;
 // Provider addresses in logs become labels (see host-labels.ts). The debug log
 // keeps them only while the user has turned that on in Settings > Debug; it is
 // never saved, so every launch starts with labels.
-const hostLabels = new HostLabels();
-hostLabels.setSources(storage.getSourceAddresses());
-let includeAddressesInLog = false;
+function sourceAddresses(): ReturnType<typeof storage.getSourceAddresses> {
+  try {
+    return storage.getSourceAddresses();
+  } catch {
+    return [];  // an unreadable config must not stop the app here; labels then number every host
+  }
+}
+const logPolicy = new LogPolicy(sourceAddresses());
+// Every change to the sources (Sources tab, file import, a setup import) keeps the labels current.
+storage.onSourcesChanged(() => logPolicy.setSources(sourceAddresses()));
 
-/** Text for the error card, a terminal or the system log: labels, always. */
+/** Text for a terminal or the system log: labels, always. */
 function redactForDisplay(text: string): string {
-  return redactUrls(text, hostLabels.labeller());
+  return logPolicy.forDisplay(text);
 }
 
 /** Text for the debug log: labels, or the addresses while the user has included them (Settings > Debug). */
 function redactForLog(text: string): string {
-  return redactUrls(text, hostLabels.labeller(includeAddressesInLog));
+  return logPolicy.forLog(text);
 }
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
@@ -193,7 +199,7 @@ process.on('uncaughtException', (error) => {
     type: 'error',
     title: 'sbtlTV internal error',
     message: 'An internal error occurred. sbtlTV will keep running.',
-    detail: `${summary}\n\nDetails are in the debug log when debug logging is enabled (Settings > System).`,
+    detail: `${logPolicy.forCard(summary)}\n\nDetails are in the debug log when debug logging is enabled (Settings > Debug).`,
     buttons: ['OK'],
   }).catch(() => {});
 });
@@ -243,6 +249,22 @@ function rotateLogIfNeeded(): boolean {
   }
 }
 
+/**
+ * Logs written before provider addresses became labels (0.13.0 and earlier) can name
+ * the provider: they are deleted once, so a log attached to a report starts clean.
+ */
+function retireLogsFromBeforeLabels(): void {
+  if (storage.getDebugLogFormat() >= 2) return;
+  for (const file of [getDebugLogPath(), `${getDebugLogPath()}.old`]) {
+    try {
+      fs.rmSync(file, { force: true });
+    } catch {
+      return;  // try again next launch
+    }
+  }
+  storage.setDebugLogFormat(2);
+}
+
 function initDebugLogging(enabled: boolean): void {
   debugLoggingEnabled = enabled;
 
@@ -276,7 +298,7 @@ function initDebugLogging(enabled: boolean): void {
     }
     debugLog(`Platform: ${process.platform} ${process.arch}`);
     debugLog(`Electron: ${process.versions.electron}`);
-    debugLog(`Provider addresses: ${includeAddressesInLog ? 'included (turned on in Settings > Debug)' : 'replaced by labels'}`);
+    debugLog(logPolicy.headerLine());
     debugLog(`Node: ${process.versions.node}`);
     debugLog('='.repeat(60));
   } else if (!enabled && debugLogStream) {
@@ -289,7 +311,15 @@ function initDebugLogging(enabled: boolean): void {
 
 function debugLog(message: string, category = 'app'): void {
   // Users attach this log to reports: no provider credentials (they ride in stream URLs), no provider addresses unless included.
-  writeDebugLine(redactForLog(message), category);
+  // Redacted even while the log is off: that is also how hosts become known, so a later bare mention
+  // on the card or a terminal is labelled.
+  let line: string;
+  try {
+    line = redactForLog(message);
+  } catch {
+    return;  // logging must never crash the app
+  }
+  writeDebugLine(line, category);
 }
 
 /** A line that was already redacted with redactForLog (e.g. before JSON quoting): written as it is. */
@@ -1247,7 +1277,7 @@ function sendToRenderer(channel: string, data: unknown): void {
 
 /** A message in the app's error card; its text goes to the debug log too, so reports can be matched. */
 function reportMpvError(message: string): void {
-  const text = redactForDisplay(message.trim());
+  const text = logPolicy.forCard(message.trim());  // the card is only on the user's screen: real hostnames, never logins
   // Redacted before quoting (a URL ends at whitespace, not at a quote), with the log's own rules.
   writeDebugLine(`banner: ${JSON.stringify(redactForLog(message.trim()))}`, 'mpv');
   sendToRenderer('mpv-error', text);
@@ -1267,8 +1297,9 @@ function reportPlaybackFailure(message: string): void {
 /** One of mpv's own error lines: held back while a stall reload is opening the stream. */
 function reportMpvLogError(message: string): void {
   if (stream.holdsMpvErrors(mpvState.playing)) {
-    stream.lastHeldError = redactForDisplay(message.trim());  // before quoting: the URL ends at whitespace, not at the quote
-    writeDebugLine(`banner held during reconnect: ${JSON.stringify(redactForLog(message.trim()))}`, 'mpv');
+    // Redacted for the log before quoting (a URL ends at whitespace, not at a quote), and written as it is.
+    stream.lastHeldError = redactForLog(message.trim());
+    writeDebugLine(`banner held during reconnect: ${JSON.stringify(stream.lastHeldError)}`, 'mpv');
     return;
   }
   reportMpvError(message);
@@ -1623,7 +1654,7 @@ async function loadMedia(request: StreamLoadRequest & { requestId?: number }): P
     return { error: 'Native playback must be reset' };
   }
   const url = request.url;
-  hostLabels.noteUrl(url);  // before mpv names the host on its own ("Failed to resolve hostname …")
+  logPolicy.noteUrl(url);  // before mpv names the host on its own ("Failed to resolve hostname …")
   lastJumpAt = Date.now();
   const { generation, resumeAt } = stream.begin(request, Date.now(), playerRaw);
   debugLog(`mpv-load called (${request.reason})${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
@@ -1707,7 +1738,7 @@ async function checkStreamHealth(): Promise<void> {
       stream.reloadInFlight = false;
     }
   } else if (action === 'give-up') {
-    debugLog(`Stream still stalled after ${STALL_MAX_RELOADS} reloads; giving up${stream.lastHeldError ? ` (last mpv error: ${JSON.stringify(stream.lastHeldError)})` : ''}`, 'mpv');
+    writeDebugLine(`Stream still stalled after ${STALL_MAX_RELOADS} reloads; giving up${stream.lastHeldError ? ` (last mpv error: ${JSON.stringify(stream.lastHeldError)})` : ''}`, 'mpv');
     sendToRenderer('stream-recovery', { state: 'failed', live: media.live });
     endRewindForLoad();
   }
@@ -1929,7 +1960,6 @@ ipcMain.handle('storage-save-source', async (_event, source: Source) => {
   try {
     storage.saveSource(source);
     dataHost?.pushSources();
-    hostLabels.setSources(storage.getSourceAddresses());
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -1940,7 +1970,6 @@ ipcMain.handle('storage-delete-source', async (_event, id: string) => {
   try {
     storage.deleteSource(id);
     dataHost?.pushSources();
-    hostLabels.setSources(storage.getSourceAddresses());
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -2002,17 +2031,13 @@ ipcMain.handle('debug-get-log-path', async () => {
 });
 
 ipcMain.handle('debug-is-enabled', () => debugLoggingEnabled);
-ipcMain.handle('debug-get-include-addresses', () => includeAddressesInLog);
+ipcMain.handle('debug-get-include-addresses', () => logPolicy.addressesIncluded);
 ipcMain.handle('debug-set-include-addresses', (_event, on: unknown) => {
-  const next = on === true;
-  if (next !== includeAddressesInLog) {
-    includeAddressesInLog = next;
-    debugLog(next
-      ? 'Provider addresses are included in this log from here on (turned on in Settings > Debug)'
-      : 'Provider addresses are replaced by labels again');
-  }
-  return includeAddressesInLog;
+  const { included, logLine } = logPolicy.setIncludeAddresses(on);
+  if (logLine) debugLog(logLine);
+  return included;
 });
+ipcMain.handle('debug-get-source-legend', () => logPolicy.legend());
 
 ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
   debugLog(message, 'renderer');
@@ -2415,6 +2440,7 @@ app.whenReady().then(async () => {
 
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
+  retireLogsFromBeforeLabels();
   initDebugLogging(settings.debugLoggingEnabled ?? false);
   if (process.platform === 'linux') {
     const reason = compatibilityModeFromFlag ? 'launch flag' : compatibilityModeFromSetting ? 'setting' : 'default';

@@ -14,6 +14,7 @@ export function DebugTab({
   const [logPath, setLogPath] = useState<string>('');
   // Never saved: main starts every launch with labels.
   const [includeAddresses, setIncludeAddresses] = useState(false);
+  const [legend, setLegend] = useState<{ n: number; name: string }[]>([]);
   const updateSettings = useUpdateSettings();
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export function DebugTab({
       });
     }
     window.debug?.getIncludeAddresses?.().then(setIncludeAddresses).catch(() => {});
+    window.debug?.getSourceLegend?.().then(setLegend).catch(() => {});
   }, []);
 
   async function handleDebugLoggingChange(enabled: boolean) {
@@ -64,17 +66,22 @@ export function DebugTab({
         </OptionRow>
 
         <OptionRow
-          title="Provider addresses"
+          title="Provider addresses in the debug log"
           help={
             <>
               Only turn this on when you're sending the log to someone you trust, privately. Never post a log made with this on publicly.
-              <span className="opt-row__note">
+              <span className="opt-row__note opt-row__note--strong">
                 Your usernames and passwords are never written to the log, with this on or off. This only adds your provider's address.
               </span>
+              {legend.length > 0 && (
+                <span className="opt-row__note">
+                  In the log your sources appear as {legend.map(({ n, name }) => `source ${n} (${name})`).join(', ')}; their names are not written to it.
+                </span>
+              )}
             </>
           }
         >
-          <OnOff value={includeAddresses} onChange={(on) => void handleIncludeAddressesChange(on)} offLabel="Labels" onLabel="Included" />
+          <OnOff value={includeAddresses} onChange={(on) => void handleIncludeAddressesChange(on)} offLabel="Hidden" onLabel="Included" />
         </OptionRow>
 
         {logPath && (
@@ -82,7 +89,7 @@ export function DebugTab({
             title="Log file"
             help={
               <>
-                Logs never contain your logins, and provider addresses appear as labels like "[source: name]" unless you include them above.
+                Logs never contain your logins, and provider addresses appear as labels like "[source 1]" or "[host 2]" unless you include them above.
                 Report issues on{' '}
                 <a href="https://github.com/thesubtleties/sbtlTV/issues" target="_blank" rel="noopener noreferrer">GitHub</a>.
               </>

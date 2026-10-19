@@ -287,6 +287,7 @@ export interface DebugApi {
   onEnabledChanged?: (callback: (enabled: boolean) => void) => () => void;
   getIncludeAddresses?: () => Promise<boolean>;
   setIncludeAddresses?: (on: boolean) => Promise<boolean>;
+  getSourceLegend?: () => Promise<{ n: number; name: string }[]>;
 }
 
 export interface UpdateInfo {

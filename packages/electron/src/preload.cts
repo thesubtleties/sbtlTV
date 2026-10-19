@@ -148,6 +148,7 @@ export interface DebugApi {
   onEnabledChanged: (callback: (enabled: boolean) => void) => () => void;
   getIncludeAddresses: () => Promise<boolean>;
   setIncludeAddresses: (on: boolean) => Promise<boolean>;
+  getSourceLegend: () => Promise<{ n: number; name: string }[]>;
 }
 
 export interface PlatformApi {
@@ -326,6 +327,7 @@ contextBridge.exposeInMainWorld('debug', {
   isEnabled: () => ipcRenderer.invoke('debug-is-enabled'),
   getIncludeAddresses: () => ipcRenderer.invoke('debug-get-include-addresses'),
   setIncludeAddresses: (on: boolean) => ipcRenderer.invoke('debug-set-include-addresses', on),
+  getSourceLegend: () => ipcRenderer.invoke('debug-get-source-legend'),
   onEnabledChanged: (callback: (enabled: boolean) => void) => {
     const listener = (_event: IpcRendererEvent, enabled: boolean) => callback(enabled);
     ipcRenderer.on('debug-logging-changed', listener);
