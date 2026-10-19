@@ -57,13 +57,13 @@ export function DebugTab({
     <SettingsTab>
       <Section
         title="Debug logging"
-        description="Verbose logs help diagnose video playback, network and application problems. They are written to a file you can share when reporting a bug."
+        description="Detailed logs for tracking down playback, network and app problems."
       >
         <OptionRow
           title="Logging"
           help={debugLoggingEnabled
-            ? 'Detailed logs from mpv, the window and the main process are being written. This may slightly affect performance.'
-            : 'Only basic logging. Turn this on before reproducing a problem you want to report.'}
+            ? 'Writing detailed logs. Can slow things down slightly.'
+            : 'Turn on, then make the problem happen again.'}
         >
           <OnOff value={debugLoggingEnabled} onChange={(enabled) => void handleDebugLoggingChange(enabled)} />
         </OptionRow>
@@ -85,16 +85,7 @@ export function DebugTab({
         </OptionRow>
 
         {logPath && (
-          <OptionRow
-            title="Log file"
-            help={
-              <>
-                Logs never contain your logins, and provider addresses appear as labels like "[source 1]" or "[host 2]" unless you include them above.
-                Report issues on{' '}
-                <a href="https://github.com/thesubtleties/sbtlTV/issues" target="_blank" rel="noopener noreferrer">GitHub</a>.
-              </>
-            }
-          >
+          <OptionRow title="Log file">
             <code className="st-code">{logPath}</code>
             <Button onClick={() => void handleOpenLogFolder()}>Open folder</Button>
           </OptionRow>
@@ -146,10 +137,10 @@ function BugReportSection({ loggingOn, addressesIncluded }: { loggingOn: boolean
   return (
     <Section
       title="Bug report"
-      description="A zip with what's needed to look into a problem: versions, your computer's hardware, settings, how your sources are doing, and the debug log. No logins, provider addresses, source names or your user folder. Nothing is sent: you attach the file to an issue yourself."
+      description="Everything needed to look into a problem, in one zip. No logins, addresses or names. Nothing is sent; you attach it."
     >
       {!loggingOn && <Hint>Turn on debug logging, make the problem happen again, then save the report.</Hint>}
-      {addressesIncluded && <Hint tone="warn">Provider addresses are being written to the log file right now. The report zip never contains them; send the log file itself only to someone you trust.</Hint>}
+      {addressesIncluded && <Hint tone="warn">Addresses are being logged right now. The zip leaves them out.</Hint>}
       <div className="st-actions">
         <Button onClick={() => void togglePreview()} disabled={state.kind === 'loading'} aria-expanded={preview !== null}>
           {state.kind === 'loading' ? 'Putting it together…' : preview === null ? "What's in it" : 'Hide'}
@@ -157,11 +148,11 @@ function BugReportSection({ loggingOn, addressesIncluded }: { loggingOn: boolean
         <Button variant="primary" onClick={() => void save()} disabled={state.kind === 'busy' || state.kind === 'loading'}>{state.kind === 'busy' ? 'Saving…' : 'Save report file…'}</Button>
         <a className="st-btn st-btn--default" href={issueUrl(version, platform)} target="_blank" rel="noopener noreferrer">Open a GitHub issue</a>
       </div>
-      {state.kind === 'saved' && <Hint tone="ok">Saved, and its folder is open. Open a GitHub issue and drag the zip into it.</Hint>}
+      {state.kind === 'saved' && <Hint tone="ok">Saved. Drag it into a new issue.</Hint>}
       {state.kind === 'error' && <Hint tone="danger">{state.message}</Hint>}
       {preview !== null && (
         <>
-          <Hint>This is report.json. The zip also has the debug log, with logins, addresses, source names and your user folder taken out.</Hint>
+          <Hint>This is report.json. The zip also has the log, cleaned the same way.</Hint>
           <pre className="st-report-preview">{preview}</pre>
         </>
       )}
