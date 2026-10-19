@@ -17,7 +17,7 @@ const MESSAGES: Record<string, string> = {
   invalid: "This file isn't a valid sbtlTV setup",
   newer: 'This setup was made by a newer sbtlTV. Update sbtlTV first.',
   'wrong-passphrase': "That passphrase doesn't open this file.",
-  'other-computer': 'This backup can only be restored on the computer that made it',
+  'other-computer': "This backup can only be restored on the computer that made it, with the keyring it was made with.",
   'needs-passphrase': "This file isn't a valid sbtlTV setup",
   'needs-keyring': "This file isn't a valid sbtlTV setup",
 };

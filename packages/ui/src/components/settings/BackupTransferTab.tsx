@@ -55,6 +55,8 @@ export function BackupTransferTab() {
       const r = await window.setup.exportSetup({ parts: chosen, lists, playlists });
       if ('error' in r) setExportError(r.error);
       else if (r.success) setExported(r.data);
+    } catch (error) {
+      setExportError(`The export didn't finish: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setExporting(false);
     }
@@ -83,19 +85,28 @@ export function BackupTransferTab() {
     else if (r.success) setImp({ step: 'preview', token: r.data.token, preview: r.data.preview });
   }
 
-  async function apply(token: string) {
+  async function apply(token: string, withBackup = backupFirst) {
     setImp({ step: 'applying' });
-    const currentLists = backupFirst ? await readLists(LIST_PARTS, true) : {};
-    const currentPlaylists = backupFirst ? await rebuildFilePlaylists(sources) : {};
-    const r = await window.setup!.apply(token, { backupFirst, currentLists, currentPlaylists });
-    if ('error' in r) return setImp({ step: 'failed', error: r.error, backupName: 'backupName' in r ? r.backupName : null });
-    if (!r.success) return;
+    let backupName: string | null = null;
     try {
+      const currentLists = withBackup ? await readLists(LIST_PARTS, true) : {};
+      const currentPlaylists = withBackup ? await rebuildFilePlaylists(sources) : {};
+      const r = await window.setup!.apply(token, { backupFirst: withBackup, currentLists, currentPlaylists });
+      if ('error' in r) return setImp({ step: 'failed', error: r.error, backupName: 'backupName' in r ? r.backupName : null });
+      if (!r.success) return setImp({ step: 'idle' });
+      backupName = r.data.backupName;
       await replaceLists(r.data.lists);
+      await window.setup!.relaunch();
     } catch (error) {
-      return setImp({ step: 'failed', error: error instanceof Error ? error.message : String(error), backupName: r.data.backupName });
+      setImp({ step: 'failed', error: error instanceof Error ? error.message : String(error), backupName });
     }
-    await window.setup!.relaunch();
+  }
+
+  // After a failed import: put the backup back in one step (no new backup of the half-imported state).
+  async function restoreNow(name: string) {
+    const r = await window.setup!.openBackup(name);
+    if ('error' in r) return setImp({ step: 'failed', error: r.error, backupName: null });
+    if (r.success) await apply(r.data.token, false);
   }
 
   return (
@@ -149,7 +160,7 @@ export function BackupTransferTab() {
             {imp.backupName && (
               <>
                 <Hint tone="warn">The import didn't finish. Restore your previous setup?</Hint>
-                <Button variant="primary" onClick={() => void openBackup(imp.backupName!)}>Restore</Button>
+                <Button variant="primary" onClick={() => void restoreNow(imp.backupName!)}>Restore</Button>
               </>
             )}
           </>
@@ -157,7 +168,7 @@ export function BackupTransferTab() {
       </Section>
 
       {backups.length > 0 && (
-        <Section title="Restore previous setup" description="sbtlTV backs up your setup before every import. Only this computer can open these.">
+        <Section title="Restore previous setup" description="sbtlTV backs up your setup before every import. Backups stay on this computer and are protected like your saved passwords.">
           {backups.map((b) => (
             <OptionRow key={b.name} title={b.label}>
               <Button onClick={() => void openBackup(b.name)} disabled={imp.step === 'applying'}>Restore…</Button>
