@@ -5,8 +5,7 @@ import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
-import { useChannelSortOrder, useChannelColumnWidth, useUIStore } from '../stores/uiStore';
-import { needsLogin } from '@sbtltv/core';
+import { useChannelSortOrder, useChannelColumnWidth, useSourceNeedsLogin } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import './ChannelPanel.css';
@@ -36,8 +35,7 @@ function ChannelPanelImpl({
   const favoriteChannels = useFavoriteChannels();
   const channels = isFavoritesView ? favoriteChannels : regularChannels;
   const categories = useCategories();
-  // e.g. after importing a setup shared without logins
-  const waitingForLogin = useUIStore((st) => st.sources.some((src) => src.enabled && needsLogin(src)));
+  const waitingForLogin = useSourceNeedsLogin();
   const [availableWidth, setAvailableWidth] = useState(800);
   const [searchQuery, setSearchQuery] = useState('');
 
