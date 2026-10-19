@@ -166,6 +166,9 @@ function cutUrl(scheme: string, rest: string, hosts: HostLabeller): string {
   return hostEnd === -1 ? scheme + label : `${scheme}${label}/${ELLIPSIS}`;
 }
 
+/** What may follow a URL this module already cut: whitespace, or the end of a value (cutEncodedUrls stops there too). */
+const endsCutUrl = (c: string) => isSpace(c) || c === '&' || c === '"' || c === "'";
+
 /** Every URL cut to a host label; known bare hosts between URLs labelled too. Labels are never scanned again. */
 function cutUrls(text: string, hosts: HostLabeller): string {
   if (!text.includes('://')) return cutBareHosts(text, hosts);
@@ -190,12 +193,21 @@ function cutUrls(text: string, hosts: HostLabeller): string {
     }
     let start = sep;
     while (start > pos && isSchemeChar(text[start - 1])) start--;
+    // Already redacted ("scheme://…", a URL that had a login): keep it as it is.
+    if (text.startsWith(ELLIPSIS, sep + 3)) {
+      const after = sep + 3 + ELLIPSIS.length;
+      if (after === text.length || endsCutUrl(text[after])) {
+        out += cutBareHosts(text.slice(pos, start), hosts) + text.slice(start, after);
+        pos = after;
+        continue;
+      }
+    }
     // Already redacted ("scheme://<label>" or "scheme://<label>/…" and nothing more): keep it as it is.
     const label = labelLengthAt(text, sep + 3);
     if (label > 0) {
       let after = sep + 3 + label;
       if (text.startsWith(`/${ELLIPSIS}`, after)) after += 2;
-      if (after === text.length || isSpace(text[after])) {
+      if (after === text.length || endsCutUrl(text[after])) {
         out += cutBareHosts(text.slice(pos, start), hosts) + text.slice(start, after);
         pos = after;
         continue;
@@ -316,7 +328,9 @@ export function redactUrls(text: string, hosts: HostLabeller = PLAIN_HOSTS): str
   // JSON writes "http:\/\/host\/…" (or /): read it as a URL.
   let unescaped = text.includes(':\\/\\/') ? text.split(':\\/\\/').join('://') : text;
   if (/:\\u002f\\u002f/i.test(unescaped)) unescaped = unescaped.replace(/\\u002f/gi, '/');
-  return cutEncodedUrls(cutBareIpv6(cutUrls(unescaped, hosts), hosts), hosts)
+  // Encoded URLs first: the bare-host pass could otherwise label part of one ("%2F%2Fedge.src…")
+  // and hide it from the encoded pass. What it writes ("scheme://<label>/…") cutUrls keeps as it is.
+  return cutBareIpv6(cutUrls(cutEncodedUrls(unescaped, hosts), hosts), hosts)
     .replace(LOGIN_JSON, (_m, name: string, colon: string) => `"${name}"${colon}"${ELLIPSIS}"`)
     .replace(LOGIN_PARAM, (_m, name: string) => `${name}=${ELLIPSIS}`)
     .replace(LOGIN_PARAM_ENCODED, (_m, name: string) => `${name}%3D${ELLIPSIS}`)
