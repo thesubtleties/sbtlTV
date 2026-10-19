@@ -26,6 +26,7 @@ import { CaptionSession } from './caption-session.js';
 import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
 import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
+import { resetCacheIfMarked } from './setup-backups.js';
 const { autoUpdater } = electronUpdater;
 
 // Before the keyring is opened (Chromium picks it when the app is ready): keep
@@ -2504,6 +2505,13 @@ app.whenReady().then(async () => {
   let compatibilityHandoff: CompatibilityHandoff | null = null;
   if (compatibilityModeRequested) compatibilityHandoff = consumeCompatibilityHandoff();
   else discardStaleCompatibilityHandoff();
+
+  // After an import (setup-transfer.ts): the old guide and library cache goes before it is opened.
+  try {
+    if (resetCacheIfMarked(app.getPath('userData'))) debugLog('Cache cleared after a setup import', 'app');
+  } catch (error) {
+    debugLog(`Could not clear the cache after an import: ${error instanceof Error ? error.message : error}`, 'app');
+  }
 
   // Before the window: the page asks for its data port as soon as it loads.
   dataHost = startDataHost({
