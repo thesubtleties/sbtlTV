@@ -6,6 +6,7 @@ import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitle-set
 import { settleTeamLogosDefault } from './settings-upgrades.js';
 import { normalizeRewindBytes } from './rewind.js';
 import os from 'node:os';
+import { isKeyringSealed } from './secret-fallback.js';
 import { keptOnImport, type SetupSource } from './setup-body.js';
 import type { KeyProtector } from './setup-file.js';
 
@@ -428,6 +429,12 @@ export class SecretsUnreadable extends Error {}
 
 /** Everything an export needs, every secret read now: an export never goes out half empty. */
 export function readSetupForExport(): { sources: Source[]; settings: AppSettings } {
+  if (!safeStorage.isEncryptionAvailable()) {
+    // The plain fallback would read keyring-sealed secrets as garbage (secret-fallback.ts).
+    const stored = store.get('settings');
+    const sealed = [...store.get('sources', []).map((s) => s.encryptedPassword), stored.encryptedTmdbApiKey, stored.encryptedPosterDbApiKey];
+    if (sealed.some((v) => v && isKeyringSealed(v))) throw new SecretsUnreadable('keyring out of reach');
+  }
   try {
     return { sources: getSources(), settings: getSettings() };
   } catch (error) {
