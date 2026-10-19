@@ -174,9 +174,9 @@ test('data-process log lines name a source by id, never by its name', async () =
   await syncEpg(c, named, [], 'http://127.0.0.1:1/nothing', 'override');
   assert.ok(logs.length >= 4, logs.join('\n'));
   assert.deepEqual(logs.filter((m) => m.includes('Acme')), []);
-  // The rematch line lives in the worker (not callable here): no log call in src/data prints source.name.
+  // The rematch line lives in the worker (not callable here): no log call in src/data prints a name (source.name, or a name copied from it).
   const dir = fileURLToPath(new URL('../../src/data/', import.meta.url));
   for (const f of readdirSync(dir).filter((n) => n.endsWith('.ts') && !n.endsWith('.test.ts'))) {
-    assert.doesNotMatch(readFileSync(path.join(dir, f), 'utf8'), /\blog\([^\n]*source\.name/, f);
+    assert.doesNotMatch(readFileSync(path.join(dir, f), 'utf8'), /\blog\([^\n]*(?:\.name\b|\$\{name\})/, f);
   }
 });

@@ -75,9 +75,9 @@ function scheduleDue(): void {
   if (!db || !settings) return;
   const metas = runQuery(db, { id: 0, type: 'syncStatus' }) as Parameters<typeof dueSyncs>[0];
   for (const d of dueSyncs(metas, sources, settings, Date.now())) {
-    const name = sources.find((s) => s.id === d.sourceId)?.name ?? d.sourceId;
-    if (d.channels) { log('sync', `Source ${name} is stale, syncing...`); enqueue({ kind: 'channels', sourceId: d.sourceId }); }
-    if (d.vod) { log('vod', `Source ${name} is stale, syncing VOD...`); enqueue({ kind: 'vod', sourceId: d.sourceId }); }
+    // By id, never by name (a name can say who the provider is); the log shows it as [source N].
+    if (d.channels) { log('sync', `Source ${d.sourceId} is stale, syncing...`); enqueue({ kind: 'channels', sourceId: d.sourceId }); }
+    if (d.vod) { log('vod', `Source ${d.sourceId} is stale, syncing VOD...`); enqueue({ kind: 'vod', sourceId: d.sourceId }); }
   }
 }
 
