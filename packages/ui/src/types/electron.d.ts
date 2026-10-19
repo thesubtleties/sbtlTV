@@ -194,7 +194,8 @@ export interface SetupApi {
   apply: (token: string, opts: { backupFirst: boolean; currentLists: SetupListsWire; currentPlaylists: Record<string, string> }) => Promise<SetupResult<{ lists: SetupListsWire; backupName: string | null }> | { error: string; backupName: string | null }>;
   relaunch: () => Promise<void>;
   showFile: () => Promise<void>;
-  takePendingPlaylists: () => Promise<{ sourceId: string; content: string }[]>;
+  pendingPlaylists: () => Promise<{ sourceId: string; content: string }[]>;
+  settlePlaylists: (sourceIds: string[]) => Promise<void>;
 }
 
 export interface PrivacyApi {

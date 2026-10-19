@@ -271,7 +271,8 @@ contextBridge.exposeInMainWorld('setup', {
   apply: (token: string, opts: { backupFirst: boolean; currentLists: unknown; currentPlaylists: Record<string, string> }) => ipcRenderer.invoke('setup:apply', token, opts),
   relaunch: () => ipcRenderer.invoke('setup:relaunch'),
   showFile: () => ipcRenderer.invoke('setup:showFile'),
-  takePendingPlaylists: () => ipcRenderer.invoke('setup:takePendingPlaylists'),
+  pendingPlaylists: () => ipcRenderer.invoke('setup:pendingPlaylists'),
+  settlePlaylists: (sourceIds: string[]) => ipcRenderer.invoke('setup:settlePlaylists', sourceIds),
 });
 
 // Colors the desktop provides, for Settings > Appearance

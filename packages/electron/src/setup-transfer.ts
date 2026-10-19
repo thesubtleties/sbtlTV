@@ -64,6 +64,15 @@ class ExportProblem extends Error {}
 
 const backupsDir = () => path.join(app.getPath('userData'), 'backups');
 
+function readPending(): { sourceId: string; content: string }[] {
+  try {
+    const list = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), PENDING_PLAYLISTS), 'utf8')) as unknown;
+    return Array.isArray(list) ? list.filter((p) => typeof p?.sourceId === 'string' && typeof p?.content === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 export function registerSetupTransfer(deps: { window: () => BrowserWindow | null; relaunch: () => void; log: (m: string) => void }): void {
   const picked = new Map<string, { file: Buffer; body?: SetupBody }>();
   let lastExport: string | null = null;
@@ -181,14 +190,15 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
     if (lastExport) shell.showItemInFolder(lastExport);
   });
 
-  ipcMain.handle('setup:takePendingPlaylists', () => {
+  // Pending until the page reports the source has its channels (setup:settlePlaylists).
+  ipcMain.handle('setup:pendingPlaylists', () => readPending());
+
+  ipcMain.handle('setup:settlePlaylists', (_e, sourceIds: unknown) => {
+    if (!Array.isArray(sourceIds)) return;
+    const left = readPending().filter((p) => !sourceIds.includes(p.sourceId));
     const file = path.join(app.getPath('userData'), PENDING_PLAYLISTS);
-    try {
-      const list = JSON.parse(fs.readFileSync(file, 'utf8')) as { sourceId: string; content: string }[];
-      fs.rmSync(file, { force: true });
-      return Array.isArray(list) ? list.filter((p) => typeof p?.sourceId === 'string' && typeof p?.content === 'string') : [];
-    } catch {
-      return [];
-    }
+    if (left.length) fs.writeFileSync(file, JSON.stringify(left));
+    else fs.rmSync(file, { force: true });
   });
+
 }
