@@ -25,3 +25,12 @@ export function buildM3U(rows: PlaylistRow[], epgUrl?: string): string {
   }
   return lines.join('\n') + '\n';
 }
+
+/**
+ * The guide link a rebuilt playlist carries: the playlist's own (stored from its
+ * url-tvg when it was imported), else the source's address. The source's typed
+ * address can be a leftover from "Own address" mode, and travels in the source anyway.
+ */
+export function playlistGuideUrl(source: { epg_url?: string; auto_load_epg?: boolean }, ownGuideUrl: string | undefined): string | undefined {
+  return ownGuideUrl || source.epg_url || undefined;
+}

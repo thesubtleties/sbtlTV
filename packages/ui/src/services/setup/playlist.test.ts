@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseM3U } from '@sbtltv/local-adapter';
-import { buildM3U } from './playlist';
+import { buildM3U, playlistGuideUrl } from './playlist';
 
 const original = `#EXTM3U url-tvg="https://epg.example/guide.xml"
 #EXTINF:-1 tvg-id="cbs.us" tvg-logo="https://img.example/cbs.png" tvg-chno="2" group-title="News",CBS
@@ -49,5 +49,14 @@ describe('R8 buildM3U', () => {
     const before = parseM3U('#EXTM3U\n#EXTINF:-1 tvg-name="Fox, News",\nhttp://s/1\n#EXTINF:-1 tvg-name=" Padded ",\nhttp://s/2\n', 's').channels;
     const after = parseM3U(buildM3U(before.map((c) => row({ name: c.name, direct_url: c.direct_url }))), 's').channels;
     expect(after.map((c) => [c.stream_id, c.name])).toEqual(before.map((c) => [c.stream_id, c.name]));
+  });
+});
+
+describe('playlistGuideUrl', () => {
+  it("carries the playlist's own guide link, not a typed-in address left over from the other mode", () => {
+    expect(playlistGuideUrl({ epg_url: 'https://typed.example/old.xml', auto_load_epg: true }, 'https://own.example/guide.xml')).toBe('https://own.example/guide.xml');
+    expect(playlistGuideUrl({ epg_url: 'https://typed.example/guide.xml', auto_load_epg: false }, 'https://own.example/guide.xml')).toBe('https://own.example/guide.xml');
+    expect(playlistGuideUrl({ epg_url: 'https://typed.example/guide.xml' }, undefined)).toBe('https://typed.example/guide.xml');
+    expect(playlistGuideUrl({}, undefined)).toBeUndefined();
   });
 });
