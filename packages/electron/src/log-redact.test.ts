@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { redactUrls, hostOf, PUBLIC_HOSTS, type HostLabeller } from './log-redact.js';
 
 test('stream URLs keep only the scheme and a host label (Xtream puts the username and password in the path)', () => {
@@ -192,4 +194,42 @@ test('logins inside an encoded query are cut, and double-encoded or \\u-escaped 
   assert.equal(redactUrls('next=%2Fget.php%3Fusername%3Dbob%26password%3Ds3cret%26type%3Dm3u'), 'next=%2Fget.php%3Fusername%3D…%26password%3D…%26type%3Dm3u');
   assert.equal(redactUrls('u=http%253A%252F%252Fprovider.example%252Fx'), 'u=http://[host]/…');
   assert.equal(redactUrls('{"u":"http:\\u002f\\u002fprovider.example\\u002flive"}'), '{"u":"http://[host]/…');
+});
+
+test('every login name is cut in all three shapes, and the native twin has exactly the same list', () => {
+  const names = ['username', 'user', 'password', 'pass', 'passwd', 'pwd', 'token', 'access_token', 'refresh_token', 'id_token', 'auth_token', 'api_key', 'apikey', 'key', 'secret', 'client_secret', 'auth'];
+  assert.equal(redactUrls(names.map((n) => `${n}=v`).join(' ')), names.map((n) => `${n}=…`).join(' '));
+  assert.equal(redactUrls(names.map((n) => `"${n}":"v"`).join(',')), names.map((n) => `"${n}":"…"`).join(','));
+  assert.equal(redactUrls(names.map((n) => `%26${n}%3Dv`).join('')), names.map((n) => `%26${n}%3D…`).join(''));
+  const header = readFileSync(fileURLToPath(new URL('../../mpv-texture/src/native/log_redact.h', import.meta.url)), 'utf8');
+  const kNames = /kNames\[\] = \{([^}]*)\}/.exec(header)![1].match(/"[^"]+"/g)!.map((q) => q.slice(1, -1));
+  assert.deepEqual([...kNames].sort(), [...names].sort());
+});
+
+test('encoded, escaped and JSON login shapes the first tests did not pin', () => {
+  // An encoded query at the start of a value (not after %3F or %26)
+  assert.equal(redactUrls('q=username%3Dbob%26password%3Ds3cret'), 'q=username%3D…%26password%3D…');
+  // Lower-case percent-encoding
+  assert.equal(redactUrls('next=%2fget.php%3fusername%3dbob%26password%3ds3cret'), 'next=%2fget.php%3fusername%3D…%26password%3D…');
+  // An escaped quote inside a JSON login does not end it
+  assert.equal(redactUrls('{"password":"a\\"b s3cret","ok":1}'), '{"password":"…","ok":1}');
+  // / with upper-case hex
+  assert.equal(redactUrls('{"u":"http:\\u002F\\u002Fprovider.example\\u002Flive\\u002Fbob"}'), '{"u":"http://[host]/…');
+  // Malformed percent-encoding: the loose decoder still sees the login before the host, and the path
+  assert.equal(redactUrls('u=http%3A%2F%2Fbob%3As3cret%40provider.example%2Flive%2F100%'), 'u=http://…');
+  assert.equal(redactUrls('u=http%3A%2F%2Fprovider.example%2Flive%2F100%'), 'u=http://[host]/…');
+  // An encoded URL ends with its value
+  assert.equal(redactUrls(`u=http%3A%2F%2Fh.example%2Fx&type=m3u {"u":"http%3A%2F%2Fh.example%2Fx","ok":1} 'http%3A%2F%2Fh.example%2Fx'!`),
+    `u=http://[host]/…&type=m3u {"u":"http://[host]/…","ok":1} 'http://[host]/…'!`);
+});
+
+test('IPv6: only whole, well-formed addresses; lowercased; a URL host is the URL pass\'s', () => {
+  for (const s of ['surface::bead and cafe::bead_x', 'ratio 1::2::3', 'x :1::2', 'deadbeef::1', '1:2:3:4:5:6:7:8::9']) assert.equal(redactUrls(s), s);
+  const seen: string[] = [];
+  redactUrls('FE80::1', { forUrl: (h) => h, forBare: (t) => { seen.push(t); return '[host]'; } });
+  assert.deepEqual(seen, ['fe80::1']);
+  const urlHosts: string[] = [];
+  const numbered: HostLabeller = { forUrl: (h) => { urlHosts.push(h); return '[host 1]'; }, forBare: () => '[host 2]' };
+  assert.equal(redactUrls('http://[2001:db8::1]:8080/x', numbered), 'http://[host 1]/…');
+  assert.deepEqual([...new Set(urlHosts)], ['2001:db8::1']);
 });

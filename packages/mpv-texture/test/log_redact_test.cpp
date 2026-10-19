@@ -92,7 +92,6 @@ int main() {
     ok &= check("a monkey=banana", "a monkey=banana");
     { std::string big(200000, 'a'); auto t0 = std::chrono::steady_clock::now(); ok &= check(big, big);
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count(); std::cout << "200k line: " << ms << "ms\n"; ok &= ms < 200; }
-    std::cout << (ok ? "all passed\n" : "failures\n");
     // More login names (same list as log-redact.ts)
     ok &= check("pwd=hunter2&x=1 access_token=abc refresh_token=d id_token=e auth_token=f", "pwd=\xE2\x80\xA6&x=1 access_token=\xE2\x80\xA6 refresh_token=\xE2\x80\xA6 id_token=\xE2\x80\xA6 auth_token=\xE2\x80\xA6");
     ok &= check("client_secret=s secret=t auth=u", "client_secret=\xE2\x80\xA6 secret=\xE2\x80\xA6 auth=\xE2\x80\xA6");
@@ -107,5 +106,9 @@ int main() {
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count(); std::cout << "200k colons: " << ms << "ms\n"; ok &= ms < 200; }
     { std::string big(200000, ':'); auto t0 = std::chrono::steady_clock::now(); redactUrls(big);
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count(); std::cout << "200k '::': " << ms << "ms\n"; ok &= ms < 200; }
+    // IPv6 edges (same as log-redact.test.ts): only whole, well-formed addresses
+    for (const char* s : {"surface::bead and cafe::bead_x", "ratio 1::2::3", "x :1::2", "deadbeef::1", "1:2:3:4:5:6:7:8::9"}) ok &= check(s, s);
+    ok &= check("ipv6 http://[2001:db8::1]:8080/x and 2001:db8::1", "ipv6 http://[host]/\xE2\x80\xA6 and [host]");
+    std::cout << (ok ? "all passed\n" : "failures\n");
     return ok ? 0 : 1;
 }

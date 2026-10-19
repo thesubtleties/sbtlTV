@@ -86,7 +86,8 @@ test('syncChannels stores an imported playlist from its content and skips it whe
 });
 
 import { createServer } from 'node:http';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { syncEpg } from './sync-stages.js';
@@ -160,4 +161,22 @@ test('syncEpg keeps the old guide when nothing in the new one matches, and fails
   assert.equal(await syncEpg(c, source, [cbs], 'http://127.0.0.1:1/nothing', 'override'), 0);
   assert.equal(progress.at(-1)?.state, 'failed');
   assert.equal((db.prepare("select count(*) c from epg_programs").get() as { c: number }).c, 1, 'a failed download keeps the old guide');
+});
+
+test('data-process log lines name a source by id, never by its name', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  const { c } = ctx(db);
+  const logs: string[] = []; c.log = (_cat, m) => logs.push(m);
+  const named: Source = { ...source, name: 'Acme Premium TV' };
+  const failing: ChannelClient = { async testConnection() { throw new Error('boom'); }, async getLiveCategories() { return []; }, async getLiveStreams() { return []; } };
+  await syncChannels(c, named, failing);
+  await syncChannels(c, { ...named, type: 'm3u', url: 'imported:x' }, null);
+  await syncEpg(c, named, [], 'http://127.0.0.1:1/nothing', 'override');
+  assert.ok(logs.length >= 4, logs.join('\n'));
+  assert.deepEqual(logs.filter((m) => m.includes('Acme')), []);
+  // The rematch line lives in the worker (not callable here): no log call in src/data prints source.name.
+  const dir = fileURLToPath(new URL('../../src/data/', import.meta.url));
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.ts') && !n.endsWith('.test.ts'))) {
+    assert.doesNotMatch(readFileSync(path.join(dir, f), 'utf8'), /\blog\([^\n]*source\.name/, f);
+  }
 });
