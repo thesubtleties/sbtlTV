@@ -12,6 +12,7 @@ import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
 import { PrivacyTab } from './settings/PrivacyTab';
+import { BackupTransferTab } from './settings/BackupTransferTab';
 import { VideoPlayerTab } from './settings/VideoPlayerTab';
 import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
@@ -273,6 +274,8 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
             onAllowLanSourcesChange={setAllowLanSources}
           />
         );
+      case 'backup':
+        return <BackupTransferTab />;
       case 'privacy':
         return (
           <PrivacyTab

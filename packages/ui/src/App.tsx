@@ -714,6 +714,16 @@ function App() {
     if (!window.storage) return;
     window.storage.getSources().then((result) => {
       if (result.data) useUIStore.getState().hydrateSources(result.data);
+      // After a setup import: playlists from files come back from the setup file (setup-transfer.ts).
+      void window.setup?.takePendingPlaylists().then(async (pending) => {
+        for (const p of pending) {
+          try {
+            await data.query({ type: 'importPlaylist', sourceId: p.sourceId, content: p.content });
+          } catch (err) {
+            debugLog(`Playlist from the imported setup failed: ${err instanceof Error ? err.message : String(err)}`, 'sync');
+          }
+        }
+      });
     }).catch((err) => {
       debugLog(`Loading sources failed: ${err instanceof Error ? err.message : String(err)}`, 'sync');
       useToastStore.getState().addToast({ kind: 'error', title: 'Could not load sources', message: 'The app settings could not be read — details are in the debug log.', duration: 8000 });
