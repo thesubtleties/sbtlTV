@@ -93,5 +93,19 @@ int main() {
     { std::string big(200000, 'a'); auto t0 = std::chrono::steady_clock::now(); ok &= check(big, big);
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count(); std::cout << "200k line: " << ms << "ms\n"; ok &= ms < 200; }
     std::cout << (ok ? "all passed\n" : "failures\n");
+    // More login names (same list as log-redact.ts)
+    ok &= check("pwd=hunter2&x=1 access_token=abc refresh_token=d id_token=e auth_token=f", "pwd=\xE2\x80\xA6&x=1 access_token=\xE2\x80\xA6 refresh_token=\xE2\x80\xA6 id_token=\xE2\x80\xA6 auth_token=\xE2\x80\xA6");
+    ok &= check("client_secret=s secret=t auth=u", "client_secret=\xE2\x80\xA6 secret=\xE2\x80\xA6 auth=\xE2\x80\xA6");
+    ok &= check("monkey=1 bypass=2", "monkey=1 bypass=2");
+    // Bare IPv6 (not loopback; times and single colons are not addresses)
+    ok &= check("connect to 2001:db8:85a3::8a2e:370:7334 failed", "connect to [host] failed");
+    ok &= check("peer fe80::1%eth0 and 2a00:1450:4001:82a::200e", "peer [host]%eth0 and [host]");
+    ok &= check("at 12:34:56 and 00:00:01.500", "at 12:34:56 and 00:00:01.500");
+    ok &= check("loopback ::1 stays", "loopback ::1 stays");
+    ok &= check("surface::bar std::face::b", "surface::bar std::face::b");
+    { std::string big; for (int i = 0; i < 100000; i++) big += "a:"; auto t0 = std::chrono::steady_clock::now(); redactUrls(big);
+      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count(); std::cout << "200k colons: " << ms << "ms\n"; ok &= ms < 200; }
+    { std::string big(200000, ':'); auto t0 = std::chrono::steady_clock::now(); redactUrls(big);
+      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count(); std::cout << "200k '::': " << ms << "ms\n"; ok &= ms < 200; }
     return ok ? 0 : 1;
 }

@@ -278,7 +278,9 @@ inline std::string cutUrls(const std::string& text) {
 }
 
 inline std::string cutLoginParams(const std::string& text) {
-    static const char* const kNames[] = {"username", "user", "password", "pass", "passwd", "token", "api_key", "apikey", "key"};
+    // Same list as LOGIN_NAMES in log-redact.ts.
+    static const char* const kNames[] = {"username", "user", "password", "pass", "passwd", "pwd", "token", "access_token", "refresh_token",
+                                         "id_token", "auth_token", "api_key", "apikey", "key", "secret", "client_secret", "auth"};
     const std::string low = lower(text);
     std::string out;
     size_t pos = 0;
@@ -344,6 +346,51 @@ inline std::string cutXtreamPaths(const std::string& text) {
     return out;
 }
 
+inline bool isHexDigit(char c) {
+    return isAsciiDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+// A bare IPv6 address (not loopback): groups of up to 4 hex digits, one "::" or
+// all 8 groups. Same rule as isIpv6 in log-redact.ts. Only hex digits and colons are passed in.
+inline bool isIpv6(const std::string& token) {
+    if (token == "::1") return false;
+    const size_t dbl = token.find("::");
+    if (dbl != std::string::npos && (token.find("::", dbl + 1) != std::string::npos || token.find(":::") != std::string::npos)) return false;
+    if (!token.empty() && token.front() == ':' && dbl != 0) return false;
+    if (!token.empty() && token.back() == ':' && (dbl == std::string::npos || dbl != token.size() - 2)) return false;
+    size_t colons = 0;
+    size_t group = 0;
+    for (char c : token) {
+        if (c == ':') { colons++; group = 0; continue; }
+        if (++group > 4) return false;
+    }
+    if (colons < 2 || colons > 7) return false;
+    return dbl != std::string::npos || colons == 7;
+}
+
+// Bare IPv6 addresses outside URLs become [host]. Linear: each maximal run of
+// hex digits and colons is looked at once.
+inline std::string cutBareIpv6(const std::string& text) {
+    if (text.find(':') == std::string::npos) return text;
+    std::string out;
+    size_t pos = 0;
+    size_t i = 0;
+    while (i < text.size()) {
+        if (!isHexDigit(text[i]) && text[i] != ':') { i++; continue; }
+        size_t end = i;
+        while (end < text.size() && (isHexDigit(text[end]) || text[end] == ':')) end++;
+        const bool bounded = (i == 0 || !isWordChar(text[i - 1])) && (end == text.size() || !isWordChar(text[end]));
+        if (bounded && isIpv6(text.substr(i, end - i))) {
+            out.append(text, pos, i - pos);
+            out += "[host]";
+            pos = end;
+        }
+        i = end;
+    }
+    out.append(text, pos, std::string::npos);
+    return out;
+}
+
 }  // namespace log_redact_detail
 
 // A URL the player is about to open: its host is known from now on, so mpv or
@@ -359,5 +406,5 @@ inline void noteUrl(const std::string& url) {
 
 inline std::string redactUrls(const std::string& text) {
     using namespace log_redact_detail;
-    return cutXtreamPaths(cutLoginParams(cutUrls(text)));
+    return cutXtreamPaths(cutLoginParams(cutBareIpv6(cutUrls(text))));
 }
