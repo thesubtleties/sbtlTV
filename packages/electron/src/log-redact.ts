@@ -105,8 +105,22 @@ function isIpv4(token: string): boolean {
 const isHostChar = (code: number) =>
   (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 45 || code === 46;
 
+/** End of the bare IPv6 address starting at text[i] (its run of hex digits and colons, less a trailing "addr:" colon), or i when there is none. */
+function runEndOfHexColons(text: string, i: number): number {
+  let end = i;
+  while (end < text.length && (isHex(text.charCodeAt(end)) || text.charCodeAt(end) === 58)) end++;
+  return end;
+}
+
+function ipv6RunEnd(text: string, i: number): number {
+  const end = runEndOfHexColons(text, i);
+  const stop = text[end - 1] === ':' && text[end - 2] !== ':' ? end - 1 : end;
+  return isIpv6(text.slice(i, stop)) ? stop : i;
+}
+
 /** Hostnames outside URLs, replaced by their label when known or when the text says they are a host. Linear. */
 function cutBareHosts(text: string, hosts: HostLabeller): string {
+  let notV6Until = 0;
   let out = '';
   let pos = 0;
   let i = 0;
@@ -116,8 +130,13 @@ function cutBareHosts(text: string, hosts: HostLabeller): string {
     if (!isHostChar(text.charCodeAt(i))) { i++; continue; }
     let end = i;
     while (end < text.length && isHostChar(text.charCodeAt(end))) end++;
-    // A hex group followed by ':' is part of an IPv6 address: cutBareIpv6 labels it whole.
-    if (text[end] === ':' && /^[0-9A-Fa-f]+$/.test(text.slice(i, end))) { i = end; continue; }
+    // The start of a bare IPv6 address ("2001:db8::1:443"): cutBareIpv6 labels it whole.
+    // Only a real one: a hostname of hex letters ("cafe: …") is still a host here.
+    if (text[end] === ':' && i >= notV6Until) {
+      const v6End = ipv6RunEnd(text, i);
+      if (v6End > end) { i = v6End; continue; }
+      notV6Until = runEndOfHexColons(text, i);  // checked once per run: linear
+    }
     let a = i;
     let b = end;
     while (a < b && (text[a] === '.' || text[a] === '-')) a++;

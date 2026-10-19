@@ -248,3 +248,9 @@ test('"::" separators and A-F prefixes are not addresses', () => {
   }
   assert.equal(redactUrls('peer fe80::1 and 2001:db8:: up'), 'peer [host] and [host] up');
 });
+
+test('a hostname made of hex letters before a colon is still a host (only a real IPv6 run is left to the IPv6 pass)', () => {
+  assert.equal(redactUrls('getaddrinfo ENOTFOUND cafe: lookup failed'), 'getaddrinfo ENOTFOUND [host]: lookup failed');
+  assert.equal(redactUrls('connect ECONNREFUSED feed:8080'), 'connect ECONNREFUSED [host]:8080');
+  assert.equal(redactUrls('connect ECONNREFUSED 2001:db8::1:443'), 'connect ECONNREFUSED [host]');
+});

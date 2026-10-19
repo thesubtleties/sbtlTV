@@ -115,6 +115,8 @@ int main() {
     ok &= check("service_name: DE:: ZDF", "service_name: DE:: ZDF");
     ok &= check("CA :: CBC and ::8080", "CA :: CBC and ::8080");
     ok &= check("peer fe80::1 and 2001:db8:: up", "peer [host] and [host] up");
+    ok &= check("Failed to resolve hostname cafe: x", "Failed to resolve hostname [host]: x");
+    ok &= check("Failed to resolve hostname 2001:db8::1: x", "Failed to resolve hostname [host]: x");
     std::cout << (ok ? "all passed\n" : "failures\n");
     return ok ? 0 : 1;
 }

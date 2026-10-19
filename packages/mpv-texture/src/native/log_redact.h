@@ -181,7 +181,71 @@ inline std::string urlHostOf(const std::string& rest) {
 
 // Hostnames outside URLs become [host] when known, or when the text says they
 // are a host. Linear: each character is looked at once (look-backs are bounded).
+inline bool isHexDigit(char c) {
+    return isAsciiDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+// A bare IPv6 address (not loopback): groups of up to 4 hex digits, one "::" or
+// all 8 groups. Same rule as isIpv6 in log-redact.ts. Only hex digits and colons are passed in.
+inline bool isIpv6(const std::string& token) {
+    if (token == "::1") return false;
+    const size_t dbl = token.find("::");
+    if (dbl != std::string::npos && (token.find("::", dbl + 1) != std::string::npos || token.find(":::") != std::string::npos)) return false;
+    if (!token.empty() && token.front() == ':' && dbl != 0) return false;
+    if (!token.empty() && token.back() == ':' && (dbl == std::string::npos || dbl != token.size() - 2)) return false;
+    size_t colons = 0;
+    size_t group = 0;
+    size_t groups = 0;  // groups with digits: "::", "DE::" and "::8080" are separators or prefixes, not addresses
+    for (char c : token) {
+        if (c == ':') { colons++; group = 0; continue; }
+        if (++group > 4) return false;
+        if (group == 1) groups++;
+    }
+    if (colons < 2 || colons > 7 || groups < 2) return false;
+    return dbl != std::string::npos || colons == 7;
+}
+
+// End of the run of hex digits and colons starting at text[i].
+inline size_t hexColonRunEnd(const std::string& text, size_t i) {
+    size_t end = i;
+    while (end < text.size() && (isHexDigit(text[end]) || text[end] == ':')) end++;
+    return end;
+}
+
+// End of the bare IPv6 address starting at text[i] (less a trailing "addr:" colon), or i when there is none.
+inline size_t ipv6RunEnd(const std::string& text, size_t i) {
+    const size_t end = hexColonRunEnd(text, i);
+    const size_t stop = (end - i >= 2 && text[end - 1] == ':' && text[end - 2] != ':') ? end - 1 : end;
+    return isIpv6(text.substr(i, stop - i)) ? stop : i;
+}
+
+// Bare IPv6 addresses outside URLs become [host]. Linear: each maximal run of
+// hex digits and colons is looked at once.
+inline std::string cutBareIpv6(const std::string& text) {
+    if (text.find(':') == std::string::npos) return text;
+    std::string out;
+    size_t pos = 0;
+    size_t i = 0;
+    while (i < text.size()) {
+        if (!isHexDigit(text[i]) && text[i] != ':') { i++; continue; }
+        size_t end = i;
+        while (end < text.size() && (isHexDigit(text[end]) || text[end] == ':')) end++;
+        const bool bounded = (i == 0 || !isWordChar(text[i - 1])) && (end == text.size() || !isWordChar(text[end]));
+        // "addr: message": the colon after an address is not part of it.
+        const size_t stop = (end - i >= 2 && text[end - 1] == ':' && text[end - 2] != ':') ? end - 1 : end;
+        if (bounded && isIpv6(text.substr(i, stop - i))) {
+            out.append(text, pos, i - pos);
+            out += "[host]";
+            pos = stop;
+        }
+        i = end;
+    }
+    out.append(text, pos, std::string::npos);
+    return out;
+}
+
 inline std::string cutBareHosts(const std::string& text, const std::unordered_set<std::string>& lineHosts) {
+    size_t notV6Until = 0;
     std::string out;
     size_t pos = 0;
     size_t i = 0;
@@ -191,14 +255,12 @@ inline std::string cutBareHosts(const std::string& text, const std::unordered_se
         if (!isHostChar(text[i])) { i++; continue; }
         size_t end = i;
         while (end < text.size() && isHostChar(text[end])) end++;
-        // A hex group followed by ':' is part of an IPv6 address: cutBareIpv6 labels it whole.
-        if (end < text.size() && text[end] == ':') {
-            bool hex = true;
-            for (size_t k = i; k < end && hex; k++) {
-                const char c = text[k];
-                hex = isAsciiDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-            }
-            if (hex) { i = end; continue; }
+        // The start of a bare IPv6 address: cutBareIpv6 labels it whole. Only a real one: a
+        // hostname of hex letters ("cafe: ...") is still a host here. Checked once per run: linear.
+        if (end < text.size() && text[end] == ':' && i >= notV6Until) {
+            const size_t v6End = ipv6RunEnd(text, i);
+            if (v6End > end) { i = v6End; continue; }
+            notV6Until = hexColonRunEnd(text, i);
         }
         size_t a = i;
         size_t b = end;
@@ -350,55 +412,6 @@ inline std::string cutXtreamPaths(const std::string& text) {
             }
         }
         if (!cut) i++;
-    }
-    out.append(text, pos, std::string::npos);
-    return out;
-}
-
-inline bool isHexDigit(char c) {
-    return isAsciiDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-}
-
-// A bare IPv6 address (not loopback): groups of up to 4 hex digits, one "::" or
-// all 8 groups. Same rule as isIpv6 in log-redact.ts. Only hex digits and colons are passed in.
-inline bool isIpv6(const std::string& token) {
-    if (token == "::1") return false;
-    const size_t dbl = token.find("::");
-    if (dbl != std::string::npos && (token.find("::", dbl + 1) != std::string::npos || token.find(":::") != std::string::npos)) return false;
-    if (!token.empty() && token.front() == ':' && dbl != 0) return false;
-    if (!token.empty() && token.back() == ':' && (dbl == std::string::npos || dbl != token.size() - 2)) return false;
-    size_t colons = 0;
-    size_t group = 0;
-    size_t groups = 0;  // groups with digits: "::", "DE::" and "::8080" are separators or prefixes, not addresses
-    for (char c : token) {
-        if (c == ':') { colons++; group = 0; continue; }
-        if (++group > 4) return false;
-        if (group == 1) groups++;
-    }
-    if (colons < 2 || colons > 7 || groups < 2) return false;
-    return dbl != std::string::npos || colons == 7;
-}
-
-// Bare IPv6 addresses outside URLs become [host]. Linear: each maximal run of
-// hex digits and colons is looked at once.
-inline std::string cutBareIpv6(const std::string& text) {
-    if (text.find(':') == std::string::npos) return text;
-    std::string out;
-    size_t pos = 0;
-    size_t i = 0;
-    while (i < text.size()) {
-        if (!isHexDigit(text[i]) && text[i] != ':') { i++; continue; }
-        size_t end = i;
-        while (end < text.size() && (isHexDigit(text[end]) || text[end] == ':')) end++;
-        const bool bounded = (i == 0 || !isWordChar(text[i - 1])) && (end == text.size() || !isWordChar(text[end]));
-        // "addr: message": the colon after an address is not part of it.
-        const size_t stop = (end - i >= 2 && text[end - 1] == ':' && text[end - 2] != ':') ? end - 1 : end;
-        if (bounded && isIpv6(text.substr(i, stop - i))) {
-            out.append(text, pos, i - pos);
-            out += "[host]";
-            pos = stop;
-        }
-        i = end;
     }
     out.append(text, pos, std::string::npos);
     return out;
