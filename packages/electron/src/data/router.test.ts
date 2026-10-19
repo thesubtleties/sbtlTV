@@ -86,3 +86,12 @@ test('a limit above the cap is clamped rather than refused', () => {
   routeRendererMessage(db, { id: 24, type: 'movies', by: { kind: 'popular' }, sourceIds: [], limit: 1_000_000 }, (r) => replies.push(r), () => {});
   assert.equal(replies[0].ok, true);
 });
+
+test('playlistRows needs a source id and is answered from the database', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const replies: DataReply[] = [];
+  routeRendererMessage(db, { id: 30, type: 'playlistRows', sourceId: 's1' }, (r) => replies.push(r), () => {});
+  routeRendererMessage(db, { id: 31, type: 'playlistRows', sourceId: 5 }, (r) => replies.push(r), () => {});
+  assert.deepEqual(replies.map((r) => [r.id, r.ok]), [[30, true], [31, false]]);
+  assert.equal(((replies[0] as { data: unknown[] }).data).length, 3);
+});
