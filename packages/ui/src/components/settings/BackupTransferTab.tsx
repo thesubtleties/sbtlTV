@@ -31,11 +31,14 @@ type ImportState =
   | { step: 'applying' }
   | { step: 'failed'; error: string; backupName: string | null };
 
-export function BackupTransferTab() {
+/** The last export, kept by Settings while it is open (switching tabs keeps it; closing Settings clears it). */
+export interface LastExport { passphrase: string; filePath: string }
+
+export function BackupTransferTab({ lastExport, onExported }: { lastExport: LastExport | null; onExported: (e: LastExport) => void }) {
   const sources = useUIStore((s) => s.sources);
   const [parts, setParts] = useState(() => new Set(EXPORT_PARTS.filter((p) => p.defaultOn).map((p) => p.id)));
   const [exporting, setExporting] = useState(false);
-  const [exported, setExported] = useState<{ passphrase: string; filePath: string } | null>(null);
+  const exported = lastExport;
   const [exportError, setExportError] = useState<string | null>(null);
   const [imp, setImp] = useState<ImportState>({ step: 'idle' });
   const [passphrase, setPassphrase] = useState('');
@@ -62,7 +65,7 @@ export function BackupTransferTab() {
       const playlists = parts.has('sources') ? await rebuildFilePlaylists(sources) : {};
       const r = await window.setup.exportSetup({ parts: chosen, lists, playlists });
       if ('error' in r) setExportError(r.error);
-      else if (r.success) { setExported(r.data); setCopied(false); }
+      else if (r.success) { onExported(r.data); setCopied(false); }
     } catch (error) {
       setExportError(`The export didn't finish: ${error instanceof Error ? error.message : String(error)}`);
     } finally {

@@ -12,7 +12,7 @@ import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
 import { PrivacyTab } from './settings/PrivacyTab';
-import { BackupTransferTab } from './settings/BackupTransferTab';
+import { BackupTransferTab, type LastExport } from './settings/BackupTransferTab';
 import { VideoPlayerTab } from './settings/VideoPlayerTab';
 import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
@@ -28,6 +28,8 @@ interface SettingsProps {
 }
 
 export function Settings({ onClose, initialTab }: SettingsProps) {
+  // The last setup export's passphrase: kept while Settings is open, gone when it closes.
+  const [lastExport, setLastExport] = useState<LastExport | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'sources');
   const [sources, setSources] = useState<Source[]>([]);
   const [isEncryptionAvailable, setIsEncryptionAvailable] = useState(true);
@@ -275,7 +277,7 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
           />
         );
       case 'backup':
-        return <BackupTransferTab />;
+        return <BackupTransferTab lastExport={lastExport} onExported={setLastExport} />;
       case 'privacy':
         return (
           <PrivacyTab
