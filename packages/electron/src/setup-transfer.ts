@@ -75,7 +75,8 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
       deps.log(`Setup exported (${req.parts.join(', ')})`);
       return { success: true, data: { passphrase, filePath: choice.filePath } };
     } catch (error) {
-      deps.log(`Setup export failed: ${error instanceof storage.SecretsUnreadable ? 'secrets unreadable' : message(error)}`);
+      // The reason only: Node's file errors carry paths (the user's home folder).
+      deps.log(`Setup export failed: ${error instanceof storage.SecretsUnreadable ? 'secrets unreadable' : error instanceof ExportProblem ? 'setup has a value a file cannot carry' : (error as NodeJS.ErrnoException)?.code ?? (error instanceof Error ? error.name : 'unknown')}`);
       return { error: message(error) };
     }
   });
@@ -84,7 +85,7 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
     try {
       const win = deps.window();
       if (!win) return { success: false, canceled: true };
-      const choice = await dialog.showOpenDialog(win, { title: 'Import setup', filters: [{ name: 'sbtlTV setup', extensions: ['sbtltv'] }], properties: ['openFile'] });
+      const choice = await dialog.showOpenDialog(win, { title: 'Import setup', filters: [{ name: 'sbtlTV setup', extensions: ['sbtltv'] }, { name: 'All files', extensions: ['*'] }], properties: ['openFile'] });
       if (choice.canceled || !choice.filePaths[0]) return { success: false, canceled: true };
       if (fs.statSync(choice.filePaths[0]).size > MAX_FILE) throw new SetupFileError('invalid');
       const file = fs.readFileSync(choice.filePaths[0]);
@@ -92,10 +93,9 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
       const token = randomUUID();
       picked.clear();
       picked.set(token, { file });
-      if (header.kdf.name === 'keyring') {
-        picked.get(token)!.body = validateSetupBody(openWithKeyring(file, storage.keyringProtector));
-        return { success: true, data: { token, needsPassphrase: false } };
-      }
+      // A backup opens only from Restore previous setup (its own folder): a keyring-sealed
+      // file from elsewhere could open with no passphrase where the keyring is weak.
+      if (header.kdf.name === 'keyring') return { error: 'This is a backup, not a setup file. Restore it from Restore previous setup below.' };
       return { success: true, data: { token, needsPassphrase: true } };
     } catch (error) {
       return { error: message(error) };

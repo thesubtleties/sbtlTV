@@ -17,6 +17,12 @@ const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: bo
   { id: 'progress', title: 'Watch progress', defaultOn: false },
 ];
 const LIST_PARTS: ListPart[] = ['favorites', 'watchlist', 'progress'];
+const PLATFORMS: Record<string, string> = { linux: 'Linux', darwin: 'macOS', win32: 'Windows' };
+const platformName = (p: string) => PLATFORMS[p] ?? p;
+function exportedOn(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : `, ${d.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+}
 
 type ImportState =
   | { step: 'idle' }
@@ -33,6 +39,8 @@ export function BackupTransferTab() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [imp, setImp] = useState<ImportState>({ step: 'idle' });
   const [passphrase, setPassphrase] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
   const [backupFirst, setBackupFirst] = useState(true);
   const [backups, setBackups] = useState<{ name: string; label: string }[]>([]);
 
@@ -41,20 +49,20 @@ export function BackupTransferTab() {
   const toggle = (id: SetupPart, on: boolean) => setParts((prev) => {
     const next = new Set(prev);
     if (on) next.add(id); else next.delete(id);
-    if (id === 'sources' && !on) next.delete('logins');
+    if (id === 'sources') { if (on) next.add('logins'); else next.delete('logins'); }
     return next;
   });
 
   async function exportSetup() {
     if (!window.setup) return;
-    setExporting(true); setExportError(null); setExported(null);
+    setExporting(true); setExportError(null);
     try {
       const chosen = [...parts];
       const lists = await readLists(LIST_PARTS.filter((p) => parts.has(p)), parts.has('settings'));
       const playlists = parts.has('sources') ? await rebuildFilePlaylists(sources) : {};
       const r = await window.setup.exportSetup({ parts: chosen, lists, playlists });
       if ('error' in r) setExportError(r.error);
-      else if (r.success) setExported(r.data);
+      else if (r.success) { setExported(r.data); setCopied(false); }
     } catch (error) {
       setExportError(`The export didn't finish: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -74,7 +82,8 @@ export function BackupTransferTab() {
   }
 
   async function unlock(token: string) {
-    const u = await window.setup!.unlock(token, passphrase);
+    setUnlocking(true);
+    const u = await window.setup!.unlock(token, passphrase).finally(() => setUnlocking(false));
     if ('error' in u) setImp({ step: 'passphrase', token, error: u.error });
     else if (u.success) setImp({ step: 'preview', token, preview: u.data });
   }
@@ -121,7 +130,7 @@ export function BackupTransferTab() {
         {exported && (
           <div className="setup-passphrase">
             <div className="setup-passphrase__words">{exported.passphrase}</div>
-            <Button onClick={() => void navigator.clipboard.writeText(exported.passphrase)}>Copy</Button>{' '}
+            <Button onClick={() => void navigator.clipboard.writeText(exported.passphrase).then(() => setCopied(true), () => setExportError('Could not copy; select the words and copy them instead.'))}>{copied ? 'Copied' : 'Copy'}</Button>{' '}
             <Button onClick={() => void window.setup?.showFile()}>Show file</Button>
             <Hint>This passphrase isn't saved anywhere. You'll need it to open the file. Lost it? Just export again.</Hint>
           </div>
@@ -134,16 +143,16 @@ export function BackupTransferTab() {
         {imp.step === 'passphrase' && (
           <form onSubmit={(e) => { e.preventDefault(); void unlock(imp.token); }}>
             <OptionRow title="Passphrase" help="The five words shown when the file was exported.">
-              <TextField autoFocus value={passphrase} onChange={(e) => setPassphrase(e.target.value)} placeholder="word-word-word-word-word" />
+              <TextField autoFocus aria-label="Passphrase" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} placeholder="word-word-word-word-word" />
             </OptionRow>
             {imp.error && <Hint tone="danger">{imp.error}</Hint>}
-            <Button type="submit" variant="primary">Open</Button>
+            <Button type="submit" variant="primary" disabled={unlocking}>{unlocking ? 'Opening…' : 'Open'}</Button>
           </form>
         )}
         {imp.step === 'preview' && (
           <div className="setup-preview">
             <Hint>
-              From sbtlTV {imp.preview.app} on {imp.preview.platform}, {new Date(imp.preview.exportedAt).toLocaleString()}: {setupSummary(imp.preview)}.
+              From sbtlTV {imp.preview.app} on {platformName(imp.preview.platform)}{exportedOn(imp.preview.exportedAt)}: {setupSummary(imp.preview)}.
             </Hint>
             <Hint tone="warn">Importing replaces your current setup: sources, settings, API keys, favorites, watchlist and watch progress. Anything not in this file is cleared.</Hint>
             <OptionRow title="Back up my current setup first"><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
