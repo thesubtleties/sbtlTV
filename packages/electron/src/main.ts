@@ -288,12 +288,15 @@ function initDebugLogging(enabled: boolean): void {
 }
 
 function debugLog(message: string, category = 'app'): void {
+  // Users attach this log to reports: no provider credentials (they ride in stream URLs), no provider addresses unless included.
+  writeDebugLine(redactForLog(message), category);
+}
+
+/** A line that was already redacted with redactForLog (e.g. before JSON quoting): written as it is. */
+function writeDebugLine(redacted: string, category: string): void {
   if (!debugLoggingEnabled || !debugLogStream) return;
   try {
-    const timestamp = new Date().toISOString();
-    // Users attach this log to reports: no provider credentials (they ride in stream URLs).
-    const line = `[${timestamp}] [${category}] ${redactForLog(message)}\n`;
-    debugLogStream.write(line);
+    debugLogStream.write(`[${new Date().toISOString()}] [${category}] ${redacted}\n`);
   } catch {
     // Silently fail - logging should never crash the app
   }
@@ -1246,7 +1249,7 @@ function sendToRenderer(channel: string, data: unknown): void {
 function reportMpvError(message: string): void {
   const text = redactForDisplay(message.trim());
   // Redacted before quoting (a URL ends at whitespace, not at a quote), with the log's own rules.
-  debugLog(`banner: ${JSON.stringify(redactForLog(message.trim()))}`, 'mpv');
+  writeDebugLine(`banner: ${JSON.stringify(redactForLog(message.trim()))}`, 'mpv');
   sendToRenderer('mpv-error', text);
 }
 
@@ -1265,7 +1268,7 @@ function reportPlaybackFailure(message: string): void {
 function reportMpvLogError(message: string): void {
   if (stream.holdsMpvErrors(mpvState.playing)) {
     stream.lastHeldError = redactForDisplay(message.trim());  // before quoting: the URL ends at whitespace, not at the quote
-    debugLog(`banner held during reconnect: ${JSON.stringify(redactForLog(message.trim()))}`, 'mpv');
+    writeDebugLine(`banner held during reconnect: ${JSON.stringify(redactForLog(message.trim()))}`, 'mpv');
     return;
   }
   reportMpvError(message);
