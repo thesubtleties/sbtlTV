@@ -53,4 +53,22 @@ describe('R8 setup lists', () => {
     await setLastCategory('s1_news');
     expect((await readLists(['favorites'], false)).lastCategory).toBeUndefined();
   });
+
+  it('rows from a file keep only known fields of the right type (a bad sub_delay must not reach the player)', async () => {
+    await replaceLists({
+      progress: [
+        { id: 'movie_s1_m1', type: 'movie', stream_id: 's1_m1', position: 60, duration: 600, progress: 0.1, completed: false, updated_at: '2026-10-02T10:00:00Z', sub_delay: 'x', sub_delay_stream_id: 's1_m1', evil: '<b>' },
+        { id: 'movie_s1_m2', type: 'movie', stream_id: 's1_m2', position: 'x', duration: 600, progress: 0.1, completed: false, updated_at: '2026-10-02T10:00:00Z' },
+        { id: 'movie_s1_m3', type: 'rocket', position: 1, duration: 2, progress: 0.5, completed: false, updated_at: '2026-10-02T10:00:00Z' },
+      ],
+      watchlist: [{ id: 'movie_1', type: 'movie', tmdb_id: '1', name: 'Heat', added: '2026-10-01T00:00:00Z' }],
+    });
+    const rows = await db.watchProgress.toArray();
+    expect(rows.map((r) => r.id)).toEqual(['movie_s1_m1']);
+    expect(rows[0].sub_delay).toBeUndefined();
+    expect('evil' in rows[0]).toBe(false);
+    const wl = await db.watchlist.toArray();
+    expect(wl).toHaveLength(1);
+    expect(wl[0].tmdb_id).toBeUndefined();
+  });
 });
