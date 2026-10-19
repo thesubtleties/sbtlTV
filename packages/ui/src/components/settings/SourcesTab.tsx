@@ -5,6 +5,7 @@ import { data } from '../../data/client';
 import { useSyncStatus } from '../../hooks/useChannels';
 import { useChannelSyncing, useVodSyncing, useUIStore, useUpdateSettings } from '../../stores/uiStore';
 import { parseM3U } from '@sbtltv/local-adapter';
+import { needsLogin } from '@sbtltv/core';
 import { useToast } from '../../hooks/useToast';
 import { Button, Hint, Section, Segmented, SettingsTab } from './ui';
 
@@ -308,9 +309,11 @@ export function SourcesTab({ sources, isEncryptionAvailable, onSourcesChange }: 
                       <Button className="st-btn--small" variant="danger" onClick={() => handleDelete(source.id, source.name)}>Delete</Button>
                     </div>
                   </div>
-                  {(parts.length > 0 || meta?.error || meta?.last_synced) && (
+                  {(parts.length > 0 || meta?.error || meta?.last_synced || needsLogin(source)) && (
                     <div className="source-detail">
-                      {meta?.error ? (
+                      {needsLogin(source) ? (
+                        <span className="source-error">Login needed: edit this source and enter its password.</span>
+                      ) : meta?.error ? (
                         <span className="source-error">{meta.error}</span>
                       ) : (
                         <>
