@@ -25,15 +25,27 @@ import { StreamSession, parseCompatibilityHandoff, type StreamLoadRequest, type 
 import { CaptionSession } from './caption-session.js';
 import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
 import { preferredCaptionLanguage } from './subtitle-settings.js';
-import { resolvePasswordStore } from './password-store.js';
+import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
 const { autoUpdater } = electronUpdater;
 
-// Before the keyring is opened: the AppImage updater relaunches without arguments,
-// which would drop a --password-store the user launches with (see password-store.ts).
+// Before the keyring is opened (Chromium picks it when the app is ready): keep
+// using the keyring the passwords were saved with (see password-store.ts).
+// Where this launch's keyring came from, for the debug log and Settings > Privacy.
+let keyringFrom: 'launch' | 'kept' | 'found' | 'guess' = 'guess';
+const launchPasswordStore = app.commandLine.getSwitchValue('password-store');
 if (process.platform === 'linux') {
-  const { apply, remember } = resolvePasswordStore(process.argv, storage.getRememberedPasswordStore());
-  if (remember) storage.rememberPasswordStore(remember);
-  if (apply) app.commandLine.appendSwitch('password-store', apply);
+  try {
+    const { apply, remember } = resolvePasswordStore(launchPasswordStore, storage.getKeptPasswordStore());
+    if (launchPasswordStore) keyringFrom = 'launch';
+    if (remember) storage.keepPasswordStore(remember);
+    if (apply) {
+      app.commandLine.appendSwitch('password-store', apply);
+      keyringFrom = 'kept';
+    }
+  } catch (error) {
+    // An unreadable or unwritable config must not stop the app; Chromium then picks as before.
+    console.error('[startup] Could not read or keep the keyring choice:', error instanceof Error ? error.message : error);
+  }
 }
 
 // Provider addresses in logs become labels (see host-labels.ts). The debug log
@@ -2097,7 +2109,27 @@ ipcMain.handle('privacy-storage-protection', () => {
   const available = safeStorage.isEncryptionAvailable();
   // Linux only: which keyring, or 'basic_text' (Chromium's fixed key, no real keyring).
   const backend = process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : null;
-  return { platform: process.platform, available, backend };
+  return {
+    platform: process.platform,
+    available,
+    backend,
+    // Linux: the keyring a --password-store at launch forces (it wins over the setting)
+    launchKeyring: process.platform === 'linux' && launchPasswordStore ? launchPasswordStore : null,
+  };
+});
+
+// Settings > Privacy (Linux): switch keyrings. One keyring cannot read what another
+// saved, so the saved passwords and API keys are dropped, the new keyring is kept,
+// and the app restarts with it.
+ipcMain.handle('privacy-switch-keyring', (_event, keyring: unknown) => {
+  if (process.platform !== 'linux' || !isKeyring(keyring)) return { error: 'Not a keyring' };
+  if (launchPasswordStore) return { error: 'The keyring is set by --password-store when sbtlTV starts' };
+  debugLog(`Switching keyring to ${keyring}; saved passwords and API keys are dropped`, 'app');
+  storage.forgetSecrets();
+  storage.keepPasswordStore(keyring);
+  relaunchApp(process.argv.slice(1));
+  app.quit();
+  return { success: true };
 });
 
 // A failure is logged by its reason only, never with an address.
@@ -2451,6 +2483,20 @@ app.whenReady().then(async () => {
   const settings = storage.getSettings();
   retireLogsFromBeforeLabels();
   initDebugLogging(settings.debugLoggingEnabled ?? false);
+  if (process.platform === 'linux') {
+    safeStorage.isEncryptionAvailable();  // makes Chromium pick its keyring now, so it can be named
+    const backend = safeStorage.getSelectedStorageBackend();
+    try {
+      const keep = keyringToKeep(storage.getKeptPasswordStore(), backend);
+      if (keep) {
+        storage.keepPasswordStore(keep);
+        keyringFrom = 'found';
+      }
+    } catch (error) {
+      debugLog(`Could not keep the keyring: ${error instanceof Error ? error.message : error}`, 'app');
+    }
+    debugLog(`Keyring: ${backend} (${keyringFrom === 'launch' ? 'launch flag' : keyringFrom === 'kept' ? 'kept' : keyringFrom === 'found' ? 'found, now kept' : "Chromium's guess"})`, 'app');
+  }
   if (process.platform === 'linux') {
     const reason = compatibilityModeFromFlag ? 'launch flag' : compatibilityModeFromSetting ? 'setting' : 'default';
     debugLog(`Linux player mode: ${compatibilityModeRequested ? 'compatibility' : 'native'} (${reason})`, 'mpv');
