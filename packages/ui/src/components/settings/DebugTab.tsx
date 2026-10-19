@@ -72,13 +72,10 @@ export function DebugTab({
           title="Provider addresses in the debug log"
           help={
             <>
-              Only turn this on when you're sending the log to someone you trust, privately. Never post a log made with this on publicly.
-              <span className="opt-row__note opt-row__note--strong">
-                Your usernames and passwords are never written to the log, with this on or off. This only adds your provider's address.
-              </span>
+              Adds your provider's address to the log. Only for a log you send privately. Logins are never logged either way.
               {legend.length > 0 && (
                 <span className="opt-row__note">
-                  In the log your sources appear as {legend.map(({ n, name }) => `source ${n} (${name})`).join(', ')}; their names are not written to it.
+                  In the log: {legend.map(({ n, name }) => `source ${n} = ${name}`).join(', ')}.
                 </span>
               )}
             </>
