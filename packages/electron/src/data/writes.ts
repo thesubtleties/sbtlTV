@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { Category, Channel, Movie, Series, Episode, DataTable, VodDetailFields } from '@sbtltv/core';
+import { redactUrls, type HostLabeller } from '../log-redact.js';
 
 export interface EpgProgramInput { epg_channel_id: string; startMs: number; endMs: number; title: string; description: string }
 export interface EpgLinkInput { stream_id: string; epg_channel_id: string; confidence: string; strategy: string }
@@ -174,8 +175,13 @@ export function updateVodDetails(db: DatabaseSync, kind: 'movie' | 'series', ite
   return [table];
 }
 
+// A sync error is shown in Settings > Sources and goes into bug reports: where it
+// failed (the host) stays, logins never do.
+const KEEP_HOSTS: HostLabeller = { forUrl: (host) => host, forBare: () => null };
+
 export function setSourceError(db: DatabaseSync, sourceId: string, error: string | null): DataTable[] {
-  db.prepare(`insert into sources_meta(source_id, error) values (?, ?) on conflict(source_id) do update set error = excluded.error`).run(sourceId, error);
+  const clean = error === null ? null : redactUrls(error, KEEP_HOSTS);
+  db.prepare(`insert into sources_meta(source_id, error) values (?, ?) on conflict(source_id) do update set error = excluded.error`).run(sourceId, clean);
   return ['sources_meta'];
 }
 

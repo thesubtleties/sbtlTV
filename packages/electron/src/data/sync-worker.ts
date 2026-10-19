@@ -84,7 +84,7 @@ async function run(job: SyncJob): Promise<void> {
       return;
     }
     case 'rematch': {
-      c.log('epg', `Starting EPG rematch for source: ${source.name || source.id}`);
+      c.log('epg', `Starting EPG rematch for source ${source.id}`);
       const rows = db!.prepare(`select stream_id, source_id, name, stream_icon, epg_channel_id, direct_url from channels where source_id = ?`).all(source.id) as { stream_id: string; source_id: string; name: string; stream_icon: string; epg_channel_id: string; direct_url: string }[];
       if (rows.length === 0) { c.log('epg', 'No channels found for source, nothing to rematch'); return; }
       const channels: Channel[] = rows.map((r) => ({ ...r, category_ids: [] }));
