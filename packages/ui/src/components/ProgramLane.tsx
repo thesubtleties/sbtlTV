@@ -113,8 +113,7 @@ export const ProgramLane = memo(function ProgramLane({
       return;
     }
 
-    // morph: plan once, against the window as it is right now.
-    const now = new Date();
+    // morph: plan once, against the window (and the guide's now) as they are right now.
     const visible: VisibleProgram[] = (programs ?? [])
       .map((program) => ({ program, style: getProgramStyle(program, windowStart, windowEnd, pixelsPerHour) }))
       .filter((entry) => entry.style.visible)

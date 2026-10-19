@@ -5,7 +5,7 @@ export interface TimeGridState {
   now: Date;
   // The left edge of the visible time window
   anchor: Date;
-  // True when showing current time at left edge
+  // True when following the current time at the left edge
   isAtNow: boolean;
   // Number of hours visible (2-5)
   visibleHours: number;
@@ -30,9 +30,9 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-// Get current time (for "now at left edge")
+// The current minute (the guide's "now", and the left edge at "now")
 function getNow(): Date {
-  return new Date();
+  return new Date(minuteOf(Date.now()));
 }
 
 /** Time until just past the next minute (local minutes fall on whole UTC minutes). */
@@ -40,11 +40,55 @@ export function msUntilNextMinute(nowMs: number): number {
   return 60_000 - (nowMs % 60_000) + 50;
 }
 
+/** The start of the minute containing `ms`: the guide's "now". */
+export function minuteOf(ms: number): number {
+  return Math.floor(ms / 60_000) * 60_000;
+}
+
+/**
+ * Calls onTick just after each minute, and again when the window comes back into
+ * view (timers stall while the machine sleeps and are slowed while hidden).
+ * Returns a stop function.
+ */
+export function startMinuteTicker(onTick: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout>;
+  const schedule = () => {
+    timer = setTimeout(() => {
+      onTick();
+      schedule();
+    }, msUntilNextMinute(Date.now()));
+  };
+  const resync = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    clearTimeout(timer);
+    onTick();
+    schedule();
+  };
+  schedule();
+  if (typeof window !== 'undefined') {
+    document.addEventListener('visibilitychange', resync);
+    window.addEventListener('focus', resync);
+  }
+  return () => {
+    clearTimeout(timer);
+    if (typeof window !== 'undefined') {
+      document.removeEventListener('visibilitychange', resync);
+      window.removeEventListener('focus', resync);
+    }
+  };
+}
+
 // Floor to the current hour
 function floorToHour(date: Date): Date {
   const result = new Date(date);
   result.setMinutes(0, 0, 0);
   return result;
+}
+
+// One hour back: from between hours, snap to the hour; from an hour, the one before
+export function stepBack(anchor: Date): Date {
+  const hour = floorToHour(anchor);
+  return hour.getTime() === anchor.getTime() ? addHours(hour, -1) : hour;
 }
 
 // Add hours to a date
@@ -75,25 +119,21 @@ export function useTimeGrid({
   preloadBefore = 2,
   preloadAfter = 4,
 }: UseTimeGridOptions): TimeGridState & TimeGridActions {
-  // Current anchor point (left edge of visible window)
-  // When isAtNow=true, anchor is current time (now at left edge)
-  const [anchor, setAnchor] = useState<Date>(() => getNow());
-  const [isAtNow, setIsAtNow] = useState(true);
   const [now, setNow] = useState<Date>(() => getNow());
+  // The left edge the user browsed to, or null while following "now". Deriving the
+  // edge from `now` (rather than copying it in an effect) keeps the clock, the edge
+  // and what is on now in one render.
+  const [browseAnchor, setBrowseAnchor] = useState<Date | null>(null);
+  const isAtNow = browseAnchor === null;
+  const anchor = browseAnchor ?? now;
 
   // One tick per minute, on the minute: the clock, the left edge at "now" and
   // what is on now all change together, when the shows do.
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    const schedule = () => {
-      timer = setTimeout(() => {
-        setNow(getNow());
-        schedule();
-      }, msUntilNextMinute(Date.now()));
-    };
-    schedule();
-    return () => clearTimeout(timer);
+  const refreshNow = useCallback(() => {
+    const minute = minuteOf(Date.now());
+    setNow((current) => (current.getTime() === minute ? current : new Date(minute)));
   }, []);
+  useEffect(() => startMinuteTicker(refreshNow), [refreshNow]);
 
   // Calculate visible hours and pixels per hour based on available width
   const { visibleHours, pixelsPerHour } = useMemo(() => {
@@ -116,42 +156,21 @@ export function useTimeGrid({
   const loadStart = useMemo(() => addHours(anchor, -preloadBefore), [anchor, preloadBefore]);
   const loadEnd = useMemo(() => addHours(anchor, visibleHours + preloadAfter), [anchor, visibleHours, preloadAfter]);
 
-  // At "now", the left edge follows the clock, so the guide stays current while it is open.
-  useEffect(() => {
-    if (isAtNow) setAnchor(now);
-  }, [isAtNow, now]);
-
-  // Navigation: go back one hour (snap to even hour)
+  // Navigation: go back one hour (the first step back from "now" snaps to its hour)
   const goBack = useCallback(() => {
-    setIsAtNow(false);
-    setAnchor((current) => {
-      // If at "now", first back goes to current hour
-      // Otherwise, go back one hour
-      const currentHour = floorToHour(current);
-      if (current.getTime() === currentHour.getTime()) {
-        // Already at an hour boundary, go back one hour
-        return addHours(currentHour, -1);
-      }
-      // First back snaps to current hour
-      return currentHour;
-    });
-  }, []);
+    setBrowseAnchor((current) => stepBack(current ?? now));
+  }, [now]);
 
   // Navigation: go forward one hour (snap to even hour)
   const goForward = useCallback(() => {
-    setIsAtNow(false);
-    setAnchor((current) => {
-      const currentHour = floorToHour(current);
-      // Go to next hour
-      return addHours(currentHour, 1);
-    });
-  }, []);
+    setBrowseAnchor((current) => addHours(floorToHour(current ?? now), 1));
+  }, [now]);
 
   // Navigation: return to current time
   const goToNow = useCallback(() => {
-    setIsAtNow(true);
-    setNow(getNow());
-  }, []);
+    setBrowseAnchor(null);
+    refreshNow();
+  }, [refreshNow]);
 
   return {
     now,
