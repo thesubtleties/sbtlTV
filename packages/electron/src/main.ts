@@ -89,6 +89,8 @@ const compatibilityModeRequested = compatibilityModeFromFlag || compatibilityMod
 let MpvTextureBridgeClass: (new () => MpvTextureBridgeType) | null = null;
 // Why the native path is unavailable this launch, shown in the Linux fallback dialog.
 let nativeInitError: string | null = null;
+// For the bug report (bug-report.ts): facts read once where they are known, never on a click.
+let reportFacts: { gpuSelection?: string; nativeMpv?: string; nativeFfmpeg?: string; externalMpv?: string; externalMpvSource?: string } = {};
 // True once the launch has decided between the native bridge and external mpv.
 // The renderer mounts before that decision, so 'mpv-get-mode' reports it.
 let playerModeSettled = false;
@@ -441,6 +443,7 @@ async function getChromiumGpuIdentity(): Promise<{ vendorId?: number; deviceId?:
   // Selection errors must reach initNativeMpv's compatibility fallback.
   const gpu = selectChromiumGpuIdentity(devices, webGlRenderer);
   debugLog(`GPU selection source=${gpu.source}`, 'mpv');
+  reportFacts.gpuSelection = gpu.source;
   return gpu;
 }
 
@@ -716,6 +719,12 @@ async function initMpv(): Promise<void> {
     // Check mpv version for logging
     const mpvVersion = getMpvVersion(mpvBinary);
     const versionStr = mpvVersion ? `${mpvVersion[0]}.${mpvVersion[1]}` : 'unknown';
+    reportFacts.externalMpv = versionStr;
+    // Where it came from, never the path (it can hold the user's name).
+    const bundledRoot = app.isPackaged ? process.resourcesPath : __dirname;
+    reportFacts.externalMpvSource = mpvBinary.startsWith(bundledRoot) ? 'bundled'
+      : /^\/(opt\/homebrew|usr\/local)\//.test(mpvBinary) ? 'homebrew'
+      : mpvBinary.startsWith('/usr/') || mpvBinary.startsWith('C:\\Program Files') ? 'system' : 'other';
     console.log('[mpv] Version:', versionStr);
     debugLog(`Version: ${versionStr}`, 'mpv');
 
@@ -900,6 +909,8 @@ async function initNativeMpv(): Promise<boolean> {
 
     mpvBridge = bridge;
     useNativeMpv = true;
+    reportFacts.nativeMpv = bridge.getProperty('mpv-version') ?? 'unknown';
+    reportFacts.nativeFfmpeg = bridge.getProperty('ffmpeg-version') ?? 'unknown';
     syncPlaybackDiagnostics();
     setMpvOptions([...STREAM_BASE_OPTIONS, ...SUBTITLE_BASE_OPTIONS, ['sub-fonts-dir', subtitleFontsPath()]], 'native init');
     applySubtitleStyle('native init');
@@ -2119,7 +2130,7 @@ async function gatherReportInputs(rawSyncStatus: unknown): Promise<ReportInputs>
   // PCI vendor ids -> names; the device id (hex) names the exact model.
   const VENDORS: Record<number, string> = { 0x1002: 'AMD', 0x10de: 'NVIDIA', 0x8086: 'Intel', 0x106b: 'Apple', 0x5143: 'Qualcomm', 0x13b5: 'ARM', 0x1af4: 'Virtio' };
   try {
-    const info = (await app.getGPUInfo('complete')) as { gpuDevice?: { active?: boolean; vendorId?: number; deviceId?: number; driverVendor?: string; driverVersion?: string }[] };
+    const info = (await app.getGPUInfo('basic')) as { gpuDevice?: { active?: boolean; vendorId?: number; deviceId?: number; driverVendor?: string; driverVersion?: string }[] };
     for (const d of info.gpuDevice ?? []) {
       gpus.push({
         vendor: d.vendorId !== undefined ? (VENDORS[d.vendorId] ?? `0x${d.vendorId.toString(16)}`) : undefined,
@@ -2129,39 +2140,66 @@ async function gatherReportInputs(rawSyncStatus: unknown): Promise<ReportInputs>
         ...(d.driverVersion && { driverVersion: d.driverVersion }),
       });
     }
-    // The GPU the in-window player renders with (high-performance WebGL), by name.
-    const webGl = (await getHighPerformanceWebGlRenderer()) as { renderer?: string; vendor?: string } | null;
-    if (webGl?.renderer) gpus.push({ renderer: webGl.renderer, vendor: webGl.vendor, usedFor: 'video (high-performance WebGL)' });
   } catch (error) {
     debugLog(`Bug report: GPU info unavailable (${error instanceof Error ? error.name : 'error'})`, 'app');
   }
-  const bridge = useNativeMpv ? mpvBridge : null;
-  const prop = (name: string, empty = 'unknown') => (bridge ? (bridge.getProperty(name) ?? empty) : 'external mpv');
+  // The GPU the in-window player renders with (high-performance WebGL), by name.
+  const webGl = (await getHighPerformanceWebGlRenderer().catch(() => null)) as { renderer?: unknown; vendor?: unknown } | null;
+  if (typeof webGl?.renderer === 'string') {
+    gpus.push({ renderer: webGl.renderer.slice(0, 200), vendor: typeof webGl.vendor === 'string' ? webGl.vendor.slice(0, 200) : undefined, usedFor: 'video (high-performance WebGL)' });
+  }
   let settings: ReportInputs['settings'] = 'unreadable';
   try { settings = storage.getSettings(); } catch { /* reported as unreadable */ }
   let sources: ReportInputs['sources'] = 'unreadable';
   try {
     sources = storage.getSources().map((s) => ({ id: s.id, type: s.type, enabled: s.enabled, epg_url: s.epg_url, auto_load_epg: s.auto_load_epg, hasLogin: !!s.password }));
   } catch { /* reported as unreadable */ }
+  const bridge = useNativeMpv ? mpvBridge : null;
+  const linux = process.platform === 'linux';
+  let distro: string | undefined;
+  if (linux) {
+    try {
+      const release = fs.readFileSync('/etc/os-release', 'utf8');
+      const field = (name: string) => new RegExp(`^${name}="?([^"\n]*)"?$`, 'm').exec(release)?.[1];
+      distro = [field('ID'), field('VERSION_ID')].filter(Boolean).join(' ') || undefined;
+    } catch { /* not there */ }
+  }
+  const install = !app.isPackaged ? 'dev'
+    : linux ? (process.env.APPIMAGE ? 'AppImage' : 'package (deb)')
+    : process.platform === 'win32' ? (process.env.PORTABLE_EXECUTABLE_DIR ? 'portable' : 'installer')
+    : 'app';
+  const windowDisplay = mainWindow && !mainWindow.isDestroyed() ? screen.getDisplayMatching(mainWindow.getBounds()) : screen.getPrimaryDisplay();
   return {
     app: { version: app.getVersion(), build: readBuildInfo() },
-    system: { platform: process.platform, arch: process.arch, osVersion: process.getSystemVersion(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
+    system: {
+      platform: process.platform, arch: process.arch, osVersion: process.getSystemVersion(),
+      electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node,
+      install,
+      ...(linux && { distro, session: process.env.XDG_SESSION_TYPE, desktop: process.env.XDG_CURRENT_DESKTOP }),
+    },
     player: {
-      mode: compatibilityModeRequested ? 'compatibility' : 'native',
-      why: compatibilityModeFromFlag ? 'launch flag' : compatibilityModeFromSetting ? 'setting' : process.platform === 'linux' ? 'default' : 'in-window',
+      mode: useNativeMpv ? 'in-window' : 'external mpv',
+      why: compatibilityModeFromFlag ? 'restarted in compatibility mode after a playback failure'
+        : compatibilityModeFromSetting ? 'compatibility mode chosen in Settings'
+        : !USE_NATIVE_MPV ? 'external mpv on this system'
+        : !useNativeMpv && nativeInitError ? 'the in-window player could not start'
+        : useNativeMpv ? 'default' : 'not started yet',
       error: nativeInitError,
       // Linux only: there hwdec-current is an instant cached read (see the stream checks above).
-      hwdec: !bridge ? 'external mpv' : process.platform === 'linux' ? prop('hwdec-current', 'nothing playing') : 'not read',
-      mpv: prop('mpv-version'),
-      ffmpeg: prop('ffmpeg-version'),
+      hwdec: !bridge ? 'external mpv' : linux ? (bridge.getProperty('hwdec-current') ?? 'nothing playing') : 'not read on this system',
+      mpv: useNativeMpv ? (reportFacts.nativeMpv ?? 'unknown') : (reportFacts.externalMpv ? `${reportFacts.externalMpv} (${reportFacts.externalMpvSource})` : 'not started yet'),
+      ffmpeg: useNativeMpv ? (reportFacts.nativeFfmpeg ?? 'unknown') : 'external mpv',
+      ...(reportFacts.gpuSelection && { gpuSelection: reportFacts.gpuSelection }),
     },
     hardware: {
       cpu: os.cpus()[0]?.model?.trim() ?? 'unknown',
       threads: os.cpus().length,
-      ramGB: round(os.totalmem()),
-      freeRamGB: round(os.freemem()),
+      ramGB: Math.round(os.totalmem() / 1024 ** 3),
       gpus,
-      displays: screen.getAllDisplays().map((d) => ({ width: d.size.width, height: d.size.height, scale: d.scaleFactor, hz: d.displayFrequency > 0 ? d.displayFrequency : null }))  // 0: not reported (e.g. Wayland),
+      displays: {
+        count: screen.getAllDisplays().length,
+        window: { width: windowDisplay.size.width, height: windowDisplay.size.height, scale: windowDisplay.scaleFactor, hz: windowDisplay.displayFrequency > 0 ? windowDisplay.displayFrequency : null },
+      },
     },
     keyring: {
       backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : null,
