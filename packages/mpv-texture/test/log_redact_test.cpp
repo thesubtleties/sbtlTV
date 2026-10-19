@@ -117,6 +117,11 @@ int main() {
     ok &= check("peer fe80::1 and 2001:db8:: up", "peer [host] and [host] up");
     ok &= check("Failed to resolve hostname cafe: x", "Failed to resolve hostname [host]: x");
     ok &= check("Failed to resolve hostname 2001:db8::1: x", "Failed to resolve hostname [host]: x");
+    // A user's folder becomes ~ (same rule as log-redact.ts)
+    ok &= check("dlopen /home/alice/sbtl/x.so failed", "dlopen ~/sbtl/x.so failed");
+    ok &= check("font dir C:\\Users\\Alice Smith\\fonts", "font dir ~\\fonts");
+    ok &= check("/Users/bob/Library x", "~/Library x");
+    ok &= check("/usr/share/fonts myhome/alice", "/usr/share/fonts myhome/alice");
     std::cout << (ok ? "all passed\n" : "failures\n");
     return ok ? 0 : 1;
 }

@@ -232,6 +232,11 @@ const LOGIN_PARAM = new RegExp(`\\b(${LOGIN_NAMES})=[^&\\t\\n\\v\\f\\r '"]+`, 'g
 const LOGIN_JSON = new RegExp(`"(${LOGIN_NAMES})"(\\s*:\\s*)"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"`, 'gi');
 // A login value inside an encoded query ("username%3Dbob%26password%3Ds3cret"): up to the next encoded "&".
 const LOGIN_PARAM_ENCODED = new RegExp(`(?:\\b|(?<=%3F)|(?<=%26))(${LOGIN_NAMES})%3D[^&%\\t\\n\\v\\f\\r '"]*(?:%(?!26)[0-9A-Fa-f]{2}[^&%\\t\\n\\v\\f\\r '"]*)*`, 'gi');
+// A user's folder in a path ("/home/alice", "/Users/bob", "C:\\Users\\Alice Smith"): the name is
+// often the person's, so it becomes ~. Windows names may hold spaces (up to the next slash).
+// Single character classes only: linear. Mirrored in log_redact.h.
+const HOME_UNIX = /(^|[^A-Za-z0-9_.-])\/(?:home|Users)\/[^/\s'"]+/g;
+const HOME_WINDOWS = /\b[A-Za-z]:[\\/]+Users[\\/]+[^\\/\r\n'"]+/gi;
 const XTREAM_PATH = /\b(live|movie|series|timeshift)\/[^/\t\n\v\f\r '"]+\/[^/\t\n\v\f\r '"]+\//gi;
 
 function decodeLoosely(text: string): string {
@@ -336,7 +341,9 @@ export function redactUrls(text: string, hosts: HostLabeller = PLAIN_HOSTS): str
     .replace(LOGIN_JSON, (m, name: string, colon: string, value: string) => (value === '' ? m : `"${name}"${colon}"${ELLIPSIS}"`))
     .replace(LOGIN_PARAM, (_m, name: string) => `${name}=${ELLIPSIS}`)
     .replace(LOGIN_PARAM_ENCODED, (_m, name: string) => `${name}%3D${ELLIPSIS}`)
-    .replace(XTREAM_PATH, (_m, kind: string) => `${kind}/${ELLIPSIS}/`);
+    .replace(XTREAM_PATH, (_m, kind: string) => `${kind}/${ELLIPSIS}/`)
+    .replace(HOME_WINDOWS, '~')
+    .replace(HOME_UNIX, '$1~');
 }
 
 /** Hosts kept, logins never: for error text the user sees (Settings, an episode that failed to load) and stored sync errors. */
