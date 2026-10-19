@@ -5,7 +5,9 @@
 // carry the username and password in the path (Xtream: /live/<user>/<pass>/<id>.ts),
 // in the query, or before the host. Pure, so it runs under node:test. The native
 // player's copy is packages/mpv-texture/src/native/log_redact.h; keep the two in
-// step, including: only ASCII whitespace ends a URL, and the label shapes.
+// step, including: only ASCII whitespace ends a URL, the label shapes, the login
+// names and bare IPv6. TS only, on purpose: JSON login fields and percent-encoded or
+// slash-escaped URLs (mpv and ffmpeg only print those inside a :// URL, which both cut).
 //
 // A few linear passes, no backtracking: it runs on the main thread for every log
 // line, so a long line must never stall it.

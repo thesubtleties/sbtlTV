@@ -9,6 +9,8 @@
 // Logs are cleaned of provider login details and addresses before they reach
 // stderr (a terminal or the system journal). The app's copy is
 // packages/electron/src/log-redact.ts; keep the two in step:
+// Not here, on purpose (log-redact.ts only): JSON login fields and percent-encoded or
+// slash-escaped URLs; mpv and ffmpeg only print those inside a :// URL, which is cut.
 // - every :// starts a URL, whatever is glued in front of it, and runs to the
 //   next ASCII whitespace; it is cut to scheme://[host]/... (scheme://... when
 //   it holds an @; scheme:///... when it has no host). Public services stay
