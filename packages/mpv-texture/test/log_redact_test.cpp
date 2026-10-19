@@ -28,6 +28,21 @@ int main() {
     ok &= check("never-in-a-url.example and libavcodec.so.61 v0.13.0", "never-in-a-url.example and libavcodec.so.61 v0.13.0");
     ok &= check("Failed to open http://[host]/\xE2\x80\xA6", "Failed to open http://[host]/\xE2\x80\xA6");
     { const std::string once = redactUrls("a http://seen-host.example/x then seen-host.example"); ok &= check(once, once); }
+    {
+        const char* const bypasses[] = {
+            "http://[host]/live/bob/s3cret/1.ts?password=s3cret",
+            "http://[host]evil.example/live/bob/s3cret/1.ts",
+            "http://[source:x]real.example/live/bob/s3cret/1.ts",
+            "a http://[host 1 then http://real.example/live/bob/s3cret/1.ts ]",
+        };
+        for (const char* line : bypasses) {
+            const std::string out = redactUrls(line);
+            const bool leaked = out.find("s3cret") != std::string::npos || out.find("bob") != std::string::npos
+                || out.find("real.example") != std::string::npos || out.find("evil.example") != std::string::npos;
+            if (leaked) { std::cerr << "FAIL bypass\n in:  " << line << "\n got: " << out << "\n"; ok = false; }
+        }
+    }
+    ok &= check("ok [source: lemo] and [host 2] stay", "ok [source: lemo] and [host 2] stay");
     ok &= check("", "");
     ok &= check("GET player_api.php?username=bob&password=s3cret&action=x", "GET player_api.php?username=\xE2\x80\xA6&password=\xE2\x80\xA6&action=x");
     ok &= check("Opening 'live/bob/s3cret/12345.ts'", "Opening 'live/\xE2\x80\xA6/12345.ts'");

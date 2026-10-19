@@ -49,8 +49,29 @@ export function hostOf(hostPort: string): string {
   return (colon === -1 ? hostPort : hostPort.slice(0, colon)).toLowerCase();
 }
 
-/** A label this module wrote ("[host]", "[host 3]", "[source: lemo]") starts at text[i]: text redacted twice stays the same. */
-const isLabelAt = (text: string, i: number) => text.startsWith('[host', i) || text.startsWith('[source:', i);
+const MAX_SOURCE_LABEL = 100;
+
+/**
+ * Length of a label this module writes at text[i] ("[host]", "[host 3]", "[source: <name>]"), or 0.
+ * Only those exact shapes count, so text that merely starts like one ("[host]evil.example/…")
+ * is redacted like anything else. Lets text redacted twice stay the same.
+ */
+function labelLengthAt(text: string, i: number): number {
+  if (text.startsWith('[host]', i)) return 6;
+  if (text.startsWith('[host ', i)) {
+    let j = i + 6;
+    while (j < text.length && text.charCodeAt(j) >= 48 && text.charCodeAt(j) <= 57) j++;
+    return j > i + 6 && text[j] === ']' ? j + 1 - i : 0;
+  }
+  if (text.startsWith('[source: ', i)) {
+    const limit = Math.min(text.length, i + 9 + MAX_SOURCE_LABEL);
+    for (let j = i + 9; j < limit; j++) {
+      if (text[j] === ']') return j + 1 - i;
+      if (text[j] === '[' || text[j] === '\n') return 0;
+    }
+  }
+  return 0;
+}
 
 const isHostChar = (code: number) =>
   (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 45 || code === 46;
@@ -62,10 +83,8 @@ function cutBareHosts(text: string, hosts: HostLabeller): string {
   let pos = 0;
   let i = 0;
   while (i < text.length) {
-    if (isLabelAt(text, i)) {
-      const close = text.indexOf(']', i);
-      if (close !== -1) { i = close + 1; continue; }
-    }
+    const label = labelLengthAt(text, i);
+    if (label > 0) { i += label; continue; }
     if (!isHostChar(text.charCodeAt(i))) { i++; continue; }
     let end = i;
     while (end < text.length && isHostChar(text.charCodeAt(end))) end++;
@@ -89,7 +108,6 @@ function cutBareHosts(text: string, hosts: HostLabeller): string {
 /** One URL token: scheme://<label>/… (scheme://… when it holds an @ anywhere: credentials may sit before the host). */
 function cutUrl(scheme: string, rest: string, hosts: HostLabeller): string {
   if (rest.includes('@')) return `${scheme}${ELLIPSIS}`;
-  if (isLabelAt(rest, 0)) return scheme + rest;
   const hostEnd = rest.search(/[/?#]/);
   const hostPort = hostEnd === -1 ? rest : rest.slice(0, hostEnd);
   const host = hostOf(hostPort);
@@ -111,9 +129,18 @@ function cutUrls(text: string, hosts: HostLabeller): string {
     }
     let start = sep;
     while (start > pos && isSchemeChar(text[start - 1])) start--;
+    // Already redacted ("scheme://<label>" or "scheme://<label>/…" and nothing more): keep it as it is.
+    const label = labelLengthAt(text, sep + 3);
+    if (label > 0) {
+      let after = sep + 3 + label;
+      if (text.startsWith(`/${ELLIPSIS}`, after)) after += 2;
+      if (after === text.length || isSpace(text[after])) {
+        out += cutBareHosts(text.slice(pos, start), hosts) + text.slice(start, after);
+        pos = after;
+        continue;
+      }
+    }
     let end = sep + 3;
-    const labelClose = isLabelAt(text, end) ? text.indexOf(']', end) : -1;
-    if (labelClose !== -1) end = labelClose + 1;  // already redacted: the label (which may hold a space) stays as it is
     while (end < text.length && !isSpace(text[end])) end++;
     out += cutBareHosts(text.slice(pos, start), hosts) + cutUrl(text.slice(start, sep + 3), text.slice(sep + 3, end), hosts);
     pos = end;

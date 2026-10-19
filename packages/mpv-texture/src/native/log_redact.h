@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cctype>
 #include <mutex>
 #include <string>
@@ -59,10 +60,25 @@ inline bool isSeenHost(const std::string& host) {
     return seenHosts().count(host) != 0;
 }
 
-// A label written by redaction ("[host]", or the app's "[host 3]", "[source: x]")
-// starts at text[i]: text redacted twice stays the same.
-inline bool isLabelAt(const std::string& text, size_t i) {
-    return text.compare(i, 5, "[host") == 0 || text.compare(i, 8, "[source:") == 0;
+// Length of a label written by redaction at text[i] ("[host]", or the app's
+// "[host 3]", "[source: <name>]"), or 0. Only those exact shapes count, so text
+// that merely starts like one ("[host]evil.example/...") is redacted like
+// anything else. Lets text redacted twice stay the same.
+inline size_t labelLengthAt(const std::string& text, size_t i) {
+    if (text.compare(i, 6, "[host]") == 0) return 6;
+    if (text.compare(i, 6, "[host ") == 0) {
+        size_t j = i + 6;
+        while (j < text.size() && std::isdigit(static_cast<unsigned char>(text[j]))) j++;
+        return j > i + 6 && j < text.size() && text[j] == ']' ? j + 1 - i : 0;
+    }
+    if (text.compare(i, 9, "[source: ") == 0) {
+        const size_t limit = std::min(text.size(), i + 9 + 100);
+        for (size_t j = i + 9; j < limit; j++) {
+            if (text[j] == ']') return j + 1 - i;
+            if (text[j] == '[' || text[j] == '\n') return 0;
+        }
+    }
+    return 0;
 }
 
 inline bool isHostChar(char c) {
@@ -86,10 +102,8 @@ inline std::string cutBareHosts(const std::string& text) {
     size_t pos = 0;
     size_t i = 0;
     while (i < text.size()) {
-        if (isLabelAt(text, i)) {
-            const size_t close = text.find(']', i);
-            if (close != std::string::npos) { i = close + 1; continue; }
-        }
+        const size_t label = labelLengthAt(text, i);
+        if (label > 0) { i += label; continue; }
         if (!isHostChar(text[i])) { i++; continue; }
         size_t end = i;
         while (end < text.size() && isHostChar(text[end])) end++;
@@ -123,19 +137,26 @@ inline std::string cutUrls(const std::string& text) {
         }
         size_t start = sep;
         while (start > pos && isSchemeChar(text[start - 1])) start--;
-        size_t end = sep + 3;
-        if (isLabelAt(text, end)) {  // already redacted: the label (which may hold a space) stays as it is
-            const size_t close = text.find(']', end);
-            if (close != std::string::npos) end = close + 1;
+        // Already redacted ("scheme://<label>" or "scheme://<label>/..." and nothing more): keep it as it is.
+        const size_t label = labelLengthAt(text, sep + 3);
+        if (label > 0) {
+            size_t after = sep + 3 + label;
+            const std::string slashEllipsis = std::string("/") + ellipsis();
+            if (text.compare(after, slashEllipsis.size(), slashEllipsis) == 0) after += slashEllipsis.size();
+            if (after == text.size() || std::isspace(static_cast<unsigned char>(text[after]))) {
+                out += cutBareHosts(text.substr(pos, start - pos));
+                out.append(text, start, after - start);
+                pos = after;
+                continue;
+            }
         }
+        size_t end = sep + 3;
         while (end < text.size() && !std::isspace(static_cast<unsigned char>(text[end]))) end++;
         out += cutBareHosts(text.substr(pos, start - pos));
         const std::string scheme = text.substr(start, sep + 3 - start);
         const std::string rest = text.substr(sep + 3, end - sep - 3);
         if (rest.find('@') != std::string::npos) {
             out += scheme + ellipsis();
-        } else if (isLabelAt(rest, 0)) {
-            out += scheme + rest;
         } else {
             const size_t hostEnd = rest.find_first_of("/?#");
             const std::string hostPort = hostEnd == std::string::npos ? rest : rest.substr(0, hostEnd);

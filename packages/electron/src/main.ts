@@ -39,6 +39,11 @@ let includeAddressesInLog = false;
 function redactForDisplay(text: string): string {
   return redactUrls(text, hostLabels.labeller());
 }
+
+/** Text for the debug log: labels, or the addresses while the user has included them (Settings > Debug). */
+function redactForLog(text: string): string {
+  return redactUrls(text, hostLabels.labeller(includeAddressesInLog));
+}
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
 // which may not be available on all platforms
@@ -287,7 +292,7 @@ function debugLog(message: string, category = 'app'): void {
   try {
     const timestamp = new Date().toISOString();
     // Users attach this log to reports: no provider credentials (they ride in stream URLs).
-    const line = `[${timestamp}] [${category}] ${redactUrls(message, hostLabels.labeller(includeAddressesInLog))}\n`;
+    const line = `[${timestamp}] [${category}] ${redactForLog(message)}\n`;
     debugLogStream.write(line);
   } catch {
     // Silently fail - logging should never crash the app
@@ -1240,7 +1245,8 @@ function sendToRenderer(channel: string, data: unknown): void {
 /** A message in the app's error card; its text goes to the debug log too, so reports can be matched. */
 function reportMpvError(message: string): void {
   const text = redactForDisplay(message.trim());
-  debugLog(`banner: ${JSON.stringify(text)}`, 'mpv');
+  // Redacted before quoting (a URL ends at whitespace, not at a quote), with the log's own rules.
+  debugLog(`banner: ${JSON.stringify(redactForLog(message.trim()))}`, 'mpv');
   sendToRenderer('mpv-error', text);
 }
 
@@ -1259,7 +1265,7 @@ function reportPlaybackFailure(message: string): void {
 function reportMpvLogError(message: string): void {
   if (stream.holdsMpvErrors(mpvState.playing)) {
     stream.lastHeldError = redactForDisplay(message.trim());  // before quoting: the URL ends at whitespace, not at the quote
-    debugLog(`banner held during reconnect: ${JSON.stringify(stream.lastHeldError)}`, 'mpv');
+    debugLog(`banner held during reconnect: ${JSON.stringify(redactForLog(message.trim()))}`, 'mpv');
     return;
   }
   reportMpvError(message);

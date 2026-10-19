@@ -83,3 +83,19 @@ test('login details outside a URL are cleaned too', () => {
   assert.equal(redactUrls('Location: /movie/bob/s3cret/99.mkv'), 'Location: /movie/…/99.mkv');
   assert.equal(redactUrls('token=abc123 and api_key=xyz'), 'token=… and api_key=…');
 });
+
+test('text that only looks like a label does not slip past redaction', () => {
+  const hosts: HostLabeller = { forUrl: () => '[host 1]', forBare: (t) => (t === 'real.example' ? '[host 1]' : null) };
+  for (const line of [
+    'http://[host]/live/bob/s3cret/1.ts?password=s3cret',
+    'http://[host]evil.example/live/bob/s3cret/1.ts',
+    'http://[source:x]real.example/live/bob/s3cret/1.ts',
+    'a http://[host 1 then http://real.example/live/bob/s3cret/1.ts ]',
+    'see [host then real.example/live/bob/s3cret/2.ts ok]',
+  ]) {
+    const out = redactUrls(line, hosts);
+    assert.ok(!out.includes('s3cret') && !out.includes('bob') && !out.includes('real.example') && !out.includes('evil.example'), `${line} -> ${out}`);
+  }
+  assert.equal(redactUrls('Failed to open http://[host 1]/…', hosts), 'Failed to open http://[host 1]/…');
+  assert.equal(redactUrls('ok [source: lemo] and [host 2] stay', hosts), 'ok [source: lemo] and [host 2] stay');
+});
