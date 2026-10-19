@@ -72,3 +72,17 @@ test('a setup file cannot turn on LAN sources (that guard is this computer\'s ch
   assert.deepEqual(settingsForExport({ allowLanSources: true, guideOpacity: 0.9 } as never), { guideOpacity: 0.9 });
   assert.deepEqual(keptOnImport({ allowLanSources: true, guideOpacity: 0.9 }), { allowLanSources: true });
 });
+
+test('settings values are typed and bounded, so a bad file cannot break the app on start', () => {
+  const bad: Record<string, unknown>[] = [
+    { liveSourceOrder: 'x' }, { vodSourceOrder: [1, 2] }, { movieGenresEnabled: 'all' }, { seriesGenresEnabled: ['a'] },
+    { channelSortOrder: 'random' }, { categorySortOrder: 'x' }, { theme: 'neon' },
+    { categoryBarWidth: 'wide' }, { channelColumnWidth: -5 }, { guideOpacity: 3 }, { guideOpacity: Number.NaN },
+    { epgRefreshHours: -1 }, { vodRefreshHours: 1e9 }, { guideMorphEnabled: 'yes' }, { lastSourceId: 5 },
+    { appearance: 'dark' }, { subtitles: [1] },
+  ];
+  for (const settings of bad) assert.throws(() => validateSetupBody({ ...good(), settings }), /invalid/, JSON.stringify(settings));
+  const ok = { liveSourceOrder: ['a1'], movieGenresEnabled: [28, 12], channelSortOrder: 'number', categorySortOrder: 'provider', theme: 'light',
+    categoryBarWidth: 180, guideOpacity: 0.8, epgRefreshHours: 0, vodRefreshHours: 48, guideMorphEnabled: false, appearance: { palette: 'sbtl' }, subtitles: { size: 1 } };
+  assert.deepEqual(validateSetupBody({ ...good(), settings: ok }).settings, ok);
+});

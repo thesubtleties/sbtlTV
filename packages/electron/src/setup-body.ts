@@ -85,15 +85,42 @@ function validateSource(raw: unknown, i: number): SetupSource {
   };
 }
 
+// Each setting that travels, with the values the app can live with: a file from
+// someone else must not be able to store a value the app breaks on at start.
+type Check = (v: unknown) => boolean;
+const oneOf = (...values: string[]): Check => (v) => typeof v === 'string' && values.includes(v);
+const bool: Check = (v) => typeof v === 'boolean';
+const num = (min: number, max: number): Check => (v) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
+const shortText: Check = (v) => typeof v === 'string' && v.length <= 200;
+const list = (item: Check): Check => (v) => Array.isArray(v) && v.length <= 1000 && v.every(item);
+const record: Check = (v) => isObj(v) && JSON.stringify(v).length <= 10_000;  // normalised by getSettings
+const SETTING_CHECKS: Record<(typeof SETUP_SETTING_KEYS)[number], Check> = {
+  theme: oneOf('dark', 'light'),
+  lastSourceId: shortText,
+  vodRefreshHours: num(0, 24 * 365),
+  epgRefreshHours: num(0, 24 * 365),
+  movieGenresEnabled: list((v) => Number.isInteger(v)),
+  seriesGenresEnabled: list((v) => Number.isInteger(v)),
+  rpdbBackdropsEnabled: bool,
+  channelSortOrder: oneOf('alphabetical', 'number'),
+  categorySortOrder: oneOf('alphabetical', 'provider'),
+  categoryBarWidth: num(0, 4000),
+  channelColumnWidth: num(0, 4000),
+  guideOpacity: num(0, 1),
+  liveSourceOrder: list(shortText),
+  vodSourceOrder: list(shortText),
+  sportsMatchupEnabled: bool,
+  guideMorphEnabled: bool,
+  autoplayNextEpisode: bool,
+  appearance: record,
+  subtitles: record,
+};
+
 function validateSettings(raw: unknown): Partial<AppSettings> {
   if (!isObj(raw)) fail('settings');
   for (const [k, v] of Object.entries(raw)) {
     if (!SETTING_KEYS.has(k)) fail(`settings.${k}`);
-    // Shapes only; storage.updateSettings + getSettings normalise the values.
-    const ok = v === undefined || typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string'
-      || (Array.isArray(v) && v.length <= 1000 && v.every((x) => typeof x === 'string' || typeof x === 'number'))
-      || (isObj(v) && JSON.stringify(v).length <= 10_000);
-    if (!ok) fail(`settings.${k}`);
+    if (v !== undefined && !SETTING_CHECKS[k as keyof typeof SETTING_CHECKS](v)) fail(`settings.${k}`);
   }
   return raw as Partial<AppSettings>;
 }
