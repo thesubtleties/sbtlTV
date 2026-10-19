@@ -129,12 +129,15 @@ function cutUrl(scheme: string, rest: string, hosts: HostLabeller): string {
 function cutUrls(text: string, hosts: HostLabeller): string {
   if (!text.includes('://')) return cutBareHosts(text, hosts);
   // Every URL host on the line is made known first, so a bare mention before its URL is labelled too.
-  for (let at = text.indexOf('://'); at !== -1; at = text.indexOf('://', at + 3)) {
-    if (labelLengthAt(text, at + 3) > 0) continue;
+  // A URL runs to the next whitespace, as in the loop below; the next search starts there (linear time).
+  for (let at = text.indexOf('://'); at !== -1;) {
     let end = at + 3;
     while (end < text.length && !isSpace(text[end])) end++;
-    const host = urlHostOf(text.slice(at + 3, end));
-    if (host) hosts.forUrl(host);
+    if (labelLengthAt(text, at + 3) === 0) {
+      const host = urlHostOf(text.slice(at + 3, end));
+      if (host) hosts.forUrl(host);
+    }
+    at = text.indexOf('://', end);
   }
   let out = '';
   let pos = 0;

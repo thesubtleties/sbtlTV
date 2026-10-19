@@ -143,11 +143,12 @@ inline std::string cutUrls(const std::string& text) {
         return std::isalnum(static_cast<unsigned char>(c)) || c == '+' || c == '.' || c == '-';
     };
     // Every URL host on the line is made known first, so a bare mention before its URL is labelled too.
-    for (size_t at = text.find("://"); at != std::string::npos; at = text.find("://", at + 3)) {
-        if (labelLengthAt(text, at + 3) > 0) continue;
+    // A URL runs to the next whitespace, as in the loop below; the next search starts there (linear time).
+    for (size_t at = text.find("://"); at != std::string::npos;) {
         size_t end = at + 3;
         while (end < text.size() && !std::isspace(static_cast<unsigned char>(text[end]))) end++;
-        noteUrlHost(text.substr(at + 3, end - at - 3));
+        if (labelLengthAt(text, at + 3) == 0) noteUrlHost(text.substr(at + 3, end - at - 3));
+        at = text.find("://", end);
     }
     std::string out;
     size_t pos = 0;

@@ -51,6 +51,10 @@ int main() {
       if (out.find("cdn.zzz.tv") != std::string::npos) { std::cerr << "FAIL bare before url\n got: " << out << "\n"; ok = false; } }
     noteUrl("http://user:pw@quiet-load.example:8080/live/a/b/1.ts");
     ok &= check("[ffmpeg] tcp: Failed to resolve hostname quiet-load.example: x", "[ffmpeg] tcp: Failed to resolve hostname [host]: x");
+    { std::string big; for (int i = 0; i < 100000; i++) big += "a://";
+      auto t0 = std::chrono::steady_clock::now(); redactUrls(big);
+      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+      std::cout << "100k :// line: " << ms << "ms\n"; ok &= ms < 200; }
     ok &= check("", "");
     ok &= check("GET player_api.php?username=bob&password=s3cret&action=x", "GET player_api.php?username=\xE2\x80\xA6&password=\xE2\x80\xA6&action=x");
     ok &= check("Opening 'live/bob/s3cret/12345.ts'", "Opening 'live/\xE2\x80\xA6/12345.ts'");

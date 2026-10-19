@@ -105,3 +105,12 @@ test('a URL without a host still loses its path (file:// paths name the user)', 
   assert.equal(redactUrls('x:///home/steven/a.ts'), 'x:///…');
   assert.equal(redactUrls('http://:8080/home/steven/a.ts'), 'http:///…');
 });
+
+test('a long line of :// without spaces stays fast (the host pre-pass jumps like the main loop)', () => {
+  const hosts: HostLabeller = { forUrl: () => '[host 1]', forBare: () => null };
+  const line = 'a://'.repeat(100_000);
+  const started = Date.now();
+  redactUrls(line, hosts);
+  redactUrls(line);
+  assert.ok(Date.now() - started < 200, `took ${Date.now() - started}ms`);
+});
