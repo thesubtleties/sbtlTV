@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildReport, validateSyncStatus, type ReportInputs } from './bug-report.js';
+import { buildReport, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { LogPolicy } from './log-policy.js';
 import type { SourceMetaRow } from '@sbtltv/core';
 
@@ -180,4 +180,15 @@ test('sync status in the shape the page actually sends (SourceMetaRow) keeps tim
   assert.deepEqual(r.sources[0].counts, { channels: 1200, categories: 40, movies: 300, series: 50 });
   assert.notEqual(r.sources[0].lastSync.library, null);
   assert.notEqual(r.sources[0].lastSync.channelsOrGuide, null);
+});
+
+test('a log for the zip: its last part from a whole line, every line labelled again (an address written while they were included does not ship)', () => {
+  const raw = Buffer.from('first line\n2026 [app] Failed http://prov.example:8080/live/bob/s3cret/1.ts\nC:\\Users\\Alice Smith\\x\nlast\n');
+  const fresh = new LogPolicy([{ id: X, name: 'Acme Premium TV', url: 'http://prov.example:8080' }]);
+  const whole = reportLogText(raw, 1_000_000, (l) => fresh.forDisplay(l));
+  assert.equal(whole.includes('prov.example') || whole.includes('s3cret') || whole.includes('Alice'), false, whole);
+  assert.ok(whole.startsWith('first line\n'));
+  const tail = reportLogText(raw, 20, (l) => l);
+  assert.equal(tail, 'last\n');  // cut to the tail, starting at a whole line
+  assert.equal(reportLogText(Buffer.alloc(0), 10, (l) => l), '');
 });

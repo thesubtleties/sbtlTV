@@ -28,7 +28,7 @@ import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
 import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
 import { registerSetupTransfer } from './setup-transfer.js';
-import { buildReport, validateSyncStatus, type ReportInputs } from './bug-report.js';
+import { buildReport, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { makeZip } from './zip-writer.js';
 const { autoUpdater } = electronUpdater;
 
@@ -2214,8 +2214,28 @@ async function gatherReportInputs(rawSyncStatus: unknown): Promise<ReportInputs>
   };
 }
 
+const REPORT_LOG_MAX = 10 * 1024 * 1024;
+
+/** The last `max` bytes of a file, or null when it can't be read (logging off, never rotated). */
+function readTail(file: string, max: number): Buffer | null {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    const length = Math.min(size, max);
+    const buf = Buffer.alloc(length);
+    fs.readSync(fd, buf, 0, length, size - length);
+    return buf;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) fs.closeSync(fd);
+  }
+}
+
 async function reportJson(rawSyncStatus: unknown): Promise<string> {
-  return JSON.stringify(buildReport(await gatherReportInputs(rawSyncStatus), (text) => logPolicy.forLog(text), new Date()), null, 2);
+  // Always labels, whatever the "include addresses" switch says: a report goes to a public issue.
+  return JSON.stringify(buildReport(await gatherReportInputs(rawSyncStatus), (text) => logPolicy.forDisplay(text), new Date()), null, 2);
 }
 
 ipcMain.handle('debug-report-preview', async (_event, syncStatus: unknown) => {
@@ -2229,17 +2249,29 @@ ipcMain.handle('debug-report-preview', async (_event, syncStatus: unknown) => {
 ipcMain.handle('debug-report-save', async (_event, syncStatus: unknown) => {
   try {
     const json = await reportJson(syncStatus);
-    const today = new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const choice = mainWindow
       ? await dialog.showSaveDialog(mainWindow, { title: 'Save bug report', defaultPath: path.join(app.getPath('documents'), `sbtltv-report-${today}.zip`), filters: [{ name: 'Zip', extensions: ['zip'] }] })
       : { canceled: true, filePath: undefined };
     if (choice.canceled || !choice.filePath) return { success: false, canceled: true };
     const entries = [{ name: 'report.json', data: Buffer.from(json, 'utf8') }];
+    // The logs, labelled again by a fresh policy (lines written while addresses were included
+    // lose them; this session's numbering is untouched), last 10 MB each.
+    const fresh = new LogPolicy(sourceAddresses());
     const logPath = getDebugLogPath();
     for (const [file, name] of [[logPath, 'debug.log'], [`${logPath}.old`, 'debug-previous.log']] as const) {
-      try { entries.push({ name, data: fs.readFileSync(file) }); } catch { /* not there: logging was off or never rotated */ }
+      const raw = readTail(file, REPORT_LOG_MAX);
+      if (raw) entries.push({ name, data: Buffer.from(reportLogText(raw, REPORT_LOG_MAX, (line) => fresh.forDisplay(line)), 'utf8') });
     }
-    fs.writeFileSync(choice.filePath, makeZip(entries));
+    // Written beside the target, then renamed: a failed save leaves no half-written zip.
+    const temp = `${choice.filePath}.part`;
+    try {
+      fs.writeFileSync(temp, makeZip(entries));
+      fs.renameSync(temp, choice.filePath);
+    } finally {
+      fs.rmSync(temp, { force: true });
+    }
     shell.showItemInFolder(choice.filePath);
     debugLog('Bug report saved', 'app');
     return { success: true, data: { filePath: choice.filePath } };

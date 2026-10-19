@@ -165,3 +165,18 @@ export function validateSyncStatus(raw: unknown): ReportInputs['syncStatus'] {
     return [out as unknown as SyncRow];
   });
 }
+
+/**
+ * A log as it goes into the report zip: its last `maxBytes` (starting at a whole
+ * line), every line through `clean` again. The log on disk may hold provider
+ * addresses written while the user included them; the zip never does.
+ */
+export function reportLogText(raw: Buffer, maxBytes: number, clean: (line: string) => string): string {
+  let text = raw.toString('utf8');
+  if (raw.length > maxBytes) {
+    text = raw.subarray(raw.length - maxBytes).toString('utf8');
+    const firstBreak = text.indexOf('\n');
+    text = firstBreak === -1 ? '' : text.slice(firstBreak + 1);
+  }
+  return text.split('\n').map((line) => (line ? clean(line) : line)).join('\n');
+}

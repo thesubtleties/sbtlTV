@@ -49,7 +49,7 @@ test('a 10 MB log fits and round-trips', () => {
 });
 
 test('local and central headers agree, with UTF-8 flag, deflate, sizes, crc and DOS time; end record is consistent', () => {
-  const mtime = new Date(2026, 9, 19, 13, 47, 58); // local time, as zip stores it
+  const mtime = new Date(Date.UTC(2026, 9, 19, 13, 47, 58)); // stored as UTC: the zip says nothing about the time zone
   const files = [
     { name: 'report.json', data: Buffer.from('{"a":1}'.repeat(50)), mtime },
     { name: 'débug.log', data: Buffer.from('line\n'.repeat(1000)), mtime },
@@ -70,6 +70,8 @@ test('local and central headers agree, with UTF-8 flag, deflate, sizes, crc and 
     const packed = zip.readUInt32LE(at + 20);
     // central: flags, method, time, date, crc, sizes
     assert.equal(zip.readUInt16LE(at + 8), 0x0800, 'central UTF-8 flag');
+    assert.equal(zip.readUInt16LE(at + 4), (3 << 8) | 20, 'made by Unix (so unzip reads UTF-8 names)');
+    assert.equal(zip.readUInt32LE(at + 38) >>> 16, 0o100644, 'a regular file, rw-r--r--');
     assert.equal(zip.readUInt16LE(at + 10), 8, 'central deflate');
     assert.equal(zip.readUInt16LE(at + 12), time, 'central time');
     assert.equal(zip.readUInt16LE(at + 14), date, 'central date');
