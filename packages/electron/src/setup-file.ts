@@ -114,5 +114,6 @@ export function openWithKeyring(file: Buffer, keys: KeyProtector): unknown {
   let key: Buffer;
   try { key = keys.unprotect(header.key!); } catch { throw new SetupFileError('other-computer'); }
   if (key.length !== 32) throw new SetupFileError('other-computer');
-  return unseal(headerBytes, header, sealed, key, 'other-computer');
+  // The key unsealed, so this computer made it: a failing tag means the file was changed or cut short.
+  return unseal(headerBytes, header, sealed, key, 'invalid');
 }

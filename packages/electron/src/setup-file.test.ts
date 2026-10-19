@@ -109,8 +109,16 @@ test('R8: a body that unpacks past the cap is refused (gzip bomb)', async () => 
   await rejects(() => openWithKeyring(keyringFileAround(Buffer.concat(members)), fakeKeyring), 'invalid');
 });
 
-test('R8: a changed byte in a backup says other-computer, like a foreign key', async () => {
+test('R8: a changed byte in a backup is refused (as damaged)', async () => {
   const file = sealWithKeyring(body, fakeKeyring);
   const flipped = Buffer.from(file); flipped[flipped.length - 20] ^= 1;
-  await rejects(() => openWithKeyring(flipped, fakeKeyring), 'other-computer');
+  await rejects(() => openWithKeyring(flipped, fakeKeyring), 'invalid');
+});
+
+test('a damaged backup on its own computer says damaged, not "another computer"', async () => {
+  const file = sealWithKeyring(body, fakeKeyring);
+  await rejects(() => openWithKeyring(file.subarray(0, file.length - 1), fakeKeyring), 'invalid');
+  const flipped = Buffer.from(file); flipped[flipped.length - 5] ^= 1;
+  await rejects(() => openWithKeyring(flipped, fakeKeyring), 'invalid');
+  await rejects(() => openWithKeyring(file, otherKeyring), 'other-computer');
 });
