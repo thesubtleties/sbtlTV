@@ -1,25 +1,25 @@
-# sbtlTV 0.13.0
+# sbtlTV 0.14.0 beta 1
 
-Rewind live TV, a light palette, and the first release tested through betas.
+Leads to 0.14.0. Something off? Save a bug report (Settings > Debug) and attach it to an issue.
 
 ## Added
 
-- **Rewind live TV** - pause, rewind and catch back up to live. Off by default: Settings > Live TV > Live playback > Rewind live TV, with 512 MB, 2 GB, 8 GB or a custom amount of memory, up to a quarter of your RAM. Drag the playhead or use the arrow keys; End or the LIVE pill goes back to live, and ‹ › jump to the earlier or later show. Changing channel starts the rewind over.
-- **sbtl light** - a light palette in Settings > Appearance: slate on a soft off-white, never stark white.
-- **Beta updates** - Settings > About. Off by default; turn it on to try new versions early. A beta updates to newer betas, then to the full release they lead to.
+- **Backup & transfer** - Settings > System. Export your setup (sources, logins, settings, API keys, favorites, watchlist) to one file locked with a five-word passphrase, and import it on another computer. sbtlTV backs up your setup before each import, so you can go back.
+- **Bug report** - Settings > Debug. One zip with what's needed to look into a problem: versions, hardware, settings, how your sources are doing, and the log. No logins, provider addresses or names. Nothing is sent; you attach it to an issue.
+- **Keyring (Linux)** - Settings > Privacy. sbtlTV keeps using the keyring your passwords were saved with, through updates and desktop changes. Switching restarts sbtlTV; saved passwords are entered again.
 
 ## Changed
 
-- **Settings are regrouped** into Content, Live TV, Movies & Series and System. Caption language, size and style now live in Video Player, which shows on every platform; the Live captions switch is in Live TV > Live playback.
-- **Guide times have no leading zero** - 8:35, not 08:35.
+- **Logs say less about you** - logins, provider addresses, source names and your user folder never appear, in more shapes than before (tokens, JSON, encoded links, IPv6).
+- **Shorter settings text**, and every settings page has room at the bottom.
 
 ## Fixed
 
-- **Memory kept after playback** - the player held on to everything it had cached (about 100 MB per few minutes of live TV) until you quit. It is now released when you stop, or when you switch between live TV and movies or series.
-- **Adding some Xtream sources failed** with "UNIQUE constraint failed: channels.stream_id" - providers that list a channel once in each of its categories now load.
-- **An empty guide after a channel re-sync** - if the guide refresh after it failed, every channel showed no programmes until the next one worked.
-- **The first poster in a Movies or Series list** had its hover glow cut off at the left edge.
+- **Linux: logins unreadable after an update** - the AppImage updater restarted without your `--password-store`, so saved passwords needed a manual restart.
+- **The guide's clock and "on now" changed at different times** - they now change together, on the minute.
+- **A failed read of sources or settings** showed an empty list or quiet defaults; it now says so.
 
 ## Known issues
 
+- **The keyring fix starts with the next update** - this beta has to be running first.
 - **Widescreen SD channels still play small on macOS.**
