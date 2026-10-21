@@ -256,6 +256,17 @@ contextBridge.exposeInMainWorld('subtitles', {
   },
 });
 
+// Downloaded subtitles (SubDL): main does every request and file; the page only asks
+contextBridge.exposeInMainWorld('subdl', {
+  languages: () => ipcRenderer.invoke('subdl-languages'),
+  checkKey: (key: string) => ipcRenderer.invoke('subdl-check-key', key),
+  usage: () => ipcRenderer.invoke('subdl-usage'),
+  find: (title: unknown, language: string) => ipcRenderer.invoke('subdl-find', title, language),
+  load: (generation: number, title: unknown, nId: string, language: string, duration: number) => ipcRenderer.invoke('subdl-load', generation, title, nId, language, duration),
+  cues: (generation: number, around: number, delay: number, speed: number) => ipcRenderer.invoke('subdl-cues', generation, around, delay, speed),
+  setSpeed: (generation: number, speed: number) => ipcRenderer.invoke('subtitle-set-speed', generation, speed),
+});
+
 // Settings > Privacy: what IP outside services see (asks Mullvad's checker, only when called)
 interface IpCheckResult { ip: string; city: string | null; country: string | null; organization: string | null; mullvadServer: string | null }
 interface StorageProtection { platform: string; available: boolean; backend: string | null; launchKeyring: string | null }

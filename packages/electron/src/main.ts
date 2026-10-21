@@ -23,7 +23,11 @@ import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
 import { STREAM_BASE_OPTIONS, STALL_MAX_RELOADS } from './stream-health.js';
 import { StreamSession, parseCompatibilityHandoff, type StreamLoadRequest, type CompatibilityHandoff } from './stream-session.js';
 import { CaptionSession } from './caption-session.js';
-import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
+import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, type SubtitleTrack } from './subtitle-mpv.js';
+import { SubdlClient, type HttpGet, type SubdlTitle } from './subdl-client.js';
+import { SubdlService } from './subdl-service.js';
+import { SubtitleCache } from './subtitle-cache.js';
+import { SUBTITLE_LANGUAGES } from './subtitle-languages.js';
 import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
 import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
@@ -1407,6 +1411,55 @@ const captions = new CaptionSession({
   currentGeneration: () => stream.generation,
 });
 
+// Downloaded subtitles (SubDL, with the user's key). The key goes only in the
+// Authorization header; mpv only ever gets files SubtitleCache wrote.
+const subdlHttp: HttpGet = async (url, headers, maxBytes) => {
+  const response = await electronNet.fetch(url, {
+    cache: 'no-store',
+    credentials: 'omit',
+    headers: { 'User-Agent': 'sbtlTV', ...headers },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (Number(response.headers.get('content-length') ?? 0) > maxBytes) throw new Error('answer too large');
+  const body = new Uint8Array(await response.arrayBuffer());
+  if (body.byteLength > maxBytes) throw new Error('answer too large');
+  const responseHeaders: Record<string, string> = {};
+  response.headers.forEach((value, name) => { responseHeaders[name.toLowerCase()] = value; });
+  return { status: response.status, headers: responseHeaders, body };
+};
+const subtitleCache = new SubtitleCache(path.join(app.getPath('userData'), 'subtitles'));
+/** A key being checked in Settings before it is saved */
+let subdlKeyOverride: string | null = null;
+const subdl = new SubdlService({
+  client: new SubdlClient(subdlHttp, () => subdlKeyOverride ?? storage.getSettings().subdlApiKey ?? null),
+  cache: subtitleCache,
+  addSubtitle: addSubtitleFile,
+  isCurrent: (generation) => stream.isCurrent(generation),
+  log: (message) => debugLog(message, 'subtitles'),
+});
+
+/** sub-add a file the cache wrote (not selected), wait for mpv to list it, and tell the renderer about the new track list. */
+async function addSubtitleFile(file: string): Promise<SubtitleTrack | null> {
+  if (!subtitleCache.owns(file)) return null;
+  if (useNativeMpv && mpvBridge) {
+    if (!mpvBridge.command('sub-add', file, 'auto')) return null;
+  } else if (mpvSocket) {
+    try { await sendMpvCommand('sub-add', [file, 'auto']); } catch { return null; }
+  } else {
+    return null;
+  }
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const tracks = parseSubtitleTracks(await readMpvProperty('track-list'));
+    const added = tracks.find((t) => t.externalFile === file);
+    if (added) {
+      captions.setTracks(tracks, mpvState.duration || Number(await readMpvProperty('duration')) || 0);
+      return added;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return null;
+}
+
 /** Playback stopped or the player is going away: the stream and its captions end together. */
 function endPlayback(opts: { invalidate?: boolean } = {}): void {
   stream.end(opts);
@@ -1491,6 +1544,69 @@ ipcMain.handle('subtitle-set-delay', async (_event, generation: unknown, seconds
   const clamped = Math.min(Math.max(seconds, -60), 60);
   setMpvOptions([['sub-delay', clamped.toFixed(3)]], 'set delay');
   return { success: true };
+});
+
+// Subtitle speed: a frame-rate fix or a two-line sync. Only near 1: anything else is not a timing fix.
+ipcMain.handle('subtitle-set-speed', async (_event, generation: unknown, speed: unknown) => {
+  if (!stream.isCurrent(generation)) return { error: 'Stale subtitle request' };
+  if (typeof speed !== 'number' || !Number.isFinite(speed) || speed < 0.9 || speed > 1.1) return { error: 'Invalid speed' };
+  setMpvOptions([['sub-speed', speed.toFixed(6)]], 'set speed');
+  return { success: true };
+});
+
+function subdlTitle(value: unknown): SubdlTitle | null {
+  const v = value as Partial<SubdlTitle> | null;
+  if (!v || typeof v !== 'object' || !Number.isInteger(v.tmdbId) || (v.tmdbId as number) <= 0 || (v.type !== 'movie' && v.type !== 'tv')) return null;
+  const count = (x: unknown) => (Number.isInteger(x) && (x as number) >= 0 && (x as number) < 10_000 ? (x as number) : undefined);
+  return { tmdbId: v.tmdbId as number, type: v.type, season: count(v.season), episode: count(v.episode) };
+}
+
+const usageAnswer = (u: Awaited<ReturnType<typeof subdl.usage>>) =>
+  'error' in u ? { error: u.error } : { usage: { downloadsLeft: u.downloadsLeft, downloadsLimit: u.downloadsLimit } };
+
+ipcMain.handle('subdl-languages', () => SUBTITLE_LANGUAGES.map(({ code, label, iso }) => ({ code, label, iso })));
+
+// Settings: try a key before it is saved (one /me call, which costs no search).
+ipcMain.handle('subdl-check-key', async (_event, key: unknown) => {
+  if (typeof key !== 'string' || key.trim().length < 8 || key.length > 200) return { error: 'auth' };
+  subdlKeyOverride = key.trim();
+  subdl.keyChanged();
+  try {
+    return usageAnswer(await subdl.usage());
+  } finally {
+    subdlKeyOverride = null;
+    subdl.keyChanged();  // a rejected trial key says nothing about the saved one
+  }
+});
+
+ipcMain.handle('subdl-usage', async () => usageAnswer(await subdl.usage()));
+
+ipcMain.handle('subdl-find', async (_event, title: unknown, language: unknown) => {
+  const t = subdlTitle(title);
+  if (!t || typeof language !== 'string' || language.length > 20) return { error: 'bad-response' };
+  const found = await subdl.find(t, language, storage.getSettings().subtitles?.preferSdh === true);
+  if ('error' in found) return found;
+  return { results: found.results.map(({ nId, releaseName, language: lang, hi, ai, author, pack }) => ({ nId, releaseName, language: lang, hi, ai, author, pack })) };
+});
+
+ipcMain.handle('subdl-load', async (_event, generation: unknown, title: unknown, nId: unknown, language: unknown, duration: unknown) => {
+  if (!stream.isCurrent(generation)) return { error: 'stale' };
+  const t = subdlTitle(title);
+  if (!t || typeof nId !== 'string' || nId.length > 130 || typeof language !== 'string' || language.length > 20) return { error: 'bad-response' };
+  return subdl.load({
+    generation: generation as number,
+    title: t,
+    nId,
+    language,
+    preferSdh: storage.getSettings().subtitles?.preferSdh === true,
+    duration: typeof duration === 'number' && duration > 0 ? duration : mpvState.duration,
+  });
+});
+
+ipcMain.handle('subdl-cues', async (_event, generation: unknown, around: unknown, delay: unknown, speed: unknown) => {
+  if (!stream.isCurrent(generation)) return [];
+  if ([around, delay, speed].some((x) => typeof x !== 'number' || !Number.isFinite(x))) return [];
+  return subdl.cues(generation as number, around as number, delay as number, Math.min(Math.max(speed as number, 0.9), 1.1));
 });
 
 /**
@@ -2066,6 +2182,9 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
   }
   if (settings.debugLoggingEnabled !== undefined) {
     followUp('switching debug logging', () => initDebugLogging(settings.debugLoggingEnabled!));
+  }
+  if (settings.subdlApiKey !== undefined) {
+    followUp('resetting the SubDL key state', () => subdl.keyChanged());
   }
   followUp('sending settings to the data process', () => dataHost?.pushSettings());
   return { success: true };

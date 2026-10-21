@@ -117,6 +117,27 @@ export interface SubtitleTracksUpdate {
 /** Live captions: main checks the first lines and hides station-data junk */
 export type CcState = 'checking' | 'ok' | 'other-language' | 'unreadable';
 
+export interface SubdlTitle { tmdbId: number; type: 'movie' | 'tv'; season?: number; episode?: number }
+export interface SubdlResultInfo { nId: string; releaseName: string; language: string; hi: boolean; ai: boolean; author: string | null; pack: boolean }
+export interface SubdlTiming { speed: number | null; fps: { from: number; to: number } | null; cutMismatch: boolean }
+export interface SubdlUsageInfo { downloadsLeft: number; downloadsLimit: number }
+export type SubdlFailure = 'auth' | 'quota' | 'not-found' | 'network' | 'bad-response' | 'stale' | 'no-file';
+export interface SubdlLanguage { code: string; label: string; iso: string[] }
+
+/** Downloaded subtitles: main does every SubDL request and file */
+export interface SubdlApi {
+  languages: () => Promise<SubdlLanguage[]>;
+  /** Tries a key before it is saved */
+  checkKey: (key: string) => Promise<{ usage?: SubdlUsageInfo; error?: SubdlFailure }>;
+  usage: () => Promise<{ usage?: SubdlUsageInfo; error?: SubdlFailure }>;
+  find: (title: SubdlTitle, language: string) => Promise<{ results?: SubdlResultInfo[]; error?: SubdlFailure }>;
+  /** nId 'auto': the best match. The track is added, not selected. */
+  load: (generation: number, title: SubdlTitle, nId: string, language: string, duration: number) => Promise<{ trackId?: number; nId?: string; ai?: boolean; timing?: SubdlTiming; error?: SubdlFailure }>;
+  /** Spoken lines of the loaded subtitle around a video time */
+  cues: (generation: number, around: number, delay: number, speed: number) => Promise<Array<{ start: number; text: string }>>;
+  setSpeed: (generation: number, speed: number) => Promise<MpvResult>;
+}
+
 export interface SubtitlesApi {
   /** Calls carry the load generation they were decided for; main ignores stale ones. null turns subtitles off. */
   setTrack: (generation: number, id: number | null, visible: boolean) => Promise<MpvResult>;
@@ -378,6 +399,7 @@ declare global {
     data?: DataApi;
     mpv?: MpvApi;
     subtitles?: SubtitlesApi;
+    subdl?: SubdlApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
     appearance?: AppearanceApi;

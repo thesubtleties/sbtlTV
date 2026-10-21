@@ -89,8 +89,8 @@ test('subtitle fonts live in resources when packaged, in assets when not', () =>
   assert.equal(subtitleFontsDir({ isPackaged: false, resourcesPath: '/r', dirname: '/repo/packages/electron/dist' }), path.join('/repo/packages/electron', 'assets', 'sub-fonts'));
 });
 
-test('loadResetOptions also shows subtitles again', () => {
-  assert.deepEqual(loadResetOptions(), [['sid', 'no'], ['sub-delay', '0'], ['sub-visibility', 'yes']]);
+test('loadResetOptions also shows subtitles again and resets a synced speed', () => {
+  assert.deepEqual(loadResetOptions(), [['sid', 'no'], ['sub-delay', '0'], ['sub-speed', '1'], ['sub-visibility', 'yes']]);
 });
 
 // Real caption lines, 2026-10-12 language sample (field 1 / field 2 decoded separately).

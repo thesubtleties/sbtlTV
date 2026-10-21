@@ -52,9 +52,9 @@ export const SUBTITLE_BASE_OPTIONS: Array<[string, string]> = [
   ['sid', 'no'],
 ];
 
-/** mpv keeps the selected track, sub-delay and visibility across loadfile; reset them before each load. */
+/** mpv keeps the selected track, sub-delay, sub-speed and visibility across loadfile; reset them before each load. */
 export function loadResetOptions(): Array<[string, string]> {
-  return [['sid', 'no'], ['sub-delay', '0'], ['sub-visibility', 'yes']];
+  return [['sid', 'no'], ['sub-delay', '0'], ['sub-speed', '1'], ['sub-visibility', 'yes']];
 }
 
 const FONT_SIZE: Record<SubtitleSize, string> = { small: '38', medium: '46', large: '56' };
