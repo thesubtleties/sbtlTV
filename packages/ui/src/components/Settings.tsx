@@ -53,6 +53,10 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
   const [posterDbKeyValid, setPosterDbKeyValid] = useState<boolean | null>(null);
   const [rpdbBackdropsEnabled, setRpdbBackdropsEnabled] = useState(false);
 
+  // SubDL state
+  const [subdlApiKey, setSubdlApiKey] = useState('');
+  const [subdlKeyValid, setSubdlKeyValid] = useState<boolean | null>(null);
+
   // Security state
   const [allowLanSources, setAllowLanSources] = useState(false);
   const [linuxPlayerMode, setLinuxPlayerMode] = useState<'native' | 'compatibility'>('native');
@@ -142,6 +146,11 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
       setPosterDbKeyValid(true); // Assume valid if previously saved
     }
     setRpdbBackdropsEnabled(s.rpdbBackdropsEnabled ?? false);
+
+    // Load SubDL key
+    const subdlKey = s.subdlApiKey || '';
+    setSubdlApiKey(subdlKey);
+    if (subdlKey) setSubdlKeyValid(true); // Assume valid if previously saved
 
     // Load security settings
     setAllowLanSources(s.allowLanSources ?? false);
@@ -289,6 +298,7 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
           <PrivacyTab
             tmdbKeySet={tmdbApiKey.trim().length > 0}
             posterDbKeySet={posterDbApiKey.trim().length > 0}
+            subdlKeySet={subdlApiKey.trim().length > 0}
             teamLogosEnabled={sportsMatchupEnabled}
             autoUpdateEnabled={autoUpdateEnabled}
             debugLoggingEnabled={debugLoggingEnabled}
