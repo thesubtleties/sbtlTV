@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { rankResults } from './subtitle-pick.js';
 import type { SubdlResult } from './subdl-client.js';
 
-const r = (o: Partial<SubdlResult>): SubdlResult => ({ nId: 'x', releaseName: 'R', language: 'en', hi: false, ai: false, author: null, season: null, episode: null, pack: false, popularity: null, fps: null, ...o });
+const r = (o: Partial<SubdlResult>): SubdlResult => ({ nId: 'x', releaseName: 'R', language: 'en', hi: false, ai: false, author: null, season: null, episode: null, pack: false, popularity: null, fps: null, md5: null, ...o });
 
 test('language first, then standard vs SDH by preference, then human over AI, then popularity, else SubDL order', () => {
   const list = [r({ nId: 'ai', ai: true, popularity: 900 }), r({ nId: 'sdh', hi: true }), r({ nId: 'fr', language: 'fr' }), r({ nId: 'pop', popularity: 50 }), r({ nId: 'plain' })];

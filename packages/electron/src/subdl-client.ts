@@ -30,6 +30,8 @@ export interface SubdlResult {
   pack: boolean;
   popularity: number | null;
   fps: number | null;
+  /** Same md5 = the same file uploaded twice */
+  md5: string | null;
 }
 export interface SubdlUsage { downloadsLeft: number; downloadsLimit: number; searchesLeft: number | null }
 export type SubdlErrorKind = 'auth' | 'quota' | 'not-found' | 'network' | 'bad-response';
@@ -86,10 +88,11 @@ export function parseSearch(json: unknown): SubdlResult[] {
         ai: yes(sub.ai),
         author: str(sub.author),
         season,
-        episode: num(file.episode) ?? num(sub.episode),
+        episode: num(file.episode) || num(sub.episode) || null,  // 0 = not given
         pack: yes(sub.full_season),
         popularity: null,
         fps: fpsOf(sub, subRelease),
+        md5: str(file.md5),
       });
     }
   }
@@ -108,7 +111,9 @@ export function parseUsage(json: unknown): SubdlUsage | null {
 export function errorKind(status: number, json: unknown, _headers: Record<string, string>): SubdlErrorKind | null {
   const code = obj(obj(json)?.error)?.code;
   if (code === 'quota_exceeded' || status === 429) return 'quota';
-  if (status === 401 || status === 403) return 'auth';
+  // Only SubDL saying no is a bad key: a 403 without its error body is a challenge page or a proxy
+  if (status === 401 || code === 'unauthorized') return 'auth';
+  if (status === 403) return json === null ? 'network' : 'bad-response';
   if (status === 404) return 'not-found';
   if (status >= 500) return 'network';
   if (status >= 400) return 'bad-response';
@@ -149,7 +154,7 @@ export class SubdlClient {
   async search(title: SubdlTitle, language: string): Promise<SubdlResult[]> {
     const q = new URLSearchParams({ tmdb_id: String(title.tmdbId), type: title.type, unpack: '1', subs_per_page: '30' });
     const lang = subdlCode(language);
-    if (lang) q.set('languages', lang.toLowerCase());
+    if (lang) q.set('languages', lang);  // as SubDL lists them: EN, BR_PT
     if (title.type === 'tv' && title.season != null && title.episode != null) {
       q.set('season', String(title.season));
       q.set('episode', String(title.episode));

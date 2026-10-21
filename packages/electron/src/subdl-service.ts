@@ -34,6 +34,16 @@ export class SubdlService {
   private authFailed = false;
   /** Cues of the file loaded for a stream, for the sync panel */
   private loaded: { generation: number; cues: Cue[] } | null = null;
+  /** Files that failed (gone from SubDL, not a subtitle): every try costs a download, so never again this session */
+  private failed = new Set<string>();
+  /** Out of downloads: none attempted until SubDL's daily reset (UTC midnight) */
+  private quotaUntil = 0;
+  /** One download per file at a time */
+  private inflight = new Map<string, Promise<{ path: string; cues: Cue[] }>>();
+  /** Files sub-added in the current load, by path: loading one again reuses its track (no duplicate tracks in mpv) */
+  private added: { generation: number; byPath: Map<string, SubtitleTrack> } = { generation: -1, byPath: new Map() };
+  /** Clock (replaced in tests) */
+  now: () => number = () => Date.now();
 
   constructor(private readonly io: SubdlServiceIo) {}
 
@@ -48,6 +58,11 @@ export class SubdlService {
     }
     const kind: SubdlErrorKind = e instanceof SubdlError ? e.kind : 'network';
     if (kind === 'auth') this.authFailed = true;
+    if (kind === 'quota') {
+      const midnight = new Date(this.now());
+      midnight.setUTCHours(24, 0, 0, 0);
+      this.quotaUntil = midnight.getTime();
+    }
     this.io.log(`subdl: request failed (${kind})`);
     return { error: kind };
   }
@@ -73,7 +88,17 @@ export class SubdlService {
     return { text, ext: SUBTITLE_EXT[format], cues };
   }
 
-  private async fileFor(title: SubdlTitle, nId: string, language: string): Promise<{ path: string; cues: Cue[] }> {
+  private fileFor(title: SubdlTitle, nId: string, language: string): Promise<{ path: string; cues: Cue[] }> {
+    const key = `${title.tmdbId}:${title.season ?? ''}:${title.episode ?? ''}:${nId}`;
+    let pending = this.inflight.get(key);
+    if (!pending) {
+      pending = this.readOrDownload(title, nId, language).finally(() => this.inflight.delete(key));
+      this.inflight.set(key, pending);
+    }
+    return pending;
+  }
+
+  private async readOrDownload(title: SubdlTitle, nId: string, language: string): Promise<{ path: string; cues: Cue[] }> {
     const cached = this.io.cache.find(title, nId);
     if (cached) {
       const now = new Date();
@@ -81,7 +106,16 @@ export class SubdlService {
       const text = fs.readFileSync(cached, 'utf8');
       return { path: cached, cues: parseCues(text, sniffFormat(text) ?? 'srt') };
     }
-    const prepared = this.prepare(await this.io.client.download(nId), language);
+    if (this.failed.has(nId)) throw new SubdlError('not-found', 'failed before');
+    if (this.now() < this.quotaUntil) throw new SubdlError('quota', 'no downloads left today');
+    let prepared: { text: string; ext: string; cues: Cue[] };
+    try {
+      prepared = this.prepare(await this.io.client.download(nId), language);
+    } catch (e) {
+      const kind = e instanceof NoFile ? 'no-file' : e instanceof SubdlError ? e.kind : 'network';
+      if (kind === 'no-file' || kind === 'not-found' || kind === 'bad-response') this.failed.add(nId);
+      throw e;
+    }
     const path = this.io.cache.write(title, nId, prepared.ext, prepared.text);
     this.io.cache.evict();
     return { path, cues: prepared.cues };
@@ -93,10 +127,19 @@ export class SubdlService {
     if (req.nId === 'auto') {
       // A language SubDL does not list: an unfiltered search would download another language
       if (!subdlCode(req.language)) return { error: 'not-found' };
+      if (this.now() < this.quotaUntil) return { error: 'quota' };
       const found = await this.find(req.title, req.language, req.preferSdh);
       if ('error' in found) return found;
-      if (found.results.length === 0) return { error: 'not-found' };
-      candidates = found.results.slice(0, MAX_AUTO_DOWNLOADS).map((r) => ({ nId: r.nId, ai: r.ai }));
+      // Not files that failed before, and not the same file twice (same md5)
+      const seen = new Set<string>();
+      const usable = found.results.filter((r) => {
+        if (this.failed.has(r.nId)) return false;
+        if (r.md5 && seen.has(r.md5)) return false;
+        if (r.md5) seen.add(r.md5);
+        return true;
+      });
+      if (usable.length === 0) return { error: 'not-found' };
+      candidates = usable.slice(0, MAX_AUTO_DOWNLOADS).map((r) => ({ nId: r.nId, ai: r.ai }));
     } else {
       if (this.authFailed && !this.io.cache.find(req.title, req.nId)) return { error: 'auth' };
       candidates = [{ nId: req.nId, ai: false }];
@@ -113,8 +156,10 @@ export class SubdlService {
         return last;  // quota, auth, network: the next file would fail the same way
       }
       if (!this.io.isCurrent(req.generation)) return { error: 'stale' };
-      const track = await this.io.addSubtitle(file.path, req.generation);
+      if (this.added.generation !== req.generation) this.added = { generation: req.generation, byPath: new Map() };
+      const track = this.added.byPath.get(file.path) ?? await this.io.addSubtitle(file.path, req.generation);
       if (!track) return { error: 'no-file' };
+      this.added.byPath.set(file.path, track);
       this.loaded = { generation: req.generation, cues: file.cues };
       return { trackId: track.id, nId: c.nId, ai: c.ai, timing: timingCheck(file.cues, req.duration) };
     }

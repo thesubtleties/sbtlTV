@@ -44,7 +44,6 @@ test('usage from /me', () => {
 
 test('error kinds', () => {
   assert.equal(errorKind(401, fx('error-auth.json'), {}), 'auth');
-  assert.equal(errorKind(403, {}, {}), 'auth');
   assert.equal(errorKind(429, {}, {}), 'quota');
   assert.equal(errorKind(403, { error: { code: 'quota_exceeded' } }, {}), 'quota');
   assert.equal(errorKind(404, { status: false, error: 'subtitle_not_found' }, {}), 'not-found');
@@ -60,7 +59,7 @@ test('client: key only in the Authorization header, never in the URL', async () 
   assert.equal(seen[0].url.includes('KEY123'), false);
   assert.equal(seen[0].headers.Authorization, 'Bearer KEY123');
   assert.match(seen[0].url, /^https:\/\/api\.subdl\.com\/api\/v2\/subtitles\/search\?/);
-  for (const part of ['tmdb_id=693134', 'type=movie', 'unpack=1', 'languages=en']) assert.ok(seen[0].url.includes(part), part);
+  for (const part of ['tmdb_id=693134', 'type=movie', 'unpack=1', 'languages=EN']) assert.ok(seen[0].url.includes(part), part);
 });
 
 test('client: no key -> auth error without a request; 401 -> SubdlError auth; network error hides details', async () => {
@@ -78,7 +77,7 @@ test('client: episode search sends season and episode; download goes to dl.subdl
   const http: HttpGet = async (url) => { urls.push(url); return ok({ subtitles: [] }); };
   const c = new SubdlClient(http, () => 'k');
   await c.search({ tmdbId: 1396, type: 'tv', season: 5, episode: 14 }, 'pt-br');
-  assert.ok(urls[0].includes('season=5') && urls[0].includes('episode=14') && urls[0].includes('languages=br_pt'));
+  assert.ok(urls[0].includes('season=5') && urls[0].includes('episode=14') && urls[0].includes('languages=BR_PT'));
   await c.download('abc_1/XyZ9');
   assert.equal(urls[1], 'https://dl.subdl.com/subtitle/abc_1/XyZ9');
   await assert.rejects(c.download('../x'), (e: unknown) => e instanceof SubdlError && e.kind === 'bad-response');
@@ -99,4 +98,27 @@ test('client: the file size cap is passed to the transport', async () => {
   await c.search({ tmdbId: 1, type: 'movie' }, 'en');
   await c.download('p/f');
   assert.deepEqual(caps, [1024 * 1024, 2 * 1024 * 1024]);
+});
+
+// ---- Fix pass (PR #146 review, group C) ----
+test('only a real "unauthorized" is a bad key; another 403 is not', () => {
+  assert.equal(errorKind(401, {}, {}), 'auth');
+  assert.equal(errorKind(403, { error: { code: 'unauthorized' } }, {}), 'auth');
+  assert.equal(errorKind(403, null, {}), 'network');           // a challenge page or a proxy, not SubDL saying no
+  assert.equal(errorKind(403, { error: { code: 'forbidden' } }, {}), 'bad-response');
+});
+
+test('single-episode uploads keep their episode when the file says 0', () => {
+  const r = parseSearch({ subtitles: [{ subtitlePage: '/s/info/P1', release_name: 'Show.S05E14', season: 5, episode: 14, language: 'EN', unpack_files: [{ file_n_id: 'F1', format: 'srt', season: 0, episode: 0 }] }] });
+  assert.equal(r[0].episode, 14);
+  assert.equal(r[0].season, 5);
+});
+
+test('language codes go out as SubDL lists them (uppercase); md5 is kept for duplicates', async () => {
+  const urls: string[] = [];
+  const http: HttpGet = async (url) => { urls.push(url); return ok({ subtitles: [] }); };
+  await new SubdlClient(http, () => 'k').search({ tmdbId: 1, type: 'movie' }, 'pt-br');
+  assert.ok(urls[0].includes('languages=BR_PT'), urls[0]);
+  const r = parseSearch({ subtitles: [{ subtitlePage: '/s/info/P1', release_name: 'R', language: 'EN', unpack_files: [{ file_n_id: 'F1', format: 'srt', md5: 'dbf98' }] }] });
+  assert.equal(r[0].md5, 'dbf98');
 });

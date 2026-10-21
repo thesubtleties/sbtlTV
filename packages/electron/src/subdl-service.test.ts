@@ -8,7 +8,7 @@ import { SubtitleCache } from './subtitle-cache.js';
 import { SubdlError, type SubdlResult } from './subdl-client.js';
 
 const SRT = '1\n00:00:01,000 --> 00:00:02,000\nHello there.\n\n2\n00:00:05,000 --> 00:00:06,000\n[MUSIC]\n\n3\n00:50:00,000 --> 00:50:02,000\nLater.\n';
-const res = (nId: string): SubdlResult => ({ nId, releaseName: nId, language: 'en', hi: false, ai: false, author: null, season: null, episode: null, pack: false, popularity: null, fps: null });
+const res = (nId: string): SubdlResult => ({ nId, releaseName: nId, language: 'en', hi: false, ai: false, author: null, season: null, episode: null, pack: false, popularity: null, fps: null, md5: null });
 const title = { tmdbId: 7, type: 'movie' as const };
 
 function harness(opts: { results?: SubdlResult[]; files?: Record<string, Uint8Array | Error>; current?: () => boolean } = {}) {
@@ -177,4 +177,61 @@ test('a language SubDL does not list never downloads a file in another language 
   const r = await h.svc.load(req({ language: 'sk' }));
   assert.deepEqual(r, { error: 'not-found' });
   assert.deepEqual(h.downloads, []);
+});
+
+// ---- Fix pass (PR #146 review, group C: don't waste downloads) ----
+const html = () => new TextEncoder().encode('<html>gone</html>');
+
+test('a file that failed is not downloaded again (saved choice or second auto try)', async () => {
+  const h = custom({ download: async (nId) => { if (nId === 'p/dead') throw new SubdlError('not-found'); return new TextEncoder().encode(SRT); } });
+  assert.deepEqual(await h.svc.load(req({ nId: 'p/dead' })), { error: 'not-found' });
+  assert.deepEqual(await h.svc.load(req({ nId: 'p/dead' })), { error: 'not-found' });
+  assert.deepEqual(h.downloads, ['p/dead']);
+  const a = custom({ search: async () => [res('p/bad'), res('p/good')], download: async (nId) => (nId === 'p/bad' ? html() : new TextEncoder().encode(SRT)) });
+  await a.svc.load(req());
+  await a.svc.load(req({ generation: 2 }));     // a reload searches again: the bad file is skipped, the good one is cached
+  assert.deepEqual(a.downloads, ['p/bad', 'p/good']);
+});
+
+test('out of downloads is remembered: no more download attempts until the reset', async () => {
+  let now = Date.parse('2026-10-21T15:00:00Z');
+  const h = custom({ download: async () => { throw new SubdlError('quota'); } });
+  (h.svc as unknown as { now: () => number }).now = () => now;
+  assert.deepEqual(await h.svc.load(req()), { error: 'quota' });
+  assert.deepEqual(await h.svc.load(req({ generation: 2 })), { error: 'quota' });
+  assert.equal(h.downloads.length, 1);
+  now = Date.parse('2026-10-22T00:00:05Z');      // after UTC midnight
+  await h.svc.load(req({ generation: 3 }));
+  assert.equal(h.downloads.length, 2);
+});
+
+test('the same file is downloaded once when two loads ask for it together', async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  const h = custom({ download: async () => { await gate; return new TextEncoder().encode(SRT); } });
+  const a = h.svc.load(req({ nId: 'p/a' }));
+  const b = h.svc.load(req({ nId: 'p/a' }));
+  release();
+  await Promise.all([a, b]);
+  assert.deepEqual(h.downloads, ['p/a']);
+});
+
+test('the second automatic try skips a file identical to the first (same md5)', async () => {
+  const first = { ...res('p/1'), md5: 'abc' };
+  const twin = { ...res('p/2'), md5: 'abc' };
+  const other = { ...res('p/3'), md5: 'def' };
+  const h = custom({ search: async () => [first, twin, other], download: async (nId) => (nId === 'p/1' ? html() : new TextEncoder().encode(SRT)) });
+  const r = await h.svc.load(req());
+  assert.ok('nId' in r && r.nId === 'p/3');
+  assert.deepEqual(h.downloads, ['p/1', 'p/3']);
+});
+
+test('a file already added in this load is reused, not added to mpv again', async () => {
+  const h = custom({});
+  const a = await h.svc.load(req({ nId: 'p/a' }));
+  const b = await h.svc.load(req({ nId: 'p/a' }));
+  assert.ok('trackId' in a && 'trackId' in b && a.trackId === b.trackId);
+  assert.equal(h.added.length, 1);
+  await h.svc.load(req({ nId: 'p/a', generation: 2 }));   // a new load (mpv dropped its tracks): added again
+  assert.equal(h.added.length, 2);
 });

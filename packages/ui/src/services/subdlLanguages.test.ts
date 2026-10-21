@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { languageOptions, isoCodesFor } from './subdlLanguages';
+import { languageOptions, isoCodesFor, pickerLanguage } from './subdlLanguages';
 
 const LIST = [
   { code: 'en', label: 'English', iso: ['eng'] },
@@ -32,5 +32,23 @@ describe('isoCodesFor', () => {
   });
   it('unknown language: the bare code still matches tracks tagged with it', () => {
     expect(isoCodesFor(LIST, 'auto', 'xx-YY')).toEqual(['xx']);
+  });
+});
+
+describe('locale aliases', () => {
+  const ALL = [
+    ...LIST,
+    { code: 'no', label: 'Norsk', iso: ['nor', 'nob', 'nno'] },
+    { code: 'zh-cn', label: '中文 (简体)', iso: ['chi', 'zho'] },
+    { code: 'zh-tw', label: '中文 (繁體)', iso: ['chi', 'zho'] },
+  ];
+  it('Norwegian and Chinese system locales map to SubDL languages', () => {
+    expect(pickerLanguage(ALL, 'auto', 'nb-NO')).toBe('no');
+    expect(pickerLanguage(ALL, 'auto', 'nn')).toBe('no');
+    expect(pickerLanguage(ALL, 'auto', 'zh-HK')).toBe('zh-tw');
+    expect(pickerLanguage(ALL, 'auto', 'zh-Hant-TW')).toBe('zh-tw');
+    expect(pickerLanguage(ALL, 'auto', 'zh-SG')).toBe('zh-cn');
+    expect(pickerLanguage(ALL, 'auto', 'zh')).toBe('zh-cn');
+    expect(isoCodesFor(ALL, 'auto', 'nb-NO')).toContain('nob');
   });
 });

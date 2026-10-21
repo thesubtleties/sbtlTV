@@ -32,7 +32,7 @@ import { saveSettings } from './utils/saveSettings';
 import type { SettingsTabId } from './components/settings/SettingsSidebar';
 import { useSubtitleStore, subtitleChoiceToSave, type PendingDelay, type SubdlLoadInfo } from './stores/subtitleStore';
 import { loadSubdlLanguages, subdlLanguagesNow } from './hooks/useSubdlLanguages';
-import { isoCodesFor } from './services/subdlLanguages';
+import { isoCodesFor, localeLanguage } from './services/subdlLanguages';
 import { resumeSettled } from './hooks/resumeSettle';
 import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
 import { perfMeasure, perfStart } from './utils/perfMarks';
@@ -183,7 +183,7 @@ function subdlLoadInfo(info: VodPlayInfo | null | undefined): SubdlLoadInfo | nu
   const setting = settings.subtitles?.language ?? 'auto';
   const list = subdlLanguagesNow();
   const locale = navigator.language || 'en';
-  const language = setting !== 'auto' ? setting : (list.find((l) => l.code === locale.toLowerCase())?.code ?? locale.toLowerCase().split('-')[0]);
+  const language = setting !== 'auto' ? setting : localeLanguage(list, locale);
   return {
     title: isTv ? { tmdbId: info.tmdbId, type: 'tv', season: info.seasonNum, episode: info.episodeNum } : { tmdbId: info.tmdbId, type: 'movie' },
     language,
