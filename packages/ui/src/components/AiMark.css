@@ -1,11 +1,16 @@
+/* A filled chip: reads in every palette, light ones included */
 .ai-mark {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: var(--accent);
+  line-height: 1.4;
   vertical-align: middle;
 }
 

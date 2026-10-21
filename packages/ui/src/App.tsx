@@ -823,9 +823,9 @@ function App() {
       // Leave Ctrl/Alt/Cmd combinations to the system and Chromium (Ctrl+F,
       // Cmd+M, Ctrl+Shift+I...); Shift alone is part of some bindings (Shift+I).
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      // The subtitle picker and sync panel handle their own keys while open
+      // The subtitle picker and sync panel move with the arrows and close with Esc; Space, Z/X and the rest still work
       const subtitlePanels = useSubtitleStore.getState();
-      if (subtitlePanels.pickerOpen || subtitlePanels.syncOpen) return;
+      if ((subtitlePanels.pickerOpen || subtitlePanels.syncOpen) && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape'].includes(e.key)) return;
 
       switch (e.key) {
         case ' ':

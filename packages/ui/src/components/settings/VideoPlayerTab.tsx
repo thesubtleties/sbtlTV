@@ -99,7 +99,7 @@ export function VideoPlayerTab({
           title="Language"
           help={subtitles.language === 'auto'
             ? 'Your system language. Live captions prefer it when a channel carries several; if a channel only has another language, that one shows.'
-            : 'Live captions prefer this language when a channel carries several; movie and series subtitles pick it when the file has it.'}
+            : 'Live captions prefer this language when a channel carries several; movies and series use it for their subtitles and SubDL.'}
         >
           {subdlKeySet || !basicLanguage ? (
             <select

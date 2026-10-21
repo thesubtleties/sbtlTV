@@ -56,7 +56,7 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
     : none
       ? (kind === 'vod' ? 'No subtitles in this file' : 'No captions on this channel')
       : tracks.length === 0
-        ? 'Captions off (V) · right-click to find subtitles'
+        ? 'No subtitles in this file · V gets some from SubDL'
         : `${on ? 'Captions on' : 'Captions off'} (V)${checking ? ' · checking the captions, they show in a moment' : ''}${otherLanguage ? ` · this channel's captions only came through in ${otherLanguage}` : ''} · right-click for tracks and delay`;
 
   return (
@@ -99,7 +99,7 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
             <>
               <div className="cc__divider" />
               <button className="cc__item" role="menuitem" onClick={() => { setMenuOpen(false); useSubtitleStore.getState().openPicker(true); }}>
-                Find subtitles...
+                Find subtitles…
               </button>
               <button
                 className="cc__item"

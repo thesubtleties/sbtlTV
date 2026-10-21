@@ -45,9 +45,9 @@ export function SubtitlesTab({ subdlApiKey, subdlKeyValid, onSubdlKeyChange, onS
     <SettingsTab>
       <Section
         title="Subtitles"
-        description="Subtitles on movies and series, where the file has them. The CC button in the player bar (or V) turns them on or off until you quit sbtlTV; right-click it for tracks and timing. Language and look are under Video Player."
+        description="Subtitles on movies and series. CC in the player bar (or V) turns them on or off until you quit sbtlTV; right-click it for tracks, timing and SubDL. Language and look are under Video Player."
       >
-        <OptionRow title="Movie & series subtitles" help={subtitles.vodDefault ? 'Subtitles start on, in your chosen language when the file has it.' : 'Movies and episodes start without subtitles.'}>
+        <OptionRow title="Movie & series subtitles" help={subtitles.vodDefault ? 'Subtitles start on, in your language when the file or SubDL has it.' : 'Movies and episodes start without subtitles.'}>
           <OnOff value={subtitles.vodDefault} onChange={(v) => void updateSubtitles({ vodDefault: v })} />
         </OptionRow>
       </Section>

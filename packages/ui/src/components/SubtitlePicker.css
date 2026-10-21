@@ -152,3 +152,10 @@
   border-top: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
 }
+
+.subpick__close:focus-visible,
+.subpick__row:focus-visible,
+.subsync__row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

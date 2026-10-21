@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useSubtitleStore } from '../stores/subtitleStore';
 import { usePlaybackStore } from '../stores/playbackStore';
 import { heardAt, solveSync, type SyncPoint } from '../services/subtitleLogic';
@@ -18,6 +18,8 @@ function SyncPanel() {
   const moved = useRef(false);
   const points = useRef<SyncPoint[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const focusedOnce = useRef(false);
 
   // The lines around now, refreshed while playback goes on
   useEffect(() => {
@@ -60,21 +62,44 @@ function SyncPanel() {
     setTimeout(() => setSynced(false), 1500);
   }
 
+  // Focus moves into the panel (first lines in view) and back to the CC button when it closes
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    panelRef.current?.querySelector<HTMLElement>('.subsync__done')?.focus();
+    return () => { (document.querySelector<HTMLElement>('.cc__arrow') ?? opener)?.focus?.(); };
+  }, []);
+  useEffect(() => {
+    if (focusedOnce.current || focus === null) return;
+    focusedOnce.current = true;
+    listRef.current?.querySelector<HTMLElement>(`[data-index="${focus}"]`)?.focus();
+  }, [focus]);
+
+  // Up/Down move between lines, Esc closes (after the CC menu, if open); Enter is the focused line's own (pick)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') useSubtitleStore.getState().openSync(false);
-      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (e.key === 'Escape') {
+        if (document.querySelector('.cc__menu')) return;
+        useSubtitleStore.getState().openSync(false);
+      } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && (e.target as HTMLElement | null)?.dataset?.index !== undefined) {
         moved.current = true;
-        const step = e.key === 'ArrowDown' ? 1 : -1;
-        setFocus((f) => Math.min(Math.max((f ?? 0) + step, 0), Math.max(cues.length - 1, 0)));
-      } else if (e.key === 'Enter' && focus !== null) pick(focus);
-      else return;
+        const next = Math.min(Math.max((focus ?? 0) + (e.key === 'ArrowDown' ? 1 : -1), 0), Math.max(cues.length - 1, 0));
+        setFocus(next);
+        listRef.current?.querySelector<HTMLElement>(`[data-index="${next}"]`)?.focus();
+      } else return;
       e.preventDefault();
       e.stopPropagation();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   });
+
+  const trapTab = (e: ReactKeyboardEvent) => {
+    if (e.key !== 'Tab') return;
+    const items = [...(panelRef.current?.querySelectorAll<HTMLElement>('button') ?? [])].filter((el) => el.tabIndex >= 0);
+    if (items.length === 0) return;
+    if (e.shiftKey && document.activeElement === items[0]) { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === items[items.length - 1]) { e.preventDefault(); items[0].focus(); }
+  };
 
   useEffect(() => {
     if (focus !== null) listRef.current?.querySelector<HTMLElement>(`[data-index="${focus}"]`)?.scrollIntoView({ block: 'center' });
@@ -83,22 +108,22 @@ function SyncPanel() {
   const hint = synced ? 'Synced' : points.current.length > 0 ? 'Tap another line later to fix drift' : 'Tap the line you just heard';
 
   return (
-    <div className="subsync" role="dialog" aria-label="Sync subtitles">
+    <div className="subsync" role="dialog" aria-label="Sync subtitles" ref={panelRef} onKeyDown={trapTab}>
       <div className="subsync__head">
         <span className="subsync__title">Sync subtitles</span>
         <button className="subpick__close" onClick={() => useSubtitleStore.getState().openSync(false)} aria-label="Close">×</button>
       </div>
       <div className={`subsync__hint${synced ? ' subsync__hint--ok' : ''}`}>{hint}</div>
-      <div className="subsync__list" ref={listRef} role="listbox">
+      <div className="subsync__list" ref={listRef}>
         {cues.length === 0 && <div className="subpick__note">No spoken lines around here</div>}
         {cues.map((c, i) => (
           <button
             key={`${c.start}-${i}`}
             data-index={i}
-            role="option"
-            aria-selected={i === focus}
+            tabIndex={i === focus ? 0 : -1}
             className={`subsync__row${i === focus ? ' subsync__row--focus' : ''}`}
             onMouseEnter={() => { moved.current = true; setFocus(i); }}
+            onFocus={() => setFocus(i)}
             onClick={() => pick(i)}
           >
             {c.text}
