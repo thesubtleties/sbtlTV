@@ -33,13 +33,29 @@ const update = (generation: number, tracks: SubtitleTrack[], duration = 0) => ({
 const settle = async () => { resolveLoad?.(); await new Promise((r) => setTimeout(r, 0)); };
 
 describe('SubDL when the file has no subtitle in the language', () => {
+  it('waits for the real track list: the empty one announced at load start is not a decision', async () => {
+    s().bindLoad(3, 'vod', true, 'en-US', null, info);
+    s().receiveTracks(update(3, [], 0), true, 'en-US');   // reset at load start
+    expect(load).not.toHaveBeenCalled();
+    s().receiveTracks(update(3, [eng], 120), true, 'en-US');
+    expect(load).not.toHaveBeenCalled();
+    expect(s().selectedId).toBe(2);
+  });
+
+  it('a real list without the language (duration known) does go to SubDL', () => {
+    s().bindLoad(3, 'vod', true, 'en-US', null, info);
+    s().receiveTracks(update(3, [], 0), true, 'en-US');
+    s().receiveTracks(update(3, [spa], 120), true, 'en-US');
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
   it('loads the best match once, then selects and tags it', async () => {
     s().bindLoad(3, 'vod', true, 'en-US', null, info);
-    s().receiveTracks(update(3, [spa]), true, 'en-US');
-    s().receiveTracks(update(3, [spa]), true, 'en-US');
+    s().receiveTracks(update(3, [spa], 120), true, 'en-US');
+    s().receiveTracks(update(3, [spa], 120), true, 'en-US');
     expect(load).toHaveBeenCalledTimes(1);
     expect(load).toHaveBeenCalledWith(3, info.title, 'auto', 'en', 0);
-    s().receiveTracks(update(3, [spa, downloaded]), true, 'en-US');  // main pushes the new list before load returns
+    s().receiveTracks(update(3, [spa, downloaded], 120), true, 'en-US');  // main pushes the new list before load returns
     await settle();
     expect(s().selectedId).toBe(5);
     expect(s().downloaded[5]).toEqual({ nId: 'p/f', ai: false, language: 'en' });
@@ -48,14 +64,14 @@ describe('SubDL when the file has no subtitle in the language', () => {
 
   it('a built-in track in the language is used, no SubDL request', () => {
     s().bindLoad(3, 'vod', true, 'en-US', null, info);
-    s().receiveTracks(update(3, [spa, eng]), true, 'en-US');
+    s().receiveTracks(update(3, [spa, eng], 120), true, 'en-US');
     expect(load).not.toHaveBeenCalled();
     expect(s().selectedId).toBe(2);
   });
 
   it('a result for an earlier load is dropped', async () => {
     s().bindLoad(3, 'vod', true, 'en-US', null, info);
-    s().receiveTracks(update(3, [spa]), true, 'en-US');
+    s().receiveTracks(update(3, [spa], 120), true, 'en-US');
     s().bindLoad(4, 'vod', true, 'en-US', null, null);
     await settle();
     expect(setTrack).not.toHaveBeenCalledWith(3, 5, true);
@@ -64,7 +80,7 @@ describe('SubDL when the file has no subtitle in the language', () => {
 
   it('subtitles off by default: nothing loads until CC is pressed, even with no tracks', async () => {
     s().bindLoad(3, 'vod', false, 'en-US', null, info);
-    s().receiveTracks(update(3, []), false, 'en-US');
+    s().receiveTracks(update(3, [], 120), false, 'en-US');
     expect(load).not.toHaveBeenCalled();
     s().toggle('en-US');
     expect(load).toHaveBeenCalledTimes(1);
@@ -75,7 +91,7 @@ describe('SubDL when the file has no subtitle in the language', () => {
   it('no downloads left: says so and falls back to the file\'s track', async () => {
     loadResult = { error: 'quota' };
     s().bindLoad(3, 'vod', true, 'en-US', null, info);
-    s().receiveTracks(update(3, [spa]), true, 'en-US');
+    s().receiveTracks(update(3, [spa], 120), true, 'en-US');
     await settle();
     expect(s().subdlStatus).toBe('quota');
     expect(s().selectedId).toBe(1);
@@ -95,7 +111,7 @@ describe('SubDL when the file has no subtitle in the language', () => {
   it('a frame-rate mismatch is fixed and reported', async () => {
     loadResult = { trackId: 5, nId: 'p/f', ai: false, timing: { speed: 23.976 / 25, fps: { from: 25, to: 23.976 }, cutMismatch: false } };
     s().bindLoad(3, 'vod', true, 'en-US', null, info);
-    s().receiveTracks(update(3, [spa]), true, 'en-US');
+    s().receiveTracks(update(3, [spa], 120), true, 'en-US');
     await settle();
     expect(setSpeed).toHaveBeenLastCalledWith(3, 23.976 / 25);
     expect(s().subdlStatus).toEqual({ fps: { from: 25, to: 23.976 } });
@@ -103,7 +119,7 @@ describe('SubDL when the file has no subtitle in the language', () => {
 
   it('a picked file is a user choice: recorded for saving', async () => {
     s().bindLoad(3, 'vod', true, 'en-US', null, info);
-    s().receiveTracks(update(3, [eng]), true, 'en-US');
+    s().receiveTracks(update(3, [eng], 120), true, 'en-US');
     const picked = s().loadSubdl('p/f', true, 'fr');
     await settle();
     await picked;

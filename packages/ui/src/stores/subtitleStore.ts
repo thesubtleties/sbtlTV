@@ -59,6 +59,8 @@ interface SubtitleData {
   subdlStatus: SubdlStatus | null;
   /** The automatic SubDL attempt for this load has started (once per load) */
   subdlTried: boolean;
+  /** A track list with the file's duration has arrived: the file's own tracks are known (the one announced at load start is empty) */
+  listReady: boolean;
   /** The locale bound with the load, for the fallback track */
   locale: string;
   pickerOpen: boolean;
@@ -99,7 +101,7 @@ export function initialSubtitleState(): SubtitleData {
     generation: -1, kind: null, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null,
     delay: 0, delayResolved: true, pendingDelay: null, speed: 1, userSubtitleEdit: null,
     sessionOn: { live: null, vod: null }, waiting: null,
-    subdl: null, downloaded: {}, subdlBusy: false, subdlStatus: null, subdlTried: false, locale: 'en',
+    subdl: null, downloaded: {}, subdlBusy: false, subdlStatus: null, subdlTried: false, listReady: false, locale: 'en',
     pickerOpen: false, syncOpen: false,
   };
 }
@@ -146,7 +148,7 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
     if (decision.kind === 'track') {
       set({ selectedId: decision.id });
       send.track(decision.id, true);
-    } else if (decision.kind === 'subdl' && !subdlTried) {
+    } else if (decision.kind === 'subdl' && !subdlTried && get().listReady) {
       set({ subdlTried: true });
       void loadSubdl(decision.nId, false, subdl.language);
     }
@@ -196,7 +198,7 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
     if (!kind) return;
     const wanted = sessionOn[kind] ?? defaultOn;
     const tracks = kind === 'vod' ? update.tracks.filter((t) => !t.isCc) : update.tracks;
-    set({ tracks });
+    set({ tracks, ...(update.duration > 0 && { listReady: true }) });
 
     if (kind === 'live') {
       const cc = tracks.find((t) => t.isCc) ?? tracks[0];
@@ -238,7 +240,7 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
       set({
         generation, kind, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, delay: 0, speed: 1,
         delayResolved: pendingDelay === null, pendingDelay, waiting: null,
-        subdl: kind === 'vod' ? subdl : null, downloaded: {}, subdlBusy: false, subdlStatus: null, subdlTried: false, locale,
+        subdl: kind === 'vod' ? subdl : null, downloaded: {}, subdlBusy: false, subdlStatus: null, subdlTried: false, listReady: false, locale,
         pickerOpen: false, syncOpen: false,
       });
       if (waiting?.generation === generation) apply(waiting, defaultOn, locale);
@@ -248,7 +250,7 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
       const { waiting, kind, delay, speed } = get();
       if (!kind || generation < get().generation) return;
       // A reload drops sub-added files: SubDL loads again (from the cache) for the new load
-      set({ generation, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, waiting: null, downloaded: {}, subdlTried: false, subdlBusy: false });
+      set({ generation, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, waiting: null, downloaded: {}, subdlTried: false, subdlBusy: false, listReady: false });
       if (delay !== 0) send.delay(delay);  // main reset sub-delay with the reload
       if (speed !== 1) send.speed(speed);
       if (waiting?.generation === generation) apply(waiting, defaultOn, locale);

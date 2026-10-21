@@ -1261,8 +1261,9 @@ function handleMpvMessage(msg: MpvMessage): void {
       case 'duration':
         playerRaw.duration = (msg.data as number) ?? 0;
         Object.assign(mpvState, stream.gate.pass(playerRaw, Date.now()));
-        // The renderer restores a saved subtitle delay once the duration is known.
-        if (mpvState.duration > 0 && captions.tracks.length > 0) captions.setTracks(captions.tracks, mpvState.duration);
+        // The renderer restores a saved subtitle delay, and decides on SubDL, once the
+        // duration is known: a list with the duration is the file's real one (even an empty one).
+        if (mpvState.duration > 0) captions.setTracks(captions.tracks, mpvState.duration);
         resumeExternalIfOpen();
         break;
       case 'eof-reached':
