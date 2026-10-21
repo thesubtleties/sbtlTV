@@ -1,0 +1,185 @@
+{
+ "status": true,
+ "results": [
+  {
+   "sd_id": 1300044,
+   "name": "Breaking Bad",
+   "type": "tv",
+   "imdb_id": "tt0903747",
+   "tmdb_id": 1396,
+   "first_air_date": "2008-01-20T00:00:00.000Z",
+   "release_date": "2008-01-20T00:00:00.000Z",
+   "slug": "breaking-bad",
+   "year": 2008
+  }
+ ],
+ "subtitles": [
+  {
+   "release_name": "Breaking Bad, SEASON 5 1080p x265 [23.976 FPS]",
+   "name": "00 Breaking Bad, SEASON 5 1080p x265 [23.976 FPS].zip",
+   "lang": "English",
+   "author": "ClassicLover",
+   "url": "/subtitle/3594438-8511760.zip?api_key=REDACTED",
+   "subtitlePage": "/s/info/sAcVm4CLIE",
+   "season": 5,
+   "episode": null,
+   "language": "EN",
+   "framerate": 2,
+   "fps": "23.976",
+   "hi": false,
+   "episode_from": null,
+   "episode_end": 0,
+   "full_season": true,
+   "unpack_files": [
+    {
+     "file_n_id": "rilA9a7VAt",
+     "name": "14 Ozymandias.en.srt",
+     "release_name": "14 Ozymandias.en",
+     "season": 0,
+     "episode": 14,
+     "language": "EN",
+     "hi": false,
+     "format": "srt",
+     "size": 41142,
+     "md5": "a4ff2fef5ab283467bb886b348d4e589",
+     "url": "/subtitle/sAcVm4CLIE/rilA9a7VAt?api_key=REDACTED",
+     "from_pack": true
+    }
+   ]
+  },
+  {
+   "release_name": "Breaking Bad, Season 5 (1080p BluRay x265 HEVC 10bit AAC 5.1 Silence) [23.976 FPS]",
+   "name": "15 Granite State.en.zip",
+   "lang": "English",
+   "author": "ClassicLover",
+   "url": "/subtitle/3567542-8486821.zip?api_key=REDACTED",
+   "subtitlePage": "/s/info/jNG8vFuqc6Z",
+   "season": 5,
+   "episode": null,
+   "language": "EN",
+   "framerate": 2,
+   "fps": "23.976",
+   "hi": false,
+   "episode_from": null,
+   "episode_end": 0,
+   "full_season": true,
+   "unpack_files": [
+    {
+     "file_n_id": "OfDn8pCfAX",
+     "name": "14 Ozymandias.en.srt",
+     "release_name": "14 Ozymandias.en",
+     "season": 5,
+     "episode": 14,
+     "language": "EN",
+     "hi": false,
+     "format": "srt",
+     "size": 41208,
+     "md5": "cbd836b46b5bf6372d02461242b3ef7c",
+     "url": "/subtitle/jNG8vFuqc6Z/OfDn8pCfAX?api_key=REDACTED",
+     "from_pack": true
+    }
+   ]
+  },
+  {
+   "release_name": "BreakingBad-Season5(WEBRip)",
+   "name": "SUBDL::breaking-bad-fifth-season-english-3002117.zip",
+   "lang": "english",
+   "author": "Nightfall",
+   "url": "/subtitle/3003765-3002117.zip?api_key=REDACTED",
+   "subtitlePage": "/s/info/1H2SsTD8jk",
+   "season": 5,
+   "episode": null,
+   "language": "EN",
+   "framerate": 0,
+   "fps": null,
+   "hi": false,
+   "episode_from": null,
+   "episode_end": 0,
+   "full_season": true,
+   "unpack_files": [
+    {
+     "file_n_id": "hMcWKJaPor",
+     "name": "Breaking Bad  S05E14  Ozymandias.srt",
+     "release_name": "Breaking Bad  S05E14  Ozymandias",
+     "season": 5,
+     "episode": 14,
+     "language": "EN",
+     "hi": false,
+     "format": "srt",
+     "size": 36093,
+     "md5": "1ef23d763a5da1468563ff5888ade369",
+     "url": "/subtitle/1H2SsTD8jk/hMcWKJaPor?api_key=REDACTED",
+     "from_pack": true
+    }
+   ]
+  },
+  {
+   "release_name": "BreakingBad-Season5(Blu-ray/Web)V2",
+   "name": "SUBDL::breaking-bad-fifth-season-english-2961665.zip",
+   "lang": "english",
+   "author": "Penguin2359",
+   "url": "/subtitle/2967808-2961665.zip?api_key=REDACTED",
+   "subtitlePage": "/s/info/kyZlxnQiGj",
+   "season": 5,
+   "episode": null,
+   "language": "EN",
+   "framerate": 0,
+   "fps": null,
+   "hi": false,
+   "episode_from": null,
+   "episode_end": 0,
+   "full_season": true,
+   "unpack_files": [
+    {
+     "file_n_id": "GAHVvR8o0k",
+     "name": "Breaking Bad (2008) - S05E14 - Ozymandias.eng.sdh.srt",
+     "release_name": "Breaking Bad (2008) - S05E14 - Ozymandias.eng.sdh",
+     "season": 5,
+     "episode": 14,
+     "language": "EN",
+     "hi": true,
+     "format": "srt",
+     "size": 43793,
+     "md5": "92ab7c55cd3c88472adae0d7429cfa68",
+     "url": "/subtitle/kyZlxnQiGj/GAHVvR8o0k?api_key=REDACTED",
+     "from_pack": true
+    }
+   ]
+  },
+  {
+   "release_name": "Breaking Bad - Season 5 WEBRip",
+   "name": "SUBDL::breaking-bad-fifth-season-english-2915156.zip",
+   "lang": "english",
+   "author": "Nightfall",
+   "url": "/subtitle/2924996-2915156.zip?api_key=REDACTED",
+   "subtitlePage": "/s/info/XutQSrrJ1u",
+   "season": 5,
+   "episode": null,
+   "language": "EN",
+   "framerate": 0,
+   "fps": null,
+   "hi": false,
+   "episode_from": null,
+   "episode_end": 0,
+   "full_season": true,
+   "unpack_files": [
+    {
+     "file_n_id": "QYBu9J6m75",
+     "name": "Breaking Bad  S05E14  Ozymandias.srt",
+     "release_name": "Breaking Bad  S05E14  Ozymandias",
+     "season": 5,
+     "episode": 14,
+     "language": "EN",
+     "hi": false,
+     "format": "srt",
+     "size": 36092,
+     "md5": "46903202c15c0bd946809909f30d767e",
+     "url": "/subtitle/XutQSrrJ1u/QYBu9J6m75?api_key=REDACTED",
+     "from_pack": true
+    }
+   ]
+  }
+ ],
+ "totalPages": 4,
+ "currentPage": 1
+}

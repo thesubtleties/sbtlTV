@@ -1,0 +1,65 @@
+{
+ "plan": {
+  "is_pro": false,
+  "name": "Free",
+  "product_type": null,
+  "current_period_end": null
+ },
+ "usage": {
+  "search": {
+   "used": 0,
+   "limit": 2000,
+   "remaining": 2000,
+   "period": "day",
+   "reset_at": "2026-10-22T00:00:00.000Z"
+  },
+  "downloads": {
+   "used": 0,
+   "limit": 50,
+   "remaining": 50,
+   "period": "day",
+   "reset_at": "2026-10-22T00:00:00.000Z"
+  },
+  "ai": {
+   "translations": {
+    "eligible": false,
+    "requires_paid_plan": true,
+    "quota": {
+     "unlimited": false,
+     "limit": 0,
+     "usedOrReserved": 0,
+     "remaining": 0,
+     "periodStart": null,
+     "periodEnd": null
+    },
+    "free_trial_per_month": 0,
+    "period": "month",
+    "reset_at": "2026-11-01T00:00:00.000Z",
+    "endpoint": "/api/v2/ai/translations"
+   },
+   "transcriptions": {
+    "available": false,
+    "beta": true,
+    "pro_required": true,
+    "free_trial_per_month": null,
+    "period": "month",
+    "reset_at": "2026-11-01T00:00:00.000Z"
+   },
+   "filename_search": {
+    "beta": false,
+    "pro_required": false,
+    "ai_engine": {
+     "available": true,
+     "requires_paid_plan": true,
+     "free_trial_per_month": 1,
+     "free_trials_used": 0
+    },
+    "batch_limit": 50,
+    "period": "month",
+    "reset_at": "2026-11-01T00:00:00.000Z"
+   }
+  }
+ },
+ "upgrade_url": "https://subdl.com/pro",
+ "docs_url": "https://subdl.com/developers"
+}
