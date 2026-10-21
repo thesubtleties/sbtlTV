@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSubtitleStore } from '../stores/subtitleStore';
 import { usePlaybackStore } from '../stores/playbackStore';
-import { solveSync, type SyncPoint } from '../services/subtitleLogic';
+import { heardAt, solveSync, type SyncPoint } from '../services/subtitleLogic';
 import './SubtitlePicker.css';
 import './SubtitleSync.css';
 
@@ -46,7 +46,7 @@ function SyncPanel() {
     if (!cue) return;
     const position = usePlaybackStore.getState().position;
     const store = useSubtitleStore.getState();
-    points.current = [...points.current, { cueStart: cue.start, at: position }];
+    points.current = [...points.current, { cueStart: cue.start, at: heardAt(position) }];
     const next = solveSync(points.current, store.speed);
     if (Math.abs(next.speed - store.speed) > 1e-6) store.setSpeed(next.speed);
     store.setDelay(next.delay);

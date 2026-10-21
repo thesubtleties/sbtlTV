@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { pickSubtitleTrack, stepDelay, formatDelay, trackLabel } from './subtitleLogic';
-import { decideVodSubtitle, solveSync, subdlStatusText } from './subtitleLogic';
+import { decideVodSubtitle, heardAt, solveSync, subdlStatusText, SYNC_REACTION_S } from './subtitleLogic';
 import type { SubtitleTrack } from '../types/electron';
 
 const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false };
@@ -111,5 +111,17 @@ describe('trackLabel for downloaded tracks', () => {
     const t: SubtitleTrack = { id: 5, lang: null, title: 'abc__def.srt', codec: 'subrip', isCc: false, external: true, externalFile: '/x/abc__def.srt', hearingImpaired: false };
     expect(trackLabel(t, 'English')).toBe('English');
     expect(trackLabel(t)).toBe('Downloaded subtitles');
+  });
+});
+
+describe('heardAt', () => {
+  it('a tap lands a moment after the line started: the reaction time is taken off', () => {
+    expect(heardAt(100)).toBeCloseTo(100 - SYNC_REACTION_S, 6);
+    expect(SYNC_REACTION_S).toBeGreaterThan(0.1);
+    expect(SYNC_REACTION_S).toBeLessThan(0.5);
+  });
+  it('one tap on a line heard on time leaves the delay near 0', () => {
+    const r = solveSync([{ cueStart: 100, at: heardAt(100 + SYNC_REACTION_S) }], 1);
+    expect(r.delay).toBeCloseTo(0, 6);
   });
 });

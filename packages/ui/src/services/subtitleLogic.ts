@@ -127,3 +127,11 @@ export function subdlStatusText(status: 'quota' | 'not-found' | 'auth' | 'cut' |
     cut: 'Timing may be off · Find another or Sync',
   }[status];
 }
+
+/** How long after a line starts people tap it in Sync (hear, recognise, press). */
+export const SYNC_REACTION_S = 0.3;
+
+/** The video time a tapped line was actually heard: the tap, less the reaction time. */
+export function heardAt(tapPosition: number): number {
+  return tapPosition - SYNC_REACTION_S;
+}
