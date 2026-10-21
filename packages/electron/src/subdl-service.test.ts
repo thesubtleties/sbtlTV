@@ -243,3 +243,12 @@ test('sync lines: a wider span on request, and only from the file asked for', as
   assert.equal(h.svc.cues(1, 'p/a', 2000, 0, 1, 1200).length, 1);      // ±20 min: only "Later." (50:00)
   assert.deepEqual(h.svc.cues(1, 'p/other', 2, 0, 1), []);              // another file's lines are not handed out
 });
+
+test('a cached file that is no longer a subtitle is downloaded again', async () => {
+  const h = custom({});
+  await h.svc.load(req({ nId: 'p/a' }));
+  fs.writeFileSync(h.cache.find(title, 'p/a')!, '<html>damaged</html>');
+  const r = await h.svc.load(req({ nId: 'p/a', generation: 2 }));
+  assert.ok('trackId' in r);
+  assert.deepEqual(h.downloads, ['p/a', 'p/a']);
+});

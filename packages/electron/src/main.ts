@@ -24,7 +24,7 @@ import { STREAM_BASE_OPTIONS, STALL_MAX_RELOADS } from './stream-health.js';
 import { StreamSession, parseCompatibilityHandoff, type StreamLoadRequest, type CompatibilityHandoff } from './stream-session.js';
 import { CaptionSession } from './caption-session.js';
 import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, TrackListWaiter, type SubtitleTrack } from './subtitle-mpv.js';
-import { SubdlClient, type HttpGet, type SubdlTitle } from './subdl-client.js';
+import { redirectAllowed, SubdlClient, SubdlError, type HttpGet, type SubdlTitle } from './subdl-client.js';
 import { SubdlService } from './subdl-service.js';
 import { SubtitleCache } from './subtitle-cache.js';
 import { SUBTITLE_LANGUAGES } from './subtitle-languages.js';
@@ -1428,24 +1428,47 @@ const captions = new CaptionSession({
 // Downloaded subtitles (SubDL, with the user's key). The key goes only in the
 // Authorization header; mpv only ever gets files SubtitleCache wrote.
 const subdlHttp: HttpGet = async (url, headers, maxBytes) => {
-  const response = await electronNet.fetch(url, {
+  const signal = AbortSignal.timeout(10_000);
+  const get = (target: string) => electronNet.fetch(target, {
     cache: 'no-store',
     credentials: 'omit',
     headers: { 'User-Agent': 'sbtlTV', ...headers },
-    signal: AbortSignal.timeout(10_000),
+    redirect: 'manual',  // the key goes with the request: follow only to SubDL's own hosts
+    signal,
   });
+  let response = await get(url);
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get('location');
+    const next = location ? new URL(location, url).toString() : '';
+    if (!redirectAllowed(next)) throw new Error('redirect to another host');
+    response = await get(next);
+    if (response.status >= 300 && response.status < 400) throw new Error('too many redirects');
+  }
   if (Number(response.headers.get('content-length') ?? 0) > maxBytes) throw new Error('answer too large');
-  const body = new Uint8Array(await response.arrayBuffer());
-  if (body.byteLength > maxBytes) throw new Error('answer too large');
+  // Read with the cap, so an answer without a length cannot fill memory
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = response.body?.getReader();
+  while (reader) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      throw new Error('answer too large');
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
   const responseHeaders: Record<string, string> = {};
   response.headers.forEach((value, name) => { responseHeaders[name.toLowerCase()] = value; });
   return { status: response.status, headers: responseHeaders, body };
 };
 const subtitleCache = new SubtitleCache(path.join(app.getPath('userData'), 'subtitles'));
-/** A key being checked in Settings before it is saved */
-let subdlKeyOverride: string | null = null;
 const subdl = new SubdlService({
-  client: new SubdlClient(subdlHttp, () => subdlKeyOverride ?? storage.getSettings().subdlApiKey ?? null),
+  client: new SubdlClient(subdlHttp, () => storage.getSettings().subdlApiKey ?? null),
   cache: subtitleCache,
   addSubtitle: addSubtitleFile,
   isCurrent: (generation) => stream.isCurrent(generation),
@@ -1596,13 +1619,13 @@ ipcMain.handle('subdl-languages', () => SUBTITLE_LANGUAGES.map(({ code, label, i
 // Settings: try a key before it is saved (one /me call, which costs no search).
 ipcMain.handle('subdl-check-key', async (_event, key: unknown) => {
   if (typeof key !== 'string' || key.trim().length < 8 || key.length > 200) return { error: 'auth' };
-  subdlKeyOverride = key.trim();
-  subdl.keyChanged();
+  // Its own client: a load running meanwhile keeps using (and is counted against) the saved key
+  const trial = new SubdlClient(subdlHttp, () => key.trim());
   try {
-    return usageAnswer(await subdl.usage());
-  } finally {
-    subdlKeyOverride = null;
-    subdl.keyChanged();  // a rejected trial key says nothing about the saved one
+    const usage = await trial.usage();
+    return { usage: { downloadsLeft: usage.downloadsLeft, downloadsLimit: usage.downloadsLimit } };
+  } catch (error) {
+    return { error: error instanceof SubdlError ? error.kind : 'network' };
   }
 });
 
@@ -2213,6 +2236,8 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
   }
   if (settings.subdlApiKey !== undefined) {
     followUp('resetting the SubDL key state', () => subdl.keyChanged());
+    // Without a key the downloaded subtitles go too (their folders are a list of what was watched)
+    if (!settings.subdlApiKey) followUp('clearing downloaded subtitles', () => subtitleCache.clear());
   }
   followUp('sending settings to the data process', () => dataHost?.pushSettings());
   return { success: true };
@@ -2463,6 +2488,7 @@ ipcMain.handle('privacy-switch-keyring', (_event, keyring: unknown) => {
   if (launchPasswordStore) return { error: 'The keyring is set by --password-store when sbtlTV starts' };
   debugLog(`Switching keyring to ${keyring}; saved passwords, API keys and setup backups are dropped`, 'app');
   storage.forgetSecrets();
+  subtitleCache.clear();
   removeBackups(path.join(app.getPath('userData'), 'backups'));
   storage.keepPasswordStore(keyring);
   restartApp();

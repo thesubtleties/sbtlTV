@@ -99,6 +99,18 @@ export function parseSearch(json: unknown): SubdlResult[] {
   return out;
 }
 
+const SUBDL_HOSTS = new Set(['api.subdl.com', 'dl.subdl.com']);
+
+/** A redirect main may follow: https to SubDL's own hosts only (the key goes with the request). */
+export function redirectAllowed(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && SUBDL_HOSTS.has(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function parseUsage(json: unknown): SubdlUsage | null {
   const usage = obj(obj(json)?.usage);
   const downloads = obj(usage?.downloads);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { decodeSubtitle, sniffFormat, parseCues, isSoundCue, timingCheck, solveSync } from './subtitle-files.js';
+import { decodeSubtitle, sniffFormat, parseCues, isSoundCue, timingCheck, solveSync, sanitizeAss } from './subtitle-files.js';
 
 const SRT = '1\r\n00:00:01,000 --> 00:00:02,500\r\n<i>Hello</i> there.\r\n\r\n2\r\n00:01:00,000 --> 00:01:02,000\r\n[MUSIC]\r\n\r\n3\r\n01:30:00,000 --> 01:30:03,000\r\n- Bye.\r\n- Bye!\r\n';
 const VTT = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.500 align:start\nHello there.\n\n00:01.000 --> 00:02.000\nShort form.\n';
@@ -114,4 +114,22 @@ test('sync: two taps only change speed for a real frame-rate ratio (else a scene
   assert.ok(Math.abs(snapped.speed - fps) < 1e-9, `snapped to ${fps}, got ${snapped.speed}`);
   const cut = solveSync([{ cueStart: 100, at: 100 }, { cueStart: 700, at: 730 }], 1);   // 30 s cut between taps: 1.05
   assert.deepEqual(cut, { speed: 1, delay: 30 });
+});
+
+test('ASS files are cleaned before mpv sees them: no embedded fonts or graphics, extreme values capped, event count capped', () => {
+  const evil = [
+    '[Script Info]', 'ScriptType: v4.00+', '',
+    '[Fonts]', 'fontname: evil.ttf', 'AAAAAAAA', '',
+    '[Graphics]', 'filename: x.png', 'BBBB', '',
+    '[Events]', 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+    'Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\\blur999\\be500\\fs9000}Hi',
+    ...Array.from({ length: 30_005 }, (_, i) => `Dialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,line ${i}`),
+  ].join('\n');
+  const clean = sanitizeAss(evil);
+  assert.equal(clean.includes('[Fonts]'), false);
+  assert.equal(clean.includes('evil.ttf'), false);
+  assert.equal(clean.includes('[Graphics]'), false);
+  assert.ok(clean.includes('{\\blur20\\be20\\fs200}Hi'), 'values capped');
+  assert.equal(clean.split('\n').filter((l) => l.startsWith('Dialogue:')).length, 20_000);
+  assert.ok(clean.startsWith('[Script Info]'));
 });

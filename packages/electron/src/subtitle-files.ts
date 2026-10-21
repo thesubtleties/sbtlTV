@@ -109,6 +109,34 @@ export function parseCues(text: string, format: SubtitleFormat): Cue[] {
   return cues.sort((a, b) => a.start - b.start);
 }
 
+const MAX_ASS_EVENTS = 20_000;
+const ASS_CAPS: Array<[RegExp, number]> = [[/\\blur(\d+(?:\.\d+)?)/g, 20], [/\\be(\d+(?:\.\d+)?)/g, 20], [/\\fs(\d+(?:\.\d+)?)/g, 200]];
+
+/**
+ * A downloaded ASS file, made safe for libass (it runs in the app's main
+ * process): embedded fonts and graphics dropped, extreme blur and font sizes
+ * capped, at most 20,000 events.
+ */
+export function sanitizeAss(text: string): string {
+  const out: string[] = [];
+  let skipping = false;
+  let events = 0;
+  for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
+    const section = /^\s*\[([^\]]+)\]\s*$/.exec(line);
+    if (section) skipping = /^(fonts|graphics)$/i.test(section[1].trim());
+    if (skipping) continue;
+    if (/^Dialogue:/i.test(line)) {
+      if (++events > MAX_ASS_EVENTS) continue;
+      let capped = line;
+      for (const [re, max] of ASS_CAPS) capped = capped.replace(re, (m, v) => (Number(v) > max ? m.replace(v, String(max)) : m));
+      out.push(capped);
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 /** A line with nothing to hear as speech: [MUSIC], (laughs), ♪ lyrics ♪, a speaker label alone. */
 export function isSoundCue(text: string): boolean {
   const rest = text

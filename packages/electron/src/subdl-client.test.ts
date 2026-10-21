@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { parseSearch, parseUsage, errorKind, SubdlClient, SubdlError, type HttpGet } from './subdl-client.js';
+import { parseSearch, parseUsage, errorKind, redirectAllowed, SubdlClient, SubdlError, type HttpGet } from './subdl-client.js';
 
 const fx = (n: string): unknown => JSON.parse(readFileSync(fileURLToPath(new URL(`../src/fixtures/subdl/${n}`, import.meta.url)), 'utf8'));
 const ok = (body: unknown) => ({ status: 200, headers: {}, body: new TextEncoder().encode(JSON.stringify(body)) });
@@ -121,4 +121,13 @@ test('language codes go out as SubDL lists them (uppercase); md5 is kept for dup
   assert.ok(urls[0].includes('languages=BR_PT'), urls[0]);
   const r = parseSearch({ subtitles: [{ subtitlePage: '/s/info/P1', release_name: 'R', language: 'EN', unpack_files: [{ file_n_id: 'F1', format: 'srt', md5: 'dbf98' }] }] });
   assert.equal(r[0].md5, 'dbf98');
+});
+
+test('redirects are followed only to SubDL hosts over https', () => {
+  assert.equal(redirectAllowed('https://dl.subdl.com/subtitle/a/b'), true);
+  assert.equal(redirectAllowed('https://api.subdl.com/api/v2/me'), true);
+  assert.equal(redirectAllowed('https://cdn.example.com/x.srt'), false);
+  assert.equal(redirectAllowed('http://dl.subdl.com/subtitle/a/b'), false);
+  assert.equal(redirectAllowed('https://dl.subdl.com.evil.com/x'), false);
+  assert.equal(redirectAllowed('not a url'), false);
 });

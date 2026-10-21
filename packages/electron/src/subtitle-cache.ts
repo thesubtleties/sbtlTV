@@ -1,14 +1,15 @@
 // Downloaded subtitles on disk: userData/subtitles/<title>/<page>__<file>.<ext>.
 // The only place subtitle paths for mpv come from. A few KB each; capped,
 // least recently used first out.
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SubdlTitle } from './subdl-client.js';
 
 const ID = /^[A-Za-z0-9_-]{1,64}(?:\/[A-Za-z0-9_-]{1,64})?$/;
 const EXT = ['srt', 'vtt', 'ass'];
-/** page/file -> page__file on disk */
-const fileName = (nId: string) => nId.replace('/', '__');
+/** The file name for an id: a hash, so two ids never share a name (and ids don't show on disk) */
+const fileName = (nId: string) => createHash('sha256').update(nId).digest('hex').slice(0, 32);
 
 export function titleKey(t: SubdlTitle): string {
   return t.type === 'tv' ? `tv_${t.tmdbId}_s${t.season ?? 0}e${t.episode ?? 0}` : `movie_${t.tmdbId}`;
@@ -48,11 +49,16 @@ export class SubtitleCache {
     return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel) && fs.existsSync(p);
   }
 
+  /** Every cached subtitle gone (the key was removed, or secrets forgotten). */
+  clear(): void {
+    fs.rmSync(this.dir, { recursive: true, force: true });
+  }
+
   evict(): void {
     if (!fs.existsSync(this.dir)) return;
     const files = fs.readdirSync(this.dir, { withFileTypes: true })
       .filter((d) => d.isDirectory())
-      .flatMap((d) => fs.readdirSync(path.join(this.dir, d.name)).map((f) => path.join(this.dir, d.name, f)))
+      .flatMap((d) => fs.readdirSync(path.join(this.dir, d.name)).filter((f) => !f.endsWith('.tmp')).map((f) => path.join(this.dir, d.name, f)))
       .map((p) => ({ p, s: fs.statSync(p) }))
       .sort((a, b) => a.s.mtimeMs - b.s.mtimeMs);
     let total = files.reduce((n, f) => n + f.s.size, 0);

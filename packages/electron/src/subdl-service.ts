@@ -8,7 +8,7 @@
 
 import fs from 'node:fs';
 import { SubdlError, type SubdlClient, type SubdlErrorKind, type SubdlResult, type SubdlTitle, type SubdlUsage } from './subdl-client.js';
-import { decodeSubtitle, isSoundCue, parseCues, sniffFormat, SUBTITLE_EXT, timingCheck, type Cue, type TimingStatus } from './subtitle-files.js';
+import { decodeSubtitle, isSoundCue, parseCues, sanitizeAss, sniffFormat, SUBTITLE_EXT, timingCheck, type Cue, type TimingStatus } from './subtitle-files.js';
 import { rankResults } from './subtitle-pick.js';
 import { subdlCode } from './subtitle-languages.js';
 import type { SubtitleCache } from './subtitle-cache.js';
@@ -27,6 +27,8 @@ export interface LoadResult { trackId: number; nId: string; ai: boolean; timing:
 export type ServiceError = { error: SubdlErrorKind | 'stale' | 'no-file' };
 
 const MAX_AUTO_DOWNLOADS = 2;
+/** A cached file larger than a download may be is not a subtitle we wrote */
+const MAX_CACHED_BYTES = 4 * 1024 * 1024;
 class NoFile extends Error {}
 
 export class SubdlService {
@@ -42,6 +44,7 @@ export class SubdlService {
   private inflight = new Map<string, Promise<{ path: string; cues: Cue[] }>>();
   /** Files sub-added in the current load, by path: loading one again reuses its track (no duplicate tracks in mpv) */
   private added: { generation: number; byPath: Map<string, SubtitleTrack> } = { generation: -1, byPath: new Map() };
+  private lastEvict = 0;
   /** Clock (replaced in tests) */
   now: () => number = () => Date.now();
 
@@ -83,9 +86,10 @@ export class SubdlService {
     const text = decodeSubtitle(bytes, language);
     const format = sniffFormat(text);
     if (!format) throw new NoFile();
-    const cues = parseCues(text, format);
+    const safe = format === 'ass' ? sanitizeAss(text) : text;
+    const cues = parseCues(safe, format);
     if (!cues.some((c) => !isSoundCue(c.text))) throw new NoFile();
-    return { text, ext: SUBTITLE_EXT[format], cues };
+    return { text: safe, ext: SUBTITLE_EXT[format], cues };
   }
 
   private fileFor(title: SubdlTitle, nId: string, language: string): Promise<{ path: string; cues: Cue[] }> {
@@ -101,10 +105,15 @@ export class SubdlService {
   private async readOrDownload(title: SubdlTitle, nId: string, language: string): Promise<{ path: string; cues: Cue[] }> {
     const cached = this.io.cache.find(title, nId);
     if (cached) {
-      const now = new Date();
-      fs.utimesSync(cached, now, now);  // recently used: last to be evicted
-      const text = fs.readFileSync(cached, 'utf8');
-      return { path: cached, cues: parseCues(text, sniffFormat(text) ?? 'srt') };
+      // Checked again: a damaged or replaced file is dropped and fetched anew
+      const text = fs.statSync(cached).size <= MAX_CACHED_BYTES ? fs.readFileSync(cached, 'utf8') : '';
+      const format = sniffFormat(text);
+      if (format) {
+        const now = new Date();
+        fs.utimesSync(cached, now, now);  // recently used: last to be evicted
+        return { path: cached, cues: parseCues(text, format) };
+      }
+      fs.rmSync(cached, { force: true });
     }
     if (this.failed.has(nId)) throw new SubdlError('not-found', 'failed before');
     if (this.now() < this.quotaUntil) throw new SubdlError('quota', 'no downloads left today');
@@ -117,7 +126,11 @@ export class SubdlService {
       throw e;
     }
     const path = this.io.cache.write(title, nId, prepared.ext, prepared.text);
-    this.io.cache.evict();
+    // At most once a minute: it reads every cached file's size
+    if (this.now() - this.lastEvict > 60_000) {
+      this.lastEvict = this.now();
+      try { this.io.cache.evict(); } catch (e) { this.io.log(`subdl: cache cleanup failed (${e instanceof Error ? e.name : 'error'})`); }
+    }
     return { path, cues: prepared.cues };
   }
 
