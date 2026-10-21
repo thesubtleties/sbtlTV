@@ -12,6 +12,9 @@ export interface SubtitleTrack {
   title: string | null;
   codec: string;
   isCc: boolean;  // EIA-608 closed captions carried in the video
+  external: boolean;            // added with sub-add (a downloaded subtitle)
+  externalFile: string | null;  // its path, to tell which download it is
+  hearingImpaired: boolean;     // the file marks it SDH
 }
 
 /** mpv's track-list (JSON string from libmpv, array from the IPC socket) -> subtitle tracks. */
@@ -33,6 +36,9 @@ export function parseSubtitleTracks(value: unknown): SubtitleTrack[] {
       title: typeof r.title === 'string' ? r.title : null,
       codec,
       isCc: codec === 'eia_608',
+      external: r.external === true,
+      externalFile: typeof r['external-filename'] === 'string' ? r['external-filename'] : null,
+      hearingImpaired: r['hearing-impaired'] === true,
     });
   }
   return tracks;

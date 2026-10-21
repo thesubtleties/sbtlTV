@@ -99,6 +99,11 @@ export interface SubtitleTrack {
   codec: string;
   /** EIA-608 closed captions carried in the video (live TV) */
   isCc: boolean;
+  /** Added with sub-add: a downloaded (SubDL) subtitle */
+  external: boolean;
+  externalFile: string | null;
+  /** The file marks it SDH */
+  hearingImpaired: boolean;
 }
 
 export interface SubtitleTracksUpdate {

@@ -11,7 +11,7 @@ const LIVE_JSON = JSON.stringify([
 ]);
 
 test('parses the live CC track from libmpv JSON', () => {
-  assert.deepEqual(parseSubtitleTracks(LIVE_JSON), [{ id: 1, lang: null, title: null, codec: 'eia_608', isCc: true }]);
+  assert.deepEqual(parseSubtitleTracks(LIVE_JSON), [{ id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false }]);
 });
 
 test('parses VOD text tracks from the socket array', () => {
@@ -21,8 +21,8 @@ test('parses VOD text tracks from the socket array', () => {
     { id: 2, type: 'sub', codec: 'subrip', lang: 'spa', title: 'Spanish' },
   ]);
   assert.deepEqual(tracks, [
-    { id: 1, lang: 'eng', title: null, codec: 'mov_text', isCc: false },
-    { id: 2, lang: 'spa', title: 'Spanish', codec: 'subrip', isCc: false },
+    { id: 1, lang: 'eng', title: null, codec: 'mov_text', isCc: false, external: false, externalFile: null, hearingImpaired: false },
+    { id: 2, lang: 'spa', title: 'Spanish', codec: 'subrip', isCc: false, external: false, externalFile: null, hearingImpaired: false },
   ]);
 });
 
@@ -61,7 +61,7 @@ test('read schedule waits for video, then reads once when a subtitle track is th
   const s = new TrackReadSchedule(10, 1000);
   assert.equal(s.shouldRead(0, false), false);
   assert.equal(s.shouldRead(0, true), true);
-  s.record(0, [{ id: 1, lang: null, title: null, codec: 'eia_608', isCc: true }]);
+  s.record(0, [{ id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false }]);
   assert.equal(s.shouldRead(5000, true), false);
 });
 
@@ -71,7 +71,7 @@ test('keeps reading until a subtitle track appears, then stops', () => {
   s.record(0, []);
   assert.equal(s.shouldRead(500, true), false);   // too soon
   assert.equal(s.shouldRead(1000, true), true);
-  s.record(1000, [{ id: 1, lang: null, title: null, codec: 'eia_608', isCc: true }]);
+  s.record(1000, [{ id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false }]);
   assert.equal(s.shouldRead(2000, true), false);
 });
 
@@ -94,3 +94,15 @@ test('loadResetOptions also shows subtitles again', () => {
 });
 
 // Real caption lines, 2026-10-12 language sample (field 1 / field 2 decoded separately).
+
+test('external and hearing-impaired flags are kept', () => {
+  const tracks = parseSubtitleTracks([
+    { id: 1, type: 'sub', codec: 'subrip', lang: 'eng', external: true, 'external-filename': '/u/subtitles/movie_1/a.srt' },
+    { id: 2, type: 'sub', codec: 'subrip', lang: 'eng', 'hearing-impaired': true },
+  ]);
+  assert.equal(tracks[0].external, true);
+  assert.equal(tracks[0].externalFile, '/u/subtitles/movie_1/a.srt');
+  assert.equal(tracks[1].hearingImpaired, true);
+  assert.equal(tracks[1].external, false);
+  assert.equal(tracks[1].externalFile, null);
+});

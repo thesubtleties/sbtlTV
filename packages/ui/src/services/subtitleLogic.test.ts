@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { pickSubtitleTrack, stepDelay, formatDelay, trackLabel } from './subtitleLogic';
 import type { SubtitleTrack } from '../types/electron';
 
-const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true };
-const eng: SubtitleTrack = { id: 1, lang: 'eng', title: null, codec: 'mov_text', isCc: false };
-const spa: SubtitleTrack = { id: 2, lang: 'spa', title: 'Spanish', codec: 'subrip', isCc: false };
-const und: SubtitleTrack = { id: 3, lang: 'und', title: null, codec: 'mov_text', isCc: false };
+const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false };
+const eng: SubtitleTrack = { id: 1, lang: 'eng', title: null, codec: 'mov_text', isCc: false, external: false, externalFile: null, hearingImpaired: false };
+const spa: SubtitleTrack = { id: 2, lang: 'spa', title: 'Spanish', codec: 'subrip', isCc: false, external: false, externalFile: null, hearingImpaired: false };
+const und: SubtitleTrack = { id: 3, lang: 'und', title: null, codec: 'mov_text', isCc: false, external: false, externalFile: null, hearingImpaired: false };
 
 describe('pickSubtitleTrack', () => {
   it('live picks the CC track', () => {

@@ -237,7 +237,7 @@ contextBridge.exposeInMainWorld('mpv', {
 } satisfies MpvApi);
 
 // Subtitles: mpv's subtitle tracks for the current stream, and the choice back
-interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean }
+interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean; external: boolean; externalFile: string | null; hearingImpaired: boolean }
 interface SubtitleTracksUpdate { generation: number; tracks: SubtitleTrack[]; duration: number }
 interface CcStateUpdate { generation: number; state: 'checking' | 'ok' | 'other-language' | 'unreadable'; language: 'en' | 'es' | 'fr' | null }
 contextBridge.exposeInMainWorld('subtitles', {

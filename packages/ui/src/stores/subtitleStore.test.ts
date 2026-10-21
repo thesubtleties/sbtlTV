@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSubtitleStore, initialSubtitleState } from './subtitleStore';
 import type { SubtitleTrack } from '../types/electron';
 
-const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true };
-const eng: SubtitleTrack = { id: 1, lang: 'eng', title: null, codec: 'mov_text', isCc: false };
-const vodCc: SubtitleTrack = { id: 2, lang: null, title: null, codec: 'eia_608', isCc: true };
+const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false };
+const eng: SubtitleTrack = { id: 1, lang: 'eng', title: null, codec: 'mov_text', isCc: false, external: false, externalFile: null, hearingImpaired: false };
+const vodCc: SubtitleTrack = { id: 2, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false };
 
 const setTrack = vi.fn(async () => ({ success: true }));
 const setVisible = vi.fn(async () => ({ success: true }));
@@ -194,7 +194,7 @@ describe('captions only in another language', () => {
 });
 
 describe('changing the subtitle language while a movie plays', () => {
-  const spa: SubtitleTrack = { id: 2, lang: 'spa', title: null, codec: 'subrip', isCc: false };
+  const spa: SubtitleTrack = { id: 2, lang: 'spa', title: null, codec: 'subrip', isCc: false, external: false, externalFile: null, hearingImpaired: false };
 
   it('switches to the track in the new language', () => {
     s().bindLoad(1, 'vod', true, 'en-US', null);
