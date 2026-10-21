@@ -1,10 +1,12 @@
 // Subtitle and caption settings: what is stored, and the caption language
 // they ask for. No electron imports, so it runs under node:test.
 
+import { languageByCode } from './subtitle-languages.js';
+
 export type SubtitleSize = 'small' | 'medium' | 'large';
 export type SubtitleStyle = 'outline' | 'box' | 'shadow';
-/** Captions and subtitles language; auto = the system language */
-export type CaptionLanguageSetting = 'auto' | 'en' | 'es' | 'fr';
+/** Captions and subtitles language: auto = the system language, else a SUBTITLE_LANGUAGES code */
+export type CaptionLanguageSetting = string;
 export type CaptionLanguage = 'en' | 'es' | 'fr';
 export interface SubtitleSettings {
   liveDefault: boolean;  // live captions on when a channel starts
@@ -12,11 +14,11 @@ export interface SubtitleSettings {
   size: SubtitleSize;
   style: SubtitleStyle;
   language: CaptionLanguageSetting;
+  preferSdh: boolean;  // downloaded subtitles: SDH (sound cues) over standard
 }
 
 const SIZES: readonly SubtitleSize[] = ['small', 'medium', 'large'];
 const STYLES: readonly SubtitleStyle[] = ['outline', 'box', 'shadow'];
-const LANGUAGES: readonly CaptionLanguageSetting[] = ['auto', 'en', 'es', 'fr'];
 
 export function normalizeSubtitleSettings(value: unknown): SubtitleSettings {
   const v = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
@@ -25,7 +27,8 @@ export function normalizeSubtitleSettings(value: unknown): SubtitleSettings {
     vodDefault: v.vodDefault === true,
     size: SIZES.find(s => s === v.size) ?? 'medium',
     style: STYLES.find(s => s === v.style) ?? 'outline',
-    language: LANGUAGES.find(l => l === v.language) ?? 'auto',
+    language: typeof v.language === 'string' && (v.language === 'auto' || languageByCode(v.language)) ? v.language : 'auto',
+    preferSdh: v.preferSdh === true,
   };
 }
 
@@ -35,7 +38,6 @@ export function normalizeSubtitleSettings(value: unknown): SubtitleSettings {
  * broadcast captions are English, Spanish or French). null: no preference.
  */
 export function preferredCaptionLanguage(setting: CaptionLanguageSetting, systemLocale: string): CaptionLanguage | null {
-  if (setting !== 'auto') return setting;
-  const primary = systemLocale.toLowerCase().split(/[-_]/)[0];
-  return primary === 'en' || primary === 'es' || primary === 'fr' ? primary : null;
+  const code = setting === 'auto' ? systemLocale.toLowerCase().split(/[-_]/)[0] : setting;
+  return code === 'en' || code === 'es' || code === 'fr' ? code : null;
 }

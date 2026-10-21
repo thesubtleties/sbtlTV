@@ -215,8 +215,10 @@ export interface SubtitleSettings {
   vodDefault: boolean;
   size: 'small' | 'medium' | 'large';
   style: 'outline' | 'box' | 'shadow';
-  /** auto = the system language */
-  language: 'auto' | 'en' | 'es' | 'fr';
+  /** 'auto' = the system language, else a subtitle language code (en, pt-br, ...) */
+  language: string;
+  /** Downloaded subtitles: SDH (sound cues) over standard */
+  preferSdh?: boolean;
 }
 
 export interface AppSettings {
