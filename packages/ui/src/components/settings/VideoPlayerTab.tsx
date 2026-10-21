@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useUpdateSettings } from '../../stores/uiStore';
 import { debugLog } from '../../utils/debugLog';
 import { useSubtitleSettings } from '../../hooks/useSubtitleSettings';
+import { useSubdlKeySet, useSubdlLanguages } from '../../hooks/useSubdlLanguages';
+import { languageOptions } from '../../services/subdlLanguages';
 import { OnOff, OptionRow, Section, Segmented, SettingsTab } from './ui';
 
 type LinuxPlayerMode = 'native' | 'compatibility';
@@ -22,6 +24,9 @@ export function VideoPlayerTab({
 }: VideoPlayerTabProps) {
   const updateSettings = useUpdateSettings();
   const { subtitles, updateSubtitles } = useSubtitleSettings();
+  const subdlKeySet = useSubdlKeySet();
+  const languages = useSubdlLanguages();
+  const basicLanguage = ['auto', 'en', 'es', 'fr'].includes(subtitles.language);
   const isLinux = !!window.platform?.isLinux;
   // The player mode is read once at launch. Ask main which player this
   // process started with so the hint can say a restart is still pending.
@@ -96,11 +101,22 @@ export function VideoPlayerTab({
             ? 'Your system language. Live captions prefer it when a channel carries several; if a channel only has another language, that one shows.'
             : 'Live captions prefer this language when a channel carries several; movie and series subtitles pick it when the file has it.'}
         >
-          <Segmented
-            value={subtitles.language}
-            options={[{ id: 'auto', label: 'Auto' }, { id: 'en', label: 'English' }, { id: 'es', label: 'Español' }, { id: 'fr', label: 'Français' }]}
-            onChange={(language) => void updateSubtitles({ language })}
-          />
+          {subdlKeySet || !basicLanguage ? (
+            <select
+              className="st-select"
+              aria-label="Subtitle language"
+              value={subtitles.language}
+              onChange={(e) => void updateSubtitles({ language: e.target.value })}
+            >
+              {languageOptions(languages, subdlKeySet, subtitles.language).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+          ) : (
+            <Segmented
+              value={subtitles.language}
+              options={[{ id: 'auto', label: 'Auto' }, { id: 'en', label: 'English' }, { id: 'es', label: 'Español' }, { id: 'fr', label: 'Français' }]}
+              onChange={(language) => void updateSubtitles({ language })}
+            />
+          )}
         </OptionRow>
         <OptionRow title="Size">
           <Segmented

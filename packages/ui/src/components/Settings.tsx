@@ -307,7 +307,14 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
       case 'appearance':
         return <AppearanceTab />;
       case 'subtitles':
-        return <SubtitlesTab />;
+        return (
+          <SubtitlesTab
+            subdlApiKey={subdlApiKey}
+            subdlKeyValid={subdlKeyValid}
+            onSubdlKeyChange={setSubdlApiKey}
+            onSubdlKeyValidChange={setSubdlKeyValid}
+          />
+        );
       case 'liveplayback':
         return <LivePlaybackTab />;
       case 'player':
