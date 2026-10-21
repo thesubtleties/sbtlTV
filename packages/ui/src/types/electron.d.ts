@@ -245,6 +245,8 @@ export interface SubtitleSettings {
   language: string;
   /** Downloaded subtitles: SDH (sound cues) over standard */
   preferSdh?: boolean;
+  /** Seconds of playback before an automatic SubDL download */
+  subdlWait?: 0 | 10 | 20 | 30;
 }
 
 export interface AppSettings {

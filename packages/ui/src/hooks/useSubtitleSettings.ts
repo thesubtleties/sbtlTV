@@ -4,7 +4,7 @@ import { systemLocale } from './useSubtitleController';
 import { saveSettings } from '../utils/saveSettings';
 import type { SubtitleSettings } from '../types/electron';
 
-const DEFAULTS: SubtitleSettings = { liveDefault: false, vodDefault: false, size: 'medium', style: 'outline', language: 'auto', preferSdh: false };
+const DEFAULTS: SubtitleSettings = { liveDefault: false, vodDefault: false, size: 'medium', style: 'outline', language: 'auto', preferSdh: false, subdlWait: 10 };
 
 /** Caption/subtitle settings and their updater, shared by Live playback, Subtitles and Video Player. */
 export function useSubtitleSettings() {

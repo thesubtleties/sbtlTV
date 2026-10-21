@@ -67,6 +67,15 @@ export function SubtitlesTab({ subdlApiKey, subdlKeyValid, onSubdlKeyChange, onS
           />
         </OptionRow>
         {keySet && (
+          <OptionRow title="Wait before downloading" help="Skipping through titles won't use up your 50 downloads a day.">
+            <Segmented
+              value={String(subtitles.subdlWait ?? 10)}
+              options={[{ id: '0', label: 'Off' }, { id: '10', label: '10 s' }, { id: '20', label: '20 s' }, { id: '30', label: '30 s' }]}
+              onChange={(v) => void updateSubtitles({ subdlWait: Number(v) as 0 | 10 | 20 | 30 })}
+            />
+          </OptionRow>
+        )}
+        {keySet && (
           <OptionRow title="Prefer" help="SDH adds sound cues like [door slams].">
             <Segmented
               value={subtitles.preferSdh ? 'sdh' : 'standard'}

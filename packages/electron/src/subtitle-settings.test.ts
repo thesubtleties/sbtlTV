@@ -4,14 +4,14 @@ import { normalizeSubtitleSettings, preferredCaptionLanguage } from './subtitle-
 
 test('settings default to off, medium, outline, auto language', () => {
   for (const value of [undefined, null, 'x', 42, {}]) {
-    assert.deepEqual(normalizeSubtitleSettings(value), { liveDefault: false, vodDefault: false, size: 'medium', style: 'outline', language: 'auto', preferSdh: false });
+    assert.deepEqual(normalizeSubtitleSettings(value), { liveDefault: false, vodDefault: false, size: 'medium', style: 'outline', language: 'auto', preferSdh: false, subdlWait: 10 });
   }
 });
 
 test('settings keep valid values and drop invalid ones', () => {
   assert.deepEqual(
     normalizeSubtitleSettings({ liveDefault: true, vodDefault: 'yes', size: 'large', style: 'neon', language: 'es' }),
-    { liveDefault: true, vodDefault: false, size: 'large', style: 'outline', language: 'es', preferSdh: false },
+    { liveDefault: true, vodDefault: false, size: 'large', style: 'outline', language: 'es', preferSdh: false, subdlWait: 10 },
   );
   assert.equal(normalizeSubtitleSettings({ language: 'zz' }).language, 'auto');
 });
@@ -34,4 +34,11 @@ test('language: any known code survives, unknown falls back to auto; preferSdh d
 test('live captions only prefer en/es/fr; another language means no preference', () => {
   assert.equal(preferredCaptionLanguage('es', 'en-US'), 'es');
   assert.equal(preferredCaptionLanguage('pt-br', 'en-US'), null);
+});
+
+test('SubDL wait before an automatic download: 0, 10, 20 or 30 s, default 10', () => {
+  assert.equal(normalizeSubtitleSettings({}).subdlWait, 10);
+  assert.equal(normalizeSubtitleSettings({ subdlWait: 0 }).subdlWait, 0);
+  assert.equal(normalizeSubtitleSettings({ subdlWait: 30 }).subdlWait, 30);
+  assert.equal(normalizeSubtitleSettings({ subdlWait: 15 }).subdlWait, 10);
 });

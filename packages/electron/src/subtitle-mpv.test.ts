@@ -37,7 +37,7 @@ test('base options turn on CC tracks, stop sidecar searches and ignore fonts ins
 });
 
 test('style options: medium outline in Fira', () => {
-  const opts = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'medium', style: 'outline', language: 'auto', preferSdh: false }, 'fira'));
+  const opts = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'medium', style: 'outline', language: 'auto', preferSdh: false, subdlWait: 10 }, 'fira'));
   assert.equal(opts.get('sub-font'), 'Fira Sans');
   assert.equal(opts.get('sub-font-size'), '46');
   assert.equal(opts.get('sub-border-style'), 'outline-and-shadow');
@@ -47,11 +47,11 @@ test('style options: medium outline in Fira', () => {
 });
 
 test('style options: large box in mono, small shadow in system font', () => {
-  const box = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'large', style: 'box', language: 'auto', preferSdh: false }, 'mono'));
+  const box = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'large', style: 'box', language: 'auto', preferSdh: false, subdlWait: 10 }, 'mono'));
   assert.equal(box.get('sub-font'), 'JetBrains Mono');
   assert.equal(box.get('sub-font-size'), '56');
   assert.equal(box.get('sub-border-style'), 'opaque-box');
-  const shadow = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'small', style: 'shadow', language: 'auto', preferSdh: false }, 'system'));
+  const shadow = new Map(subtitleStyleOptions({ liveDefault: false, vodDefault: false, size: 'small', style: 'shadow', language: 'auto', preferSdh: false, subdlWait: 10 }, 'system'));
   assert.equal(shadow.get('sub-font'), 'sans-serif');
   assert.equal(shadow.get('sub-font-size'), '38');
   assert.equal(shadow.get('sub-shadow-offset'), '2');

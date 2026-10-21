@@ -5,6 +5,8 @@ import { languageByCode } from './subtitle-languages.js';
 
 export type SubtitleSize = 'small' | 'medium' | 'large';
 export type SubtitleStyle = 'outline' | 'box' | 'shadow';
+export type SubdlWait = 0 | 10 | 20 | 30;
+const SUBDL_WAITS: readonly SubdlWait[] = [0, 10, 20, 30];
 /** Captions and subtitles language: auto = the system language, else a SUBTITLE_LANGUAGES code */
 export type CaptionLanguageSetting = string;
 export type CaptionLanguage = 'en' | 'es' | 'fr';
@@ -15,6 +17,7 @@ export interface SubtitleSettings {
   style: SubtitleStyle;
   language: CaptionLanguageSetting;
   preferSdh: boolean;  // downloaded subtitles: SDH (sound cues) over standard
+  subdlWait: SubdlWait;  // seconds of playback before an automatic SubDL download
 }
 
 const SIZES: readonly SubtitleSize[] = ['small', 'medium', 'large'];
@@ -29,6 +32,7 @@ export function normalizeSubtitleSettings(value: unknown): SubtitleSettings {
     style: STYLES.find(s => s === v.style) ?? 'outline',
     language: typeof v.language === 'string' && (v.language === 'auto' || languageByCode(v.language)) ? v.language : 'auto',
     preferSdh: v.preferSdh === true,
+    subdlWait: SUBDL_WAITS.find((w) => w === v.subdlWait) ?? 10,
   };
 }
 

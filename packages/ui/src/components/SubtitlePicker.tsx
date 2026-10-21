@@ -63,7 +63,7 @@ function PickerPanel({ subdl }: { subdl: SubdlLoadInfo }) {
     if (loadingId) return;
     setLoadingId(r.nId);
     setError(null);
-    await useSubtitleStore.getState().loadSubdl(r.nId, true, language);
+    await useSubtitleStore.getState().loadSubdl(r.nId, true, language, r.ai);
     setLoadingId(null);
     const state = useSubtitleStore.getState();
     const picked = state.selectedId !== null && state.downloaded[state.selectedId]?.nId === r.nId;

@@ -127,3 +127,151 @@ describe('SubDL when the file has no subtitle in the language', () => {
     expect(s().downloaded[5]).toEqual({ nId: 'p/f', ai: false, language: 'fr' });
   });
 });
+
+// ---- Review (PR #146): findings 3, 4, 6 ----
+
+/** Loads resolved one at a time, in any order (settle() only reaches the last one started). */
+function deferLoads() {
+  const queue: Array<(v: unknown) => void> = [];
+  load.mockImplementationOnce(() => new Promise((r) => queue.push(r)));
+  load.mockImplementationOnce(() => new Promise((r) => queue.push(r)));
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  return { queue, flush };
+}
+const noTiming = { speed: null, fps: null, cutMismatch: false };
+const saved = { delay: 1.5, duration: 100, speed: 0.95904, subdlId: 'p/saved' };
+
+describe('review finding 3: timing belongs to the file it was set for', () => {
+  async function playSaved() {
+    loadResult = { trackId: 5, nId: 'p/saved', ai: false, timing: noTiming };
+    s().bindLoad(3, 'vod', true, 'en-US', saved, info);
+    s().receiveTracks(update(3, [spa], 100), true, 'en-US');
+    await settle();
+    expect([s().delay, s().speed]).toEqual([1.5, 0.95904]);
+  }
+
+  it('picking another SubDL file starts from that file\'s timing, not the saved one', async () => {
+    await playSaved();
+    loadResult = { trackId: 6, nId: 'p/other', ai: false, timing: noTiming };
+    const picked = s().loadSubdl('p/other', true);
+    await settle();
+    await picked;
+    expect(s().selectedId).toBe(6);
+    expect([s().delay, s().speed]).toEqual([0, 1]);
+    expect(setDelay).toHaveBeenLastCalledWith(3, 0);
+    expect(setSpeed).toHaveBeenLastCalledWith(3, 1);
+    expect(s().userSubtitleEdit).toMatchObject({ subdlId: 'p/other', delay: 0, speed: 1 });
+  });
+
+  it('a picked file with a frame-rate fix gets its own speed', async () => {
+    await playSaved();
+    loadResult = { trackId: 6, nId: 'p/other', ai: false, timing: { speed: 23.976 / 25, fps: { from: 25, to: 23.976 }, cutMismatch: false } };
+    const picked = s().loadSubdl('p/other', true);
+    await settle();
+    await picked;
+    expect(s().delay).toBe(0);
+    expect(s().userSubtitleEdit).toMatchObject({ subdlId: 'p/other', delay: 0, speed: 23.976 / 25 });
+  });
+
+  it('switching from the SubDL file to a built-in track drops the SubDL timing', async () => {
+    await playSaved();
+    s().selectTrack(1);
+    expect([s().delay, s().speed]).toEqual([0, 1]);
+    expect(s().userSubtitleEdit).toMatchObject({ subdlId: null, delay: 0, speed: 1 });
+  });
+});
+
+describe('review finding 4: a stall reload keeps the file that was showing', () => {
+  it('reloads the same SubDL file (not a fresh auto pick) with the user\'s timing', async () => {
+    s().bindLoad(3, 'vod', true, 'en-US', null, info);
+    s().receiveTracks(update(3, [spa], 120), true, 'en-US');
+    await settle();                                   // auto chose p/f
+    s().setDelay(2);
+    load.mockClear();
+    s().rebindLoad(4, true, 'en-US');
+    s().receiveTracks(update(4, [spa], 120), true, 'en-US');
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledWith(4, info.title, 'p/f', 'en', 0);
+    await settle();
+    expect(s().selectedId).toBe(5);
+    expect(s().delay).toBe(2);
+    expect(s().downloaded[5]?.nId).toBe('p/f');
+  });
+
+  it('timing set on a built-in track is not applied to a SubDL file the reload picks', async () => {
+    s().bindLoad(3, 'vod', true, 'en-US', null, info);
+    s().receiveTracks(update(3, [spa, eng], 120), true, 'en-US');
+    s().setDelay(2);                                  // on eng (built-in)
+    s().rebindLoad(4, true, 'en-US');
+    s().receiveTracks(update(4, [spa, eng], 120), true, 'en-US');
+    expect(load).not.toHaveBeenCalled();
+    expect(s().selectedId).toBe(2);
+    expect(s().delay).toBe(2);
+  });
+});
+
+describe('review finding 6: the user\'s choice beats an automatic load still running', () => {
+  it('a built-in track picked during the download is kept', async () => {
+    s().bindLoad(3, 'vod', true, 'en-US', null, info);
+    s().receiveTracks(update(3, [spa], 120), true, 'en-US');   // auto load in flight
+    s().selectTrack(1);
+    await settle();
+    expect(s().selectedId).toBe(1);
+    expect(setTrack).toHaveBeenLastCalledWith(3, 1, true);
+  });
+
+  it('subtitles turned off during the download stay off', async () => {
+    s().bindLoad(3, 'vod', true, 'en-US', null, info);
+    s().receiveTracks(update(3, [spa], 120), true, 'en-US');
+    s().selectTrack(null);
+    await settle();
+    expect(s().selectedId).toBe(null);
+    expect(s().sessionOn.vod).toBe(false);
+    expect(setTrack).toHaveBeenLastCalledWith(3, null, true);
+  });
+
+  it('a picker file that lands before the automatic one is not replaced by it', async () => {
+    const { queue, flush } = deferLoads();
+    s().bindLoad(3, 'vod', true, 'en-US', null, info);
+    s().receiveTracks(update(3, [spa], 120), true, 'en-US');   // auto: queue[0]
+    const picked = s().loadSubdl('p/pick', true);              // pick: queue[1]
+    queue[1]({ trackId: 6, nId: 'p/pick', ai: false, timing: noTiming });
+    await picked;
+    queue[0]({ trackId: 5, nId: 'p/f', ai: false, timing: noTiming });
+    await flush();
+    expect(s().selectedId).toBe(6);
+    expect(s().userSubtitleEdit).toMatchObject({ subdlId: 'p/pick' });
+  });
+});
+
+describe('wait before an automatic download', () => {
+  it('counts playback time, not wall time, and a newer choice cancels it', async () => {
+    vi.useFakeTimers();
+    try {
+      const { usePlaybackStore } = await import('./playbackStore');
+      const waiting = { ...info, waitSeconds: 10 };
+      usePlaybackStore.setState({ position: 0 });
+      s().bindLoad(3, 'vod', true, 'en-US', null, waiting);
+      s().receiveTracks(update(3, [spa], 120), true, 'en-US');
+      vi.advanceTimersByTime(15_000);           // paused: position stays 0
+      expect(load).not.toHaveBeenCalled();
+      for (let t = 1; t <= 11; t++) { usePlaybackStore.setState({ position: t }); vi.advanceTimersByTime(1000); }
+      expect(load).toHaveBeenCalledTimes(1);
+
+      load.mockClear();
+      s().bindLoad(4, 'vod', true, 'en-US', null, waiting);
+      s().receiveTracks(update(4, [spa], 120), true, 'en-US');
+      s().selectTrack(1);                       // the user picks the file's track meanwhile
+      for (let t = 20; t <= 32; t++) { usePlaybackStore.setState({ position: t }); vi.advanceTimersByTime(1000); }
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a saved file in the cache loads straight away', () => {
+    s().bindLoad(3, 'vod', true, 'en-US', { delay: 0, duration: 100, subdlId: 'p/saved' }, { ...info, waitSeconds: 30 });
+    s().receiveTracks(update(3, [spa], 100), true, 'en-US');
+    expect(load).toHaveBeenCalledWith(3, info.title, 'p/saved', 'en', 0);
+  });
+});

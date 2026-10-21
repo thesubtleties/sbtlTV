@@ -30,7 +30,7 @@ import { useRewindStore } from './stores/rewindStore';
 import { liveTarget, shouldShowRewindTip } from './utils/rewindModel';
 import { saveSettings } from './utils/saveSettings';
 import type { SettingsTabId } from './components/settings/SettingsSidebar';
-import { useSubtitleStore, type PendingDelay, type SubdlLoadInfo } from './stores/subtitleStore';
+import { useSubtitleStore, subtitleChoiceToSave, type PendingDelay, type SubdlLoadInfo } from './stores/subtitleStore';
 import { loadSubdlLanguages, subdlLanguagesNow } from './hooks/useSubdlLanguages';
 import { isoCodesFor } from './services/subdlLanguages';
 import { resumeSettled } from './hooks/resumeSettle';
@@ -171,10 +171,7 @@ interface SubtitleChoice { delay: number; speed: number; subdlId: string | null;
 
 /** The current choice, or undefined (keep the stored one) while a saved one is not restored yet. */
 function currentSubtitle(): SubtitleChoice | undefined {
-  const s = useSubtitleStore.getState();
-  if (s.kind !== 'vod' || !s.delayResolved || s.subdlBusy) return undefined;
-  const d = s.selectedId !== null ? s.downloaded[s.selectedId] : undefined;
-  return { delay: s.delay, speed: s.speed, subdlId: d?.nId ?? null, ai: d?.ai ?? false };
+  return subtitleChoiceToSave();
 }
 
 /** SubDL for a movie or episode about to load: needs a saved key and a TMDB match. */
@@ -192,6 +189,7 @@ function subdlLoadInfo(info: VodPlayInfo | null | undefined): SubdlLoadInfo | nu
     language,
     languageIso: isoCodesFor(list, setting, locale),
     preferSdh: settings.subtitles?.preferSdh === true,
+    waitSeconds: settings.subtitles?.subdlWait ?? 10,
   };
 }
 

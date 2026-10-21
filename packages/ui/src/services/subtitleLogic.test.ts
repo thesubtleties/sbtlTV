@@ -125,3 +125,21 @@ describe('heardAt', () => {
     expect(r.delay).toBeCloseTo(0, 6);
   });
 });
+
+describe('review: decideVodSubtitle edges', () => {
+  const t = (id: number, lang: string | null, o: Partial<SubtitleTrack> = {}): SubtitleTrack => ({ id, lang, title: null, codec: 'subrip', isCc: false, external: false, externalFile: null, hearingImpaired: false, ...o });
+  const base = { languageIso: ['eng'], preferSdh: false, subdl: true, saved: null };
+
+  it('track languages match case-insensitively', () => {
+    expect(decideVodSubtitle([t(1, 'ENG')], base)).toEqual({ kind: 'track', id: 1 });
+  });
+  it('a downloaded track wins over SDH preference (no second download)', () => {
+    expect(decideVodSubtitle([t(1, 'eng'), t(4, null, { external: true })], { ...base, preferSdh: true })).toEqual({ kind: 'track', id: 4 });
+  });
+  it('a saved choice without a SubDL file falls through to the normal rule', () => {
+    expect(decideVodSubtitle([t(1, 'eng')], { ...base, saved: { subdlId: null, ai: false, delay: 1, speed: 1, duration: 100 } })).toEqual({ kind: 'track', id: 1 });
+  });
+  it('an external track never counts as the built-in track in the language', () => {
+    expect(decideVodSubtitle([t(3, 'eng', { external: true })], { ...base, subdl: false })).toEqual({ kind: 'track', id: 3 });
+  });
+});

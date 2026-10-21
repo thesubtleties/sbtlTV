@@ -127,3 +127,18 @@ describe('SubDL subtitle choice with watch progress', () => {
     expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toBeNull();
   });
 });
+
+describe('review: SubDL fields across saves', () => {
+  const movie = { type: 'movie' as const, streamId: 'm-1', tmdbId: 550, position: 600, duration: 7200 };
+
+  it('moving from an AI file to a human one drops the AI flag', async () => {
+    await updateWatchProgress({ ...movie, subDelay: 0, subdlId: 'pg/ai', subdlAi: true });
+    await updateWatchProgress({ ...movie, subDelay: 0, subdlId: 'pg/human', subdlAi: false });
+    expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toEqual({ delay: 0, duration: 7200, subdlId: 'pg/human' });
+  });
+
+  it('a speed alone (built-in track synced for drift) is saved and offered', async () => {
+    await updateWatchProgress({ ...movie, subDelay: 0, subSpeed: 1.02, subdlId: null });
+    expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toEqual({ delay: 0, duration: 7200, speed: 1.02 });
+  });
+});
