@@ -23,7 +23,7 @@ import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
 import { STREAM_BASE_OPTIONS, STALL_MAX_RELOADS } from './stream-health.js';
 import { StreamSession, parseCompatibilityHandoff, type StreamLoadRequest, type CompatibilityHandoff } from './stream-session.js';
 import { CaptionSession } from './caption-session.js';
-import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, type SubtitleTrack } from './subtitle-mpv.js';
+import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, TrackListWaiter, type SubtitleTrack } from './subtitle-mpv.js';
 import { SubdlClient, type HttpGet, type SubdlTitle } from './subdl-client.js';
 import { SubdlService } from './subdl-service.js';
 import { SubtitleCache } from './subtitle-cache.js';
@@ -973,9 +973,11 @@ async function initNativeMpv(): Promise<boolean> {
       const now = Date.now();
       if (trackReadSchedule.shouldRead(now, status.width > 0 && status.height > 0)) {
         const tracks = parseSubtitleTracks(bridge?.getProperty('track-list'));
-        trackReadSchedule.record(now, tracks);
         // Read with the tracks: the status duration can still be the previous file's.
-        captions.setTracks(tracks, Number(bridge?.getProperty('duration')) || 0);
+        const duration = Number(bridge?.getProperty('duration')) || 0;
+        // A movie's list counts once its duration is known too (the renderer decides on SubDL then)
+        trackReadSchedule.record(now, tracks, loadIsLive ? undefined : duration);
+        captions.setTracks(tracks, duration);
       }
 
       // mpv reports time-pos on every frame. Each forwarded status is an IPC
@@ -1262,17 +1264,22 @@ function handleMpvMessage(msg: MpvMessage): void {
         playerRaw.duration = (msg.data as number) ?? 0;
         Object.assign(mpvState, stream.gate.pass(playerRaw, Date.now()));
         // The renderer restores a saved subtitle delay, and decides on SubDL, once the
-        // duration is known: a list with the duration is the file's real one (even an empty one).
-        if (mpvState.duration > 0) captions.setTracks(captions.tracks, mpvState.duration);
+        // duration is known: a list with the duration is the file's real one (even an empty
+        // one), but only after mpv pushed this load's track-list (duration can come first).
+        if (mpvState.duration > 0 && trackListGeneration === stream.generation) captions.setTracks(captions.tracks, mpvState.duration);
         resumeExternalIfOpen();
         break;
       case 'eof-reached':
         externalEof = msg.data === true;
         break;
-      case 'track-list':
+      case 'track-list': {
         // Pushed by mpv on every change (file loaded, CC track created); no polling.
-        captions.setTracks(parseSubtitleTracks(msg.data), mpvState.duration);
+        const tracks = parseSubtitleTracks(msg.data);
+        trackListGeneration = stream.generation;
+        captions.setTracks(tracks, mpvState.duration);
+        trackListWaiter.offer(tracks);
         break;
+      }
     }
 
     // Throttle updates to renderer. A copy: mpvState keeps changing while a
@@ -1389,6 +1396,12 @@ function applySubtitleStyle(why: string): void {
 // In-window player: when to read track-list for the current load (see TrackReadSchedule).
 const trackReadSchedule = new TrackReadSchedule();
 let trackReadGeneration = -1;
+/** External player: the load whose track-list mpv has pushed (a duration before it is not the real list yet) */
+let trackListGeneration = -1;
+/** External player: sub-adds waiting for the pushed track-list that holds their file */
+const trackListWaiter = new TrackListWaiter();
+/** The current load is live TV (no duration to wait for) */
+let loadIsLive = false;
 
 async function readSubText(): Promise<string> {
   if (useNativeMpv && mpvBridge) return mpvBridge.getProperty('sub-text') ?? '';
@@ -1439,26 +1452,39 @@ const subdl = new SubdlService({
   log: (message) => debugLog(message, 'subtitles'),
 });
 
-/** sub-add a file the cache wrote (not selected), wait for mpv to list it, and tell the renderer about the new track list. */
-async function addSubtitleFile(file: string): Promise<SubtitleTrack | null> {
-  if (!subtitleCache.owns(file)) return null;
+/**
+ * sub-add a file the cache wrote (not selected) and return its track once mpv
+ * lists it, for this load only: a title switch while waiting returns null.
+ * In-window: the list is read directly. External: mpv pushes it (no polling of
+ * an mpv that may be stuck; one deadline).
+ */
+async function addSubtitleFile(file: string, generation: number): Promise<SubtitleTrack | null> {
+  if (!subtitleCache.owns(file) || !stream.isCurrent(generation)) return null;
   if (useNativeMpv && mpvBridge) {
-    if (!mpvBridge.command('sub-add', file, 'auto')) return null;
-  } else if (mpvSocket) {
-    try { await sendMpvCommand('sub-add', [file, 'auto']); } catch { return null; }
-  } else {
+    if (!mpvBridge.command('sub-add', file, 'auto')) {
+      debugLog('subtitles: mpv rejected sub-add', 'subtitles');
+      return null;
+    }
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const tracks = parseSubtitleTracks(mpvBridge.getProperty('track-list'));
+      const added = tracks.find((t) => t.externalFile === file);
+      if (added) {
+        if (!stream.isCurrent(generation)) return null;
+        captions.setTracks(tracks, Number(mpvBridge.getProperty('duration')) || 0);
+        return added;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (!stream.isCurrent(generation)) return null;
+    }
     return null;
   }
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const tracks = parseSubtitleTracks(await readMpvProperty('track-list'));
-    const added = tracks.find((t) => t.externalFile === file);
-    if (added) {
-      captions.setTracks(tracks, mpvState.duration || Number(await readMpvProperty('duration')) || 0);
-      return added;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return null;
+  if (!mpvSocket) return null;
+  const listed = trackListWaiter.wait(file, 3000);
+  sendMpvCommand('sub-add', [file, 'auto']).catch((err) => {
+    debugLog(`subtitles: sub-add failed: ${err instanceof Error ? err.message : err}`, 'subtitles');
+  });
+  const added = await listed;
+  return added && stream.isCurrent(generation) ? added : null;
 }
 
 /** Playback stopped or the player is going away: the stream and its captions end together. */
@@ -1828,6 +1854,7 @@ async function loadMedia(request: StreamLoadRequest & { requestId?: number }): P
   // The renderer binds subtitles and progress saving to this, whoever started the load;
   // sent before the load's first track update.
   const rewindBytes = request.live ? storage.getRewindLiveBytes() : 0;
+  loadIsLive = request.live;
   sendToRenderer('media-loaded', { generation, live: request.live, resumeAt, reason: request.reason, requestId: request.requestId ?? null, rewind: rewindBytes > 0 });
   captions.beginLoad();
   const cacheProperties = rewindMpvProperties(rewindBytes, request.live);

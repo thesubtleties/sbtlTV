@@ -18,7 +18,7 @@ export interface SubdlServiceIo {
   client: Pick<SubdlClient, 'search' | 'download' | 'usage'>;
   cache: SubtitleCache;
   /** sub-add the file (not selected) and return its track once mpv lists it; null if it never shows */
-  addSubtitle(path: string): Promise<SubtitleTrack | null>;
+  addSubtitle(path: string, generation: number): Promise<SubtitleTrack | null>;
   isCurrent(generation: number): boolean;
   log(message: string): void;
 }
@@ -113,7 +113,7 @@ export class SubdlService {
         return last;  // quota, auth, network: the next file would fail the same way
       }
       if (!this.io.isCurrent(req.generation)) return { error: 'stale' };
-      const track = await this.io.addSubtitle(file.path);
+      const track = await this.io.addSubtitle(file.path, req.generation);
       if (!track) return { error: 'no-file' };
       this.loaded = { generation: req.generation, cues: file.cues };
       return { trackId: track.id, nId: c.nId, ai: c.ai, timing: timingCheck(file.cues, req.duration) };

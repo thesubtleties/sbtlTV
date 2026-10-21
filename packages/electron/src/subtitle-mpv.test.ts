@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
-import { parseSubtitleTracks, subtitleStyleOptions, loadResetOptions, SUBTITLE_BASE_OPTIONS, TrackReadSchedule, subtitleFontsDir } from './subtitle-mpv.js';
+import { parseSubtitleTracks, subtitleStyleOptions, loadResetOptions, SUBTITLE_BASE_OPTIONS, TrackReadSchedule, TrackListWaiter, subtitleFontsDir } from './subtitle-mpv.js';
 import { normalizeSubtitleSettings } from './subtitle-settings.js';
 
 const LIVE_JSON = JSON.stringify([
@@ -105,4 +105,26 @@ test('external and hearing-impaired flags are kept', () => {
   assert.equal(tracks[1].hearingImpaired, true);
   assert.equal(tracks[1].external, false);
   assert.equal(tracks[1].externalFile, null);
+});
+
+test('track reads go on until the duration is known too (a list without it is not the real one yet)', () => {
+  const s = new TrackReadSchedule(10, 1000);
+  const sub = parseSubtitleTracks([{ id: 1, type: 'sub', codec: 'subrip', lang: 'eng' }]);
+  assert.equal(s.shouldRead(0, true), true);
+  s.record(0, sub, 0);
+  assert.equal(s.shouldRead(1000, true), true);   // tracks but no duration: read again
+  s.record(1000, sub, 5400);
+  assert.equal(s.shouldRead(2000, true), false);
+});
+
+test('TrackListWaiter: resolves when a pushed list holds the file, null on timeout or cancel', async () => {
+  const w = new TrackListWaiter();
+  const found = w.wait('/c/a.srt', 1000);
+  w.offer(parseSubtitleTracks([{ id: 1, type: 'sub', codec: 'subrip' }]));
+  w.offer(parseSubtitleTracks([{ id: 1, type: 'sub', codec: 'subrip' }, { id: 2, type: 'sub', codec: 'subrip', external: true, 'external-filename': '/c/a.srt' }]));
+  assert.equal((await found)?.id, 2);
+  assert.equal(await w.wait('/c/b.srt', 20), null);
+  const cancelled = w.wait('/c/c.srt', 1000);
+  w.cancelAll();
+  assert.equal(await cancelled, null);
 });

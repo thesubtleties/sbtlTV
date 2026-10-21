@@ -104,10 +104,44 @@ export class TrackReadSchedule {
     return now - this.lastRead >= this.intervalMs;
   }
 
-  record(now: number, tracks: SubtitleTrack[]): void {
+  /** duration: for a movie or episode, the list only counts once the duration is known too (live has none) */
+  record(now: number, tracks: SubtitleTrack[], duration?: number): void {
     this.reads++;
     this.lastRead = now;
-    if (tracks.length > 0) this.done = true;
+    if (tracks.length > 0 && (duration === undefined || duration > 0)) this.done = true;
+  }
+}
+
+/**
+ * External mpv pushes track-list on every change. A sub-add waits here for the
+ * pushed list that holds its file (no polling of an mpv that may be stuck).
+ */
+export class TrackListWaiter {
+  private waiting = new Set<{ file: string; resolve: (track: SubtitleTrack | null) => void; timer: ReturnType<typeof setTimeout> }>();
+
+  wait(file: string, timeoutMs: number): Promise<SubtitleTrack | null> {
+    return new Promise((resolve) => {
+      const entry = { file, resolve, timer: setTimeout(() => { this.waiting.delete(entry); resolve(null); }, timeoutMs) };
+      this.waiting.add(entry);
+    });
+  }
+
+  offer(tracks: SubtitleTrack[]): void {
+    for (const entry of this.waiting) {
+      const track = tracks.find((t) => t.externalFile === entry.file);
+      if (!track) continue;
+      clearTimeout(entry.timer);
+      this.waiting.delete(entry);
+      entry.resolve(track);
+    }
+  }
+
+  cancelAll(): void {
+    for (const entry of this.waiting) {
+      clearTimeout(entry.timer);
+      entry.resolve(null);
+    }
+    this.waiting.clear();
   }
 }
 
