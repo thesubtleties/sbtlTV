@@ -84,3 +84,19 @@ test('client: episode search sends season and episode; download goes to dl.subdl
   await assert.rejects(c.download('../x'), (e: unknown) => e instanceof SubdlError && e.kind === 'bad-response');
   assert.equal(urls.length, 2);
 });
+
+test('client: download errors map to kinds (quota on the file host, 404 gone); a 200 that is not JSON is bad-response', async () => {
+  const status = (s: number, body = '{}'): HttpGet => async () => ({ status: s, headers: {}, body: new TextEncoder().encode(body) });
+  await assert.rejects(new SubdlClient(status(429), () => 'k').download('p/f'), (e: unknown) => e instanceof SubdlError && e.kind === 'quota');
+  await assert.rejects(new SubdlClient(status(404, 'Not Found'), () => 'k').download('p/f'), (e: unknown) => e instanceof SubdlError && e.kind === 'not-found');
+  await assert.rejects(new SubdlClient(status(200, '<html>'), () => 'k').search({ tmdbId: 1, type: 'movie' }, 'en'), (e: unknown) => e instanceof SubdlError && e.kind === 'bad-response');
+});
+
+test('client: the file size cap is passed to the transport', async () => {
+  const caps: number[] = [];
+  const http: HttpGet = async (_u, _h, max) => { caps.push(max); return ok({ subtitles: [] }); };
+  const c = new SubdlClient(http, () => 'k');
+  await c.search({ tmdbId: 1, type: 'movie' }, 'en');
+  await c.download('p/f');
+  assert.deepEqual(caps, [1024 * 1024, 2 * 1024 * 1024]);
+});

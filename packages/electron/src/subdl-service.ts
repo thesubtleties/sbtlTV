@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import { SubdlError, type SubdlClient, type SubdlErrorKind, type SubdlResult, type SubdlTitle, type SubdlUsage } from './subdl-client.js';
 import { decodeSubtitle, isSoundCue, parseCues, sniffFormat, SUBTITLE_EXT, timingCheck, type Cue, type TimingStatus } from './subtitle-files.js';
 import { rankResults } from './subtitle-pick.js';
+import { subdlCode } from './subtitle-languages.js';
 import type { SubtitleCache } from './subtitle-cache.js';
 import type { SubtitleTrack } from './subtitle-mpv.js';
 
@@ -63,8 +64,8 @@ export class SubdlService {
   }
 
   /** Bytes -> UTF-8 text in a known format with at least one spoken line. */
-  private prepare(bytes: Uint8Array): { text: string; ext: string; cues: Cue[] } {
-    const text = decodeSubtitle(bytes);
+  private prepare(bytes: Uint8Array, language: string): { text: string; ext: string; cues: Cue[] } {
+    const text = decodeSubtitle(bytes, language);
     const format = sniffFormat(text);
     if (!format) throw new NoFile();
     const cues = parseCues(text, format);
@@ -72,7 +73,7 @@ export class SubdlService {
     return { text, ext: SUBTITLE_EXT[format], cues };
   }
 
-  private async fileFor(title: SubdlTitle, nId: string): Promise<{ path: string; cues: Cue[] }> {
+  private async fileFor(title: SubdlTitle, nId: string, language: string): Promise<{ path: string; cues: Cue[] }> {
     const cached = this.io.cache.find(title, nId);
     if (cached) {
       const now = new Date();
@@ -80,7 +81,7 @@ export class SubdlService {
       const text = fs.readFileSync(cached, 'utf8');
       return { path: cached, cues: parseCues(text, sniffFormat(text) ?? 'srt') };
     }
-    const prepared = this.prepare(await this.io.client.download(nId));
+    const prepared = this.prepare(await this.io.client.download(nId), language);
     const path = this.io.cache.write(title, nId, prepared.ext, prepared.text);
     this.io.cache.evict();
     return { path, cues: prepared.cues };
@@ -90,6 +91,8 @@ export class SubdlService {
   async load(req: LoadRequest): Promise<LoadResult | ServiceError> {
     let candidates: Array<{ nId: string; ai: boolean }>;
     if (req.nId === 'auto') {
+      // A language SubDL does not list: an unfiltered search would download another language
+      if (!subdlCode(req.language)) return { error: 'not-found' };
       const found = await this.find(req.title, req.language, req.preferSdh);
       if ('error' in found) return found;
       if (found.results.length === 0) return { error: 'not-found' };
@@ -103,7 +106,7 @@ export class SubdlService {
       if (!this.io.isCurrent(req.generation)) return { error: 'stale' };
       let file: { path: string; cues: Cue[] };
       try {
-        file = await this.fileFor(req.title, c.nId);
+        file = await this.fileFor(req.title, c.nId, req.language);
       } catch (e) {
         last = this.fail(e);
         if (last.error === 'no-file' || last.error === 'not-found' || last.error === 'bad-response') continue;

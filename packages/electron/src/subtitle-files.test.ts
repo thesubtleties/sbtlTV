@@ -87,3 +87,23 @@ test('sync: two points too close, or an absurd speed, only set the delay', () =>
   assert.deepEqual(solveSync([{ cueStart: 100, at: 101 }, { cueStart: 130, at: 140 }], 1), { delay: 10, speed: 1 });
   assert.deepEqual(solveSync([{ cueStart: 100, at: 100 }, { cueStart: 1000, at: 2000 }], 1), { delay: 1000, speed: 1 });
 });
+
+// Review (PR #146, finding 1): a non-UTF-8 file is decoded with the code page
+// of its language, not always Windows-1252. The language goes in as a second
+// argument (cast so this compiles before the signature changes).
+
+test('decode: CP-1251 Russian file is read as Cyrillic when the language is ru', () => {
+  // "Привет" in Windows-1251
+  const bytes = new Uint8Array([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2]);
+  assert.equal(decodeSubtitle(bytes, 'ru'), 'Привет');
+});
+
+test('decode: CP-1256 Arabic file is read as Arabic when the language is ar', () => {
+  // "سلام" in Windows-1256
+  const bytes = new Uint8Array([0xd3, 0xe1, 0xc7, 0xe3]);
+  assert.equal(decodeSubtitle(bytes, 'ar'), 'سلام');
+});
+
+test('decode: Western languages keep the CP-1252 fallback', () => {
+  assert.equal(decodeSubtitle(new Uint8Array([0x43, 0x61, 0x66, 0xe9]), 'fr'), 'Café');
+});

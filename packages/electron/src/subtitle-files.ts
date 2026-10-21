@@ -12,15 +12,27 @@ export interface TimingStatus { speed: number | null; fps: { from: number; to: n
 export interface SyncPoint { cueStart: number; at: number }
 export const SUBTITLE_EXT: Record<SubtitleFormat, string> = { srt: 'srt', vtt: 'vtt', ass: 'ass' };
 
-/** UTF-8 (with or without BOM) and UTF-16 by BOM; anything not valid UTF-8 is read as Windows-1252. */
-export function decodeSubtitle(bytes: Uint8Array): string {
+/** The legacy code page a subtitle in this language is most likely saved in when it is not UTF-8. */
+const LEGACY_ENCODING: Record<string, string> = {
+  ar: 'windows-1256', fa: 'windows-1256', ur: 'windows-1256',
+  ru: 'windows-1251', uk: 'windows-1251', bg: 'windows-1251', sr: 'windows-1251',
+  el: 'windows-1253', he: 'windows-1255', tr: 'windows-1254',
+  pl: 'windows-1250', cs: 'windows-1250', hu: 'windows-1250', ro: 'windows-1250', hr: 'windows-1250', sl: 'windows-1250',
+  'zh-cn': 'gb18030', 'zh-tw': 'big5', ja: 'shift_jis', ko: 'euc-kr', th: 'windows-874', vi: 'windows-1258',
+};
+
+/**
+ * UTF-8 (with or without BOM) and UTF-16 by BOM. Anything else is read in the
+ * code page usual for the subtitle's language (settings code), else Windows-1252.
+ */
+export function decodeSubtitle(bytes: Uint8Array, language = ''): string {
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes.subarray(2));
   if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes.subarray(2));
   const body = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? bytes.subarray(3) : bytes;
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(body);
   } catch {
-    return new TextDecoder('windows-1252').decode(body);
+    return new TextDecoder(LEGACY_ENCODING[language] ?? 'windows-1252').decode(body);
   }
 }
 

@@ -101,3 +101,80 @@ test('timing check runs on the file against the duration', async () => {
   const r = await svc.load(req({ duration: 600 }));  // last line at 50 min on a 10 min video
   assert.ok('timing' in r && r.timing.cutMismatch === true);
 });
+
+// ---- Review (PR #146): paths the first suite does not reach ----
+
+function custom(o: { search?: () => Promise<SubdlResult[]>; download?: (nId: string) => Promise<Uint8Array>; add?: (p: string) => Promise<import('./subtitle-mpv.js').SubtitleTrack | null>; current?: () => boolean; cache?: SubtitleCache }) {
+  const downloads: string[] = [];
+  const added: string[] = [];
+  const cache = o.cache ?? new SubtitleCache(fs.mkdtempSync(path.join(os.tmpdir(), 'svc-')));
+  const svc = new SubdlService({
+    client: {
+      search: o.search ?? (async () => [res('p/a')]),
+      download: async (nId) => { downloads.push(nId); return o.download ? o.download(nId) : new TextEncoder().encode(SRT); },
+      usage: async () => ({ downloadsLeft: 1, downloadsLimit: 50, searchesLeft: 10 }),
+    },
+    cache,
+    addSubtitle: o.add ?? (async (p) => { added.push(p); return { id: 9, lang: null, title: null, codec: 'subrip', isCc: false, external: true, externalFile: p, hearingImpaired: false }; }),
+    isCurrent: o.current ?? (() => true),
+    log: () => {},
+  });
+  return { svc, downloads, added, cache };
+}
+
+test('stream changes while the file downloads: nothing is added, but the paid download is cached', async () => {
+  let current = true;
+  const h = custom({ download: async () => { current = false; return new TextEncoder().encode(SRT); }, current: () => current });
+  assert.deepEqual(await h.svc.load(req({ nId: 'p/a' })), { error: 'stale' });
+  assert.equal(h.added.length, 0);
+  assert.ok(h.cache.find(title, 'p/a'), 'the file that cost a download is kept for the next try');
+});
+
+test('network failure on the first file: the second is not tried (it would fail and cost a download)', async () => {
+  const h = custom({ search: async () => [res('p/1'), res('p/2')], download: async () => { throw new SubdlError('network'); } });
+  assert.deepEqual(await h.svc.load(req()), { error: 'network' });
+  assert.deepEqual(h.downloads, ['p/1']);
+});
+
+test('rejected key: a saved file already in the cache still loads, with no request', async () => {
+  const h = custom({ download: async () => { throw new SubdlError('auth'); } });
+  h.cache.write(title, 'p/saved', 'srt', SRT);
+  await h.svc.load(req({ nId: 'p/new' }));               // marks the key as rejected
+  const r = await h.svc.load(req({ nId: 'p/saved' }));
+  assert.ok('trackId' in r && r.nId === 'p/saved');
+  assert.deepEqual(h.downloads, ['p/new']);
+});
+
+test('mpv never lists the added file: no-file', async () => {
+  const h = custom({ add: async () => null });
+  assert.deepEqual(await h.svc.load(req()), { error: 'no-file' });
+});
+
+test('cues for Sync follow the delay and speed (video time -> file time)', async () => {
+  const h = custom({});
+  await h.svc.load(req({ nId: 'p/a' }));
+  // "Later." is at 3000 s in the file; at speed 0.5 and delay 10 it shows at 1510 s of video
+  assert.deepEqual(h.svc.cues(1, 1510, 10, 0.5, 5).map((c) => c.text), ['Later.']);
+  assert.deepEqual(h.svc.cues(1, 3000, 10, 0.5, 5), []);
+});
+
+test('a file loaded from the cache is marked recently used: eviction takes an older one first', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svc-'));
+  const cache = new SubtitleCache(dir, SRT.length * 2 + 10);
+  const h = custom({ cache });
+  const a = cache.write(title, 'p/a', 'srt', SRT);
+  const b = cache.write(title, 'p/b', 'srt', SRT);
+  fs.utimesSync(a, new Date(1000), new Date(1000));
+  fs.utimesSync(b, new Date(2000), new Date(2000));
+  await h.svc.load(req({ nId: 'p/a' }));                 // cache hit: touches a
+  await h.svc.load(req({ nId: 'p/c' }));                 // download: writes c, evicts
+  assert.ok(cache.find(title, 'p/a'), 'just used, kept');
+  assert.equal(cache.find(title, 'p/b'), null);
+});
+
+test('a language SubDL does not list never downloads a file in another language (minor: auto locale sk/lt/ca/tl)', async () => {
+  const h = custom({ search: async () => [res('p/en')] });   // unfiltered search: English only
+  const r = await h.svc.load(req({ language: 'sk' }));
+  assert.deepEqual(r, { error: 'not-found' });
+  assert.deepEqual(h.downloads, []);
+});
