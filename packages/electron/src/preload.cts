@@ -263,7 +263,7 @@ contextBridge.exposeInMainWorld('subdl', {
   usage: () => ipcRenderer.invoke('subdl-usage'),
   find: (title: unknown, language: string) => ipcRenderer.invoke('subdl-find', title, language),
   load: (generation: number, title: unknown, nId: string, language: string, duration: number) => ipcRenderer.invoke('subdl-load', generation, title, nId, language, duration),
-  cues: (generation: number, around: number, delay: number, speed: number) => ipcRenderer.invoke('subdl-cues', generation, around, delay, speed),
+  cues: (generation: number, nId: string, around: number, delay: number, speed: number, span: number) => ipcRenderer.invoke('subdl-cues', generation, nId, around, delay, speed, span),
   setSpeed: (generation: number, speed: number) => ipcRenderer.invoke('subtitle-set-speed', generation, speed),
 });
 

@@ -133,8 +133,8 @@ export interface SubdlApi {
   find: (title: SubdlTitle, language: string) => Promise<{ results?: SubdlResultInfo[]; error?: SubdlFailure }>;
   /** nId 'auto': the best match. The track is added, not selected. */
   load: (generation: number, title: SubdlTitle, nId: string, language: string, duration: number) => Promise<{ trackId?: number; nId?: string; ai?: boolean; timing?: SubdlTiming; error?: SubdlFailure }>;
-  /** Spoken lines of the loaded subtitle around a video time */
-  cues: (generation: number, around: number, delay: number, speed: number) => Promise<Array<{ start: number; text: string }>>;
+  /** Spoken lines of a downloaded subtitle (by its SubDL id) within span seconds of a video time */
+  cues: (generation: number, nId: string, around: number, delay: number, speed: number, span: number) => Promise<Array<{ start: number; text: string }>>;
   setSpeed: (generation: number, speed: number) => Promise<MpvResult>;
 }
 

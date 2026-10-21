@@ -107,3 +107,11 @@ test('decode: CP-1256 Arabic file is read as Arabic when the language is ar', ()
 test('decode: Western languages keep the CP-1252 fallback', () => {
   assert.equal(decodeSubtitle(new Uint8Array([0x43, 0x61, 0x66, 0xe9]), 'fr'), 'Café');
 });
+
+test('sync: two taps only change speed for a real frame-rate ratio (else a scene cut: delay only)', () => {
+  const fps = 23.976 / 25;
+  const snapped = solveSync([{ cueStart: 100, at: 100 * fps + 2 }, { cueStart: 3000, at: 3000 * fps * 1.0002 + 2 }], 1);
+  assert.ok(Math.abs(snapped.speed - fps) < 1e-9, `snapped to ${fps}, got ${snapped.speed}`);
+  const cut = solveSync([{ cueStart: 100, at: 100 }, { cueStart: 700, at: 730 }], 1);   // 30 s cut between taps: 1.05
+  assert.deepEqual(cut, { speed: 1, delay: 30 });
+});

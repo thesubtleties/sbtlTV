@@ -33,7 +33,7 @@ export class SubdlService {
   /** A rejected key: no more requests until it changes */
   private authFailed = false;
   /** Cues of the file loaded for a stream, for the sync panel */
-  private loaded: { generation: number; cues: Cue[] } | null = null;
+  private loaded: { generation: number; byNId: Map<string, Cue[]> } = { generation: -1, byNId: new Map() };
   /** Files that failed (gone from SubDL, not a subtitle): every try costs a download, so never again this session */
   private failed = new Set<string>();
   /** Out of downloads: none attempted until SubDL's daily reset (UTC midnight) */
@@ -160,17 +160,19 @@ export class SubdlService {
       const track = this.added.byPath.get(file.path) ?? await this.io.addSubtitle(file.path, req.generation);
       if (!track) return { error: 'no-file' };
       this.added.byPath.set(file.path, track);
-      this.loaded = { generation: req.generation, cues: file.cues };
+      if (this.loaded.generation !== req.generation) this.loaded = { generation: req.generation, byNId: new Map() };
+      this.loaded.byNId.set(c.nId, file.cues);
       return { trackId: track.id, nId: c.nId, ai: c.ai, timing: timingCheck(file.cues, req.duration) };
     }
     return last;
   }
 
-  /** Spoken lines of this stream's downloaded subtitle within span seconds of the video time `around`. */
-  cues(generation: number, around: number, delay: number, speed: number, span = 60): Array<{ start: number; text: string }> {
-    if (!this.loaded || this.loaded.generation !== generation) return [];
+  /** Spoken lines of one of this stream's downloaded subtitles within span seconds of the video time `around`. */
+  cues(generation: number, nId: string, around: number, delay: number, speed: number, span = 60): Array<{ start: number; text: string }> {
+    const cues = this.loaded.generation === generation ? this.loaded.byNId.get(nId) : undefined;
+    if (!cues) return [];
     const subTime = (around - delay) / speed;
-    return this.loaded.cues
+    return cues
       .filter((c) => !isSoundCue(c.text) && c.start >= subTime - span && c.start <= subTime + span)
       .map((c) => ({ start: c.start, text: c.text }));
   }

@@ -100,18 +100,23 @@ export function decideVodSubtitle(
 /** A line picked in the Sync panel: its start in the file, and the video time it was heard at. */
 export interface SyncPoint { cueStart: number; at: number }
 
+/** Speeds a subtitle can be off by: a frame-rate mismatch (25, 24 and 23.976 fps), either way. */
+const SYNC_SPEEDS = [25 / 24, 25 / 23.976, 24 / 23.976].flatMap((r) => [r, 1 / r]);
+
 /**
  * mpv shows a line at start * speed + delay. One picked line sets the delay
- * at the current speed; the last two, at least 60 s apart, solve speed and
- * delay (drift). A speed outside 0.9-1.1 is not a frame-rate fix: delay only.
- * Same maths as main's subtitle-files.ts.
+ * at the current speed; the last two, at least 60 s apart, set the speed too
+ * when it is a frame-rate mismatch, else (a scene cut) only the delay.
+ * opts.speed false: delay only. Same maths as main's subtitle-files.ts.
  */
-export function solveSync(points: SyncPoint[], speed: number): { delay: number; speed: number } {
+export function solveSync(points: SyncPoint[], speed: number, opts: { speed?: boolean } = {}): { delay: number; speed: number } {
   const last = points[points.length - 1];
   const prev = points.length >= 2 ? points[points.length - 2] : undefined;
-  if (prev && Math.abs(last.cueStart - prev.cueStart) >= 60) {
-    const s = (last.at - prev.at) / (last.cueStart - prev.cueStart);
-    if (s >= 0.9 && s <= 1.1) return { speed: s, delay: prev.at - prev.cueStart * s };
+  if (opts.speed !== false && prev && Math.abs(last.cueStart - prev.cueStart) >= 60) {
+    const measured = (last.at - prev.at) / (last.cueStart - prev.cueStart);
+    const closest = SYNC_SPEEDS.reduce((best, r) => (Math.abs(measured - r) < Math.abs(measured - best) ? r : best));
+    const ratio = Math.abs(measured - closest) / closest <= 0.003 ? closest : undefined;
+    if (ratio !== undefined) return { speed: ratio, delay: last.at - last.cueStart * ratio };
   }
   return { speed, delay: last.at - last.cueStart * speed };
 }

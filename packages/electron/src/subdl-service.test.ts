@@ -42,8 +42,8 @@ test('auto: search, download best, add; cues come from the file without sound cu
   const r = await svc.load(req());
   assert.ok('trackId' in r && r.trackId === 9 && r.nId === 'p/a');
   assert.equal(calls.added.length, 1);
-  assert.deepEqual(svc.cues(1, 2, 0, 1).map((c) => c.text), ['Hello there.']);
-  assert.deepEqual(svc.cues(2, 2, 0, 1), []);  // another load's cues are not handed out
+  assert.deepEqual(svc.cues(1, 'p/a', 2, 0, 1).map((c) => c.text), ['Hello there.']);
+  assert.deepEqual(svc.cues(2, 'p/a', 2, 0, 1), []);  // another load's cues are not handed out
 });
 
 test('saved choice in the cache: no second download', async () => {
@@ -154,8 +154,8 @@ test('cues for Sync follow the delay and speed (video time -> file time)', async
   const h = custom({});
   await h.svc.load(req({ nId: 'p/a' }));
   // "Later." is at 3000 s in the file; at speed 0.5 and delay 10 it shows at 1510 s of video
-  assert.deepEqual(h.svc.cues(1, 1510, 10, 0.5, 5).map((c) => c.text), ['Later.']);
-  assert.deepEqual(h.svc.cues(1, 3000, 10, 0.5, 5), []);
+  assert.deepEqual(h.svc.cues(1, 'p/a', 1510, 10, 0.5, 5).map((c) => c.text), ['Later.']);
+  assert.deepEqual(h.svc.cues(1, 'p/a', 3000, 10, 0.5, 5), []);
 });
 
 test('a file loaded from the cache is marked recently used: eviction takes an older one first', async () => {
@@ -234,4 +234,12 @@ test('a file already added in this load is reused, not added to mpv again', asyn
   assert.equal(h.added.length, 1);
   await h.svc.load(req({ nId: 'p/a', generation: 2 }));   // a new load (mpv dropped its tracks): added again
   assert.equal(h.added.length, 2);
+});
+
+test('sync lines: a wider span on request, and only from the file asked for', async () => {
+  const h = custom({});
+  await h.svc.load(req({ nId: 'p/a' }));
+  assert.equal(h.svc.cues(1, 'p/a', 2000, 0, 1).length, 0);            // ±60 s around 33 min: none
+  assert.equal(h.svc.cues(1, 'p/a', 2000, 0, 1, 1200).length, 1);      // ±20 min: only "Later." (50:00)
+  assert.deepEqual(h.svc.cues(1, 'p/other', 2, 0, 1), []);              // another file's lines are not handed out
 });

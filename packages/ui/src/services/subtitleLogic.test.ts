@@ -143,3 +143,15 @@ describe('review: decideVodSubtitle edges', () => {
     expect(decideVodSubtitle([t(3, 'eng', { external: true })], { ...base, subdl: false })).toEqual({ kind: 'track', id: 3 });
   });
 });
+
+describe('solveSync speed snapping (renderer copy)', () => {
+  it('snaps to a frame-rate ratio, else changes only the delay', () => {
+    const fps = 23.976 / 25;
+    expect(solveSync([{ cueStart: 100, at: 100 * fps + 2 }, { cueStart: 3000, at: 3000 * fps * 1.0002 + 2 }], 1).speed).toBeCloseTo(fps, 9);
+    expect(solveSync([{ cueStart: 100, at: 100 }, { cueStart: 700, at: 730 }], 1)).toEqual({ speed: 1, delay: 30 });
+  });
+  it('delay only when asked (the subtitle may be for another cut)', () => {
+    const fps = 23.976 / 25;
+    expect(solveSync([{ cueStart: 100, at: 100 * fps }, { cueStart: 3000, at: 3000 * fps }], 1, { speed: false }).speed).toBe(1);
+  });
+});

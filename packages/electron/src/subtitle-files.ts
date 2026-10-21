@@ -147,15 +147,22 @@ const MIN_SPAN_S = 60;
 
 /**
  * One picked line sets the delay at the current speed. The last two, far
- * enough apart, solve speed and delay together (fixes drift); a speed outside
- * 0.9-1.1 is not a frame-rate mismatch, so only the delay changes.
+ * enough apart, set the speed too when it is a frame-rate mismatch (25 vs
+ * 23.976 fps...); any other difference is a scene cut, so only the delay changes.
+ * opts.speed false: delay only (a subtitle for another cut).
  */
-export function solveSync(points: SyncPoint[], speed: number): { delay: number; speed: number } {
+/** Speeds a subtitle can be off by: a frame-rate mismatch (25, 24 and 23.976 fps), either way. */
+const SYNC_SPEEDS = [25 / 24, 25 / 23.976, 24 / 23.976].flatMap((r) => [r, 1 / r]);
+
+export function solveSync(points: SyncPoint[], speed: number, opts: { speed?: boolean } = {}): { delay: number; speed: number } {
   const last = points[points.length - 1];
   const prev = points.length >= 2 ? points[points.length - 2] : undefined;
-  if (prev && Math.abs(last.cueStart - prev.cueStart) >= MIN_SPAN_S) {
-    const s = (last.at - prev.at) / (last.cueStart - prev.cueStart);
-    if (s >= 0.9 && s <= 1.1) return { speed: s, delay: prev.at - prev.cueStart * s };
+  if (opts.speed !== false && prev && Math.abs(last.cueStart - prev.cueStart) >= MIN_SPAN_S) {
+    const measured = (last.at - prev.at) / (last.cueStart - prev.cueStart);
+    // Only a real frame-rate ratio is a speed; anything else is a scene cut between the taps (delay only)
+    const closest = SYNC_SPEEDS.reduce((best, r) => (Math.abs(measured - r) < Math.abs(measured - best) ? r : best));
+    const ratio = Math.abs(measured - closest) / closest <= 0.003 ? closest : undefined;
+    if (ratio !== undefined) return { speed: ratio, delay: last.at - last.cueStart * ratio };
   }
   return { speed, delay: last.at - last.cueStart * speed };
 }

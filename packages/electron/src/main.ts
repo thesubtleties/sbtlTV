@@ -1630,10 +1630,10 @@ ipcMain.handle('subdl-load', async (_event, generation: unknown, title: unknown,
   });
 });
 
-ipcMain.handle('subdl-cues', async (_event, generation: unknown, around: unknown, delay: unknown, speed: unknown) => {
-  if (!stream.isCurrent(generation)) return [];
-  if ([around, delay, speed].some((x) => typeof x !== 'number' || !Number.isFinite(x))) return [];
-  return subdl.cues(generation as number, around as number, delay as number, Math.min(Math.max(speed as number, 0.9), 1.1));
+ipcMain.handle('subdl-cues', async (_event, generation: unknown, nId: unknown, around: unknown, delay: unknown, speed: unknown, span: unknown) => {
+  if (!stream.isCurrent(generation) || typeof nId !== 'string' || nId.length > 130) return [];
+  if ([around, delay, speed, span].some((x) => typeof x !== 'number' || !Number.isFinite(x))) return [];
+  return subdl.cues(generation as number, nId, around as number, delay as number, Math.min(Math.max(speed as number, 0.9), 1.1), Math.min(Math.max(span as number, 10), 1800));
 });
 
 /**

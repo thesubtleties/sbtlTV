@@ -23,9 +23,13 @@ function SyncPanel() {
   useEffect(() => {
     let alive = true;
     const refresh = () => {
-      const { generation, delay, speed } = useSubtitleStore.getState();
+      const { generation, delay, speed, selectedId, downloaded } = useSubtitleStore.getState();
+      const nId = selectedId !== null ? downloaded[selectedId]?.nId : undefined;
+      if (!nId) return;
       const position = usePlaybackStore.getState().position;
-      void window.subdl?.cues(generation, position, delay, speed).then((list) => {
+      // Before the first tap the subtitle can be far off: a wide window; after it, the lines around now
+      const span = points.current.length === 0 ? 300 : 60;
+      void window.subdl?.cues(generation, nId, position, delay, speed, span).then((list) => {
         if (!alive) return;
         setCues(list);
         if (!moved.current) {
@@ -47,7 +51,8 @@ function SyncPanel() {
     const position = usePlaybackStore.getState().position;
     const store = useSubtitleStore.getState();
     points.current = [...points.current, { cueStart: cue.start, at: heardAt(position) }];
-    const next = solveSync(points.current, store.speed);
+    // A subtitle that may be for another cut: its timing is a scene shift, never a speed
+    const next = solveSync(points.current, store.speed, { speed: store.subdlStatus !== 'cut' });
     if (Math.abs(next.speed - store.speed) > 1e-6) store.setSpeed(next.speed);
     store.setDelay(next.delay);
     moved.current = false;
@@ -72,7 +77,7 @@ function SyncPanel() {
   });
 
   useEffect(() => {
-    if (focus !== null) listRef.current?.querySelector<HTMLElement>(`[data-index="${focus}"]`)?.scrollIntoView({ block: 'nearest' });
+    if (focus !== null) listRef.current?.querySelector<HTMLElement>(`[data-index="${focus}"]`)?.scrollIntoView({ block: 'center' });
   }, [focus]);
 
   const hint = synced ? 'Synced' : points.current.length > 0 ? 'Tap another line later to fix drift' : 'Tap the line you just heard';
