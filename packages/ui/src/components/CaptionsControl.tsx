@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSubtitleStore } from '../stores/subtitleStore';
-import { formatDelay, trackLabel } from '../services/subtitleLogic';
+import { formatDelay, subdlStatusText, trackLabel } from '../services/subtitleLogic';
+import { AiMark } from './AiMark';
 import { systemLocale } from '../hooks/useSubtitleController';
 import './CaptionsControl.css';
 
@@ -13,6 +14,12 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
   const visible = useSubtitleStore((s) => s.visible);
   const ccState = useSubtitleStore((s) => s.ccState);
   const ccLanguage = useSubtitleStore((s) => s.ccLanguage);
+  const subdl = useSubtitleStore((s) => s.subdl);
+  const downloaded = useSubtitleStore((s) => s.downloaded);
+  const subdlBusy = useSubtitleStore((s) => s.subdlBusy);
+  const subdlStatus = useSubtitleStore((s) => s.subdlStatus);
+  // Movies and episodes with a SubDL key and a TMDB match can always get subtitles
+  const subdlAvailable = kind === 'vod' && subdl !== null;
   const otherLanguage = kind === 'live' && ccState === 'other-language' && ccLanguage
     ? { en: 'English', es: 'Spanish', fr: 'French' }[ccLanguage]
     : null;
@@ -20,7 +27,7 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
   const rootRef = useRef<HTMLDivElement>(null);
 
   const unreadable = kind === 'live' && ccState === 'unreadable';
-  const none = tracks.length === 0 || unreadable;
+  const none = (tracks.length === 0 && !subdlAvailable) || unreadable;
   // Live captions stay selected (decoding) while hidden; on = shown
   const on = !none && (kind === 'live' ? visible : selectedId !== null);
   // Live captions on but still being checked (hidden until real lines confirm them)
@@ -46,7 +53,9 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
     ? "This channel's captions can't be read"
     : none
       ? (kind === 'vod' ? 'No subtitles in this file' : 'No captions on this channel')
-      : `${on ? 'Captions on' : 'Captions off'} (V)${checking ? ' · checking the captions, they show in a moment' : ''}${otherLanguage ? ` · this channel's captions only came through in ${otherLanguage}` : ''} · right-click for tracks and delay`;
+      : tracks.length === 0
+        ? 'Captions off (V) · right-click to find subtitles'
+        : `${on ? 'Captions on' : 'Captions off'} (V)${checking ? ' · checking the captions, they show in a moment' : ''}${otherLanguage ? ` · this channel's captions only came through in ${otherLanguage}` : ''} · right-click for tracks and delay`;
 
   return (
     <div className="cc" ref={rootRef}>
@@ -80,8 +89,29 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
             <button key={t.id} className={`cc__item${on && selectedId === t.id ? ' cc__item--active' : ''}`} role="menuitemradio"
               aria-checked={on && selectedId === t.id} onClick={() => useSubtitleStore.getState().selectTrack(t.id)}>
               {trackLabel(t)}
+              {downloaded[t.id] && <span className="cc__tag">SubDL</span>}
+              {downloaded[t.id]?.ai && <AiMark />}
             </button>
           ))}
+          {subdlAvailable && (
+            <>
+              <div className="cc__divider" />
+              <button className="cc__item" role="menuitem" onClick={() => { setMenuOpen(false); useSubtitleStore.getState().openPicker(true); }}>
+                Find subtitles...
+              </button>
+              <button
+                className="cc__item"
+                role="menuitem"
+                disabled={!on || selectedId === null || !downloaded[selectedId]}
+                onClick={() => { setMenuOpen(false); useSubtitleStore.getState().openSync(true); }}
+              >
+                Sync subtitles
+              </button>
+              {(subdlBusy || subdlStatus) && (
+                <div className="cc__status">{subdlBusy ? 'Finding subtitles…' : subdlStatusText(subdlStatus)}</div>
+              )}
+            </>
+          )}
           <div className="cc__divider" />
           <div className="cc__delay">
             <span className="cc__delay-label">Delay</span>

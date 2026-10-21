@@ -94,3 +94,34 @@ export function decideVodSubtitle(
   if (inLanguage.length > 0) return { kind: 'track', id: inLanguage[0].id };
   return tracks.length > 0 ? { kind: 'track', id: tracks[0].id } : { kind: 'off' };
 }
+
+/** A line picked in the Sync panel: its start in the file, and the video time it was heard at. */
+export interface SyncPoint { cueStart: number; at: number }
+
+/**
+ * mpv shows a line at start * speed + delay. One picked line sets the delay
+ * at the current speed; the last two, at least 60 s apart, solve speed and
+ * delay (drift). A speed outside 0.9-1.1 is not a frame-rate fix: delay only.
+ * Same maths as main's subtitle-files.ts.
+ */
+export function solveSync(points: SyncPoint[], speed: number): { delay: number; speed: number } {
+  const last = points[points.length - 1];
+  const prev = points.length >= 2 ? points[points.length - 2] : undefined;
+  if (prev && Math.abs(last.cueStart - prev.cueStart) >= 60) {
+    const s = (last.at - prev.at) / (last.cueStart - prev.cueStart);
+    if (s >= 0.9 && s <= 1.1) return { speed: s, delay: prev.at - prev.cueStart * s };
+  }
+  return { speed, delay: last.at - last.cueStart * speed };
+}
+
+/** The CC menu's SubDL line. */
+export function subdlStatusText(status: 'quota' | 'not-found' | 'auth' | 'cut' | { fps: { from: number; to: number } } | null): string | null {
+  if (status === null) return null;
+  if (typeof status === 'object') return `Speed fixed (${status.fps.from} → ${status.fps.to} fps)`;
+  return {
+    quota: 'No SubDL downloads left today',
+    'not-found': 'No subtitles found on SubDL',
+    auth: 'SubDL key not accepted',
+    cut: 'Timing may be off · Find another or Sync',
+  }[status];
+}

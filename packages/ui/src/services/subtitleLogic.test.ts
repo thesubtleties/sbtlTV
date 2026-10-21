@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { pickSubtitleTrack, stepDelay, formatDelay, trackLabel } from './subtitleLogic';
-import { decideVodSubtitle } from './subtitleLogic';
+import { decideVodSubtitle, solveSync, subdlStatusText } from './subtitleLogic';
 import type { SubtitleTrack } from '../types/electron';
 
 const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false };
@@ -77,5 +77,31 @@ describe('decideVodSubtitle', () => {
     expect(decideVodSubtitle([t(1, 'spa'), t(2, 'eng')], { ...base, subdl: false })).toEqual({ kind: 'track', id: 2 });
     expect(decideVodSubtitle([t(1, 'spa')], { ...base, subdl: false })).toEqual({ kind: 'track', id: 1 });
     expect(decideVodSubtitle([], { ...base, subdl: false })).toEqual({ kind: 'off' });
+  });
+});
+
+describe('solveSync (same maths as main)', () => {
+  it('one point sets the delay at the current speed', () => {
+    expect(solveSync([{ cueStart: 100, at: 103.5 }], 1)).toEqual({ delay: 3.5, speed: 1 });
+  });
+  it('two points far apart solve speed and delay', () => {
+    const r = solveSync([{ cueStart: 100, at: 100 * 0.95904 + 2 }, { cueStart: 3000, at: 3000 * 0.95904 + 2 }], 1);
+    expect(r.speed).toBeCloseTo(0.95904, 6);
+    expect(r.delay).toBeCloseTo(2, 6);
+  });
+  it('two points too close, or an absurd speed, only set the delay', () => {
+    expect(solveSync([{ cueStart: 100, at: 101 }, { cueStart: 130, at: 140 }], 1)).toEqual({ delay: 10, speed: 1 });
+    expect(solveSync([{ cueStart: 100, at: 100 }, { cueStart: 1000, at: 2000 }], 1)).toEqual({ delay: 1000, speed: 1 });
+  });
+});
+
+describe('subdlStatusText', () => {
+  it('says what happened in plain words', () => {
+    expect(subdlStatusText('quota')).toBe('No SubDL downloads left today');
+    expect(subdlStatusText('not-found')).toBe('No subtitles found on SubDL');
+    expect(subdlStatusText('auth')).toBe('SubDL key not accepted');
+    expect(subdlStatusText('cut')).toBe('Timing may be off · Find another or Sync');
+    expect(subdlStatusText({ fps: { from: 25, to: 23.976 } })).toBe('Speed fixed (25 → 23.976 fps)');
+    expect(subdlStatusText(null)).toBe(null);
   });
 });

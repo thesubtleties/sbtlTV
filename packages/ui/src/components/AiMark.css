@@ -1,0 +1,15 @@
+.ai-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  vertical-align: middle;
+}
+
+.ai-mark svg {
+  width: 9px;
+  height: 9px;
+}

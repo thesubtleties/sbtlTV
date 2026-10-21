@@ -1,0 +1,44 @@
+.subsync {
+  width: min(520px, calc(100vw - 64px));
+}
+
+.subsync__hint {
+  padding: 8px 12px 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.subsync__hint--ok {
+  color: var(--accent);
+}
+
+.subsync__row {
+  font-size: 14px;
+  line-height: 1.35;
+  white-space: pre-line;
+}
+
+.subsync__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.subsync__done {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.subsync__done:hover,
+.subsync__done:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}

@@ -23,6 +23,8 @@ import { updateWatchProgress, getResumePosition, getSubtitleDelayCandidate } fro
 import { mergedEpisodesForSeries } from './hooks/useContinueWatching';
 import { buildNextEpisodePlayInfo } from './services/continue-watching/next-episode.playinfo';
 import { UpNextOverlay } from './components/UpNextOverlay';
+import { SubtitlePicker } from './components/SubtitlePicker';
+import { SubtitleSync } from './components/SubtitleSync';
 import { usePlaybackStore } from './stores/playbackStore';
 import { useRewindStore } from './stores/rewindStore';
 import { liveTarget, shouldShowRewindTip } from './utils/rewindModel';
@@ -791,9 +793,8 @@ function App() {
   }), [setChannelSyncing, setVodSyncing]);
 
   // Save a subtitle change the user made on a movie or episode (delay, speed,
-  // SubDL file) soon after the
-  // change (the external mpv sends no status while paused, so the 15s tick is
-  // not enough). The item, position and duration are taken when the change is
+  // SubDL file) soon after the change (the external mpv sends no status while
+  // paused, so the 15s tick is not enough). The item, position and duration are taken when the change is
   // made, so switching to the next item right after cannot misfile it.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -824,6 +825,9 @@ function App() {
       // Leave Ctrl/Alt/Cmd combinations to the system and Chromium (Ctrl+F,
       // Cmd+M, Ctrl+Shift+I...); Shift alone is part of some bindings (Shift+I).
       if (e.ctrlKey || e.altKey || e.metaKey) return;
+      // The subtitle picker and sync panel handle their own keys while open
+      const subtitlePanels = useSubtitleStore.getState();
+      if (subtitlePanels.pickerOpen || subtitlePanels.syncOpen) return;
 
       switch (e.key) {
         case ' ':
@@ -1028,6 +1032,8 @@ function App() {
         rewindBump={rewindBump}
       />
 
+      <SubtitlePicker />
+      <SubtitleSync />
       {upNext && (
         <UpNextOverlay
           label={upNext.info.episodeInfo ?? upNext.info.title}
