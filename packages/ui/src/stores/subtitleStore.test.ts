@@ -141,9 +141,9 @@ describe('saved delay', () => {
   it('a user change is recorded with its load; a restore is not', () => {
     s().bindLoad(3, 'vod', false, 'en-US', { delay: 0.4, duration: 100 });
     s().receiveTracks({ generation: 3, tracks: [eng], duration: 100 }, false, 'en-US');
-    expect(s().userDelayEdit).toBeNull();
+    expect(s().userSubtitleEdit).toBeNull();
     s().nudgeDelay(0.1);
-    expect(s().userDelayEdit).toEqual({ seq: 1, generation: 3, delay: 0.5 });
+    expect(s().userSubtitleEdit).toEqual({ seq: 1, generation: 3, delay: 0.5, speed: 1, subdlId: null, ai: false });
     expect(s().delayResolved).toBe(true);
   });
 

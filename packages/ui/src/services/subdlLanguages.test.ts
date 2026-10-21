@@ -26,6 +26,10 @@ describe('isoCodesFor', () => {
     expect(isoCodesFor(LIST, 'auto', 'fr-CA')).toEqual(['fre', 'fra']);
     expect(isoCodesFor(LIST, 'auto', 'pt-BR')).toEqual(['por']);
   });
+  it('before the list has loaded, common languages still map to mpv codes', () => {
+    expect(isoCodesFor([], 'auto', 'en-US')).toContain('eng');
+    expect(isoCodesFor([], 'de', 'en-US')).toContain('ger');
+  });
   it('unknown language: the bare code still matches tracks tagged with it', () => {
     expect(isoCodesFor(LIST, 'auto', 'xx-YY')).toEqual(['xx']);
   });

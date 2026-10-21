@@ -14,6 +14,11 @@ const ISO_639_2: Record<string, string[]> = {
   ru: ['rus'], tr: ['tur'], ar: ['ara'], ja: ['jpn'], ko: ['kor'], zh: ['chi', 'zho'],
 };
 
+/** A two-letter language and the ISO 639-2 codes mpv may tag its tracks with. */
+export function isoForPrimary(primary: string): string[] {
+  return [primary, ...(ISO_639_2[primary] ?? [])];
+}
+
 function matchesLocale(lang: string | null, locale: string): boolean {
   if (!lang) return false;
   const primary = locale.toLowerCase().split(/[-_]/)[0];
@@ -55,4 +60,37 @@ export function trackLabel(track: SubtitleTrack): string {
     } catch { /* unknown code: fall through */ }
   }
   return `Subtitles ${track.id}`;
+}
+
+/** A subtitle choice saved with watch progress: a SubDL file and its timing. */
+export interface SavedSubtitle { subdlId: string | null; ai: boolean; delay: number; speed: number; duration: number }
+export type VodDecision = { kind: 'track'; id: number } | { kind: 'subdl'; nId: string } | { kind: 'off' };
+
+/**
+ * Which subtitle a movie or episode starts with when subtitles are on.
+ * subdl: a SubDL key is set and the title has a TMDB match. Without it, as
+ * before: the track in the language, else the first, else none.
+ *   1. the SubDL file saved for this title
+ *   2. a downloaded track already loaded in this playback
+ *   3. SDH preferred: a built-in track flagged SDH in the language, else SubDL
+ *   4. a built-in track in the language (it matches the video best)
+ *   5. SubDL's best match
+ */
+export function decideVodSubtitle(
+  tracks: SubtitleTrack[],
+  o: { languageIso: string[]; preferSdh: boolean; subdl: boolean; saved: SavedSubtitle | null },
+): VodDecision {
+  const inLanguage = tracks.filter((t) => !t.external && t.lang !== null && o.languageIso.includes(t.lang.toLowerCase()));
+  if (o.subdl) {
+    if (o.saved?.subdlId) return { kind: 'subdl', nId: o.saved.subdlId };
+    const downloaded = tracks.find((t) => t.external);
+    if (downloaded) return { kind: 'track', id: downloaded.id };
+    if (o.preferSdh) {
+      const sdh = inLanguage.find((t) => t.hearingImpaired);
+      return sdh ? { kind: 'track', id: sdh.id } : { kind: 'subdl', nId: 'auto' };
+    }
+    return inLanguage.length > 0 ? { kind: 'track', id: inLanguage[0].id } : { kind: 'subdl', nId: 'auto' };
+  }
+  if (inLanguage.length > 0) return { kind: 'track', id: inLanguage[0].id };
+  return tracks.length > 0 ? { kind: 'track', id: tracks[0].id } : { kind: 'off' };
 }

@@ -98,3 +98,32 @@ describe('subtitle delay survives the next play', () => {
     expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toBeNull();
   });
 });
+
+describe('SubDL subtitle choice with watch progress', () => {
+  const movie = { type: 'movie' as const, streamId: 'm-1', tmdbId: 550, position: 600, duration: 7200, name: 'Fight Club' };
+
+  it('saves the file, its AI flag and speed with the delay, and offers them back', async () => {
+    await updateWatchProgress({ ...movie, subDelay: 0.4, subSpeed: 0.95904, subdlId: 'pg/fl', subdlAi: true });
+    expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 }))
+      .toEqual({ delay: 0.4, duration: 7200, speed: 0.95904, subdlId: 'pg/fl', ai: true });
+  });
+
+  it('a SubDL file with no timing change is still offered', async () => {
+    await updateWatchProgress({ ...movie, subDelay: 0, subSpeed: 1, subdlId: 'pg/fl', subdlAi: false });
+    expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 }))
+      .toEqual({ delay: 0, duration: 7200, subdlId: 'pg/fl' });
+  });
+
+  it('a save that has not resolved the subtitle yet keeps the stored choice', async () => {
+    await updateWatchProgress({ ...movie, subDelay: 0, subSpeed: 1.02, subdlId: 'pg/fl', subdlAi: false });
+    await updateWatchProgress({ ...movie, position: 900 });
+    const rec = await db.watchProgress.get('movie_m-1');
+    expect([rec?.sub_speed, rec?.sub_subdl_id]).toEqual([1.02, 'pg/fl']);
+  });
+
+  it('picking a built-in track again clears the SubDL choice', async () => {
+    await updateWatchProgress({ ...movie, subDelay: 0, subdlId: 'pg/fl' });
+    await updateWatchProgress({ ...movie, subDelay: 0, subSpeed: 1, subdlId: null });
+    expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toBeNull();
+  });
+});

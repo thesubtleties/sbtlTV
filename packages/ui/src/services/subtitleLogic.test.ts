@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { pickSubtitleTrack, stepDelay, formatDelay, trackLabel } from './subtitleLogic';
+import { decideVodSubtitle } from './subtitleLogic';
 import type { SubtitleTrack } from '../types/electron';
 
 const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false };
@@ -48,5 +49,33 @@ describe('trackLabel', () => {
     expect(trackLabel(eng)).toBe('English');
     expect(trackLabel(spa)).toBe('Spanish');
     expect(trackLabel(und)).toBe('Subtitles 3');
+  });
+});
+
+describe('decideVodSubtitle', () => {
+  const t = (id: number, lang: string | null, o: Partial<SubtitleTrack> = {}): SubtitleTrack => ({ id, lang, title: null, codec: 'subrip', isCc: false, external: false, externalFile: null, hearingImpaired: false, ...o });
+  const base = { languageIso: ['eng'], preferSdh: false, subdl: true, saved: null };
+
+  it('saved SubDL choice wins', () => {
+    expect(decideVodSubtitle([t(1, 'eng')], { ...base, saved: { subdlId: 'p/f', ai: false, delay: 0, speed: 1, duration: 100 } })).toEqual({ kind: 'subdl', nId: 'p/f' });
+  });
+  it('built-in track in the language is kept', () => {
+    expect(decideVodSubtitle([t(1, 'spa'), t(2, 'eng')], base)).toEqual({ kind: 'track', id: 2 });
+  });
+  it('none in the language -> SubDL auto', () => {
+    expect(decideVodSubtitle([t(1, 'spa')], base)).toEqual({ kind: 'subdl', nId: 'auto' });
+    expect(decideVodSubtitle([], base)).toEqual({ kind: 'subdl', nId: 'auto' });
+  });
+  it('SDH: a flagged built-in track, else SubDL', () => {
+    expect(decideVodSubtitle([t(1, 'eng'), t(2, 'eng', { hearingImpaired: true })], { ...base, preferSdh: true })).toEqual({ kind: 'track', id: 2 });
+    expect(decideVodSubtitle([t(1, 'eng')], { ...base, preferSdh: true })).toEqual({ kind: 'subdl', nId: 'auto' });
+  });
+  it('a downloaded track already loaded is not downloaded again', () => {
+    expect(decideVodSubtitle([t(1, 'spa'), t(3, null, { external: true })], base)).toEqual({ kind: 'track', id: 3 });
+  });
+  it('no key or no TMDB match: exactly as before (language, else first, else off)', () => {
+    expect(decideVodSubtitle([t(1, 'spa'), t(2, 'eng')], { ...base, subdl: false })).toEqual({ kind: 'track', id: 2 });
+    expect(decideVodSubtitle([t(1, 'spa')], { ...base, subdl: false })).toEqual({ kind: 'track', id: 1 });
+    expect(decideVodSubtitle([], { ...base, subdl: false })).toEqual({ kind: 'off' });
   });
 });

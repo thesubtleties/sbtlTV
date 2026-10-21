@@ -4,6 +4,7 @@
  * language SubDL has. Pure, for unit tests.
  */
 import type { SubdlLanguage } from '../types/electron';
+import { isoForPrimary } from './subtitleLogic';
 
 const BASIC = ['en', 'es', 'fr'];
 
@@ -18,7 +19,7 @@ export function isoCodesFor(list: SubdlLanguage[], setting: string, systemLocale
   const code = setting === 'auto' ? locale : setting;
   const primary = code.split('-')[0];
   const entry = list.find((l) => l.code === code) ?? list.find((l) => l.code === primary);
-  return entry ? entry.iso : [primary];
+  return entry ? entry.iso : isoForPrimary(primary);
 }
 
 /** The settings code for the language the picker should start on. */
