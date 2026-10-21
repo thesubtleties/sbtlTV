@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSubtitleStore } from '../stores/subtitleStore';
 import { formatDelay, subdlStatusText, trackLabel } from '../services/subtitleLogic';
 import { AiMark } from './AiMark';
+import { subdlLanguagesNow } from '../hooks/useSubdlLanguages';
 import { systemLocale } from '../hooks/useSubtitleController';
 import './CaptionsControl.css';
 
@@ -20,6 +21,7 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
   const subdlStatus = useSubtitleStore((s) => s.subdlStatus);
   // Movies and episodes with a SubDL key and a TMDB match can always get subtitles
   const subdlAvailable = kind === 'vod' && subdl !== null;
+  const languageLabel = (code: string) => subdlLanguagesNow().find((l) => l.code === code)?.label;
   const otherLanguage = kind === 'live' && ccState === 'other-language' && ccLanguage
     ? { en: 'English', es: 'Spanish', fr: 'French' }[ccLanguage]
     : null;
@@ -88,7 +90,7 @@ export function CaptionsControl({ disabled }: { disabled: boolean }) {
           {tracks.map((t) => (
             <button key={t.id} className={`cc__item${on && selectedId === t.id ? ' cc__item--active' : ''}`} role="menuitemradio"
               aria-checked={on && selectedId === t.id} onClick={() => useSubtitleStore.getState().selectTrack(t.id)}>
-              {trackLabel(t)}
+              {trackLabel(t, downloaded[t.id] ? languageLabel(downloaded[t.id].language) : undefined)}
               {downloaded[t.id] && <span className="cc__tag">SubDL</span>}
               {downloaded[t.id]?.ai && <AiMark />}
             </button>

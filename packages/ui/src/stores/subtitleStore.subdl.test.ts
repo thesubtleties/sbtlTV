@@ -42,7 +42,7 @@ describe('SubDL when the file has no subtitle in the language', () => {
     s().receiveTracks(update(3, [spa, downloaded]), true, 'en-US');  // main pushes the new list before load returns
     await settle();
     expect(s().selectedId).toBe(5);
-    expect(s().downloaded[5]).toEqual({ nId: 'p/f', ai: false });
+    expect(s().downloaded[5]).toEqual({ nId: 'p/f', ai: false, language: 'en' });
     expect(setTrack).toHaveBeenLastCalledWith(3, 5, true);
   });
 
@@ -89,7 +89,7 @@ describe('SubDL when the file has no subtitle in the language', () => {
     await settle();
     expect(setDelay).toHaveBeenLastCalledWith(3, 1.5);
     expect(setSpeed).toHaveBeenLastCalledWith(3, 0.95904);
-    expect(s().downloaded[5]).toEqual({ nId: 'p/saved', ai: true });
+    expect(s().downloaded[5]).toEqual({ nId: 'p/saved', ai: true, language: 'en' });
   });
 
   it('a frame-rate mismatch is fixed and reported', async () => {
@@ -104,9 +104,10 @@ describe('SubDL when the file has no subtitle in the language', () => {
   it('a picked file is a user choice: recorded for saving', async () => {
     s().bindLoad(3, 'vod', true, 'en-US', null, info);
     s().receiveTracks(update(3, [eng]), true, 'en-US');
-    const picked = s().loadSubdl('p/f', true);
+    const picked = s().loadSubdl('p/f', true, 'fr');
     await settle();
     await picked;
     expect(s().userSubtitleEdit).toMatchObject({ generation: 3, subdlId: 'p/f', speed: 1, delay: 0 });
+    expect(s().downloaded[5]).toEqual({ nId: 'p/f', ai: false, language: 'fr' });
   });
 });

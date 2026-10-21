@@ -50,8 +50,10 @@ export function formatDelay(seconds: number): string {
 
 const LANGUAGE_NAMES = new Intl.DisplayNames(['en'], { type: 'language' });
 
-export function trackLabel(track: SubtitleTrack): string {
+/** downloadedLanguage: the language a SubDL track was downloaded in (mpv only knows its file name). */
+export function trackLabel(track: SubtitleTrack, downloadedLanguage?: string): string {
   if (track.isCc) return 'Closed captions';
+  if (track.external) return downloadedLanguage ?? 'Downloaded subtitles';
   if (track.title) return track.title;
   if (track.lang && track.lang !== 'und') {
     try {

@@ -2,10 +2,10 @@
 .subsync {
   position: absolute;
   right: 32px;
-  bottom: 96px;
+  top: 48px; /* top right: the subtitles at the bottom stay visible while picking or syncing */
   z-index: 52; /* above NowPlayingBar (50) and Up next (51) */
   width: min(460px, calc(100vw - 64px));
-  max-height: 60vh;
+  max-height: min(60vh, calc(100vh - 240px));
   display: flex;
   flex-direction: column;
   background: color-mix(in srgb, var(--overlay-base) 94%, transparent);

@@ -54,7 +54,7 @@ interface SubtitleData {
   /** SubDL for this load, or null (no key, no TMDB match, live) */
   subdl: SubdlLoadInfo | null;
   /** SubDL tracks of this load by track id */
-  downloaded: Record<number, { nId: string; ai: boolean }>;
+  downloaded: Record<number, { nId: string; ai: boolean; language: string }>;
   subdlBusy: boolean;
   subdlStatus: SubdlStatus | null;
   /** The automatic SubDL attempt for this load has started (once per load) */
@@ -84,7 +84,8 @@ interface SubtitleActions {
   /** Subtitle speed from Sync (a user change) */
   setSpeed: (speed: number) => void;
   /** Load a SubDL file (or 'auto': the best match). userPick: chosen in the picker, saved for the title. */
-  loadSubdl: (nId: string, userPick?: boolean) => Promise<void>;
+  /** language: the picker's choice (defaults to the load's language), shown as the track's name */
+  loadSubdl: (nId: string, userPick?: boolean, language?: string) => Promise<void>;
   openPicker: (open: boolean) => void;
   openSync: (open: boolean) => void;
   clear: () => void;
@@ -147,11 +148,11 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
       send.track(decision.id, true);
     } else if (decision.kind === 'subdl' && !subdlTried) {
       set({ subdlTried: true });
-      void loadSubdl(decision.nId, false);
+      void loadSubdl(decision.nId, false, subdl.language);
     }
   }
 
-  async function loadSubdl(nId: string, userPick: boolean): Promise<void> {
+  async function loadSubdl(nId: string, userPick: boolean, language?: string): Promise<void> {
     const { generation, subdl } = get();
     if (!subdl || !window.subdl) return;
     set({ subdlBusy: true, subdlStatus: null });
@@ -174,7 +175,7 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
     const { pendingDelay, downloaded } = get();
     const savedHere = pendingDelay?.subdlId === result.nId;
     const ai = result.ai === true || (savedHere && pendingDelay?.ai === true);
-    set({ downloaded: { ...downloaded, [result.trackId]: { nId: result.nId, ai } }, selectedId: result.trackId, sessionOn: { ...get().sessionOn, vod: true } });
+    set({ downloaded: { ...downloaded, [result.trackId]: { nId: result.nId, ai, language: language ?? subdl.language } }, selectedId: result.trackId, sessionOn: { ...get().sessionOn, vod: true } });
     send.track(result.trackId, true);
     if (savedHere && pendingDelay) {
       // The saved choice: its delay and speed, no new timing guess
@@ -311,7 +312,7 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
       send.speed(speed);
       recordEdit();
     },
-    loadSubdl: (nId, userPick = false) => loadSubdl(nId, userPick),
+    loadSubdl: (nId, userPick = false, language) => loadSubdl(nId, userPick, language),
     openPicker: (open) => set({ pickerOpen: open, syncOpen: open ? false : get().syncOpen }),
     openSync: (open) => set({ syncOpen: open, pickerOpen: open ? false : get().pickerOpen }),
 

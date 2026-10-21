@@ -105,3 +105,11 @@ describe('subdlStatusText', () => {
     expect(subdlStatusText(null)).toBe(null);
   });
 });
+
+describe('trackLabel for downloaded tracks', () => {
+  it('names a SubDL track by its language, not the cache file name', () => {
+    const t: SubtitleTrack = { id: 5, lang: null, title: 'abc__def.srt', codec: 'subrip', isCc: false, external: true, externalFile: '/x/abc__def.srt', hearingImpaired: false };
+    expect(trackLabel(t, 'English')).toBe('English');
+    expect(trackLabel(t)).toBe('Downloaded subtitles');
+  });
+});
