@@ -55,7 +55,7 @@ export interface ReportInputs {
  */
 const REPORT_SETTINGS = {
   theme: 'copy', lastSourceId: 'sourceId', tmdbApiKey: 'secret', vodRefreshHours: 'copy', epgRefreshHours: 'copy',
-  movieGenresEnabled: 'copy', seriesGenresEnabled: 'copy', posterDbApiKey: 'secret', rpdbBackdropsEnabled: 'copy',
+  movieGenresEnabled: 'copy', seriesGenresEnabled: 'copy', posterDbApiKey: 'secret', subdlApiKey: 'secret', rpdbBackdropsEnabled: 'copy',
   allowLanSources: 'copy', debugLoggingEnabled: 'copy', channelSortOrder: 'copy', categorySortOrder: 'copy',
   autoUpdateEnabled: 'copy', betaUpdates: 'copy', categoryBarWidth: 'copy', channelColumnWidth: 'copy', guideOpacity: 'copy',
   liveSourceOrder: 'sourceIds', vodSourceOrder: 'sourceIds', sportsMatchupEnabled: 'copy', guideMorphEnabled: 'copy',

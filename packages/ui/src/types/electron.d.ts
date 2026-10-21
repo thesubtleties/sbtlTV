@@ -231,6 +231,7 @@ export interface AppSettings {
   movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   posterDbApiKey?: string;         // RatingPosterDB API key for rating posters
+  subdlApiKey?: string;            // SubDL API key for downloaded subtitles
   rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging

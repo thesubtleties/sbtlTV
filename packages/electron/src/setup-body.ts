@@ -16,7 +16,7 @@ export interface SetupSource {
 export interface UserLists { favorites?: unknown[]; watchlist?: unknown[]; progress?: unknown[]; lastCategory?: string }
 export interface SetupBody {
   app: string; exportedAt: string; platform: string; includes: SetupPart[];
-  sources?: SetupSource[]; settings?: Partial<AppSettings>; apiKeys?: { tmdb?: string; posterDb?: string }; lists?: UserLists;
+  sources?: SetupSource[]; settings?: Partial<AppSettings>; apiKeys?: { tmdb?: string; posterDb?: string; subdl?: string }; lists?: UserLists;
 }
 export interface SetupPreview {
   app: string; exportedAt: string; platform: string;
@@ -36,7 +36,7 @@ export const SETUP_SETTING_KEYS = [
   'guideMorphEnabled', 'autoplayNextEpisode', 'appearance', 'subtitles',
 ] as const satisfies readonly (keyof AppSettings)[];
 const SETTING_KEYS = new Set<string>(SETUP_SETTING_KEYS);
-const SECRET_STORED_KEYS = new Set(['encryptedTmdbApiKey', 'encryptedPosterDbApiKey']);
+const SECRET_STORED_KEYS = new Set(['encryptedTmdbApiKey', 'encryptedPosterDbApiKey', 'encryptedSubdlApiKey']);
 
 const MAX_SOURCES = 200;
 const MAX_PLAYLIST = 64 * 1024 * 1024;
@@ -144,10 +144,11 @@ export function validateSetupBody(raw: unknown): SetupBody {
   if (raw.settings !== undefined) body.settings = validateSettings(raw.settings);
   if (raw.apiKeys !== undefined) {
     if (!isObj(raw.apiKeys)) fail('apiKeys');
-    only(raw.apiKeys, ['tmdb', 'posterDb'], 'apiKeys');
+    only(raw.apiKeys, ['tmdb', 'posterDb', 'subdl'], 'apiKeys');
     body.apiKeys = {
       ...(raw.apiKeys.tmdb !== undefined && { tmdb: text(raw.apiKeys.tmdb, 'apiKeys.tmdb', 500) }),
       ...(raw.apiKeys.posterDb !== undefined && { posterDb: text(raw.apiKeys.posterDb, 'apiKeys.posterDb', 500) }),
+      ...(raw.apiKeys.subdl !== undefined && { subdl: text(raw.apiKeys.subdl, 'apiKeys.subdl', 500) }),
     };
   }
   if (raw.lists !== undefined) {
@@ -186,7 +187,7 @@ export function describeSetup(body: SetupBody): SetupPreview {
     app: body.app, exportedAt: body.exportedAt, platform: body.platform,
     sources: (body.sources ?? []).map((s) => ({ name: s.name, type: s.type, withLogin: !!s.password, fromFile: s.url.startsWith('imported:'), host: hostOf(s.url) })),
     settings: body.settings !== undefined,
-    apiKeys: !!(body.apiKeys?.tmdb || body.apiKeys?.posterDb),
+    apiKeys: !!(body.apiKeys?.tmdb || body.apiKeys?.posterDb || body.apiKeys?.subdl),
     favorites: body.lists?.favorites?.length ?? 0,
     watchlist: body.lists?.watchlist?.length ?? 0,
     progress: body.lists?.progress?.length ?? 0,
@@ -247,7 +248,7 @@ export function buildSetupBody(
     });
   }
   if (parts.includes('settings')) body.settings = settingsForExport(settings);
-  if (parts.includes('apiKeys')) body.apiKeys = { ...(settings.tmdbApiKey && { tmdb: settings.tmdbApiKey }), ...(settings.posterDbApiKey && { posterDb: settings.posterDbApiKey }) };
+  if (parts.includes('apiKeys')) body.apiKeys = { ...(settings.tmdbApiKey && { tmdb: settings.tmdbApiKey }), ...(settings.posterDbApiKey && { posterDb: settings.posterDbApiKey }), ...(settings.subdlApiKey && { subdl: settings.subdlApiKey }) };
   const l: UserLists = {};
   if (parts.includes('favorites') && lists.favorites) l.favorites = lists.favorites;
   if (parts.includes('watchlist') && lists.watchlist) l.watchlist = lists.watchlist;
