@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { pickSubtitleTrack, stepDelay, formatDelay, trackLabel } from './subtitleLogic';
-import { decideVodSubtitle, heardAt, solveSync, subdlStatusText, SYNC_REACTION_S } from './subtitleLogic';
+import { decideVodSubtitle, heardAt, solveSync, subdlStatusText, SYNC_REACTION_S, syncCueKey, stepSyncFocus } from './subtitleLogic';
 import type { SubtitleTrack } from '../types/electron';
 
 const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false };
@@ -153,5 +153,27 @@ describe('solveSync speed snapping (renderer copy)', () => {
   it('delay only when asked (the subtitle may be for another cut)', () => {
     const fps = 23.976 / 25;
     expect(solveSync([{ cueStart: 100, at: 100 * fps }, { cueStart: 3000, at: 3000 * fps }], 1, { speed: false }).speed).toBe(1);
+  });
+});
+
+describe('Sync list focus (by line, not by row number)', () => {
+  const a = { start: 10, text: 'One' }, b = { start: 12, text: 'Two' }, c = { start: 15, text: 'Three' }, d = { start: 18, text: 'Four' };
+  it('a line keeps its key when the list slides', () => {
+    expect(syncCueKey(b)).toBe(syncCueKey({ ...b }));
+    expect(syncCueKey(b)).not.toBe(syncCueKey(c));
+  });
+  it('lines that start together are still told apart', () => {
+    expect(syncCueKey({ start: 12, text: 'Two' })).not.toBe(syncCueKey({ start: 12, text: 'Other' }));
+  });
+  it('Up/Down move from the focused line even after the list slid under it', () => {
+    // b was row 1; a dropped off the top, so b is now row 0
+    expect(stepSyncFocus([b, c, d], syncCueKey(b), 1)).toBe(syncCueKey(c));
+    expect(stepSyncFocus([b, c, d], syncCueKey(c), -1)).toBe(syncCueKey(b));
+  });
+  it('stops at the ends; a line no longer listed starts from the top; no lines, no focus', () => {
+    expect(stepSyncFocus([a, b], syncCueKey(b), 1)).toBe(syncCueKey(b));
+    expect(stepSyncFocus([a, b], syncCueKey(a), -1)).toBe(syncCueKey(a));
+    expect(stepSyncFocus([b, c], syncCueKey(a), 1)).toBe(syncCueKey(b));
+    expect(stepSyncFocus([], syncCueKey(a), 1)).toBeNull();
   });
 });

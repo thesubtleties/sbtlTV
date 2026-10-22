@@ -140,3 +140,18 @@ export const SYNC_REACTION_S = 0.3;
 export function heardAt(tapPosition: number): number {
   return tapPosition - SYNC_REACTION_S;
 }
+
+export interface SyncCue { start: number; text: string }
+
+/** A line's identity in the Sync list: the list slides with playback, row numbers don't stay with a line. */
+export function syncCueKey(cue: SyncCue): string {
+  return `${cue.start}|${cue.text}`;
+}
+
+/** The line Up/Down moves to from the focused one; a line that slid out of the list starts from the top. */
+export function stepSyncFocus(cues: SyncCue[], focus: string | null, step: 1 | -1): string | null {
+  if (cues.length === 0) return null;
+  const at = cues.findIndex((c) => syncCueKey(c) === focus);
+  const next = at < 0 ? 0 : Math.min(Math.max(at + step, 0), cues.length - 1);
+  return syncCueKey(cues[next]);
+}

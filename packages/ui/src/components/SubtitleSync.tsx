@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useSubtitleStore } from '../stores/subtitleStore';
 import { usePlaybackStore } from '../stores/playbackStore';
-import { heardAt, solveSync, type SyncPoint } from '../services/subtitleLogic';
+import { heardAt, solveSync, stepSyncFocus, syncCueKey, type SyncCue, type SyncPoint } from '../services/subtitleLogic';
 import './SubtitlePicker.css';
 import './SubtitleSync.css';
 
@@ -12,14 +12,19 @@ export function SubtitleSync() {
 }
 
 function SyncPanel() {
-  const [cues, setCues] = useState<Array<{ start: number; text: string }>>([]);
-  const [focus, setFocus] = useState<number | null>(null);
+  const [cues, setCues] = useState<SyncCue[]>([]);
+  // The focused line by its key, not its row: the list slides as playback goes on
+  const [focus, setFocus] = useState<string | null>(null);
+  const focusRef = useRef<string | null>(null);
+  focusRef.current = focus;
   const [synced, setSynced] = useState(false);
   const moved = useRef(false);
   const points = useRef<SyncPoint[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const focusedOnce = useRef(false);
+  const rowFor = (key: string | null) =>
+    key === null ? undefined : [...(listRef.current?.querySelectorAll<HTMLElement>('[data-key]') ?? [])].find((el) => el.dataset.key === key);
 
   // The lines around now, refreshed while playback goes on
   useEffect(() => {
@@ -34,11 +39,13 @@ function SyncPanel() {
       void window.subdl?.cues(generation, nId, position, delay, speed, span).then((list) => {
         if (!alive) return;
         setCues(list);
-        if (!moved.current) {
+        // Follow playback until the user moves; a line they moved to that slid out of the list hands back to playback
+        if (!moved.current || !list.some((c) => syncCueKey(c) === focusRef.current)) {
+          moved.current = false;
           // The last line that should have been heard by now (with the current timing)
           let last = 0;
           list.forEach((c, i) => { if (c.start * speed + delay <= position) last = i; });
-          setFocus(list.length ? last : null);
+          setFocus(list.length ? syncCueKey(list[last]) : null);
         }
       });
     };
@@ -47,9 +54,7 @@ function SyncPanel() {
     return () => { alive = false; clearInterval(timer); };
   }, []);
 
-  function pick(i: number) {
-    const cue = cues[i];
-    if (!cue) return;
+  function pick(cue: SyncCue) {
     const position = usePlaybackStore.getState().position;
     const store = useSubtitleStore.getState();
     points.current = [...points.current, { cueStart: cue.start, at: heardAt(position) }];
@@ -71,7 +76,7 @@ function SyncPanel() {
   useEffect(() => {
     if (focusedOnce.current || focus === null) return;
     focusedOnce.current = true;
-    listRef.current?.querySelector<HTMLElement>(`[data-index="${focus}"]`)?.focus();
+    rowFor(focus)?.focus();
   }, [focus]);
 
   // Up/Down move between lines, Esc closes (after the CC menu, if open); Enter is the focused line's own (pick)
@@ -80,11 +85,11 @@ function SyncPanel() {
       if (e.key === 'Escape') {
         if (document.querySelector('.cc__menu')) return;
         useSubtitleStore.getState().openSync(false);
-      } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && (e.target as HTMLElement | null)?.dataset?.index !== undefined) {
+      } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && (e.target as HTMLElement | null)?.dataset?.key !== undefined) {
         moved.current = true;
-        const next = Math.min(Math.max((focus ?? 0) + (e.key === 'ArrowDown' ? 1 : -1), 0), Math.max(cues.length - 1, 0));
+        const next = stepSyncFocus(cues, focus, e.key === 'ArrowDown' ? 1 : -1);
         setFocus(next);
-        listRef.current?.querySelector<HTMLElement>(`[data-index="${next}"]`)?.focus();
+        rowFor(next)?.focus();
       } else return;
       e.preventDefault();
       e.stopPropagation();
@@ -102,7 +107,7 @@ function SyncPanel() {
   };
 
   useEffect(() => {
-    if (focus !== null) listRef.current?.querySelector<HTMLElement>(`[data-index="${focus}"]`)?.scrollIntoView({ block: 'center' });
+    rowFor(focus)?.scrollIntoView({ block: 'center' });
   }, [focus]);
 
   const hint = synced ? 'Synced' : points.current.length > 0 ? 'Tap another line later to fix drift' : 'Tap the line you just heard';
@@ -116,19 +121,22 @@ function SyncPanel() {
       <div className={`subsync__hint${synced ? ' subsync__hint--ok' : ''}`}>{hint}</div>
       <div className="subsync__list" ref={listRef}>
         {cues.length === 0 && <div className="subpick__note">No spoken lines around here</div>}
-        {cues.map((c, i) => (
-          <button
-            key={`${c.start}-${i}`}
-            data-index={i}
-            tabIndex={i === focus ? 0 : -1}
-            className={`subsync__row${i === focus ? ' subsync__row--focus' : ''}`}
-            onMouseEnter={() => { moved.current = true; setFocus(i); }}
-            onFocus={() => setFocus(i)}
-            onClick={() => pick(i)}
-          >
-            {c.text}
-          </button>
-        ))}
+        {cues.map((c) => {
+          const key = syncCueKey(c);
+          return (
+            <button
+              key={key}
+              data-key={key}
+              tabIndex={key === focus ? 0 : -1}
+              className={`subsync__row${key === focus ? ' subsync__row--focus' : ''}`}
+              onMouseEnter={() => { moved.current = true; setFocus(key); }}
+              onFocus={() => setFocus(key)}
+              onClick={() => pick(c)}
+            >
+              {c.text}
+            </button>
+          );
+        })}
       </div>
       <div className="subsync__foot">
         <button className="subsync__done" onClick={() => useSubtitleStore.getState().openSync(false)}>Close</button>
