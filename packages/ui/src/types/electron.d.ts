@@ -99,6 +99,11 @@ export interface SubtitleTrack {
   codec: string;
   /** EIA-608 closed captions carried in the video (live TV) */
   isCc: boolean;
+  /** Added with sub-add: a downloaded (SubDL) subtitle */
+  external: boolean;
+  externalFile: string | null;
+  /** The file marks it SDH */
+  hearingImpaired: boolean;
 }
 
 export interface SubtitleTracksUpdate {
@@ -111,6 +116,27 @@ export interface SubtitleTracksUpdate {
 
 /** Live captions: main checks the first lines and hides station-data junk */
 export type CcState = 'checking' | 'ok' | 'other-language' | 'unreadable';
+
+export interface SubdlTitle { tmdbId: number; type: 'movie' | 'tv'; season?: number; episode?: number }
+export interface SubdlResultInfo { nId: string; releaseName: string; language: string; hi: boolean; ai: boolean; author: string | null; pack: boolean }
+export interface SubdlTiming { speed: number | null; fps: { from: number; to: number } | null; cutMismatch: boolean }
+export interface SubdlUsageInfo { downloadsLeft: number; downloadsLimit: number }
+export type SubdlFailure = 'auth' | 'quota' | 'not-found' | 'network' | 'bad-response' | 'stale' | 'no-file';
+export interface SubdlLanguage { code: string; label: string; iso: string[] }
+
+/** Downloaded subtitles: main does every SubDL request and file */
+export interface SubdlApi {
+  languages: () => Promise<SubdlLanguage[]>;
+  /** Tries a key before it is saved */
+  checkKey: (key: string) => Promise<{ usage?: SubdlUsageInfo; error?: SubdlFailure }>;
+  usage: () => Promise<{ usage?: SubdlUsageInfo; error?: SubdlFailure }>;
+  find: (title: SubdlTitle, language: string) => Promise<{ results?: SubdlResultInfo[]; error?: SubdlFailure }>;
+  /** nId 'auto': the best match. The track is added, not selected. */
+  load: (generation: number, title: SubdlTitle, nId: string, language: string, duration: number) => Promise<{ trackId?: number; nId?: string; ai?: boolean; timing?: SubdlTiming; error?: SubdlFailure }>;
+  /** Spoken lines of a downloaded subtitle (by its SubDL id) within span seconds of a video time */
+  cues: (generation: number, nId: string, around: number, delay: number, speed: number, span: number) => Promise<Array<{ start: number; text: string }>>;
+  setSpeed: (generation: number, speed: number) => Promise<MpvResult>;
+}
 
 export interface SubtitlesApi {
   /** Calls carry the load generation they were decided for; main ignores stale ones. null turns subtitles off. */
@@ -215,8 +241,12 @@ export interface SubtitleSettings {
   vodDefault: boolean;
   size: 'small' | 'medium' | 'large';
   style: 'outline' | 'box' | 'shadow';
-  /** auto = the system language */
-  language: 'auto' | 'en' | 'es' | 'fr';
+  /** 'auto' = the system language, else a subtitle language code (en, pt-br, ...) */
+  language: string;
+  /** Downloaded subtitles: SDH (sound cues) over standard */
+  preferSdh?: boolean;
+  /** Seconds of playback before an automatic SubDL download */
+  subdlWait?: 0 | 10 | 20 | 30;
 }
 
 export interface AppSettings {
@@ -229,6 +259,7 @@ export interface AppSettings {
   movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   posterDbApiKey?: string;         // RatingPosterDB API key for rating posters
+  subdlApiKey?: string;            // SubDL API key for downloaded subtitles
   rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
@@ -370,6 +401,7 @@ declare global {
     data?: DataApi;
     mpv?: MpvApi;
     subtitles?: SubtitlesApi;
+    subdl?: SubdlApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
     appearance?: AppearanceApi;

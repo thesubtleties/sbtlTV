@@ -156,3 +156,14 @@ test('a file playlist still waiting to be imported travels as its pending conten
   assert.equal(body.sources?.[1].playlist, '#EXTM3U\n#EXTINF:-1,One\nhttp://s/1\n');
   assert.equal(buildSetupBody(['sources'], storedSetup(), {}, { f1: '#EXTM3U\n' }, meta).sources?.[1].playlist, '#EXTM3U\n');
 });
+
+test('the SubDL key travels under apiKeys only, typed and capped like the others', () => {
+  const body = validateSetupBody({ ...good(), apiKeys: { subdl: 'subdl_key' } });
+  assert.equal(body.apiKeys?.subdl, 'subdl_key');
+  assert.equal(describeSetup(validateSetupBody({ ...good(), settings: undefined, apiKeys: { subdl: 'k' } })).apiKeys, true);
+  assert.throws(() => validateSetupBody({ ...good(), apiKeys: { subdl: 5 } }), /invalid/);
+  const stored = { ...storedSetup(), settings: { channelSortOrder: 'number', subdlApiKey: 'sk' } as never };
+  const out = buildSetupBody(['settings', 'apiKeys'], stored, {}, {}, meta);
+  assert.deepEqual(out.apiKeys, { subdl: 'sk' });
+  assert.equal(JSON.stringify(out.settings).includes('sk'), false);
+});

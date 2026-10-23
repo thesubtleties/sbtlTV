@@ -237,7 +237,7 @@ contextBridge.exposeInMainWorld('mpv', {
 } satisfies MpvApi);
 
 // Subtitles: mpv's subtitle tracks for the current stream, and the choice back
-interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean }
+interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean; external: boolean; externalFile: string | null; hearingImpaired: boolean }
 interface SubtitleTracksUpdate { generation: number; tracks: SubtitleTrack[]; duration: number }
 interface CcStateUpdate { generation: number; state: 'checking' | 'ok' | 'other-language' | 'unreadable'; language: 'en' | 'es' | 'fr' | null }
 contextBridge.exposeInMainWorld('subtitles', {
@@ -254,6 +254,17 @@ contextBridge.exposeInMainWorld('subtitles', {
     ipcRenderer.on('subtitle-cc-state', listener);
     return () => { ipcRenderer.removeListener('subtitle-cc-state', listener); };
   },
+});
+
+// Downloaded subtitles (SubDL): main does every request and file; the page only asks
+contextBridge.exposeInMainWorld('subdl', {
+  languages: () => ipcRenderer.invoke('subdl-languages'),
+  checkKey: (key: string) => ipcRenderer.invoke('subdl-check-key', key),
+  usage: () => ipcRenderer.invoke('subdl-usage'),
+  find: (title: unknown, language: string) => ipcRenderer.invoke('subdl-find', title, language),
+  load: (generation: number, title: unknown, nId: string, language: string, duration: number) => ipcRenderer.invoke('subdl-load', generation, title, nId, language, duration),
+  cues: (generation: number, nId: string, around: number, delay: number, speed: number, span: number) => ipcRenderer.invoke('subdl-cues', generation, nId, around, delay, speed, span),
+  setSpeed: (generation: number, speed: number) => ipcRenderer.invoke('subtitle-set-speed', generation, speed),
 });
 
 // Settings > Privacy: what IP outside services see (asks Mullvad's checker, only when called)

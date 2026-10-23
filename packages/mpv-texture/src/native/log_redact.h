@@ -50,7 +50,7 @@ inline std::string lower(const std::string& text) {
 
 inline bool isPublicHost(const std::string& host) {
     static const char* const kPublicHosts[] = {
-        "api.themoviedb.org", "image.tmdb.org", "files.tmdb.org", "api.ratingposterdb.com", "github.com",
+        "api.themoviedb.org", "image.tmdb.org", "files.tmdb.org", "api.ratingposterdb.com", "api.subdl.com", "dl.subdl.com", "github.com",
         "objects.githubusercontent.com", "raw.githubusercontent.com", "release-assets.githubusercontent.com",
         "a.espncdn.com", "am.i.mullvad.net"};
     for (const char* h : kPublicHosts) if (host == h) return true;

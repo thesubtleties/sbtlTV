@@ -191,6 +191,25 @@
   transition: border-color 0.1s ease;
 }
 
+/* Language list with a SubDL key: same look as a text field */
+.st-select {
+  height: 34px;
+  min-width: 200px;
+  max-width: 360px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.st-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .st-input::placeholder {
   color: var(--faint);
 }

@@ -122,7 +122,7 @@ test('a long line of :// without spaces stays fast (the host pre-pass jumps like
 
 test('the readable public hosts are exactly these (mirrored in log_redact.h)', () => {
   assert.deepEqual([...PUBLIC_HOSTS].sort(), [
-    'a.espncdn.com', 'am.i.mullvad.net', 'api.ratingposterdb.com', 'api.themoviedb.org', 'files.tmdb.org', 'github.com',
+    'a.espncdn.com', 'am.i.mullvad.net', 'api.ratingposterdb.com', 'api.subdl.com', 'api.themoviedb.org', 'dl.subdl.com', 'files.tmdb.org', 'github.com',
     'image.tmdb.org', 'objects.githubusercontent.com', 'raw.githubusercontent.com', 'release-assets.githubusercontent.com',
   ]);
 });
@@ -290,4 +290,11 @@ test('the path pass stays linear on hostile lines', () => {
     redactUrls(line);
     assert.ok(performance.now() - t < 200);
   }
+});
+
+test('SubDL hosts stay readable; a key in a query (SubDL puts one in its file links) does not', () => {
+  const out = redactUrls('GET https://dl.subdl.com/subtitle/abc/def?api_key=subdl_SECRETKEY and https://api.subdl.com/api/v2/me');
+  assert.equal(out.includes('dl.subdl.com'), true);
+  assert.equal(out.includes('api.subdl.com'), true);
+  assert.equal(out.includes('SECRETKEY'), false);
 });

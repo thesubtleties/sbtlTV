@@ -58,6 +58,9 @@ export interface StoredWatchProgress {
   name?: string;
   sub_delay?: number;           // Subtitle delay (s) the user set on this copy; not indexed
   sub_delay_stream_id?: string; // stream_id it was set on (another source's copy starts at 0)
+  sub_speed?: number;           // Subtitle speed from a frame-rate fix or sync (1 = not stored)
+  sub_subdl_id?: string;        // SubDL file chosen for this copy (page/file)
+  sub_subdl_ai?: boolean;       // that file is AI-translated
   updated_at: Date;
   source_id?: string;
 }

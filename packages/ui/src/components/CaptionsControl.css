@@ -182,3 +182,30 @@
   opacity: 0.4;
   cursor: default;
 }
+
+.cc__tag {
+  margin-left: 8px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-2);
+  vertical-align: middle;
+}
+
+.cc__item .ai-mark {
+  margin-left: 6px;
+}
+
+.cc__item:disabled {
+  color: var(--muted);
+  cursor: default;
+  background: transparent;
+}
+
+.cc__status {
+  padding: 4px 10px 6px;
+  font-size: 12px;
+  color: var(--muted);
+}

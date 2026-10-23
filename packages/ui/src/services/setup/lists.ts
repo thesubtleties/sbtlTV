@@ -27,6 +27,7 @@ const SPECS: Record<ListPart, Spec> = {
     optional: {
       tmdb_id: 'number', stream_id: 'string', series_tmdb_id: 'number', series_stream_id: 'string', season_num: 'number',
       episode_num: 'number', name: 'string', sub_delay: 'number', sub_delay_stream_id: 'string', source_id: 'string',
+      sub_speed: 'number', sub_subdl_id: 'string', sub_subdl_ai: 'boolean',
     },
   },
 };

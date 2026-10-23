@@ -23,6 +23,8 @@ export const PUBLIC_HOSTS: ReadonlySet<string> = new Set([
   'image.tmdb.org',
   'files.tmdb.org',
   'api.ratingposterdb.com',
+  'api.subdl.com',
+  'dl.subdl.com',
   'github.com',
   'objects.githubusercontent.com',
   'raw.githubusercontent.com',

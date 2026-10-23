@@ -11,7 +11,7 @@ const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: bo
   { id: 'sources', title: 'Sources', defaultOn: true },
   { id: 'logins', title: 'With logins', help: "Xtream passwords. M3U logins are part of their addresses, so they always go along.", defaultOn: true },
   { id: 'settings', title: 'Settings', defaultOn: true },
-  { id: 'apiKeys', title: 'API keys', help: 'TMDB and RatingPosterDB.', defaultOn: true },
+  { id: 'apiKeys', title: 'API keys', help: 'TMDB, RatingPosterDB and SubDL.', defaultOn: true },
   { id: 'favorites', title: 'Favorites', defaultOn: true },
   { id: 'watchlist', title: 'Watchlist', defaultOn: true },
   { id: 'progress', title: 'Watch progress', defaultOn: false },

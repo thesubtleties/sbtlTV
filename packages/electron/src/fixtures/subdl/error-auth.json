@@ -1,0 +1,7 @@
+{
+ "error": {
+  "code": "unauthorized",
+  "message": "Not Authorized",
+  "docs_url": "https://subdl.com/developers#errors"
+ }
+}

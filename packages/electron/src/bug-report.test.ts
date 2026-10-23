@@ -251,3 +251,9 @@ test('a log message cannot start a line of its own (continuation lines are inden
   assert.equal(line.split('\n').filter((l) => l.startsWith('[')).length, 1, line);
   assert.ok(line.endsWith('\n'));
 });
+
+test('the SubDL key shows only as set, never its value', () => {
+  const r = buildReport({ ...inputs(), settings: { ...(inputs().settings as object), subdlApiKey: 'SUBDL-SECRET-1' } as never }, clean, new Date()) as { settings: Record<string, unknown> };
+  assert.equal(r.settings.subdlApiKey, 'set');
+  assert.equal(JSON.stringify(r).includes('SUBDL-SECRET-1'), false);
+});

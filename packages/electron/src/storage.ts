@@ -43,6 +43,7 @@ export interface AppSettings {
   movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   posterDbApiKey?: string;         // RatingPosterDB API key
+  subdlApiKey?: string;            // SubDL API key (downloaded subtitles)
   rpdbBackdropsEnabled?: boolean;  // Use RPDB for backdrop images (tier 2+)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF protection bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
@@ -94,6 +95,7 @@ interface StoredSettings {
   movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   encryptedPosterDbApiKey?: string; // Base64 encoded encrypted buffer
+  encryptedSubdlApiKey?: string;    // Base64 encoded encrypted buffer
   rpdbBackdropsEnabled?: boolean;   // Use RPDB for backdrop images
   allowLanSources?: boolean;        // Allow requests to LAN IPs
   debugLoggingEnabled?: boolean;    // Write verbose logs to file
@@ -257,6 +259,9 @@ export function getSettings(): AppSettings {
   if (stored.encryptedPosterDbApiKey) {
     result.posterDbApiKey = decryptPassword(stored.encryptedPosterDbApiKey);
   }
+  if (stored.encryptedSubdlApiKey) {
+    result.subdlApiKey = decryptPassword(stored.encryptedSubdlApiKey);
+  }
   result.rpdbBackdropsEnabled = stored.rpdbBackdropsEnabled ?? false;
   result.allowLanSources = stored.allowLanSources ?? false;
   result.debugLoggingEnabled = stored.debugLoggingEnabled ?? false;
@@ -316,6 +321,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   if (settings.seriesGenresEnabled !== undefined) updated.seriesGenresEnabled = settings.seriesGenresEnabled;
   if (settings.posterDbApiKey !== undefined) {
     updated.encryptedPosterDbApiKey = settings.posterDbApiKey ? encryptPassword(settings.posterDbApiKey) : undefined;
+  }
+  if (settings.subdlApiKey !== undefined) {
+    updated.encryptedSubdlApiKey = settings.subdlApiKey ? encryptPassword(settings.subdlApiKey) : undefined;
   }
   if (settings.rpdbBackdropsEnabled !== undefined) {
     updated.rpdbBackdropsEnabled = settings.rpdbBackdropsEnabled;
@@ -421,7 +429,7 @@ export function keepPasswordStore(value: string): void {
  */
 export function forgetSecrets(): void {
   store.set('sources', store.get('sources', []).map(({ encryptedPassword: _password, ...source }) => source));
-  const { encryptedTmdbApiKey: _tmdb, encryptedPosterDbApiKey: _posterDb, ...settings } = store.get('settings');
+  const { encryptedTmdbApiKey: _tmdb, encryptedPosterDbApiKey: _posterDb, encryptedSubdlApiKey: _subdl, ...settings } = store.get('settings');
   store.set('settings', settings);
 }
 
@@ -432,7 +440,7 @@ export function readSetupForExport(): { sources: Source[]; settings: AppSettings
   if (!safeStorage.isEncryptionAvailable()) {
     // The plain fallback would read keyring-sealed secrets as garbage (secret-fallback.ts).
     const stored = store.get('settings');
-    const sealed = [...store.get('sources', []).map((s) => s.encryptedPassword), stored.encryptedTmdbApiKey, stored.encryptedPosterDbApiKey];
+    const sealed = [...store.get('sources', []).map((s) => s.encryptedPassword), stored.encryptedTmdbApiKey, stored.encryptedPosterDbApiKey, stored.encryptedSubdlApiKey];
     if (sealed.some((v) => v && isKeyringSealed(v))) throw new SecretsUnreadable('keyring out of reach');
   }
   try {
@@ -447,10 +455,10 @@ export function readSetupForExport(): { sources: Source[]; settings: AppSettings
  * kept keyring and the log format stay); machine settings and internal markers
  * stay as they are on this computer. Secrets are encrypted with this computer's keyring.
  */
-export function replaceSetup(input: { sources: SetupSource[]; settings: Partial<AppSettings>; apiKeys: { tmdb?: string; posterDb?: string } }): void {
+export function replaceSetup(input: { sources: SetupSource[]; settings: Partial<AppSettings>; apiKeys: { tmdb?: string; posterDb?: string; subdl?: string } }): void {
   const kept = keptOnImport(store.get('settings') as unknown as Record<string, unknown>);
   store.set('settings', { theme: 'dark', vodRefreshHours: 24, epgRefreshHours: 6, ...kept } as StoredSettings);
-  updateSettings({ ...input.settings, tmdbApiKey: input.apiKeys.tmdb ?? '', posterDbApiKey: input.apiKeys.posterDb ?? '' });
+  updateSettings({ ...input.settings, tmdbApiKey: input.apiKeys.tmdb ?? '', posterDbApiKey: input.apiKeys.posterDb ?? '', subdlApiKey: input.apiKeys.subdl ?? '' });
   store.set('sources', []);
   for (const { playlist: _playlist, ...source } of input.sources) saveSource(source as Source);
 }

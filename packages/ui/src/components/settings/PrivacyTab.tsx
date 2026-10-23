@@ -7,6 +7,7 @@ import './PrivacyTab.css';
 interface PrivacyTabProps {
   tmdbKeySet: boolean;
   posterDbKeySet: boolean;
+  subdlKeySet: boolean;
   teamLogosEnabled: boolean;
   autoUpdateEnabled: boolean;
   debugLoggingEnabled: boolean;
@@ -127,7 +128,7 @@ function KeyringRow({ protection }: { protection: StorageProtection }) {
 }
 
 /** What sbtlTV keeps, what IP the outside services see, and who sees what. */
-export function PrivacyTab({ tmdbKeySet, posterDbKeySet, teamLogosEnabled, autoUpdateEnabled, debugLoggingEnabled }: PrivacyTabProps) {
+export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosEnabled, autoUpdateEnabled, debugLoggingEnabled }: PrivacyTabProps) {
   const [ipCheck, setIpCheck] = useState<IpCheck>({ state: 'idle' });
   const [protection, setProtection] = useState<StorageProtection | null>(null);
 
@@ -209,6 +210,8 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, teamLogosEnabled, autoU
           sees="With your TMDB key: the key, your IP address and the lists you browse. Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
         <Who title="RatingPosterDB" status={posterDbKeySet ? 'on' : 'not-set-up'}
           sees="With your RPDB key: the key, your IP address and which titles' posters you see." />
+        <Who title="SubDL" status={subdlKeySet ? 'on' : 'not-set-up'}
+          sees="With your SubDL key: the key, your IP address, and which movies and episodes you get subtitles for, in which language. It's asked when subtitles are on and the file has none in your language, or when you open Find subtitles." />
         <Who title="ESPN" status={teamLogosEnabled ? 'on' : 'off'}
           sees="With team logos on: your IP address and which teams are playing on the channel you watch."
           note="Settings > Live TV > Guide > Team logos." />

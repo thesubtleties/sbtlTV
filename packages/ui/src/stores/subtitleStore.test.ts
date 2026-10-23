@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSubtitleStore, initialSubtitleState } from './subtitleStore';
 import type { SubtitleTrack } from '../types/electron';
 
-const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true };
-const eng: SubtitleTrack = { id: 1, lang: 'eng', title: null, codec: 'mov_text', isCc: false };
-const vodCc: SubtitleTrack = { id: 2, lang: null, title: null, codec: 'eia_608', isCc: true };
+const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false };
+const eng: SubtitleTrack = { id: 1, lang: 'eng', title: null, codec: 'mov_text', isCc: false, external: false, externalFile: null, hearingImpaired: false };
+const vodCc: SubtitleTrack = { id: 2, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false };
 
 const setTrack = vi.fn(async () => ({ success: true }));
 const setVisible = vi.fn(async () => ({ success: true }));
@@ -141,9 +141,9 @@ describe('saved delay', () => {
   it('a user change is recorded with its load; a restore is not', () => {
     s().bindLoad(3, 'vod', false, 'en-US', { delay: 0.4, duration: 100 });
     s().receiveTracks({ generation: 3, tracks: [eng], duration: 100 }, false, 'en-US');
-    expect(s().userDelayEdit).toBeNull();
+    expect(s().userSubtitleEdit).toBeNull();
     s().nudgeDelay(0.1);
-    expect(s().userDelayEdit).toEqual({ seq: 1, generation: 3, delay: 0.5 });
+    expect(s().userSubtitleEdit).toEqual({ seq: 1, generation: 3, delay: 0.5, speed: 1, subdlId: null, ai: false });
     expect(s().delayResolved).toBe(true);
   });
 
@@ -194,7 +194,7 @@ describe('captions only in another language', () => {
 });
 
 describe('changing the subtitle language while a movie plays', () => {
-  const spa: SubtitleTrack = { id: 2, lang: 'spa', title: null, codec: 'subrip', isCc: false };
+  const spa: SubtitleTrack = { id: 2, lang: 'spa', title: null, codec: 'subrip', isCc: false, external: false, externalFile: null, hearingImpaired: false };
 
   it('switches to the track in the new language', () => {
     s().bindLoad(1, 'vod', true, 'en-US', null);
