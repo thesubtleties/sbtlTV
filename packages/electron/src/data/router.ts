@@ -28,7 +28,7 @@ export function isSameJob(a: SyncJob, b: SyncJob): boolean {
 // Plain string sets, not derived from the DataRequest union: a new request
 // variant must be added here (and to validateRequest) or it is refused at runtime.
 const CONTROL = new Set(['syncNow', 'syncEpisodes', 'rematchEpg', 'updateVodDetails', 'importPlaylist', 'clearAll']);
-const READS = new Set(['categories', 'channels', 'channelsByIds', 'channelCount', 'channelSearch', 'programsInRange', 'currentProgram', 'syncStatus', 'movies', 'series', 'episodes', 'vodCategories', 'vodCounts']);
+const READS = new Set(['categories', 'channels', 'channelsByIds', 'channelCount', 'channelSearch', 'programsInRange', 'currentProgram', 'syncStatus', 'movies', 'series', 'episodes', 'vodCategories', 'vodCounts', 'playlistRows']);
 
 // Answers one renderer message: reads run against the read connection, control
 // requests are acknowledged and queued for the worker. Anything that is not a
@@ -70,6 +70,7 @@ export function validateRequest(req: DataRequest): DataRequest {
     case 'programsInRange': list(r.streamIds, 'streamIds', 'string'); num(r.windowStartMs, 'windowStartMs'); num(r.windowEndMs, 'windowEndMs'); break;
     case 'currentProgram': text(r.streamId, 'streamId'); num(r.nowMs, 'nowMs'); break;
     case 'syncStatus': case 'clearAll': break;
+    case 'playlistRows': text(r.sourceId, 'sourceId'); break;
     case 'movies': case 'series':
       list(r.sourceIds, 'sourceIds', 'string'); selector(r.by, r.type === 'movies' ? 'streamIds' : 'seriesIds');
       if (r.limit !== undefined) { num(r.limit, 'limit'); if ((r.limit as number) < 1) bad('limit must be positive'); r.limit = Math.min(r.limit as number, MAX_LIMIT); }

@@ -1,0 +1,161 @@
+.subpick,
+.subsync {
+  position: absolute;
+  right: 32px;
+  top: 48px; /* top right: the subtitles at the bottom stay visible while picking or syncing */
+  z-index: 52; /* above NowPlayingBar (50) and Up next (51) */
+  width: min(460px, calc(100vw - 64px));
+  max-height: min(60vh, calc(100vh - 240px));
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--overlay-base) 94%, transparent);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  color: var(--text);
+}
+
+.subpick__head,
+.subsync__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.subpick__title,
+.subsync__title {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.subpick__lang {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.subpick__lang:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.subpick__close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.subpick__close:hover {
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+.subpick__list,
+.subsync__list {
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.subpick__row,
+.subsync__row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subpick__row--focus,
+.subsync__row--focus {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+.subpick__row--current .subpick__name::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+.subpick__row:disabled {
+  cursor: default;
+}
+
+.subpick__name {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subpick__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 14px;
+}
+
+.subpick__badge {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.subpick__author {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.subpick__note,
+.subpick__error,
+.subpick__foot {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.subpick__error {
+  color: var(--text-2);
+}
+
+.subpick__foot {
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.subpick__close:focus-visible,
+.subpick__row:focus-visible,
+.subsync__row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

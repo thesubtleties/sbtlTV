@@ -1,0 +1,200 @@
+// SubDL subtitles for the stream main is playing: find, download, check and
+// hand to mpv. Every outside effect is injected (client, cache, mpv, the
+// stream's generation), so the whole flow runs under node:test.
+//
+// Every download costs one of the user's daily SubDL downloads (a failed one
+// too), so only ids from a search are fetched, at most twice per automatic
+// attempt, and a file already in the cache is never fetched again.
+
+import fs from 'node:fs';
+import { SubdlError, type SubdlClient, type SubdlErrorKind, type SubdlResult, type SubdlTitle, type SubdlUsage } from './subdl-client.js';
+import { decodeSubtitle, isSoundCue, parseCues, sanitizeAss, sniffFormat, SUBTITLE_EXT, timingCheck, type Cue, type TimingStatus } from './subtitle-files.js';
+import { rankResults } from './subtitle-pick.js';
+import { subdlCode } from './subtitle-languages.js';
+import type { SubtitleCache } from './subtitle-cache.js';
+import type { SubtitleTrack } from './subtitle-mpv.js';
+
+export interface SubdlServiceIo {
+  client: Pick<SubdlClient, 'search' | 'download' | 'usage'>;
+  cache: SubtitleCache;
+  /** sub-add the file (not selected) and return its track once mpv lists it; null if it never shows */
+  addSubtitle(path: string, generation: number): Promise<SubtitleTrack | null>;
+  isCurrent(generation: number): boolean;
+  log(message: string): void;
+}
+export interface LoadRequest { generation: number; title: SubdlTitle; nId: string; language: string; preferSdh: boolean; duration: number }
+export interface LoadResult { trackId: number; nId: string; ai: boolean; timing: TimingStatus }
+export type ServiceError = { error: SubdlErrorKind | 'stale' | 'no-file' };
+
+const MAX_AUTO_DOWNLOADS = 2;
+/** A cached file larger than a download may be is not a subtitle we wrote */
+const MAX_CACHED_BYTES = 4 * 1024 * 1024;
+class NoFile extends Error {}
+
+export class SubdlService {
+  /** A rejected key: no more requests until it changes */
+  private authFailed = false;
+  /** Cues of the file loaded for a stream, for the sync panel */
+  private loaded: { generation: number; byNId: Map<string, Cue[]> } = { generation: -1, byNId: new Map() };
+  /** Files that failed (gone from SubDL, not a subtitle): every try costs a download, so never again this session */
+  private failed = new Set<string>();
+  /** Out of downloads: none attempted until SubDL's daily reset (UTC midnight) */
+  private quotaUntil = 0;
+  /** One download per file at a time */
+  private inflight = new Map<string, Promise<{ path: string; cues: Cue[] }>>();
+  /** Files sub-added in the current load, by path: loading one again reuses its track (no duplicate tracks in mpv) */
+  private added: { generation: number; byPath: Map<string, SubtitleTrack> } = { generation: -1, byPath: new Map() };
+  private lastEvict = 0;
+  /** Clock (replaced in tests) */
+  now: () => number = () => Date.now();
+
+  constructor(private readonly io: SubdlServiceIo) {}
+
+  keyChanged(): void {
+    this.authFailed = false;
+  }
+
+  private fail(e: unknown): ServiceError {
+    if (e instanceof NoFile) {
+      this.io.log('subdl: download was not a usable subtitle');
+      return { error: 'no-file' };
+    }
+    const kind: SubdlErrorKind = e instanceof SubdlError ? e.kind : 'network';
+    if (kind === 'auth') this.authFailed = true;
+    if (kind === 'quota') {
+      const midnight = new Date(this.now());
+      midnight.setUTCHours(24, 0, 0, 0);
+      this.quotaUntil = midnight.getTime();
+    }
+    this.io.log(`subdl: request failed (${kind})`);
+    return { error: kind };
+  }
+
+  async find(title: SubdlTitle, language: string, preferSdh: boolean): Promise<{ results: SubdlResult[] } | ServiceError> {
+    if (this.authFailed) return { error: 'auth' };
+    try {
+      const results = rankResults(await this.io.client.search(title, language), { language, preferSdh, season: title.season, episode: title.episode });
+      this.io.log(`subdl: search found ${results.length} files`);
+      return { results };
+    } catch (e) {
+      return this.fail(e);
+    }
+  }
+
+  /** Bytes -> UTF-8 text in a known format with at least one spoken line. */
+  private prepare(bytes: Uint8Array, language: string): { text: string; ext: string; cues: Cue[] } {
+    const text = decodeSubtitle(bytes, language);
+    const format = sniffFormat(text);
+    if (!format) throw new NoFile();
+    const safe = format === 'ass' ? sanitizeAss(text) : text;
+    const cues = parseCues(safe, format);
+    if (!cues.some((c) => !isSoundCue(c.text))) throw new NoFile();
+    return { text: safe, ext: SUBTITLE_EXT[format], cues };
+  }
+
+  private fileFor(title: SubdlTitle, nId: string, language: string): Promise<{ path: string; cues: Cue[] }> {
+    const key = `${title.tmdbId}:${title.season ?? ''}:${title.episode ?? ''}:${nId}`;
+    let pending = this.inflight.get(key);
+    if (!pending) {
+      pending = this.readOrDownload(title, nId, language).finally(() => this.inflight.delete(key));
+      this.inflight.set(key, pending);
+    }
+    return pending;
+  }
+
+  private async readOrDownload(title: SubdlTitle, nId: string, language: string): Promise<{ path: string; cues: Cue[] }> {
+    const cached = this.io.cache.find(title, nId);
+    if (cached) {
+      // Checked again: a damaged or replaced file is dropped and fetched anew
+      const text = fs.statSync(cached).size <= MAX_CACHED_BYTES ? fs.readFileSync(cached, 'utf8') : '';
+      const format = sniffFormat(text);
+      if (format) {
+        const now = new Date();
+        fs.utimesSync(cached, now, now);  // recently used: last to be evicted
+        return { path: cached, cues: parseCues(text, format) };
+      }
+      fs.rmSync(cached, { force: true });
+    }
+    if (this.failed.has(nId)) throw new SubdlError('not-found', 'failed before');
+    if (this.now() < this.quotaUntil) throw new SubdlError('quota', 'no downloads left today');
+    let prepared: { text: string; ext: string; cues: Cue[] };
+    try {
+      prepared = this.prepare(await this.io.client.download(nId), language);
+    } catch (e) {
+      const kind = e instanceof NoFile ? 'no-file' : e instanceof SubdlError ? e.kind : 'network';
+      if (kind === 'no-file' || kind === 'not-found' || kind === 'bad-response') this.failed.add(nId);
+      throw e;
+    }
+    const path = this.io.cache.write(title, nId, prepared.ext, prepared.text);
+    // At most once a minute: it reads every cached file's size
+    if (this.now() - this.lastEvict > 60_000) {
+      this.lastEvict = this.now();
+      try { this.io.cache.evict(); } catch (e) { this.io.log(`subdl: cache cleanup failed (${e instanceof Error ? e.name : 'error'})`); }
+    }
+    return { path, cues: prepared.cues };
+  }
+
+  /** nId 'auto': search and take the best; otherwise that file (from the cache when it is there). */
+  async load(req: LoadRequest): Promise<LoadResult | ServiceError> {
+    let candidates: Array<{ nId: string; ai: boolean }>;
+    if (req.nId === 'auto') {
+      // A language SubDL does not list: an unfiltered search would download another language
+      if (!subdlCode(req.language)) return { error: 'not-found' };
+      if (this.now() < this.quotaUntil) return { error: 'quota' };
+      const found = await this.find(req.title, req.language, req.preferSdh);
+      if ('error' in found) return found;
+      // Not files that failed before, and not the same file twice (same md5)
+      const seen = new Set<string>();
+      const usable = found.results.filter((r) => {
+        if (this.failed.has(r.nId)) return false;
+        if (r.md5 && seen.has(r.md5)) return false;
+        if (r.md5) seen.add(r.md5);
+        return true;
+      });
+      if (usable.length === 0) return { error: 'not-found' };
+      candidates = usable.slice(0, MAX_AUTO_DOWNLOADS).map((r) => ({ nId: r.nId, ai: r.ai }));
+    } else {
+      if (this.authFailed && !this.io.cache.find(req.title, req.nId)) return { error: 'auth' };
+      candidates = [{ nId: req.nId, ai: false }];
+    }
+    let last: ServiceError = { error: 'no-file' };
+    for (const c of candidates) {
+      if (!this.io.isCurrent(req.generation)) return { error: 'stale' };
+      let file: { path: string; cues: Cue[] };
+      try {
+        file = await this.fileFor(req.title, c.nId, req.language);
+      } catch (e) {
+        last = this.fail(e);
+        if (last.error === 'no-file' || last.error === 'not-found' || last.error === 'bad-response') continue;
+        return last;  // quota, auth, network: the next file would fail the same way
+      }
+      if (!this.io.isCurrent(req.generation)) return { error: 'stale' };
+      if (this.added.generation !== req.generation) this.added = { generation: req.generation, byPath: new Map() };
+      const track = this.added.byPath.get(file.path) ?? await this.io.addSubtitle(file.path, req.generation);
+      if (!track) return { error: 'no-file' };
+      this.added.byPath.set(file.path, track);
+      if (this.loaded.generation !== req.generation) this.loaded = { generation: req.generation, byNId: new Map() };
+      this.loaded.byNId.set(c.nId, file.cues);
+      return { trackId: track.id, nId: c.nId, ai: c.ai, timing: timingCheck(file.cues, req.duration) };
+    }
+    return last;
+  }
+
+  /** Spoken lines of one of this stream's downloaded subtitles within span seconds of the video time `around`. */
+  cues(generation: number, nId: string, around: number, delay: number, speed: number, span = 60): Array<{ start: number; text: string }> {
+    const cues = this.loaded.generation === generation ? this.loaded.byNId.get(nId) : undefined;
+    if (!cues) return [];
+    const subTime = (around - delay) / speed;
+    return cues
+      .filter((c) => !isSoundCue(c.text) && c.start >= subTime - span && c.start <= subTime + span)
+      .map((c) => ({ start: c.start, text: c.text }));
+  }
+
+  async usage(): Promise<SubdlUsage | ServiceError> {
+    try {
+      return await this.io.client.usage();
+    } catch (e) {
+      return this.fail(e);
+    }
+  }
+}

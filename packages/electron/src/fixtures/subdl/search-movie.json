@@ -1,0 +1,180 @@
+{
+ "status": true,
+ "results": [
+  {
+   "sd_id": 1663975,
+   "name": "Dune: Part Two",
+   "type": "movie",
+   "imdb_id": "tt15239678",
+   "tmdb_id": 693134,
+   "first_air_date": "2024-02-27T00:00:00.000Z",
+   "release_date": "2024-02-27T00:00:00.000Z",
+   "slug": "dune-part-two",
+   "year": 2024
+  }
+ ],
+ "subtitles": [
+  {
+   "release_name": "Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX_merged",
+   "name": "Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX_merged.zip",
+   "lang": "English",
+   "author": "Evan Benjamin",
+   "url": "/subtitle/3570225-8489216.zip?api_key=REDACTED",
+   "subtitlePage": "/s/info/oYNHCZ2yRx",
+   "season": 0,
+   "episode": null,
+   "language": "EN",
+   "framerate": 0,
+   "fps": null,
+   "hi": false,
+   "episode_from": null,
+   "episode_end": 0,
+   "full_season": false,
+   "unpack_files": [
+    {
+     "file_n_id": "S1LYq6u7YX",
+     "name": "Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX_merged.srt",
+     "release_name": "Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX_merged",
+     "season": 0,
+     "episode": 0,
+     "language": "EN",
+     "hi": false,
+     "format": "srt",
+     "size": 83285,
+     "md5": "dbf98ddec781b273d7ce005bdadfd07d",
+     "url": "/subtitle/oYNHCZ2yRx/S1LYq6u7YX?api_key=REDACTED"
+    }
+   ]
+  },
+  {
+   "release_name": "Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX_merged",
+   "name": "Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX_merged.zip",
+   "lang": "English",
+   "author": "Evan Benjamin",
+   "url": "/subtitle/3570224-8489216.zip?api_key=REDACTED",
+   "subtitlePage": "/s/info/JTUI1ft9uW7",
+   "season": 0,
+   "episode": null,
+   "language": "EN",
+   "framerate": 0,
+   "fps": null,
+   "hi": false,
+   "episode_from": null,
+   "episode_end": 0,
+   "full_season": false,
+   "unpack_files": [
+    {
+     "file_n_id": "XF9B9Ga5Ru",
+     "name": "Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX_merged.srt",
+     "release_name": "Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX_merged",
+     "season": 0,
+     "episode": 0,
+     "language": "EN",
+     "hi": false,
+     "format": "srt",
+     "size": 83285,
+     "md5": "dbf98ddec781b273d7ce005bdadfd07d",
+     "url": "/subtitle/JTUI1ft9uW7/XF9B9Ga5Ru?api_key=REDACTED"
+    }
+   ]
+  },
+  {
+   "release_name": "Dune Part Two.2024.WEBDL-2160p Proper-FLUX.en.hi",
+   "name": "Dune Part Two.2024.WEBDL-2160p Proper-FLUX.en.hi.zip",
+   "lang": "English",
+   "author": "",
+   "url": "/subtitle/3514427-8437042.zip?api_key=REDACTED",
+   "subtitlePage": "/s/info/7W2tNKm99Y",
+   "season": 0,
+   "episode": null,
+   "language": "EN",
+   "framerate": 0,
+   "fps": null,
+   "hi": false,
+   "episode_from": null,
+   "episode_end": 0,
+   "full_season": false,
+   "unpack_files": [
+    {
+     "file_n_id": "1d9jpfXK9O",
+     "name": "Dune Part Two.2024.WEBDL-2160p Proper-FLUX.en.hi.srt",
+     "release_name": "Dune Part Two.2024.WEBDL-2160p Proper-FLUX.en.hi",
+     "season": 0,
+     "episode": 0,
+     "language": "EN",
+     "hi": true,
+     "format": "srt",
+     "size": 120904,
+     "md5": "0b06e480b17f99156d6120c91e56e685",
+     "url": "/subtitle/7W2tNKm99Y/1d9jpfXK9O?api_key=REDACTED"
+    }
+   ]
+  },
+  {
+   "release_name": "Dune.Part.Two.2024.1080p.BluRay.x264-ROEN",
+   "name": "Dune Part Two.zip",
+   "lang": "English",
+   "author": "lumenscsc",
+   "url": "/subtitle/3458138-8381001.zip?api_key=REDACTED",
+   "subtitlePage": "/s/info/j9avlHZSIrI",
+   "season": 0,
+   "episode": null,
+   "language": "EN",
+   "framerate": 2,
+   "fps": "23.976",
+   "hi": false,
+   "episode_from": null,
+   "episode_end": 0,
+   "full_season": false,
+   "unpack_files": [
+    {
+     "file_n_id": "Ldzyzv9CpC",
+     "name": "Dune Part Two.srt",
+     "release_name": "Dune Part Two",
+     "season": 0,
+     "episode": 0,
+     "language": "EN",
+     "hi": false,
+     "format": "srt",
+     "size": 81589,
+     "md5": "1f2403732b475b066f82a3bd10d14d24",
+     "url": "/subtitle/j9avlHZSIrI/Ldzyzv9CpC?api_key=REDACTED"
+    }
+   ]
+  },
+  {
+   "release_name": "Dune.Part.Two.2024.1080p.BluRay.x264-ROEN",
+   "name": "Dune Part Two (SDH).zip",
+   "lang": "English",
+   "author": "lumenscsc",
+   "url": "/subtitle/3458137-8381000.zip?api_key=REDACTED",
+   "subtitlePage": "/s/info/NFT9Ed9kZsp",
+   "season": 0,
+   "episode": null,
+   "language": "EN",
+   "framerate": 2,
+   "fps": "23.976",
+   "hi": true,
+   "episode_from": null,
+   "episode_end": 0,
+   "full_season": true,
+   "unpack_files": [
+    {
+     "file_n_id": "hhVxHMmnl8",
+     "name": "Dune Part Two (SDH).srt",
+     "release_name": "Dune Part Two (SDH)",
+     "season": 0,
+     "episode": 0,
+     "language": "EN",
+     "hi": true,
+     "format": "srt",
+     "size": 118863,
+     "md5": "9326d9137b2697ed00345dd8967cf299",
+     "url": "/subtitle/NFT9Ed9kZsp/hhVxHMmnl8?api_key=REDACTED"
+    }
+   ]
+  }
+ ],
+ "totalPages": 6,
+ "currentPage": 1
+}

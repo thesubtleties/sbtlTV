@@ -12,6 +12,9 @@ export interface SubtitleTrack {
   title: string | null;
   codec: string;
   isCc: boolean;  // EIA-608 closed captions carried in the video
+  external: boolean;            // added with sub-add (a downloaded subtitle)
+  externalFile: string | null;  // its path, to tell which download it is
+  hearingImpaired: boolean;     // the file marks it SDH
 }
 
 /** mpv's track-list (JSON string from libmpv, array from the IPC socket) -> subtitle tracks. */
@@ -33,6 +36,9 @@ export function parseSubtitleTracks(value: unknown): SubtitleTrack[] {
       title: typeof r.title === 'string' ? r.title : null,
       codec,
       isCc: codec === 'eia_608',
+      external: r.external === true,
+      externalFile: typeof r['external-filename'] === 'string' ? r['external-filename'] : null,
+      hearingImpaired: r['hearing-impaired'] === true,
     });
   }
   return tracks;
@@ -46,9 +52,9 @@ export const SUBTITLE_BASE_OPTIONS: Array<[string, string]> = [
   ['sid', 'no'],
 ];
 
-/** mpv keeps the selected track, sub-delay and visibility across loadfile; reset them before each load. */
+/** mpv keeps the selected track, sub-delay, sub-speed and visibility across loadfile; reset them before each load. */
 export function loadResetOptions(): Array<[string, string]> {
-  return [['sid', 'no'], ['sub-delay', '0'], ['sub-visibility', 'yes']];
+  return [['sid', 'no'], ['sub-delay', '0'], ['sub-speed', '1'], ['sub-visibility', 'yes']];
 }
 
 const FONT_SIZE: Record<SubtitleSize, string> = { small: '38', medium: '46', large: '56' };
@@ -98,10 +104,44 @@ export class TrackReadSchedule {
     return now - this.lastRead >= this.intervalMs;
   }
 
-  record(now: number, tracks: SubtitleTrack[]): void {
+  /** duration: for a movie or episode, the list only counts once the duration is known too (live has none) */
+  record(now: number, tracks: SubtitleTrack[], duration?: number): void {
     this.reads++;
     this.lastRead = now;
-    if (tracks.length > 0) this.done = true;
+    if (tracks.length > 0 && (duration === undefined || duration > 0)) this.done = true;
+  }
+}
+
+/**
+ * External mpv pushes track-list on every change. A sub-add waits here for the
+ * pushed list that holds its file (no polling of an mpv that may be stuck).
+ */
+export class TrackListWaiter {
+  private waiting = new Set<{ file: string; resolve: (track: SubtitleTrack | null) => void; timer: ReturnType<typeof setTimeout> }>();
+
+  wait(file: string, timeoutMs: number): Promise<SubtitleTrack | null> {
+    return new Promise((resolve) => {
+      const entry = { file, resolve, timer: setTimeout(() => { this.waiting.delete(entry); resolve(null); }, timeoutMs) };
+      this.waiting.add(entry);
+    });
+  }
+
+  offer(tracks: SubtitleTrack[]): void {
+    for (const entry of this.waiting) {
+      const track = tracks.find((t) => t.externalFile === entry.file);
+      if (!track) continue;
+      clearTimeout(entry.timer);
+      this.waiting.delete(entry);
+      entry.resolve(track);
+    }
+  }
+
+  cancelAll(): void {
+    for (const entry of this.waiting) {
+      clearTimeout(entry.timer);
+      entry.resolve(null);
+    }
+    this.waiting.clear();
   }
 }
 

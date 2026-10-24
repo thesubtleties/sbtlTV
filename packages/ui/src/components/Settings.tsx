@@ -12,6 +12,9 @@ import { SeriesTab } from './settings/SeriesTab';
 import { PosterDbTab } from './settings/PosterDbTab';
 import { SecurityTab } from './settings/SecurityTab';
 import { PrivacyTab } from './settings/PrivacyTab';
+import { BackupTransferTab, type LastExport } from './settings/BackupTransferTab';
+import { useToastStore } from '../stores/toastStore';
+import { debugLog } from '../utils/debugLog';
 import { VideoPlayerTab } from './settings/VideoPlayerTab';
 import { DebugTab } from './settings/DebugTab';
 import { AboutTab } from './settings/AboutTab';
@@ -27,6 +30,8 @@ interface SettingsProps {
 }
 
 export function Settings({ onClose, initialTab }: SettingsProps) {
+  // The last setup export's passphrase: kept while Settings is open, gone when it closes.
+  const [lastExport, setLastExport] = useState<LastExport | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'sources');
   const [sources, setSources] = useState<Source[]>([]);
   const [isEncryptionAvailable, setIsEncryptionAvailable] = useState(true);
@@ -47,6 +52,10 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
   const [posterDbApiKey, setPosterDbApiKey] = useState('');
   const [posterDbKeyValid, setPosterDbKeyValid] = useState<boolean | null>(null);
   const [rpdbBackdropsEnabled, setRpdbBackdropsEnabled] = useState(false);
+
+  // SubDL state
+  const [subdlApiKey, setSubdlApiKey] = useState('');
+  const [subdlKeyValid, setSubdlKeyValid] = useState<boolean | null>(null);
 
   // Security state
   const [allowLanSources, setAllowLanSources] = useState(false);
@@ -90,9 +99,13 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
       console.error('[Settings] window.storage unavailable - Electron IPC bridge missing');
       return;
     }
-    const result = await window.storage.getSources();
-    if (result.data) {
-      setSources(result.data);
+    try {
+      const result = await window.storage.getSources();
+      if (result.error) throw new Error(result.error);
+      if (result.data) setSources(result.data);
+    } catch (err) {
+      debugLog(`Loading sources failed: ${err instanceof Error ? err.message : String(err)}`, 'settings');
+      useToastStore.getState().addToast({ kind: 'error', title: 'Could not load sources', message: 'Saved sources could not be read. Details are in the debug log.', duration: 8000 });
     }
   }
 
@@ -133,6 +146,11 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
       setPosterDbKeyValid(true); // Assume valid if previously saved
     }
     setRpdbBackdropsEnabled(s.rpdbBackdropsEnabled ?? false);
+
+    // Load SubDL key
+    const subdlKey = s.subdlApiKey || '';
+    setSubdlApiKey(subdlKey);
+    if (subdlKey) setSubdlKeyValid(true); // Assume valid if previously saved
 
     // Load security settings
     setAllowLanSources(s.allowLanSources ?? false);
@@ -273,11 +291,14 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
             onAllowLanSourcesChange={setAllowLanSources}
           />
         );
+      case 'backup':
+        return <BackupTransferTab lastExport={lastExport} onExported={setLastExport} />;
       case 'privacy':
         return (
           <PrivacyTab
             tmdbKeySet={tmdbApiKey.trim().length > 0}
             posterDbKeySet={posterDbApiKey.trim().length > 0}
+            subdlKeySet={subdlApiKey.trim().length > 0}
             teamLogosEnabled={sportsMatchupEnabled}
             autoUpdateEnabled={autoUpdateEnabled}
             debugLoggingEnabled={debugLoggingEnabled}
@@ -286,7 +307,14 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
       case 'appearance':
         return <AppearanceTab />;
       case 'subtitles':
-        return <SubtitlesTab />;
+        return (
+          <SubtitlesTab
+            subdlApiKey={subdlApiKey}
+            subdlKeyValid={subdlKeyValid}
+            onSubdlKeyChange={setSubdlApiKey}
+            onSubdlKeyValidChange={setSubdlKeyValid}
+          />
+        );
       case 'liveplayback':
         return <LivePlaybackTab />;
       case 'player':

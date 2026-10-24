@@ -99,6 +99,11 @@ export interface SubtitleTrack {
   codec: string;
   /** EIA-608 closed captions carried in the video (live TV) */
   isCc: boolean;
+  /** Added with sub-add: a downloaded (SubDL) subtitle */
+  external: boolean;
+  externalFile: string | null;
+  /** The file marks it SDH */
+  hearingImpaired: boolean;
 }
 
 export interface SubtitleTracksUpdate {
@@ -111,6 +116,27 @@ export interface SubtitleTracksUpdate {
 
 /** Live captions: main checks the first lines and hides station-data junk */
 export type CcState = 'checking' | 'ok' | 'other-language' | 'unreadable';
+
+export interface SubdlTitle { tmdbId: number; type: 'movie' | 'tv'; season?: number; episode?: number }
+export interface SubdlResultInfo { nId: string; releaseName: string; language: string; hi: boolean; ai: boolean; author: string | null; pack: boolean }
+export interface SubdlTiming { speed: number | null; fps: { from: number; to: number } | null; cutMismatch: boolean }
+export interface SubdlUsageInfo { downloadsLeft: number; downloadsLimit: number }
+export type SubdlFailure = 'auth' | 'quota' | 'not-found' | 'network' | 'bad-response' | 'stale' | 'no-file';
+export interface SubdlLanguage { code: string; label: string; iso: string[] }
+
+/** Downloaded subtitles: main does every SubDL request and file */
+export interface SubdlApi {
+  languages: () => Promise<SubdlLanguage[]>;
+  /** Tries a key before it is saved */
+  checkKey: (key: string) => Promise<{ usage?: SubdlUsageInfo; error?: SubdlFailure }>;
+  usage: () => Promise<{ usage?: SubdlUsageInfo; error?: SubdlFailure }>;
+  find: (title: SubdlTitle, language: string) => Promise<{ results?: SubdlResultInfo[]; error?: SubdlFailure }>;
+  /** nId 'auto': the best match. The track is added, not selected. */
+  load: (generation: number, title: SubdlTitle, nId: string, language: string, duration: number) => Promise<{ trackId?: number; nId?: string; ai?: boolean; timing?: SubdlTiming; error?: SubdlFailure }>;
+  /** Spoken lines of a downloaded subtitle (by its SubDL id) within span seconds of a video time */
+  cues: (generation: number, nId: string, around: number, delay: number, speed: number, span: number) => Promise<Array<{ start: number; text: string }>>;
+  setSpeed: (generation: number, speed: number) => Promise<MpvResult>;
+}
 
 export interface SubtitlesApi {
   /** Calls carry the load generation they were decided for; main ignores stale ones. null turns subtitles off. */
@@ -173,11 +199,36 @@ export interface StorageProtection {
   available: boolean;
   /** Linux: 'kwallet', 'kwallet5', 'kwallet6', 'gnome_libsecret', 'basic_text' or 'unknown'; null elsewhere */
   backend: string | null;
+  /** Linux: the keyring a --password-store at launch forces (it wins over the setting); null otherwise */
+  launchKeyring: string | null;
+}
+
+export type SetupPart = 'sources' | 'logins' | 'settings' | 'apiKeys' | 'favorites' | 'watchlist' | 'progress';
+export interface SetupPreview {
+  app: string; exportedAt: string; platform: string;
+  sources: { name: string; type: string; withLogin: boolean; fromFile: boolean; host: string | null }[];
+  settings: boolean; apiKeys: boolean; favorites: number; watchlist: number; progress: number;
+}
+export interface SetupListsWire { favorites?: unknown[]; watchlist?: unknown[]; progress?: unknown[]; lastCategory?: string }
+type SetupResult<T> = { success: true; data: T } | { success: false; canceled: true } | { success?: undefined; error: string };
+export interface SetupApi {
+  exportSetup: (req: { parts: SetupPart[]; lists: SetupListsWire; playlists: Record<string, string> }) => Promise<SetupResult<{ passphrase: string; filePath: string }>>;
+  pick: () => Promise<SetupResult<{ token: string; needsPassphrase: boolean }>>;
+  unlock: (token: string, passphrase: string) => Promise<SetupResult<SetupPreview>>;
+  backups: () => Promise<{ success: true; data: { name: string; label: string }[] }>;
+  openBackup: (name: string) => Promise<SetupResult<{ token: string; preview: SetupPreview }>>;
+  apply: (token: string, opts: { backupFirst: boolean; currentLists: SetupListsWire; currentPlaylists: Record<string, string> }) => Promise<SetupResult<{ lists: SetupListsWire; backupName: string | null }> | { error: string; backupName: string | null }>;
+  relaunch: () => Promise<void>;
+  showFile: () => Promise<void>;
+  pendingPlaylists: () => Promise<{ sourceId: string; content: string }[]>;
+  settlePlaylists: (sourceIds: string[]) => Promise<void>;
 }
 
 export interface PrivacyApi {
   checkIp: () => Promise<{ success?: boolean; data?: IpCheckResult; error?: string }>;
   storageProtection: () => Promise<StorageProtection>;
+  /** Linux: drop saved passwords and API keys, keep this keyring, and restart */
+  switchKeyring: (keyring: string) => Promise<{ success?: boolean; error?: string }>;
 }
 
 export interface AppearanceApi {
@@ -190,8 +241,12 @@ export interface SubtitleSettings {
   vodDefault: boolean;
   size: 'small' | 'medium' | 'large';
   style: 'outline' | 'box' | 'shadow';
-  /** auto = the system language */
-  language: 'auto' | 'en' | 'es' | 'fr';
+  /** 'auto' = the system language, else a subtitle language code (en, pt-br, ...) */
+  language: string;
+  /** Downloaded subtitles: SDH (sound cues) over standard */
+  preferSdh?: boolean;
+  /** Seconds of playback before an automatic SubDL download */
+  subdlWait?: 0 | 10 | 20 | 30;
 }
 
 export interface AppSettings {
@@ -204,6 +259,7 @@ export interface AppSettings {
   movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   posterDbApiKey?: string;         // RatingPosterDB API key for rating posters
+  subdlApiKey?: string;            // SubDL API key for downloaded subtitles
   rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
@@ -282,9 +338,16 @@ export interface PlatformApi {
 export interface DebugApi {
   getLogPath: () => Promise<StorageResult<string>>;
   logFromRenderer: (message: string) => Promise<StorageResult>;
+  /** Settings > Debug > Bug report: the report.json that would be saved */
+  reportPreview: (syncStatus: unknown) => Promise<{ success?: boolean; data?: string; error?: string }>;
+  /** Save the bug report zip (save dialog); shows it in its folder */
+  saveReport: (syncStatus: unknown) => Promise<{ success?: boolean; canceled?: boolean; data?: { filePath: string }; error?: string }>;
   openLogFolder: () => Promise<StorageResult>;
   isEnabled?: () => Promise<boolean>;
   onEnabledChanged?: (callback: (enabled: boolean) => void) => () => void;
+  getIncludeAddresses?: () => Promise<boolean>;
+  setIncludeAddresses?: (on: boolean) => Promise<boolean>;
+  getSourceLegend?: () => Promise<{ n: number; name: string }[]>;
 }
 
 export interface UpdateInfo {
@@ -338,10 +401,12 @@ declare global {
     data?: DataApi;
     mpv?: MpvApi;
     subtitles?: SubtitlesApi;
+    subdl?: SubdlApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
     appearance?: AppearanceApi;
     privacy?: PrivacyApi;
+    setup?: SetupApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
     debug?: DebugApi;

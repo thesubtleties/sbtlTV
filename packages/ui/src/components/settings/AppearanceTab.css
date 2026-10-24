@@ -4,12 +4,6 @@
   gap: 26px;
 }
 
-.opt-row__note {
-  display: block;
-  margin-top: 10px;
-  color: var(--faint);
-}
-
 /* Palette tiles: each drawn in its own colors, with a swatch strip */
 .palette-tiles {
   align-self: stretch;

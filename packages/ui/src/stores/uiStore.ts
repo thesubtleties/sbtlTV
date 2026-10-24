@@ -6,6 +6,7 @@
  */
 
 import { create } from 'zustand';
+import { needsLogin } from '@sbtltv/core';
 
 import type { AppSettings, UpdateInfo, Source } from '../types/electron';
 import type { MediaItem } from '../types/media';
@@ -226,6 +227,8 @@ export const useCacheClearing = () => useUIStore((s) => s.cacheClearing);
 export const useSetCacheClearing = () => useUIStore((s) => s.setCacheClearing);
 
 // Settings selectors (read from settings object, with defaults)
+// A source waiting for its password (e.g. after importing a setup shared without logins)
+export const useSourceNeedsLogin = () => useUIStore((s) => s.sources.some((src) => src.enabled && needsLogin(src)));
 export const useChannelSortOrder = () => useUIStore((s) => s.settings.channelSortOrder ?? 'alphabetical');
 export const useCategorySortOrder = () => useUIStore((s) => s.settings.categorySortOrder ?? 'alphabetical');
 export const useCategoryBarWidth = () => useUIStore((s) => s.settings.categoryBarWidth ?? 160);

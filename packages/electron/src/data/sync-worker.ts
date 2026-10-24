@@ -15,6 +15,7 @@ import { syncEpg } from './sync-epg.js';
 import { syncVod, syncEpisodes, matchTmdb } from './sync-vod.js';
 import { deleteSource, clearAll, updateVodDetails } from './writes.js';
 import type { SyncJob } from './router.js';
+import { cleanErrorText } from '../log-redact.js';
 
 if (!parentPort) throw new Error('sync-worker must run as a worker thread');
 const port = parentPort;
@@ -30,7 +31,8 @@ function ctx(): StageContext {
   return {
     db: db!, tempDir, allowLanSources: settings.allowLanSources,
     log: (category, message) => post({ type: 'log', category, message }),
-    progress: (progress: SyncProgress) => post({ type: 'progress', progress }),
+    // A failure's message reaches the page (an episode that failed to load shows it): logins never.
+    progress: (progress: SyncProgress) => post({ type: 'progress', progress: progress.message ? { ...progress, message: cleanErrorText(progress.message) } : progress }),
     changed: (tables: DataTable[], sourceId) => post({ type: 'changed', tables, sourceId }),
   };
 }
@@ -84,7 +86,7 @@ async function run(job: SyncJob): Promise<void> {
       return;
     }
     case 'rematch': {
-      c.log('epg', `Starting EPG rematch for source: ${source.name || source.id}`);
+      c.log('epg', `Starting EPG rematch for source ${source.id}`);
       const rows = db!.prepare(`select stream_id, source_id, name, stream_icon, epg_channel_id, direct_url from channels where source_id = ?`).all(source.id) as { stream_id: string; source_id: string; name: string; stream_icon: string; epg_channel_id: string; direct_url: string }[];
       if (rows.length === 0) { c.log('epg', 'No channels found for source, nothing to rematch'); return; }
       const channels: Channel[] = rows.map((r) => ({ ...r, category_ids: [] }));

@@ -143,9 +143,16 @@ export interface FetchProxyApi {
 export interface DebugApi {
   getLogPath: () => Promise<StorageResult<string>>;
   logFromRenderer: (message: string) => Promise<StorageResult>;
+  /** Settings > Debug > Bug report: the report.json that would be saved */
+  reportPreview: (syncStatus: unknown) => Promise<{ success?: boolean; data?: string; error?: string }>;
+  /** Save the bug report zip (save dialog); shows it in its folder */
+  saveReport: (syncStatus: unknown) => Promise<{ success?: boolean; canceled?: boolean; data?: { filePath: string }; error?: string }>;
   openLogFolder: () => Promise<StorageResult>;
   isEnabled: () => Promise<boolean>;
   onEnabledChanged: (callback: (enabled: boolean) => void) => () => void;
+  getIncludeAddresses: () => Promise<boolean>;
+  setIncludeAddresses: (on: boolean) => Promise<boolean>;
+  getSourceLegend: () => Promise<{ n: number; name: string }[]>;
 }
 
 export interface PlatformApi {
@@ -230,7 +237,7 @@ contextBridge.exposeInMainWorld('mpv', {
 } satisfies MpvApi);
 
 // Subtitles: mpv's subtitle tracks for the current stream, and the choice back
-interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean }
+interface SubtitleTrack { id: number; lang: string | null; title: string | null; codec: string; isCc: boolean; external: boolean; externalFile: string | null; hearingImpaired: boolean }
 interface SubtitleTracksUpdate { generation: number; tracks: SubtitleTrack[]; duration: number }
 interface CcStateUpdate { generation: number; state: 'checking' | 'ok' | 'other-language' | 'unreadable'; language: 'en' | 'es' | 'fr' | null }
 contextBridge.exposeInMainWorld('subtitles', {
@@ -249,12 +256,38 @@ contextBridge.exposeInMainWorld('subtitles', {
   },
 });
 
+// Downloaded subtitles (SubDL): main does every request and file; the page only asks
+contextBridge.exposeInMainWorld('subdl', {
+  languages: () => ipcRenderer.invoke('subdl-languages'),
+  checkKey: (key: string) => ipcRenderer.invoke('subdl-check-key', key),
+  usage: () => ipcRenderer.invoke('subdl-usage'),
+  find: (title: unknown, language: string) => ipcRenderer.invoke('subdl-find', title, language),
+  load: (generation: number, title: unknown, nId: string, language: string, duration: number) => ipcRenderer.invoke('subdl-load', generation, title, nId, language, duration),
+  cues: (generation: number, nId: string, around: number, delay: number, speed: number, span: number) => ipcRenderer.invoke('subdl-cues', generation, nId, around, delay, speed, span),
+  setSpeed: (generation: number, speed: number) => ipcRenderer.invoke('subtitle-set-speed', generation, speed),
+});
+
 // Settings > Privacy: what IP outside services see (asks Mullvad's checker, only when called)
 interface IpCheckResult { ip: string; city: string | null; country: string | null; organization: string | null; mullvadServer: string | null }
-interface StorageProtection { platform: string; available: boolean; backend: string | null }
+interface StorageProtection { platform: string; available: boolean; backend: string | null; launchKeyring: string | null }
 contextBridge.exposeInMainWorld('privacy', {
   checkIp: (): Promise<{ success?: boolean; data?: IpCheckResult; error?: string }> => ipcRenderer.invoke('privacy-check-ip'),
   storageProtection: (): Promise<StorageProtection> => ipcRenderer.invoke('privacy-storage-protection'),
+  switchKeyring: (keyring: string): Promise<{ success?: boolean; error?: string }> => ipcRenderer.invoke('privacy-switch-keyring', keyring),
+});
+
+// Settings > Backup & transfer: the opened file stays in main, keyed by a token
+contextBridge.exposeInMainWorld('setup', {
+  exportSetup: (req: { parts: string[]; lists: unknown; playlists: Record<string, string> }) => ipcRenderer.invoke('setup:export', req),
+  pick: () => ipcRenderer.invoke('setup:pick'),
+  unlock: (token: string, passphrase: string) => ipcRenderer.invoke('setup:unlock', token, passphrase),
+  backups: () => ipcRenderer.invoke('setup:backups'),
+  openBackup: (name: string) => ipcRenderer.invoke('setup:openBackup', name),
+  apply: (token: string, opts: { backupFirst: boolean; currentLists: unknown; currentPlaylists: Record<string, string> }) => ipcRenderer.invoke('setup:apply', token, opts),
+  relaunch: () => ipcRenderer.invoke('setup:relaunch'),
+  showFile: () => ipcRenderer.invoke('setup:showFile'),
+  pendingPlaylists: () => ipcRenderer.invoke('setup:pendingPlaylists'),
+  settlePlaylists: (sourceIds: string[]) => ipcRenderer.invoke('setup:settlePlaylists', sourceIds),
 });
 
 // Colors the desktop provides, for Settings > Appearance
@@ -320,8 +353,13 @@ contextBridge.exposeInMainWorld('platform', {
 contextBridge.exposeInMainWorld('debug', {
   getLogPath: () => ipcRenderer.invoke('debug-get-log-path'),
   logFromRenderer: (message: string) => ipcRenderer.invoke('debug-log-renderer', message),
+  reportPreview: (syncStatus: unknown) => ipcRenderer.invoke('debug-report-preview', syncStatus),
+  saveReport: (syncStatus: unknown) => ipcRenderer.invoke('debug-report-save', syncStatus),
   openLogFolder: () => ipcRenderer.invoke('debug-open-log-folder'),
   isEnabled: () => ipcRenderer.invoke('debug-is-enabled'),
+  getIncludeAddresses: () => ipcRenderer.invoke('debug-get-include-addresses'),
+  setIncludeAddresses: (on: boolean) => ipcRenderer.invoke('debug-set-include-addresses', on),
+  getSourceLegend: () => ipcRenderer.invoke('debug-get-source-legend'),
   onEnabledChanged: (callback: (enabled: boolean) => void) => {
     const listener = (_event: IpcRendererEvent, enabled: boolean) => callback(enabled);
     ipcRenderer.on('debug-logging-changed', listener);

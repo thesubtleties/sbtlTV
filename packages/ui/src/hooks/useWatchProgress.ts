@@ -45,6 +45,10 @@ export async function updateWatchProgress(opts: {
   duration: number;
   sourceId?: string;
   subDelay?: number;
+  /** With subDelay: the subtitle speed and SubDL file; undefined with subDelay keeps the stored ones */
+  subSpeed?: number;
+  subdlId?: string | null;
+  subdlAi?: boolean;
 }): Promise<void> {
   if (opts.duration <= 0) return;
 
@@ -63,12 +67,24 @@ export async function updateWatchProgress(opts: {
   // delay yet (undefined: the play started and the saved delay is not restored
   // yet) keeps the stored one; a number (0 clears) replaces it.
   await db.transaction('rw', db.watchProgress, async () => {
-    let delayFields: Pick<StoredWatchProgress, 'sub_delay' | 'sub_delay_stream_id'> = {};
+    type SubtitleFields = Pick<StoredWatchProgress, 'sub_delay' | 'sub_delay_stream_id' | 'sub_speed' | 'sub_subdl_id' | 'sub_subdl_ai'>;
+    let delayFields: SubtitleFields = {};
     if (opts.subDelay === undefined) {
       const prev = await db.watchProgress.get(id);
-      if (prev?.sub_delay) delayFields = { sub_delay: prev.sub_delay, sub_delay_stream_id: prev.sub_delay_stream_id };
-    } else if (opts.subDelay !== 0) {
-      delayFields = { sub_delay: opts.subDelay, sub_delay_stream_id: opts.streamId };
+      if (prev && (prev.sub_delay || prev.sub_speed || prev.sub_subdl_id)) {
+        delayFields = { sub_delay: prev.sub_delay, sub_delay_stream_id: prev.sub_delay_stream_id, sub_speed: prev.sub_speed, sub_subdl_id: prev.sub_subdl_id, sub_subdl_ai: prev.sub_subdl_ai };
+      }
+    } else {
+      const speed = opts.subSpeed !== undefined && opts.subSpeed !== 1 ? opts.subSpeed : undefined;
+      const subdlId = opts.subdlId ?? undefined;
+      if (opts.subDelay !== 0 || speed !== undefined || subdlId !== undefined) {
+        delayFields = {
+          ...(opts.subDelay !== 0 && { sub_delay: opts.subDelay }),
+          ...(speed !== undefined && { sub_speed: speed }),
+          ...(subdlId !== undefined && { sub_subdl_id: subdlId, ...(opts.subdlAi && { sub_subdl_ai: true }) }),
+          sub_delay_stream_id: opts.streamId,
+        };
+      }
     }
     await db.watchProgress.put({
       id,
@@ -144,12 +160,19 @@ export async function getResumePosition(type: 'movie' | 'episode', opts: Progres
  * Movies look up this copy's own record first: with two copies of a movie the
  * TMDB lookup can return the other copy's record.
  */
-export async function getSubtitleDelayCandidate(type: 'movie' | 'episode', opts: ProgressLookup): Promise<{ delay: number; duration: number } | null> {
+export async function getSubtitleDelayCandidate(type: 'movie' | 'episode', opts: ProgressLookup): Promise<{ delay: number; duration: number; speed?: number; subdlId?: string; ai?: boolean } | null> {
   if (!opts.streamId) return null;
   const own = type === 'movie' ? await db.watchProgress.get(movieProgressId(opts.streamId)) : undefined;
   const entry = own ?? await findProgressEntry(type, opts);
-  if (!entry || entry.completed || !entry.sub_delay || entry.sub_delay_stream_id !== opts.streamId) return null;
-  return { delay: entry.sub_delay, duration: entry.duration };
+  if (!entry || entry.completed || entry.sub_delay_stream_id !== opts.streamId) return null;
+  if (!entry.sub_delay && !entry.sub_speed && !entry.sub_subdl_id) return null;
+  return {
+    delay: entry.sub_delay ?? 0,
+    duration: entry.duration,
+    ...(entry.sub_speed && { speed: entry.sub_speed }),
+    ...(entry.sub_subdl_id && { subdlId: entry.sub_subdl_id }),
+    ...(entry.sub_subdl_ai && { ai: true }),
+  };
 }
 
 const EMPTY_PROGRESS_MAP = new Map<string, number>();

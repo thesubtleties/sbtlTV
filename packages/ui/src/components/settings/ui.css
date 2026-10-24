@@ -3,8 +3,10 @@
 .st-tab {
   display: flex;
   flex-direction: column;
-  padding: 22px 22px 28px;
+  padding: 22px 22px 40px;
   height: auto;
+  /* In the scrolling column, never shrink: a shrunk tab loses its bottom padding and the last row sits on the edge. */
+  flex-shrink: 0;
 }
 
 /* Sections: hairlines between them, not extra space */
@@ -187,6 +189,25 @@
   color: var(--text);
   font-size: 13px;
   transition: border-color 0.1s ease;
+}
+
+/* Language list with a SubDL key: same look as a text field */
+.st-select {
+  height: 34px;
+  min-width: 200px;
+  max-width: 360px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.st-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .st-input::placeholder {
@@ -409,4 +430,16 @@
 
 .st-rewind-custom .st-input {
   width: 80px;
+}
+
+/* A second paragraph in an option's help */
+.opt-row__note {
+  display: block;
+  margin-top: 10px;
+  color: var(--faint);
+}
+
+/* A note that must be read, not skimmed */
+.opt-row__note--strong {
+  color: var(--text-2);
 }

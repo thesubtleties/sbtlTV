@@ -38,11 +38,11 @@ export const isImportedPlaylist = (source: Source): boolean => source.type === '
 
 export async function syncChannels(ctx: StageContext, source: Source, client: ChannelClient | null, playlistContent?: string): Promise<{ channels: Channel[]; epgUrl?: string } | null> {
   if (isImportedPlaylist(source) && playlistContent === undefined) {
-    ctx.log('sync', `Source ${source.name} is an imported file; keeping its stored channels`);
+    ctx.log('sync', `Source ${source.id} is an imported file; keeping its stored channels`);
     return null;
   }
   ctx.progress({ sourceId: source.id, stage: 'channels', state: 'started' });
-  ctx.log('sync', `Starting sync for source: ${source.name} (${source.type})`);
+  ctx.log('sync', `Starting sync for source ${source.id} (${source.type})`);
   try {
     let channels: Channel[]; let categories: Category[]; let epgUrl: string | undefined;
     if (source.type === 'm3u' && playlistContent !== undefined) {
@@ -80,7 +80,7 @@ export async function syncChannels(ctx: StageContext, source: Source, client: Ch
     return { channels, epgUrl };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    ctx.log('sync', `Sync FAILED for ${source.name}: ${message}`);
+    ctx.log('sync', `Sync FAILED for source ${source.id}: ${message}`);  // never the name (it can say who the provider is)
     ctx.changed(setSourceError(ctx.db, source.id, message), source.id);
     ctx.progress({ sourceId: source.id, stage: 'channels', state: 'failed', message });
     return null;

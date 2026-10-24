@@ -13,3 +13,4 @@ export * from './epg-matcher';
 export * from './epg-links';
 export * from './tmdb-exports';
 export * from './url-guard';
+export * from './source-login';

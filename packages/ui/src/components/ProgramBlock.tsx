@@ -6,6 +6,8 @@ interface ProgramBlockProps {
   program: StoredProgram;
   windowStart: Date;
   windowEnd: Date;
+  /** What is on now (the guide's minute tick), so the highlight moves when a show ends */
+  now: Date;
   pixelsPerHour: number;
   onClick?: () => void;
   className?: string;
@@ -68,6 +70,7 @@ export const ProgramBlock = memo(function ProgramBlock({
   program,
   windowStart,
   windowEnd,
+  now,
   pixelsPerHour,
   onClick,
   className,
@@ -79,7 +82,7 @@ export const ProgramBlock = memo(function ProgramBlock({
   );
 
   // Check if this program contains "now"
-  const isCurrent = isProgramCurrent(program, new Date());
+  const isCurrent = isProgramCurrent(program, now);
 
   // Format time for tooltip
   const formatTime = (date: Date | string) => {

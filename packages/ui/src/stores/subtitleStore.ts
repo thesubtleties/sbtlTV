@@ -16,12 +16,27 @@
  * subtitle tracks; their embedded broadcast captions are not trustworthy.
  */
 import { create } from 'zustand';
-import type { CcState, SubtitleTrack, SubtitleTracksUpdate } from '../types/electron';
-import { localeSubtitleTrack, pickSubtitleTrack, stepDelay, type SubtitleKind } from '../services/subtitleLogic';
+import type { CcState, SubdlTitle, SubtitleTrack, SubtitleTracksUpdate } from '../types/electron';
+import { decideVodSubtitle, localeSubtitleTrack, pickSubtitleTrack, stepDelay, type SubtitleKind } from '../services/subtitleLogic';
 import { debugLog } from '../utils/debugLog';
+import { usePlaybackStore } from './playbackStore';
 
-/** A saved delay waiting for the file's duration to confirm it is the same file. */
-export interface PendingDelay { delay: number; duration: number }
+/**
+ * A saved subtitle choice waiting for the file's duration to confirm it is the
+ * same file: the delay, and with SubDL the file and its speed.
+ */
+export interface PendingDelay { delay: number; duration: number; speed?: number; subdlId?: string | null; ai?: boolean }
+
+/** SubDL for this load: set when a key is saved and the title has a TMDB match. */
+export interface SubdlLoadInfo {
+  title: SubdlTitle; language: string; languageIso: string[]; preferSdh: boolean;
+  /** Seconds of playback before an automatic download (so skipping through titles does not spend the daily downloads) */
+  waitSeconds?: number;
+}
+/** What the CC menu says about SubDL for this load */
+export type SubdlStatus = 'quota' | 'not-found' | 'auth' | 'cut' | { fps: { from: number; to: number } };
+/** A subtitle change the user made, with its load, for App to save */
+export interface SubtitleEdit { seq: number; generation: number; delay: number; speed: number; subdlId: string | null; ai: boolean }
 
 interface SubtitleData {
   generation: number;
@@ -37,8 +52,26 @@ interface SubtitleData {
   /** False until a saved delay has been restored or rejected; progress saves keep the stored one meanwhile */
   delayResolved: boolean;
   pendingDelay: PendingDelay | null;
-  /** The last delay change the user made, with its load, for App to save */
-  userDelayEdit: { seq: number; generation: number; delay: number } | null;
+  /** sub-speed (1 = as the file says); set by a frame-rate fix or a two-line sync */
+  speed: number;
+  /** The last subtitle change the user made (delay, speed, SubDL file), with its load, for App to save */
+  userSubtitleEdit: SubtitleEdit | null;
+  /** SubDL for this load, or null (no key, no TMDB match, live) */
+  subdl: SubdlLoadInfo | null;
+  /** SubDL tracks of this load by track id */
+  downloaded: Record<number, { nId: string; ai: boolean; language: string }>;
+  subdlBusy: boolean;
+  subdlStatus: SubdlStatus | null;
+  /** The automatic SubDL attempt for this load has started (once per load) */
+  subdlTried: boolean;
+  /** A track list with the file's duration has arrived: the file's own tracks are known (the one announced at load start is empty) */
+  listReady: boolean;
+  /** The locale bound with the load, for the fallback track */
+  locale: string;
+  pickerOpen: boolean;
+  syncOpen: boolean;
+  /** Bumped by every subtitle choice (user or automatic): a load that finishes after a newer choice does not take over */
+  selSeq: number;
   /** This session's on/off per kind; null = follow the setting's default */
   sessionOn: Record<SubtitleKind, boolean | null>;
   /** A track update for a load App has not bound yet */
@@ -46,7 +79,7 @@ interface SubtitleData {
 }
 
 interface SubtitleActions {
-  bindLoad: (generation: number, kind: SubtitleKind, defaultOn: boolean, locale: string, pendingDelay: PendingDelay | null) => void;
+  bindLoad: (generation: number, kind: SubtitleKind, defaultOn: boolean, locale: string, pendingDelay: PendingDelay | null, subdl?: SubdlLoadInfo | null) => void;
   /** Main reloaded the same stream (stall recovery): follow it to the new load, keeping the on/off choice and the delay */
   rebindLoad: (generation: number, defaultOn: boolean, locale: string) => void;
   receiveTracks: (update: SubtitleTracksUpdate, defaultOn: boolean, locale: string) => void;
@@ -57,6 +90,13 @@ interface SubtitleActions {
   repickVodTrack: (locale: string) => void;
   nudgeDelay: (delta: number) => void;
   setDelay: (seconds: number) => void;
+  /** Subtitle speed from Sync (a user change) */
+  setSpeed: (speed: number) => void;
+  /** Load a SubDL file (or 'auto': the best match). userPick: chosen in the picker, saved for the title. */
+  /** language: the picker's choice (defaults to the load's language), shown as the track's name */
+  loadSubdl: (nId: string, userPick?: boolean, language?: string, ai?: boolean) => Promise<void>;
+  openPicker: (open: boolean) => void;
+  openSync: (open: boolean) => void;
   clear: () => void;
 }
 
@@ -66,8 +106,10 @@ const DURATION_TOLERANCE_S = 5;
 export function initialSubtitleState(): SubtitleData {
   return {
     generation: -1, kind: null, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null,
-    delay: 0, delayResolved: true, pendingDelay: null, userDelayEdit: null,
+    delay: 0, delayResolved: true, pendingDelay: null, speed: 1, userSubtitleEdit: null,
     sessionOn: { live: null, vod: null }, waiting: null,
+    subdl: null, downloaded: {}, subdlBusy: false, subdlStatus: null, subdlTried: false, listReady: false, locale: 'en',
+    pickerOpen: false, syncOpen: false, selSeq: 0,
   };
 }
 
@@ -84,14 +126,136 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
     track: (id: number | null, visible: boolean) => report('setTrack', window.subtitles?.setTrack(get().generation, id, visible)),
     visible: (visible: boolean) => report('setVisible', window.subtitles?.setVisible(get().generation, visible)),
     delay: (seconds: number) => report('setDelay', window.subtitles?.setDelay(get().generation, seconds)),
+    speed: (speed: number) => report('setSpeed', window.subdl?.setSpeed(get().generation, speed)),
   };
+
+  /** The SubDL file of the selected track, for saving. */
+  function currentChoice(): { subdlId: string | null; ai: boolean } {
+    const { selectedId, downloaded } = get();
+    const d = selectedId !== null ? downloaded[selectedId] : undefined;
+    return { subdlId: d?.nId ?? null, ai: d?.ai ?? false };
+  }
+
+  function recordEdit() {
+    const { userSubtitleEdit: prev, generation, delay, speed, delayResolved } = get();
+    if (!delayResolved) return;  // the saved timing is not restored yet: a save now would clear it
+    set({ userSubtitleEdit: { seq: (prev?.seq ?? 0) + 1, generation, delay, speed, ...currentChoice() } });
+  }
+
+  /** The file's own track, as without SubDL (after SubDL could not help). */
+  function fallbackTrack(): void {
+    const { tracks, locale } = get();
+    const id = pickSubtitleTrack(tracks.filter((t) => !t.external), 'vod', locale);
+    set({ selectedId: id });
+    if (id !== null) send.track(id, true);
+  }
+
+  /** Delay and speed for a newly shown file: its own, never the previous file's. */
+  function setTiming(delay: number, speed: number): void {
+    set({ delay, speed, delayResolved: true });
+    send.delay(delay);
+    send.speed(speed);
+  }
+
+  /** Movies and episodes: what to show when subtitles turn on (SubDL rule with a key, else as before). */
+  function chooseVod(tracks: SubtitleTrack[], locale: string): void {
+    const { subdl, pendingDelay, subdlTried, subdlBusy, listReady } = get();
+    if (!subdl) {
+      const id = pickSubtitleTrack(tracks, 'vod', locale);
+      set({ selectedId: id });
+      if (id !== null) send.track(id, true);
+      return;
+    }
+    const saved = pendingDelay?.subdlId ? { subdlId: pendingDelay.subdlId, ai: pendingDelay.ai ?? false, delay: pendingDelay.delay, speed: pendingDelay.speed ?? 1, duration: pendingDelay.duration } : null;
+    const decision = decideVodSubtitle(tracks, { languageIso: subdl.languageIso, preferSdh: subdl.preferSdh, subdl: true, saved: subdlTried ? null : saved });
+    if (decision.kind === 'track') {
+      set({ selectedId: decision.id });
+      send.track(decision.id, true);
+      return;
+    }
+    // The file's real track list first (the one announced at load start is empty), and one attempt at a time
+    if (decision.kind !== 'subdl' || !listReady || subdlBusy) return;
+    if (subdlTried) {
+      fallbackTrack();  // SubDL was tried for this load and could not help
+      return;
+    }
+    set({ subdlTried: true });
+    if (decision.nId === 'auto' && (subdl.waitSeconds ?? 0) > 0) waitThenLoad(subdl.waitSeconds!);
+    else void loadSubdl(decision.nId, false, subdl.language);
+  }
+
+  /** Automatic download after this many seconds of playback (pauses and seeks do not count); a newer choice cancels it. */
+  function waitThenLoad(seconds: number): void {
+    const { generation, selSeq } = get();
+    set({ subdlBusy: true });
+    let played = 0;
+    let last = usePlaybackStore.getState().position;
+    const timer = setInterval(() => {
+      const state = get();
+      if (state.generation !== generation || state.selSeq !== selSeq) {
+        clearInterval(timer);
+        if (state.generation === generation) set({ subdlBusy: false });
+        return;
+      }
+      const position = usePlaybackStore.getState().position;
+      const step = position - last;
+      if (step > 0 && step < 5) played += step;
+      last = position;
+      if (played < seconds) return;
+      clearInterval(timer);
+      set({ subdlBusy: false });
+      if (state.subdl) void loadSubdl('auto', false, state.subdl.language);
+    }, 1000);
+  }
+
+  async function loadSubdl(nId: string, userPick: boolean, language?: string, ai?: boolean): Promise<void> {
+    const { generation, subdl } = get();
+    if (!subdl || !window.subdl) return;
+    const seq = get().selSeq + 1;
+    set({ selSeq: seq, subdlBusy: true, subdlStatus: null });
+    const result = await window.subdl.load(generation, subdl.title, nId, subdl.language, 0).catch(() => ({ error: 'network' as const }));
+    if (get().generation !== generation) return;
+    const superseded = get().selSeq !== seq;  // the user chose something else meanwhile
+    if (!superseded) set({ subdlBusy: false });
+    if (result.error || result.trackId === undefined || !result.nId) {
+      if (superseded) return;
+      const status = result.error === 'quota' || result.error === 'not-found' || result.error === 'auth' ? result.error : null;
+      set({ subdlStatus: status });
+      debugLog(`SubDL: ${result.error ?? 'no track'}`, 'subtitles');
+      // The saved file is gone from SubDL: drop it and look for another, once
+      if (!userPick && nId !== 'auto' && get().pendingDelay?.subdlId === nId && (result.error === 'not-found' || result.error === 'no-file')) {
+        set({ pendingDelay: null, delayResolved: true });
+        void loadSubdl('auto', false, language);
+        return;
+      }
+      if (!userPick && get().selectedId === null) fallbackTrack();
+      return;
+    }
+    const { pendingDelay, downloaded } = get();
+    const savedHere = pendingDelay?.subdlId === result.nId;
+    const isAi = result.ai === true || ai === true || (savedHere && pendingDelay?.ai === true);
+    set({ downloaded: { ...downloaded, [result.trackId]: { nId: result.nId, ai: isAi, language: language ?? subdl.language } } });
+    if (superseded) return;
+    set({ selectedId: result.trackId, sessionOn: { ...get().sessionOn, vod: true } });
+    send.track(result.trackId, true);
+    if (savedHere && pendingDelay) {
+      // The saved choice: its own delay and speed, no new timing guess
+      set({ pendingDelay: null });
+      setTiming(pendingDelay.delay, pendingDelay.speed ?? 1);
+    } else {
+      setTiming(0, result.timing?.speed ?? 1);
+      if (result.timing?.speed && result.timing.fps) set({ subdlStatus: { fps: result.timing.fps } });
+      else if (result.timing?.cutMismatch) set({ subdlStatus: 'cut' });
+    }
+    if (userPick) recordEdit();
+  }
 
   function apply(update: SubtitleTracksUpdate, defaultOn: boolean, locale: string) {
     const { kind, selectedId, sessionOn, pendingDelay, delayResolved } = get();
     if (!kind) return;
     const wanted = sessionOn[kind] ?? defaultOn;
     const tracks = kind === 'vod' ? update.tracks.filter((t) => !t.isCc) : update.tracks;
-    set({ tracks });
+    set({ tracks, ...(update.duration > 0 && { listReady: true }) });
 
     if (kind === 'live') {
       const cc = tracks.find((t) => t.isCc) ?? tracks[0];
@@ -100,48 +264,56 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
         send.track(cc.id, wanted);
       }
     } else if (selectedId === null || !tracks.some((t) => t.id === selectedId)) {
-      const id = wanted ? pickSubtitleTrack(tracks, 'vod', locale) : null;
-      if (id !== selectedId) {
-        set({ selectedId: id });
-        if (id !== null) send.track(id, true);
-      }
+      if (wanted) chooseVod(tracks, locale);
+      else if (selectedId !== null) set({ selectedId: null });
     }
 
     if (!delayResolved && update.duration > 0) {
       const matches = pendingDelay !== null && Math.abs(pendingDelay.duration - update.duration) <= DURATION_TOLERANCE_S;
       set({ delayResolved: true, pendingDelay: null });
-      if (matches) {
-        set({ delay: pendingDelay.delay });
+      if (matches && !pendingDelay.subdlId) {
+        set({ delay: pendingDelay.delay, speed: pendingDelay.speed ?? 1 });
         send.delay(pendingDelay.delay);
+        if ((pendingDelay.speed ?? 1) !== 1) send.speed(pendingDelay.speed!);
+      } else if (matches) {
+        set({ pendingDelay });  // kept for the SubDL load, which applies it with the file
       }
     }
   }
 
   function changeDelay(seconds: number) {
     const delay = stepDelay(seconds, 0);
-    const prev = get().userDelayEdit;
-    set({ delay, delayResolved: true, pendingDelay: null, userDelayEdit: { seq: (prev?.seq ?? 0) + 1, generation: get().generation, delay } });
+    set({ delay, delayResolved: true, pendingDelay: null });
     send.delay(delay);
+    recordEdit();
   }
 
   return {
     ...initialSubtitleState(),
 
-    bindLoad: (generation, kind, defaultOn, locale, pendingDelay) => {
+    bindLoad: (generation, kind, defaultOn, locale, pendingDelay, subdl = null) => {
       const { waiting } = get();
       if (generation < get().generation) return;
       set({
-        generation, kind, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, delay: 0,
+        generation, kind, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, delay: 0, speed: 1,
         delayResolved: pendingDelay === null, pendingDelay, waiting: null,
+        subdl: kind === 'vod' ? subdl : null, downloaded: {}, subdlBusy: false, subdlStatus: null, subdlTried: false, listReady: false, locale,
+        pickerOpen: false, syncOpen: false,
       });
       if (waiting?.generation === generation) apply(waiting, defaultOn, locale);
     },
 
     rebindLoad: (generation, defaultOn, locale) => {
-      const { waiting, kind, delay } = get();
+      const { waiting, kind, delay, speed, selectedId, downloaded } = get();
       if (!kind || generation < get().generation) return;
-      set({ generation, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, waiting: null });
+      // A reload drops sub-added files: the file that was showing loads again from the cache, with its timing
+      const showing = selectedId !== null ? downloaded[selectedId] : undefined;
+      set({
+        generation, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, waiting: null, downloaded: {}, subdlTried: false, subdlBusy: false, listReady: false,
+        ...(showing && { pendingDelay: { delay, speed, subdlId: showing.nId, ai: showing.ai, duration: 0 } }),
+      });
       if (delay !== 0) send.delay(delay);  // main reset sub-delay with the reload
+      if (speed !== 1) send.speed(speed);
       if (waiting?.generation === generation) apply(waiting, defaultOn, locale);
     },
 
@@ -156,17 +328,22 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
     },
 
     toggle: (locale) => {
-      const { kind, tracks, selectedId, visible, ccState, sessionOn } = get();
-      if (!kind || tracks.length === 0) return;
+      const { kind, tracks, selectedId, visible, ccState, sessionOn, subdl } = get();
+      if (!kind || (tracks.length === 0 && !(kind === 'vod' && subdl))) return;
       if (kind === 'live') {
         if (ccState === 'unreadable' || selectedId === null) return;
         set({ visible: !visible, sessionOn: { ...sessionOn, live: !visible } });
         send.visible(!visible);
         return;
       }
-      const id = selectedId !== null ? null : pickSubtitleTrack(tracks, 'vod', locale);
-      set({ selectedId: id, sessionOn: { ...sessionOn, vod: id !== null } });
-      send.track(id, true);
+      set({ selSeq: get().selSeq + 1 });
+      if (selectedId !== null) {
+        set({ selectedId: null, sessionOn: { ...sessionOn, vod: false } });
+        send.track(null, true);
+        return;
+      }
+      set({ sessionOn: { ...sessionOn, vod: true } });
+      chooseVod(tracks, locale);
     },
 
     selectTrack: (id) => {
@@ -178,8 +355,17 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
         send.visible(id !== null);
         return;
       }
-      set({ selectedId: id, sessionOn: { ...sessionOn, vod: id !== null } });
+      const { downloaded, selectedId, pendingDelay } = get();
+      const leavingFile = selectedId !== null && !!downloaded[selectedId];
+      const toFile = id !== null && !!downloaded[id];
+      set({ selSeq: get().selSeq + 1, selectedId: id, sessionOn: { ...sessionOn, vod: id !== null } });
       send.track(id, true);
+      // Timing belongs to the file it was set for: switching to or from a SubDL file starts from 0
+      if (leavingFile || toFile) {
+        if (pendingDelay?.subdlId) set({ pendingDelay: null });
+        setTiming(0, 1);
+      }
+      recordEdit();
     },
 
     repickVodTrack: (locale) => {
@@ -193,7 +379,30 @@ export const useSubtitleStore = create<SubtitleData & SubtitleActions>((set, get
 
     nudgeDelay: (delta) => changeDelay(get().delay + delta),
     setDelay: (seconds) => changeDelay(seconds),
+    setSpeed: (speed) => {
+      set({ speed });
+      send.speed(speed);
+      recordEdit();
+    },
+    loadSubdl: (nId, userPick = false, language, ai) => loadSubdl(nId, userPick, language, ai),
+    openPicker: (open) => set({ pickerOpen: open, syncOpen: open ? false : get().syncOpen }),
+    openSync: (open) => set({ syncOpen: open, pickerOpen: open ? false : get().pickerOpen }),
 
-    clear: () => set({ kind: null, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, delay: 0, delayResolved: true, pendingDelay: null }),
+    clear: () => set({
+      kind: null, tracks: [], selectedId: null, visible: false, ccState: null, ccLanguage: null, delay: 0, delayResolved: true, pendingDelay: null,
+      speed: 1, subdl: null, downloaded: {}, subdlBusy: false, subdlStatus: null, subdlTried: false, pickerOpen: false, syncOpen: false,
+    }),
   };
 });
+
+/**
+ * The subtitle choice a progress save records, or undefined to keep the stored
+ * one: while a saved choice is not restored or not showing yet (subtitles off,
+ * SubDL unavailable), and while a SubDL load is under way.
+ */
+export function subtitleChoiceToSave(): { delay: number; speed: number; subdlId: string | null; ai: boolean } | undefined {
+  const s = useSubtitleStore.getState();
+  if (s.kind !== 'vod' || !s.delayResolved || s.subdlBusy || s.pendingDelay?.subdlId) return undefined;
+  const d = s.selectedId !== null ? s.downloaded[s.selectedId] : undefined;
+  return { delay: s.delay, speed: s.speed, subdlId: d?.nId ?? null, ai: d?.ai ?? false };
+}

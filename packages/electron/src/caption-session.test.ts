@@ -3,8 +3,8 @@ import { test, mock } from 'node:test';
 import { CaptionSession, type CaptionSessionIo } from './caption-session.js';
 import type { SubtitleTrack } from './subtitle-mpv.js';
 
-const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true };
-const eng: SubtitleTrack = { id: 2, lang: 'eng', title: null, codec: 'subrip', isCc: false };
+const cc: SubtitleTrack = { id: 1, lang: null, title: null, codec: 'eia_608', isCc: true, external: false, externalFile: null, hearingImpaired: false };
+const eng: SubtitleTrack = { id: 2, lang: 'eng', title: null, codec: 'subrip', isCc: false, external: false, externalFile: null, hearingImpaired: false };
 
 function fakeIo(lines: string[] = []) {
   const io = {

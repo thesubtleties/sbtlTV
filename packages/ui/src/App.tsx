@@ -16,18 +16,23 @@ import { useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
 import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode } from './stores/uiStore';
 import { data } from './data/client';
+import { resumePendingPlaylists } from './services/setup/pending';
 import type { StoredChannel, StoredSeries } from './db';
 import type { VodPlayInfo } from './types/media';
 import { updateWatchProgress, getResumePosition, getSubtitleDelayCandidate } from './hooks/useWatchProgress';
 import { mergedEpisodesForSeries } from './hooks/useContinueWatching';
 import { buildNextEpisodePlayInfo } from './services/continue-watching/next-episode.playinfo';
 import { UpNextOverlay } from './components/UpNextOverlay';
+import { SubtitlePicker } from './components/SubtitlePicker';
+import { SubtitleSync } from './components/SubtitleSync';
 import { usePlaybackStore } from './stores/playbackStore';
 import { useRewindStore } from './stores/rewindStore';
 import { liveTarget, shouldShowRewindTip } from './utils/rewindModel';
 import { saveSettings } from './utils/saveSettings';
 import type { SettingsTabId } from './components/settings/SettingsSidebar';
-import { useSubtitleStore, type PendingDelay } from './stores/subtitleStore';
+import { useSubtitleStore, subtitleChoiceToSave, type PendingDelay, type SubdlLoadInfo } from './stores/subtitleStore';
+import { loadSubdlLanguages, subdlLanguagesNow } from './hooks/useSubdlLanguages';
+import { isoCodesFor, localeLanguage } from './services/subdlLanguages';
 import { resumeSettled } from './hooks/resumeSettle';
 import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
 import { perfMeasure, perfStart } from './utils/perfMarks';
@@ -39,7 +44,9 @@ const CONTROLS_AUTO_HIDE_MS = 3000;
 // Debug logging helper for UI playback
 function debugLog(message: string, category = 'play'): void {
   const logMsg = `[${category}] ${message}`;
-  console.log(logMsg);
+  // Development builds only: these lines hold stream URLs, which carry provider logins.
+  // Main writes them to the debug log with logins and addresses removed.
+  if (import.meta.env.DEV) console.log(logMsg);
   if (window.debug?.logFromRenderer) {
     window.debug.logFromRenderer(logMsg).catch(() => {});
   }
@@ -137,7 +144,8 @@ async function tryLoadWithFallbacks(
  * or undefined (keep the stored one) while a saved delay is not restored yet;
  * a user's delay change passes the value it saved for its own load.
  */
-function saveVodProgress(info: VodPlayInfo, position: number, duration: number, subDelay?: number): void {
+function saveVodProgress(info: VodPlayInfo, position: number, duration: number, subtitle?: SubtitleChoice): void {
+  const sub = subtitle ?? currentSubtitle();
   if (!info.streamId || !(duration > 0)) return;
   updateWatchProgress({
     type: info.type === 'series' ? 'episode' : 'movie',
@@ -151,13 +159,38 @@ function saveVodProgress(info: VodPlayInfo, position: number, duration: number, 
     position,
     duration,
     sourceId: info.sourceId,
-    subDelay: subDelay ?? currentSubDelay(),
+    subDelay: sub?.delay,
+    subSpeed: sub?.speed,
+    subdlId: sub?.subdlId,
+    subdlAi: sub?.ai,
   }).catch((err) => debugLog(`Saving watch progress failed: ${err instanceof Error ? err.message : err}`));
 }
 
-function currentSubDelay(): number | undefined {
-  const s = useSubtitleStore.getState();
-  return s.kind === 'vod' && s.delayResolved ? s.delay : undefined;
+/** The subtitle choice saved with progress: delay, speed and SubDL file. */
+interface SubtitleChoice { delay: number; speed: number; subdlId: string | null; ai: boolean }
+
+/** The current choice, or undefined (keep the stored one) while a saved one is not restored yet. */
+function currentSubtitle(): SubtitleChoice | undefined {
+  return subtitleChoiceToSave();
+}
+
+/** SubDL for a movie or episode about to load: needs a saved key and a TMDB match. */
+function subdlLoadInfo(info: VodPlayInfo | null | undefined): SubdlLoadInfo | null {
+  const settings = useUIStore.getState().settings;
+  if (!info?.tmdbId || !(settings.subdlApiKey ?? '').trim()) return null;
+  const isTv = info.type === 'series';
+  if (isTv && (info.seasonNum == null || info.episodeNum == null)) return null;
+  const setting = settings.subtitles?.language ?? 'auto';
+  const list = subdlLanguagesNow();
+  const locale = navigator.language || 'en';
+  const language = setting !== 'auto' ? setting : localeLanguage(list, locale);
+  return {
+    title: isTv ? { tmdbId: info.tmdbId, type: 'tv', season: info.seasonNum, episode: info.episodeNum } : { tmdbId: info.tmdbId, type: 'movie' },
+    language,
+    languageIso: isoCodesFor(list, setting, locale),
+    preferSdh: settings.subtitles?.preferSdh === true,
+    waitSeconds: settings.subtitles?.subdlWait ?? 10,
+  };
 }
 
 /** What a play this window asked for knows that main does not. */
@@ -259,6 +292,8 @@ function App() {
   }, [resolveNextEpisodeInfo]);
   const triggerUpNextRef = useRef(triggerUpNext);
   useEffect(() => { triggerUpNextRef.current = triggerUpNext; }, [triggerUpNext]);
+  // The subtitle language list (from main) is needed before the first movie loads
+  useEffect(() => { void loadSubdlLanguages(); }, []);
   useEffect(() => { autoplayEnabledRef.current = autoplayEnabled; }, [autoplayEnabled]);
   useEffect(() => { isFullscreenRef.current = isFullscreen; }, [isFullscreen]);
   // Playback keys (seek, volume) read live state from a ref because the key
@@ -386,7 +421,7 @@ function App() {
       } else {
         const request = update.requestId !== null && playRequestRef.current?.id === update.requestId ? playRequestRef.current : null;
         const kind = update.live ? 'live' : 'vod';
-        store.bindLoad(update.generation, kind, subtitleDefaults()[kind], systemLocale(), request?.subtitleDelay ?? null);
+        store.bindLoad(update.generation, kind, subtitleDefaults()[kind], systemLocale(), request?.subtitleDelay ?? null, kind === 'vod' ? subdlLoadInfo(request?.vodInfo) : null);
         loadInfoRef.current = { generation: update.generation, vodInfo: request?.vodInfo ?? null };
       }
       // Progress is not saved until playback reaches where this load resumes.
@@ -670,6 +705,7 @@ function App() {
       if (!window.storage) return;
       try {
         const result = await window.storage.getSettings();
+        if (result.error) throw new Error(result.error);
         if (result.data) {
           useUIStore.getState().hydrateSettings(result.data);
         } else {
@@ -678,6 +714,8 @@ function App() {
         }
       } catch (err) {
         console.error('[App] Failed to load settings:', err);
+        debugLog(`Loading settings failed: ${err instanceof Error ? err.message : String(err)}`, 'app');
+        useToastStore.getState().addToast({ kind: 'error', title: 'Could not read your settings', message: 'Defaults are in use for now. Details are in the debug log.', duration: 8000 });
         useUIStore.getState().hydrateSettings({} as any);
       }
     }
@@ -711,7 +749,25 @@ function App() {
   useEffect(() => {
     if (!window.storage) return;
     window.storage.getSources().then((result) => {
+      // Main answers a failed read with { error } rather than a rejection: same toast as below.
+      if (result.error) throw new Error(result.error);
       if (result.data) useUIStore.getState().hydrateSources(result.data);
+      // After a setup import: playlists from files come back from the setup file (setup-transfer.ts).
+      const sources = result.data ?? [];
+      void window.setup?.pendingPlaylists().then(async (pending) => {
+        if (!pending.length) return;
+        const settled = await resumePendingPlaylists(pending, new Set(sources.map((s) => s.id)),
+          (sourceId) => data.query({ type: 'channelCount', sourceIds: [sourceId] }) as Promise<number>,
+          async (p) => {
+            try {
+              await data.query({ type: 'importPlaylist', sourceId: p.sourceId, content: p.content });
+            } catch (err) {
+              debugLog(`Playlist from the imported setup failed: ${err instanceof Error ? err.message : String(err)}`, 'sync');
+              throw err;
+            }
+          });
+        if (settled.length) await window.setup?.settlePlaylists(settled);
+      });
     }).catch((err) => {
       debugLog(`Loading sources failed: ${err instanceof Error ? err.message : String(err)}`, 'sync');
       useToastStore.getState().addToast({ kind: 'error', title: 'Could not load sources', message: 'The app settings could not be read — details are in the debug log.', duration: 8000 });
@@ -734,15 +790,15 @@ function App() {
     if (p.stage === 'tmdb') useUIStore.getState().setTmdbMatching(p.state === 'started');
   }), [setChannelSyncing, setVodSyncing]);
 
-  // Save a subtitle delay the user set on a movie or episode soon after the
-  // change (the external mpv sends no status while paused, so the 15s tick is
-  // not enough). The item, position and duration are taken when the change is
+  // Save a subtitle change the user made on a movie or episode (delay, speed,
+  // SubDL file) soon after the change (the external mpv sends no status while
+  // paused, so the 15s tick is not enough). The item, position and duration are taken when the change is
   // made, so switching to the next item right after cannot misfile it.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = useSubtitleStore.subscribe((state, prev) => {
-      const edit = state.userDelayEdit;
-      if (!edit || edit === prev.userDelayEdit) return;
+      const edit = state.userSubtitleEdit;
+      if (!edit || edit === prev.userSubtitleEdit) return;
       const load = loadInfoRef.current;
       if (!load?.vodInfo || load.generation !== edit.generation || progressBlockedRef.current) return;
       const info = load.vodInfo;
@@ -751,7 +807,8 @@ function App() {
       clearTimeout(timer);
       // Before the resume seek lands, keep the resume point rather than the 0 the player reports
       const at = resumeSettled(position, resumeTargetRef.current) ? position : (resumeTargetRef.current ?? position);
-      timer = setTimeout(() => saveVodProgress(info, at, duration, edit.delay), 800);
+      const choice: SubtitleChoice = { delay: edit.delay, speed: edit.speed, subdlId: edit.subdlId, ai: edit.ai };
+      timer = setTimeout(() => saveVodProgress(info, at, duration, choice), 800);
     });
     return () => { clearTimeout(timer); unsubscribe(); };
   }, []);
@@ -766,6 +823,9 @@ function App() {
       // Leave Ctrl/Alt/Cmd combinations to the system and Chromium (Ctrl+F,
       // Cmd+M, Ctrl+Shift+I...); Shift alone is part of some bindings (Shift+I).
       if (e.ctrlKey || e.altKey || e.metaKey) return;
+      // The subtitle picker and sync panel move with the arrows and close with Esc; Space, Z/X and the rest still work
+      const subtitlePanels = useSubtitleStore.getState();
+      if ((subtitlePanels.pickerOpen || subtitlePanels.syncOpen) && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape'].includes(e.key)) return;
 
       switch (e.key) {
         case ' ':
@@ -970,6 +1030,8 @@ function App() {
         rewindBump={rewindBump}
       />
 
+      <SubtitlePicker />
+      <SubtitleSync />
       {upNext && (
         <UpNextOverlay
           label={upNext.info.episodeInfo ?? upNext.info.title}

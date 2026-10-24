@@ -5,7 +5,7 @@ import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
-import { useChannelSortOrder, useChannelColumnWidth } from '../stores/uiStore';
+import { useChannelSortOrder, useChannelColumnWidth, useSourceNeedsLogin } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import './ChannelPanel.css';
@@ -35,7 +35,7 @@ function ChannelPanelImpl({
   const favoriteChannels = useFavoriteChannels();
   const channels = isFavoritesView ? favoriteChannels : regularChannels;
   const categories = useCategories();
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const waitingForLogin = useSourceNeedsLogin();
   const [availableWidth, setAvailableWidth] = useState(800);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -137,6 +137,7 @@ function ChannelPanelImpl({
 
   // Time grid state and actions
   const {
+    now,
     isAtNow,
     visibleHours,
     pixelsPerHour,
@@ -152,12 +153,6 @@ function ChannelPanelImpl({
   // Programs are read only for the rows Virtuoso is rendering (see useGuideRowRange).
   const { handleRangeChange, loadedStreamIds } = useGuideRowRange(displayChannels);
   const programs = useProgramsInRange(loadedStreamIds, loadStart, loadEnd);
-
-  // Update current time every minute
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-    return () => clearInterval(timer);
-  }, []);
 
   // Keyboard navigation
   useEffect(() => {
@@ -232,7 +227,7 @@ function ChannelPanelImpl({
       {/* Top Bar - Time Display & Navigation */}
       <div className="guide-header">
         <div className="guide-header-left">
-          <span className="guide-current-time">{formatTime(currentTime)}</span>
+          <span className="guide-current-time">{formatTime(now)}</span>
           <span className="guide-category">{categoryName}</span>
           <span className="guide-channel-count">
             {searchQuery.trim() ? `${displayChannels.length} of ${channels.length}` : `${channels.length} channels`}
@@ -339,6 +334,7 @@ function ChannelPanelImpl({
               programs={programs.get(channel.stream_id)}
               windowStart={windowStart}
               windowEnd={windowEnd}
+              now={now}
               pixelsPerHour={pixelsPerHour}
               visibleHours={visibleHours}
               onPlay={onPlayChannel}
@@ -361,8 +357,14 @@ function ChannelPanelImpl({
                 ) : (
                   <>
                     <h3>No Channels</h3>
-                    <p>Sync your sources to load channels</p>
-                    <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                    {waitingForLogin ? (
+                      <p className="hint">A source needs its password before its channels can load: Settings → Sources</p>
+                    ) : (
+                      <>
+                        <p>Sync your sources to load channels</p>
+                        <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                      </>
+                    )}
                   </>
                 )}
               </div>

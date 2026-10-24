@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage, session } from 'electron';
+import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage, screen, session } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
@@ -14,7 +14,7 @@ import { rewindMpvProperties, rewindCapBytes, parseCacheState, clampToRange, typ
 import { PlayerMemoryTracker } from './player-memory.js';
 import { once } from 'node:events';
 import { isTransientDecodeError } from './mpv-error-filter.js';
-import { redactUrls } from './log-redact.js';
+import { LogPolicy } from './log-policy.js';
 import { createLineBuffer } from './line-buffer.js';
 import { IP_CHECK_URL, IP_CHECK_MAX_BYTES, parseIpCheck } from './ip-check.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
@@ -23,9 +23,62 @@ import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
 import { STREAM_BASE_OPTIONS, STALL_MAX_RELOADS } from './stream-health.js';
 import { StreamSession, parseCompatibilityHandoff, type StreamLoadRequest, type CompatibilityHandoff } from './stream-session.js';
 import { CaptionSession } from './caption-session.js';
-import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule } from './subtitle-mpv.js';
+import { SUBTITLE_BASE_OPTIONS, parseSubtitleTracks, subtitleFontsDir, subtitleStyleOptions, TrackReadSchedule, TrackListWaiter, type SubtitleTrack } from './subtitle-mpv.js';
+import { redirectAllowed, SubdlClient, SubdlError, type HttpGet, type SubdlTitle } from './subdl-client.js';
+import { SubdlService } from './subdl-service.js';
+import { SubtitleCache } from './subtitle-cache.js';
+import { SUBTITLE_LANGUAGES } from './subtitle-languages.js';
 import { preferredCaptionLanguage } from './subtitle-settings.js';
+import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
+import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
+import { registerSetupTransfer } from './setup-transfer.js';
+import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
+import { makeZip } from './zip-writer.js';
 const { autoUpdater } = electronUpdater;
+
+// Before the keyring is opened (Chromium picks it when the app is ready): keep
+// using the keyring the passwords were saved with (see password-store.ts).
+// Where this launch's keyring came from, for the debug log and Settings > Privacy.
+let keyringFrom: 'launch' | 'kept' | 'found' | 'guess' = 'guess';
+const launchPasswordStore = app.commandLine.getSwitchValue('password-store');
+if (process.platform === 'linux') {
+  try {
+    const { apply, remember } = resolvePasswordStore(launchPasswordStore, storage.getKeptPasswordStore());
+    if (launchPasswordStore) keyringFrom = 'launch';
+    if (remember) storage.keepPasswordStore(remember);
+    if (apply) {
+      app.commandLine.appendSwitch('password-store', apply);
+      keyringFrom = 'kept';
+    }
+  } catch (error) {
+    // An unreadable or unwritable config must not stop the app; Chromium then picks as before.
+    console.error('[startup] Could not read or keep the keyring choice:', error instanceof Error ? error.message : error);
+  }
+}
+
+// Provider addresses in logs become labels (see host-labels.ts). The debug log
+// keeps them only while the user has turned that on in Settings > Debug; it is
+// never saved, so every launch starts with labels.
+function sourceAddresses(): ReturnType<typeof storage.getSourceAddresses> {
+  try {
+    return storage.getSourceAddresses();
+  } catch {
+    return [];  // an unreadable config must not stop the app here; labels then number every host
+  }
+}
+const logPolicy = new LogPolicy(sourceAddresses());
+// Every change to the sources (Sources tab, file import, a setup import) keeps the labels current.
+storage.onSourcesChanged(() => logPolicy.setSources(sourceAddresses()));
+
+/** Text for a terminal or the system log: labels, always. */
+function redactForDisplay(text: string): string {
+  return logPolicy.forDisplay(text);
+}
+
+/** Text for the debug log: labels, or the addresses while the user has included them (Settings > Debug). */
+function redactForLog(text: string): string {
+  return logPolicy.forLog(text);
+}
 type UpdateInfo = electronUpdater.UpdateInfo;
 // Dynamic import - mpv-texture-bridge depends on Electron's sharedTexture API
 // which may not be available on all platforms
@@ -40,6 +93,8 @@ const compatibilityModeRequested = compatibilityModeFromFlag || compatibilityMod
 let MpvTextureBridgeClass: (new () => MpvTextureBridgeType) | null = null;
 // Why the native path is unavailable this launch, shown in the Linux fallback dialog.
 let nativeInitError: string | null = null;
+// For the bug report (bug-report.ts): facts read once where they are known, never on a click.
+let reportFacts: { gpuSelection?: string; nativeMpv?: string; nativeFfmpeg?: string; externalMpv?: string; externalMpvSource?: string } = {};
 // True once the launch has decided between the native bridge and external mpv.
 // The renderer mounts before that decision, so 'mpv-get-mode' reports it.
 let playerModeSettled = false;
@@ -166,7 +221,7 @@ let lastUncaughtReportAt = 0;
 process.on('uncaughtException', (error) => {
   const summary = error instanceof Error ? error.message : String(error);
   const detail = error instanceof Error ? error.stack ?? summary : summary;
-  console.error('[main] Uncaught exception:', redactUrls(detail));
+  console.error('[main] Uncaught exception:', redactForDisplay(detail));
   debugLog(`Uncaught exception: ${detail}`, 'system');
   const now = Date.now();
   if (now - lastUncaughtReportAt < 30_000) return;
@@ -175,7 +230,7 @@ process.on('uncaughtException', (error) => {
     type: 'error',
     title: 'sbtlTV internal error',
     message: 'An internal error occurred. sbtlTV will keep running.',
-    detail: `${summary}\n\nDetails are in the debug log when debug logging is enabled (Settings > System).`,
+    detail: `${logPolicy.forCard(summary)}\n\nDetails are in the debug log when debug logging is enabled (Settings > Debug).`,
     buttons: ['OK'],
   }).catch(() => {});
 });
@@ -198,6 +253,15 @@ function syncPlaybackDiagnostics(): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('debug-logging-changed', debugLoggingEnabled);
 }
 const DEBUG_LOG_MAX_SIZE = 10 * 1024 * 1024; // 10MB max log size
+
+/** dist/build-info.json, which CI writes so a log or a bug report can be tied to an exact commit. */
+function readBuildInfo(): { sha?: string; run?: string; ref?: string } | 'local' {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')) as { sha?: string; run?: string; ref?: string };
+  } catch {
+    return 'local';
+  }
+}
 
 function getDebugLogPath(): string {
   const logDir = app.getPath('logs');
@@ -225,6 +289,22 @@ function rotateLogIfNeeded(): boolean {
   }
 }
 
+/**
+ * Logs written before provider addresses became labels (0.13.0 and earlier) can name
+ * the provider: they are deleted once, so a log attached to a report starts clean.
+ */
+function retireLogsFromBeforeLabels(): void {
+  if (storage.getDebugLogFormat() >= 2) return;
+  for (const file of [getDebugLogPath(), `${getDebugLogPath()}.old`]) {
+    try {
+      fs.rmSync(file, { force: true });
+    } catch {
+      return;  // try again next launch
+    }
+  }
+  storage.setDebugLogFormat(2);
+}
+
 function initDebugLogging(enabled: boolean): void {
   debugLoggingEnabled = enabled;
 
@@ -247,17 +327,14 @@ function initDebugLogging(enabled: boolean): void {
     debugLog('='.repeat(60));
     debugLog(`Debug logging started - sbtlTV v${app.getVersion()}`);
     // CI writes dist/build-info.json so a log can be tied to an exact commit.
-    try {
-      const info = JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')) as { sha?: string; run?: string; ref?: string };
-      debugLog(`Build: ${info.sha ?? '?'} (${info.ref ?? '?'}, run ${info.run ?? '?'})`);
-    } catch {
-      debugLog('Build: local');
-    }
+    const info = readBuildInfo();
+    debugLog(info === 'local' ? 'Build: local' : `Build: ${info.sha ?? '?'} (${info.ref ?? '?'}, run ${info.run ?? '?'})`);
     if (!rotationSucceeded) {
       debugLog('Warning: Log rotation failed, continuing with existing file', 'system');
     }
     debugLog(`Platform: ${process.platform} ${process.arch}`);
     debugLog(`Electron: ${process.versions.electron}`);
+    debugLog(logPolicy.headerLine());
     debugLog(`Node: ${process.versions.node}`);
     debugLog('='.repeat(60));
   } else if (!enabled && debugLogStream) {
@@ -269,12 +346,23 @@ function initDebugLogging(enabled: boolean): void {
 }
 
 function debugLog(message: string, category = 'app'): void {
+  // Users attach this log to reports: no provider credentials (they ride in stream URLs), no provider addresses unless included.
+  // Redacted even while the log is off: that is also how hosts become known, so a later bare mention
+  // on the card or a terminal is labelled.
+  let line: string;
+  try {
+    line = redactForLog(message);
+  } catch {
+    return;  // logging must never crash the app
+  }
+  writeDebugLine(line, category);
+}
+
+/** A line that was already redacted with redactForLog (e.g. before JSON quoting): written as it is. */
+function writeDebugLine(redacted: string, category: string): void {
   if (!debugLoggingEnabled || !debugLogStream) return;
   try {
-    const timestamp = new Date().toISOString();
-    // Users attach this log to reports: no provider credentials (they ride in stream URLs).
-    const line = `[${timestamp}] [${category}] ${redactUrls(message)}\n`;
-    debugLogStream.write(line);
+    debugLogStream.write(formatLogLine(new Date().toISOString(), category, redacted));
   } catch {
     // Silently fail - logging should never crash the app
   }
@@ -359,6 +447,7 @@ async function getChromiumGpuIdentity(): Promise<{ vendorId?: number; deviceId?:
   // Selection errors must reach initNativeMpv's compatibility fallback.
   const gpu = selectChromiumGpuIdentity(devices, webGlRenderer);
   debugLog(`GPU selection source=${gpu.source}`, 'mpv');
+  reportFacts.gpuSelection = gpu.source;
   return gpu;
 }
 
@@ -634,6 +723,12 @@ async function initMpv(): Promise<void> {
     // Check mpv version for logging
     const mpvVersion = getMpvVersion(mpvBinary);
     const versionStr = mpvVersion ? `${mpvVersion[0]}.${mpvVersion[1]}` : 'unknown';
+    reportFacts.externalMpv = versionStr;
+    // Where it came from, never the path (it can hold the user's name).
+    const bundledRoot = app.isPackaged ? process.resourcesPath : __dirname;
+    reportFacts.externalMpvSource = mpvBinary.startsWith(bundledRoot) ? 'bundled'
+      : /^\/(opt\/homebrew|usr\/local)\//.test(mpvBinary) ? 'homebrew'
+      : mpvBinary.startsWith('/usr/') || mpvBinary.startsWith('C:\\Program Files') ? 'system' : 'other';
     console.log('[mpv] Version:', versionStr);
     debugLog(`Version: ${versionStr}`, 'mpv');
 
@@ -709,12 +804,12 @@ async function initMpv(): Promise<void> {
       debugLog(line, 'mpv-stdout');
       // Only console.log non-status lines
       if (!line.includes('AV:') && !line.includes('A:') && !line.includes('V:')) {
-        console.log('[mpv stdout]', redactUrls(line));
+        console.log('[mpv stdout]', redactForDisplay(line));
       }
     });
     const stderrLines = createLineBuffer((line) => {
       debugLog(line, 'mpv-stderr');
-      console.log('[mpv stderr]', redactUrls(line));
+      console.log('[mpv stderr]', redactForDisplay(line));
     });
     mpvProcess.stdout?.on('data', (data: Buffer) => stdoutLines.push(data.toString()));
     mpvProcess.stderr?.on('data', (data: Buffer) => stderrLines.push(data.toString()));
@@ -818,6 +913,8 @@ async function initNativeMpv(): Promise<boolean> {
 
     mpvBridge = bridge;
     useNativeMpv = true;
+    reportFacts.nativeMpv = bridge.getProperty('mpv-version') ?? 'unknown';
+    reportFacts.nativeFfmpeg = bridge.getProperty('ffmpeg-version') ?? 'unknown';
     syncPlaybackDiagnostics();
     setMpvOptions([...STREAM_BASE_OPTIONS, ...SUBTITLE_BASE_OPTIONS, ['sub-fonts-dir', subtitleFontsPath()]], 'native init');
     applySubtitleStyle('native init');
@@ -876,9 +973,11 @@ async function initNativeMpv(): Promise<boolean> {
       const now = Date.now();
       if (trackReadSchedule.shouldRead(now, status.width > 0 && status.height > 0)) {
         const tracks = parseSubtitleTracks(bridge?.getProperty('track-list'));
-        trackReadSchedule.record(now, tracks);
         // Read with the tracks: the status duration can still be the previous file's.
-        captions.setTracks(tracks, Number(bridge?.getProperty('duration')) || 0);
+        const duration = Number(bridge?.getProperty('duration')) || 0;
+        // A movie's list counts once its duration is known too (the renderer decides on SubDL then)
+        trackReadSchedule.record(now, tracks, loadIsLive ? undefined : duration);
+        captions.setTracks(tracks, duration);
       }
 
       // mpv reports time-pos on every frame. Each forwarded status is an IPC
@@ -985,6 +1084,15 @@ function relaunchApp(args: string[]): void {
     return;
   }
   app.relaunch(appImage ? { execPath: appImage, args } : { args });
+}
+
+// Restart now with the same arguments (keyring switch, setup import). A downloaded
+// update must not install on this quit: the installer and the relaunch would race
+// (Windows, macOS); it installs on the next ordinary quit instead.
+function restartApp(): void {
+  autoUpdater.autoInstallOnAppQuit = false;
+  relaunchApp(process.argv.slice(1));
+  app.quit();
 }
 
 function restartInCompatibilityMode(handoff: CompatibilityHandoff | null): void {
@@ -1097,7 +1205,7 @@ async function connectToMpvSocket(): Promise<void> {
           const msg = JSON.parse(line);
           handleMpvMessage(msg);
         } catch {
-          console.error('[mpv] Failed to parse:', redactUrls(line));
+          console.error('[mpv] Failed to parse:', redactForDisplay(line));
         }
       }
     });
@@ -1155,17 +1263,23 @@ function handleMpvMessage(msg: MpvMessage): void {
       case 'duration':
         playerRaw.duration = (msg.data as number) ?? 0;
         Object.assign(mpvState, stream.gate.pass(playerRaw, Date.now()));
-        // The renderer restores a saved subtitle delay once the duration is known.
-        if (mpvState.duration > 0 && captions.tracks.length > 0) captions.setTracks(captions.tracks, mpvState.duration);
+        // The renderer restores a saved subtitle delay, and decides on SubDL, once the
+        // duration is known: a list with the duration is the file's real one (even an empty
+        // one), but only after mpv pushed this load's track-list (duration can come first).
+        if (mpvState.duration > 0 && trackListGeneration === stream.generation) captions.setTracks(captions.tracks, mpvState.duration);
         resumeExternalIfOpen();
         break;
       case 'eof-reached':
         externalEof = msg.data === true;
         break;
-      case 'track-list':
+      case 'track-list': {
         // Pushed by mpv on every change (file loaded, CC track created); no polling.
-        captions.setTracks(parseSubtitleTracks(msg.data), mpvState.duration);
+        const tracks = parseSubtitleTracks(msg.data);
+        trackListGeneration = stream.generation;
+        captions.setTracks(tracks, mpvState.duration);
+        trackListWaiter.offer(tracks);
         break;
+      }
     }
 
     // Throttle updates to renderer. A copy: mpvState keeps changing while a
@@ -1225,8 +1339,9 @@ function sendToRenderer(channel: string, data: unknown): void {
 
 /** A message in the app's error card; its text goes to the debug log too, so reports can be matched. */
 function reportMpvError(message: string): void {
-  const text = redactUrls(message.trim());
-  debugLog(`banner: ${JSON.stringify(text)}`, 'mpv');
+  const text = logPolicy.forCard(message.trim());  // the card is only on the user's screen: real hostnames, never logins
+  // Redacted before quoting (a URL ends at whitespace, not at a quote), with the log's own rules.
+  writeDebugLine(`banner: ${JSON.stringify(redactForLog(message.trim()))}`, 'mpv');
   sendToRenderer('mpv-error', text);
 }
 
@@ -1244,8 +1359,9 @@ function reportPlaybackFailure(message: string): void {
 /** One of mpv's own error lines: held back while a stall reload is opening the stream. */
 function reportMpvLogError(message: string): void {
   if (stream.holdsMpvErrors(mpvState.playing)) {
-    stream.lastHeldError = redactUrls(message.trim());  // before quoting: the URL ends at whitespace, not at the quote
-    debugLog(`banner held during reconnect: ${JSON.stringify(stream.lastHeldError)}`, 'mpv');
+    // Redacted for the log before quoting (a URL ends at whitespace, not at a quote), and written as it is.
+    stream.lastHeldError = redactForLog(message.trim());
+    writeDebugLine(`banner held during reconnect: ${JSON.stringify(stream.lastHeldError)}`, 'mpv');
     return;
   }
   reportMpvError(message);
@@ -1280,6 +1396,12 @@ function applySubtitleStyle(why: string): void {
 // In-window player: when to read track-list for the current load (see TrackReadSchedule).
 const trackReadSchedule = new TrackReadSchedule();
 let trackReadGeneration = -1;
+/** External player: the load whose track-list mpv has pushed (a duration before it is not the real list yet) */
+let trackListGeneration = -1;
+/** External player: sub-adds waiting for the pushed track-list that holds their file */
+const trackListWaiter = new TrackListWaiter();
+/** The current load is live TV (no duration to wait for) */
+let loadIsLive = false;
 
 async function readSubText(): Promise<string> {
   if (useNativeMpv && mpvBridge) return mpvBridge.getProperty('sub-text') ?? '';
@@ -1302,6 +1424,91 @@ const captions = new CaptionSession({
   preferredLanguage: () => preferredCaptionLanguage(storage.getSettings().subtitles!.language, app.getLocale()),
   currentGeneration: () => stream.generation,
 });
+
+// Downloaded subtitles (SubDL, with the user's key). The key goes only in the
+// Authorization header; mpv only ever gets files SubtitleCache wrote.
+const subdlHttp: HttpGet = async (url, headers, maxBytes) => {
+  const signal = AbortSignal.timeout(10_000);
+  const get = (target: string) => electronNet.fetch(target, {
+    cache: 'no-store',
+    credentials: 'omit',
+    headers: { 'User-Agent': 'sbtlTV', ...headers },
+    redirect: 'manual',  // the key goes with the request: follow only to SubDL's own hosts
+    signal,
+  });
+  let response = await get(url);
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get('location');
+    const next = location ? new URL(location, url).toString() : '';
+    if (!redirectAllowed(next)) throw new Error('redirect to another host');
+    response = await get(next);
+    if (response.status >= 300 && response.status < 400) throw new Error('too many redirects');
+  }
+  if (Number(response.headers.get('content-length') ?? 0) > maxBytes) throw new Error('answer too large');
+  // Read with the cap, so an answer without a length cannot fill memory
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = response.body?.getReader();
+  while (reader) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      throw new Error('answer too large');
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+  const responseHeaders: Record<string, string> = {};
+  response.headers.forEach((value, name) => { responseHeaders[name.toLowerCase()] = value; });
+  return { status: response.status, headers: responseHeaders, body };
+};
+const subtitleCache = new SubtitleCache(path.join(app.getPath('userData'), 'subtitles'));
+const subdl = new SubdlService({
+  client: new SubdlClient(subdlHttp, () => storage.getSettings().subdlApiKey ?? null),
+  cache: subtitleCache,
+  addSubtitle: addSubtitleFile,
+  isCurrent: (generation) => stream.isCurrent(generation),
+  log: (message) => debugLog(message, 'subtitles'),
+});
+
+/**
+ * sub-add a file the cache wrote (not selected) and return its track once mpv
+ * lists it, for this load only: a title switch while waiting returns null.
+ * In-window: the list is read directly. External: mpv pushes it (no polling of
+ * an mpv that may be stuck; one deadline).
+ */
+async function addSubtitleFile(file: string, generation: number): Promise<SubtitleTrack | null> {
+  if (!subtitleCache.owns(file) || !stream.isCurrent(generation)) return null;
+  if (useNativeMpv && mpvBridge) {
+    if (!mpvBridge.command('sub-add', file, 'auto')) {
+      debugLog('subtitles: mpv rejected sub-add', 'subtitles');
+      return null;
+    }
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const tracks = parseSubtitleTracks(mpvBridge.getProperty('track-list'));
+      const added = tracks.find((t) => t.externalFile === file);
+      if (added) {
+        if (!stream.isCurrent(generation)) return null;
+        captions.setTracks(tracks, Number(mpvBridge.getProperty('duration')) || 0);
+        return added;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (!stream.isCurrent(generation)) return null;
+    }
+    return null;
+  }
+  if (!mpvSocket) return null;
+  const listed = trackListWaiter.wait(file, 3000);
+  sendMpvCommand('sub-add', [file, 'auto']).catch((err) => {
+    debugLog(`subtitles: sub-add failed: ${err instanceof Error ? err.message : err}`, 'subtitles');
+  });
+  const added = await listed;
+  return added && stream.isCurrent(generation) ? added : null;
+}
 
 /** Playback stopped or the player is going away: the stream and its captions end together. */
 function endPlayback(opts: { invalidate?: boolean } = {}): void {
@@ -1387,6 +1594,69 @@ ipcMain.handle('subtitle-set-delay', async (_event, generation: unknown, seconds
   const clamped = Math.min(Math.max(seconds, -60), 60);
   setMpvOptions([['sub-delay', clamped.toFixed(3)]], 'set delay');
   return { success: true };
+});
+
+// Subtitle speed: a frame-rate fix or a two-line sync. Only near 1: anything else is not a timing fix.
+ipcMain.handle('subtitle-set-speed', async (_event, generation: unknown, speed: unknown) => {
+  if (!stream.isCurrent(generation)) return { error: 'Stale subtitle request' };
+  if (typeof speed !== 'number' || !Number.isFinite(speed) || speed < 0.9 || speed > 1.1) return { error: 'Invalid speed' };
+  setMpvOptions([['sub-speed', speed.toFixed(6)]], 'set speed');
+  return { success: true };
+});
+
+function subdlTitle(value: unknown): SubdlTitle | null {
+  const v = value as Partial<SubdlTitle> | null;
+  if (!v || typeof v !== 'object' || !Number.isInteger(v.tmdbId) || (v.tmdbId as number) <= 0 || (v.type !== 'movie' && v.type !== 'tv')) return null;
+  const count = (x: unknown) => (Number.isInteger(x) && (x as number) >= 0 && (x as number) < 10_000 ? (x as number) : undefined);
+  return { tmdbId: v.tmdbId as number, type: v.type, season: count(v.season), episode: count(v.episode) };
+}
+
+const usageAnswer = (u: Awaited<ReturnType<typeof subdl.usage>>) =>
+  'error' in u ? { error: u.error } : { usage: { downloadsLeft: u.downloadsLeft, downloadsLimit: u.downloadsLimit } };
+
+ipcMain.handle('subdl-languages', () => SUBTITLE_LANGUAGES.map(({ code, label, iso }) => ({ code, label, iso })));
+
+// Settings: try a key before it is saved (one /me call, which costs no search).
+ipcMain.handle('subdl-check-key', async (_event, key: unknown) => {
+  if (typeof key !== 'string' || key.trim().length < 8 || key.length > 200) return { error: 'auth' };
+  // Its own client: a load running meanwhile keeps using (and is counted against) the saved key
+  const trial = new SubdlClient(subdlHttp, () => key.trim());
+  try {
+    const usage = await trial.usage();
+    return { usage: { downloadsLeft: usage.downloadsLeft, downloadsLimit: usage.downloadsLimit } };
+  } catch (error) {
+    return { error: error instanceof SubdlError ? error.kind : 'network' };
+  }
+});
+
+ipcMain.handle('subdl-usage', async () => usageAnswer(await subdl.usage()));
+
+ipcMain.handle('subdl-find', async (_event, title: unknown, language: unknown) => {
+  const t = subdlTitle(title);
+  if (!t || typeof language !== 'string' || language.length > 20) return { error: 'bad-response' };
+  const found = await subdl.find(t, language, storage.getSettings().subtitles?.preferSdh === true);
+  if ('error' in found) return found;
+  return { results: found.results.map(({ nId, releaseName, language: lang, hi, ai, author, pack }) => ({ nId, releaseName, language: lang, hi, ai, author, pack })) };
+});
+
+ipcMain.handle('subdl-load', async (_event, generation: unknown, title: unknown, nId: unknown, language: unknown, duration: unknown) => {
+  if (!stream.isCurrent(generation)) return { error: 'stale' };
+  const t = subdlTitle(title);
+  if (!t || typeof nId !== 'string' || nId.length > 130 || typeof language !== 'string' || language.length > 20) return { error: 'bad-response' };
+  return subdl.load({
+    generation: generation as number,
+    title: t,
+    nId,
+    language,
+    preferSdh: storage.getSettings().subtitles?.preferSdh === true,
+    duration: typeof duration === 'number' && duration > 0 ? duration : mpvState.duration,
+  });
+});
+
+ipcMain.handle('subdl-cues', async (_event, generation: unknown, nId: unknown, around: unknown, delay: unknown, speed: unknown, span: unknown) => {
+  if (!stream.isCurrent(generation) || typeof nId !== 'string' || nId.length > 130) return [];
+  if ([around, delay, speed, span].some((x) => typeof x !== 'number' || !Number.isFinite(x))) return [];
+  return subdl.cues(generation as number, nId, around as number, delay as number, Math.min(Math.max(speed as number, 0.9), 1.1), Math.min(Math.max(span as number, 10), 1800));
 });
 
 /**
@@ -1600,12 +1870,14 @@ async function loadMedia(request: StreamLoadRequest & { requestId?: number }): P
     return { error: 'Native playback must be reset' };
   }
   const url = request.url;
+  logPolicy.noteUrl(url);  // before mpv names the host on its own ("Failed to resolve hostname …")
   lastJumpAt = Date.now();
   const { generation, resumeAt } = stream.begin(request, Date.now(), playerRaw);
   debugLog(`mpv-load called (${request.reason})${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
   // The renderer binds subtitles and progress saving to this, whoever started the load;
   // sent before the load's first track update.
   const rewindBytes = request.live ? storage.getRewindLiveBytes() : 0;
+  loadIsLive = request.live;
   sendToRenderer('media-loaded', { generation, live: request.live, resumeAt, reason: request.reason, requestId: request.requestId ?? null, rewind: rewindBytes > 0 });
   captions.beginLoad();
   const cacheProperties = rewindMpvProperties(rewindBytes, request.live);
@@ -1683,7 +1955,7 @@ async function checkStreamHealth(): Promise<void> {
       stream.reloadInFlight = false;
     }
   } else if (action === 'give-up') {
-    debugLog(`Stream still stalled after ${STALL_MAX_RELOADS} reloads; giving up${stream.lastHeldError ? ` (last mpv error: ${JSON.stringify(stream.lastHeldError)})` : ''}`, 'mpv');
+    writeDebugLine(`Stream still stalled after ${STALL_MAX_RELOADS} reloads; giving up${stream.lastHeldError ? ` (last mpv error: ${JSON.stringify(stream.lastHeldError)})` : ''}`, 'mpv');
     sendToRenderer('stream-recovery', { state: 'failed', live: media.live });
     endRewindForLoad();
   }
@@ -1693,7 +1965,7 @@ setInterval(() => {
   checkStreamHealth().catch((err) => {
     // Shown even with debug logging off, once per distinct message: a failing check is a watchdog that is not watching.
     const message = err instanceof Error ? err.message : String(err);
-    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', redactUrls(message));
+    if (message !== lastHealthCheckError) console.error('[mpv] Stream health check failed:', redactForDisplay(message));
     lastHealthCheckError = message;
     debugLog(`Stream health check failed: ${message}`, 'mpv');
   });
@@ -1962,6 +2234,11 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
   if (settings.debugLoggingEnabled !== undefined) {
     followUp('switching debug logging', () => initDebugLogging(settings.debugLoggingEnabled!));
   }
+  if (settings.subdlApiKey !== undefined) {
+    followUp('resetting the SubDL key state', () => subdl.keyChanged());
+    // Without a key the downloaded subtitles go too (their folders are a list of what was watched)
+    if (!settings.subdlApiKey) followUp('clearing downloaded subtitles', () => subtitleCache.clear());
+  }
   followUp('sending settings to the data process', () => dataHost?.pushSettings());
   return { success: true };
 });
@@ -1976,6 +2253,13 @@ ipcMain.handle('debug-get-log-path', async () => {
 });
 
 ipcMain.handle('debug-is-enabled', () => debugLoggingEnabled);
+ipcMain.handle('debug-get-include-addresses', () => logPolicy.addressesIncluded);
+ipcMain.handle('debug-set-include-addresses', (_event, on: unknown) => {
+  const { included, logLine } = logPolicy.setIncludeAddresses(on);
+  if (logLine) debugLog(logLine);
+  return included;
+});
+ipcMain.handle('debug-get-source-legend', () => logPolicy.legend());
 
 ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
   debugLog(message, 'renderer');
@@ -2010,6 +2294,167 @@ ipcMain.on('shared-texture-pipeline-failure', (event, message: unknown) => {
   mpvBridge?.reportPipelineFailure(message);
 });
 
+// Settings > Debug > Bug report (bug-report.ts). Hardware is what helps to debug and
+// no more: no VRAM, never the computer's name or the user's name.
+async function gatherReportInputs(rawSyncStatus: unknown): Promise<ReportInputs> {
+  const round = (bytes: number) => Math.round((bytes / 1024 ** 3) * 10) / 10;
+  const gpus: ReportInputs['hardware']['gpus'] = [];
+  // PCI vendor ids -> names; the device id (hex) names the exact model.
+  const VENDORS: Record<number, string> = { 0x1002: 'AMD', 0x10de: 'NVIDIA', 0x8086: 'Intel', 0x106b: 'Apple', 0x5143: 'Qualcomm', 0x13b5: 'ARM', 0x1af4: 'Virtio' };
+  try {
+    const info = (await app.getGPUInfo('basic')) as { gpuDevice?: { active?: boolean; vendorId?: number; deviceId?: number; driverVendor?: string; driverVersion?: string }[] };
+    for (const d of info.gpuDevice ?? []) {
+      gpus.push({
+        vendor: d.vendorId !== undefined ? (VENDORS[d.vendorId] ?? `0x${d.vendorId.toString(16)}`) : undefined,
+        device: d.deviceId !== undefined ? `0x${d.deviceId.toString(16).padStart(4, '0')}` : undefined,
+        active: d.active,
+        ...(d.driverVendor && { driver: d.driverVendor }),
+        ...(d.driverVersion && { driverVersion: d.driverVersion }),
+      });
+    }
+  } catch (error) {
+    debugLog(`Bug report: GPU info unavailable (${error instanceof Error ? error.name : 'error'})`, 'app');
+  }
+  // The GPU the in-window player renders with (high-performance WebGL), by name.
+  const webGl = (await getHighPerformanceWebGlRenderer().catch(() => null)) as { renderer?: unknown; vendor?: unknown } | null;
+  if (typeof webGl?.renderer === 'string') {
+    gpus.push({ renderer: webGl.renderer.slice(0, 200), vendor: typeof webGl.vendor === 'string' ? webGl.vendor.slice(0, 200) : undefined, usedFor: 'video (high-performance WebGL)' });
+  }
+  let settings: ReportInputs['settings'] = 'unreadable';
+  try { settings = storage.getSettings(); } catch { /* reported as unreadable */ }
+  let sources: ReportInputs['sources'] = 'unreadable';
+  try {
+    sources = storage.getSources().map((s) => ({ id: s.id, type: s.type, enabled: s.enabled, epg_url: s.epg_url, auto_load_epg: s.auto_load_epg, hasLogin: !!s.password }));
+  } catch { /* reported as unreadable */ }
+  const bridge = useNativeMpv ? mpvBridge : null;
+  const linux = process.platform === 'linux';
+  let distro: string | undefined;
+  if (linux) {
+    try {
+      const release = fs.readFileSync('/etc/os-release', 'utf8');
+      const field = (name: string) => new RegExp(`^${name}="?([^"\n]*)"?$`, 'm').exec(release)?.[1];
+      distro = [field('ID'), field('VERSION_ID')].filter(Boolean).join(' ') || undefined;
+    } catch { /* not there */ }
+  }
+  const install = !app.isPackaged ? 'dev'
+    : linux ? (process.env.APPIMAGE ? 'AppImage' : 'package (deb)')
+    : process.platform === 'win32' ? (process.env.PORTABLE_EXECUTABLE_DIR ? 'portable' : 'installer')
+    : 'app';
+  const windowDisplay = mainWindow && !mainWindow.isDestroyed() ? screen.getDisplayMatching(mainWindow.getBounds()) : screen.getPrimaryDisplay();
+  return {
+    app: { version: app.getVersion(), build: readBuildInfo() },
+    system: {
+      platform: process.platform, arch: process.arch, osVersion: process.getSystemVersion(),
+      electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node,
+      install,
+      ...(linux && { distro, session: process.env.XDG_SESSION_TYPE, desktop: process.env.XDG_CURRENT_DESKTOP }),
+    },
+    player: {
+      mode: useNativeMpv ? 'in-window' : 'external mpv',
+      why: compatibilityModeFromFlag ? 'restarted in compatibility mode after a playback failure'
+        : compatibilityModeFromSetting ? 'compatibility mode chosen in Settings'
+        : !USE_NATIVE_MPV ? 'external mpv on this system'
+        : !useNativeMpv && nativeInitError ? 'the in-window player could not start'
+        : useNativeMpv ? 'default' : 'not started yet',
+      error: nativeInitError,
+      // Linux only: there hwdec-current is an instant cached read (see the stream checks above).
+      hwdec: !bridge ? 'external mpv' : linux ? (bridge.getProperty('hwdec-current') ?? 'nothing playing') : 'not read on this system',
+      mpv: useNativeMpv ? (reportFacts.nativeMpv ?? 'unknown') : (reportFacts.externalMpv ? `${reportFacts.externalMpv} (${reportFacts.externalMpvSource})` : 'not started yet'),
+      ffmpeg: useNativeMpv ? (reportFacts.nativeFfmpeg ?? 'unknown') : 'external mpv',
+      ...(reportFacts.gpuSelection && { gpuSelection: reportFacts.gpuSelection }),
+    },
+    hardware: {
+      cpu: os.cpus()[0]?.model?.trim() ?? 'unknown',
+      threads: os.cpus().length,
+      ramGB: Math.round(os.totalmem() / 1024 ** 3),
+      gpus,
+      displays: {
+        count: screen.getAllDisplays().length,
+        window: { width: windowDisplay.size.width, height: windowDisplay.size.height, scale: windowDisplay.scaleFactor, hz: windowDisplay.displayFrequency > 0 ? windowDisplay.displayFrequency : null },
+      },
+    },
+    keyring: {
+      backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : null,
+      available: safeStorage.isEncryptionAvailable(),
+      from: process.platform === 'linux' ? keyringFrom : 'system',
+    },
+    debugLoggingEnabled,
+    addressesIncluded: logPolicy.addressesIncluded,
+    settings,
+    sources,
+    syncStatus: validateSyncStatus(rawSyncStatus),
+  };
+}
+
+const REPORT_LOG_MAX = 10 * 1024 * 1024;
+
+/** The last `max` bytes of a file, or null when it can't be read (logging off, never rotated). */
+function readTail(file: string, max: number): Buffer | null {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    const length = Math.min(size, max);
+    const buf = Buffer.alloc(length);
+    fs.readSync(fd, buf, 0, length, size - length);
+    return buf;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) fs.closeSync(fd);
+  }
+}
+
+async function reportJson(rawSyncStatus: unknown): Promise<string> {
+  // Always labels, whatever the "include addresses" switch says: a report goes to a public issue.
+  return JSON.stringify(buildReport(await gatherReportInputs(rawSyncStatus), (text) => logPolicy.forDisplay(text), new Date()), null, 2);
+}
+
+ipcMain.handle('debug-report-preview', async (_event, syncStatus: unknown) => {
+  try {
+    return { success: true, data: await reportJson(syncStatus) };
+  } catch (error) {
+    return { error: logPolicy.forDisplay(error instanceof Error ? error.message : String(error)) };
+  }
+});
+
+ipcMain.handle('debug-report-save', async (_event, syncStatus: unknown) => {
+  try {
+    const json = await reportJson(syncStatus);
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const choice = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, { title: 'Save bug report', defaultPath: path.join(app.getPath('documents'), `sbtltv-report-${today}.zip`), filters: [{ name: 'Zip', extensions: ['zip'] }] })
+      : { canceled: true, filePath: undefined };
+    if (choice.canceled || !choice.filePath) return { success: false, canceled: true };
+    const entries = [{ name: 'report.json', data: Buffer.from(json, 'utf8') }];
+    // The logs, labelled again by a fresh policy (lines written while addresses were included
+    // lose them; this session's numbering is untouched), last 10 MB each.
+    const fresh = new LogPolicy(sourceAddresses());
+    const logPath = getDebugLogPath();
+    // With no marker in what is kept: the current log follows the switch now; the previous one is assumed included (left out).
+    for (const [file, name, includedWithoutMarker] of [[logPath, 'debug.log', logPolicy.addressesIncluded], [`${logPath}.old`, 'debug-previous.log', true]] as const) {
+      const raw = readTail(file, REPORT_LOG_MAX);
+      if (raw) entries.push({ name, data: Buffer.from(reportLogText(raw, REPORT_LOG_MAX, (line) => fresh.forDisplay(line), includedWithoutMarker), 'utf8') });
+    }
+    // Written beside the target, then renamed: a failed save leaves no half-written zip.
+    const temp = `${choice.filePath}.part`;
+    try {
+      fs.writeFileSync(temp, makeZip(entries));
+      fs.renameSync(temp, choice.filePath);
+    } finally {
+      fs.rmSync(temp, { force: true });
+    }
+    shell.showItemInFolder(choice.filePath);
+    debugLog('Bug report saved', 'app');
+    return { success: true, data: { filePath: choice.filePath } };
+  } catch (error) {
+    // The reason only: file errors carry paths (the home folder).
+    debugLog(`Bug report could not be saved: ${(error as NodeJS.ErrnoException)?.code ?? (error instanceof Error ? error.name : 'error')}`, 'app');
+    return { error: 'The report could not be saved. Try another folder.' };
+  }
+});
+
 ipcMain.handle('debug-open-log-folder', async () => {
   const { shell } = await import('electron');
   const logPath = getDebugLogPath();
@@ -2026,7 +2471,35 @@ ipcMain.handle('privacy-storage-protection', () => {
   const available = safeStorage.isEncryptionAvailable();
   // Linux only: which keyring, or 'basic_text' (Chromium's fixed key, no real keyring).
   const backend = process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : null;
-  return { platform: process.platform, available, backend };
+  return {
+    platform: process.platform,
+    available,
+    backend,
+    // Linux: the keyring a --password-store at launch forces (it wins over the setting)
+    launchKeyring: process.platform === 'linux' && launchPasswordStore ? launchPasswordStore : null,
+  };
+});
+
+// Settings > Privacy (Linux): switch keyrings. One keyring cannot read what another
+// saved, so the saved passwords and API keys are dropped, the new keyring is kept,
+// and the app restarts with it.
+ipcMain.handle('privacy-switch-keyring', (_event, keyring: unknown) => {
+  if (process.platform !== 'linux' || !isKeyring(keyring)) return { error: 'Not a keyring' };
+  if (launchPasswordStore) return { error: 'The keyring is set by --password-store when sbtlTV starts' };
+  debugLog(`Switching keyring to ${keyring}; saved passwords, API keys and setup backups are dropped`, 'app');
+  storage.forgetSecrets();
+  subtitleCache.clear();
+  removeBackups(path.join(app.getPath('userData'), 'backups'));
+  storage.keepPasswordStore(keyring);
+  restartApp();
+  return { success: true };
+});
+
+// Settings > Backup & transfer (setup-transfer.ts)
+registerSetupTransfer({
+  window: () => mainWindow,
+  relaunch: () => restartApp(),
+  log: (m) => debugLog(m, 'setup'),
 });
 
 // A failure is logged by its reason only, never with an address.
@@ -2378,7 +2851,22 @@ app.whenReady().then(async () => {
 
   // Initialize debug logging from saved settings
   const settings = storage.getSettings();
+  retireLogsFromBeforeLabels();
   initDebugLogging(settings.debugLoggingEnabled ?? false);
+  if (process.platform === 'linux') {
+    safeStorage.isEncryptionAvailable();  // makes Chromium pick its keyring now, so it can be named
+    const backend = safeStorage.getSelectedStorageBackend();
+    try {
+      const keep = keyringToKeep(storage.getKeptPasswordStore(), backend);
+      if (keep) {
+        storage.keepPasswordStore(keep);
+        keyringFrom = 'found';
+      }
+    } catch (error) {
+      debugLog(`Could not keep the keyring: ${error instanceof Error ? error.message : error}`, 'app');
+    }
+    debugLog(`Keyring: ${backend} (${keyringFrom === 'launch' ? 'launch flag' : keyringFrom === 'kept' ? 'kept' : keyringFrom === 'found' ? 'found, now kept' : "Chromium's guess"})`, 'app');
+  }
   if (process.platform === 'linux') {
     const reason = compatibilityModeFromFlag ? 'launch flag' : compatibilityModeFromSetting ? 'setting' : 'default';
     debugLog(`Linux player mode: ${compatibilityModeRequested ? 'compatibility' : 'native'} (${reason})`, 'mpv');
@@ -2386,6 +2874,13 @@ app.whenReady().then(async () => {
   let compatibilityHandoff: CompatibilityHandoff | null = null;
   if (compatibilityModeRequested) compatibilityHandoff = consumeCompatibilityHandoff();
   else discardStaleCompatibilityHandoff();
+
+  // After an import (setup-transfer.ts): the old guide and library cache goes before it is opened.
+  try {
+    if (resetCacheIfMarked(app.getPath('userData'))) debugLog('Cache cleared after a setup import', 'app');
+  } catch (error) {
+    debugLog(`Could not clear the cache after an import: ${error instanceof Error ? error.message : error}`, 'app');
+  }
 
   // Before the window: the page asks for its data port as soon as it loads.
   dataHost = startDataHost({

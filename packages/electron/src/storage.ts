@@ -6,11 +6,18 @@ import { normalizeSubtitleSettings, type SubtitleSettings } from './subtitle-set
 import { settleTeamLogosDefault } from './settings-upgrades.js';
 import { normalizeRewindBytes } from './rewind.js';
 import os from 'node:os';
+import { isKeyringSealed } from './secret-fallback.js';
+import { keptOnImport, type SetupSource } from './setup-body.js';
+import type { KeyProtector } from './setup-file.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
   sources: StoredSource[];
   settings: StoredSettings;
+  /** 2 = the debug log only ever had labelled addresses (older logs are deleted once) */
+  debugLogFormat?: number;
+  /** Linux: the keyring sbtlTV keeps using, as a --password-store value (see password-store.ts) */
+  linuxPasswordStore?: string;
 }
 
 // Source as stored (password encrypted)
@@ -36,6 +43,7 @@ export interface AppSettings {
   movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   posterDbApiKey?: string;         // RatingPosterDB API key
+  subdlApiKey?: string;            // SubDL API key (downloaded subtitles)
   rpdbBackdropsEnabled?: boolean;  // Use RPDB for backdrop images (tier 2+)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF protection bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
@@ -87,6 +95,7 @@ interface StoredSettings {
   movieGenresEnabled?: number[];   // TMDB genre IDs to show as carousels
   seriesGenresEnabled?: number[];  // TMDB genre IDs for TV shows
   encryptedPosterDbApiKey?: string; // Base64 encoded encrypted buffer
+  encryptedSubdlApiKey?: string;    // Base64 encoded encrypted buffer
   rpdbBackdropsEnabled?: boolean;   // Use RPDB for backdrop images
   allowLanSources?: boolean;        // Allow requests to LAN IPs
   debugLoggingEnabled?: boolean;    // Write verbose logs to file
@@ -250,6 +259,9 @@ export function getSettings(): AppSettings {
   if (stored.encryptedPosterDbApiKey) {
     result.posterDbApiKey = decryptPassword(stored.encryptedPosterDbApiKey);
   }
+  if (stored.encryptedSubdlApiKey) {
+    result.subdlApiKey = decryptPassword(stored.encryptedSubdlApiKey);
+  }
   result.rpdbBackdropsEnabled = stored.rpdbBackdropsEnabled ?? false;
   result.allowLanSources = stored.allowLanSources ?? false;
   result.debugLoggingEnabled = stored.debugLoggingEnabled ?? false;
@@ -309,6 +321,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   if (settings.seriesGenresEnabled !== undefined) updated.seriesGenresEnabled = settings.seriesGenresEnabled;
   if (settings.posterDbApiKey !== undefined) {
     updated.encryptedPosterDbApiKey = settings.posterDbApiKey ? encryptPassword(settings.posterDbApiKey) : undefined;
+  }
+  if (settings.subdlApiKey !== undefined) {
+    updated.encryptedSubdlApiKey = settings.subdlApiKey ? encryptPassword(settings.subdlApiKey) : undefined;
   }
   if (settings.rpdbBackdropsEnabled !== undefined) {
     updated.rpdbBackdropsEnabled = settings.rpdbBackdropsEnabled;
@@ -379,3 +394,81 @@ export function clearAll(): void {
 export function isEncryptionAvailable(): boolean {
   return safeStorage.isEncryptionAvailable();
 }
+
+/** Names and addresses of the sources (no logins, no keyring access): for log labels. */
+export function getSourceAddresses(): { id: string; name: string; url: string; epg_url?: string }[] {
+  return store.get('sources', []).map((s) => ({ id: s.id, name: s.name, url: s.url, epg_url: s.epg_url }));
+}
+
+/** Call `listener` whenever the stored sources change (any path that saves them). */
+export function onSourcesChanged(listener: () => void): void {
+  store.onDidChange('sources', () => listener());
+}
+
+/** Which debug log format is on disk (see retireLogsFromBeforeLabels in main.ts). */
+export function getDebugLogFormat(): number {
+  return store.get('debugLogFormat') ?? 0;
+}
+
+export function setDebugLogFormat(format: number): void {
+  store.set('debugLogFormat', format);
+}
+
+/** Linux: the keyring sbtlTV keeps using (a --password-store value), or null. */
+export function getKeptPasswordStore(): string | null {
+  return store.get('linuxPasswordStore') ?? null;
+}
+
+export function keepPasswordStore(value: string): void {
+  store.set('linuxPasswordStore', value);
+}
+
+/**
+ * Drop every saved password and API key: before switching keyrings, since one
+ * keyring cannot read what another saved. Everything else stays.
+ */
+export function forgetSecrets(): void {
+  store.set('sources', store.get('sources', []).map(({ encryptedPassword: _password, ...source }) => source));
+  const { encryptedTmdbApiKey: _tmdb, encryptedPosterDbApiKey: _posterDb, encryptedSubdlApiKey: _subdl, ...settings } = store.get('settings');
+  store.set('settings', settings);
+}
+
+export class SecretsUnreadable extends Error {}
+
+/** Everything an export needs, every secret read now: an export never goes out half empty. */
+export function readSetupForExport(): { sources: Source[]; settings: AppSettings } {
+  if (!safeStorage.isEncryptionAvailable()) {
+    // The plain fallback would read keyring-sealed secrets as garbage (secret-fallback.ts).
+    const stored = store.get('settings');
+    const sealed = [...store.get('sources', []).map((s) => s.encryptedPassword), stored.encryptedTmdbApiKey, stored.encryptedPosterDbApiKey, stored.encryptedSubdlApiKey];
+    if (sealed.some((v) => v && isKeyringSealed(v))) throw new SecretsUnreadable('keyring out of reach');
+  }
+  try {
+    return { sources: getSources(), settings: getSettings() };
+  } catch (error) {
+    throw new SecretsUnreadable(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/**
+ * An import: sources and settings replaced by key (never store.clear(), so the
+ * kept keyring and the log format stay); machine settings and internal markers
+ * stay as they are on this computer. Secrets are encrypted with this computer's keyring.
+ */
+export function replaceSetup(input: { sources: SetupSource[]; settings: Partial<AppSettings>; apiKeys: { tmdb?: string; posterDb?: string; subdl?: string } }): void {
+  const kept = keptOnImport(store.get('settings') as unknown as Record<string, unknown>);
+  store.set('settings', { theme: 'dark', vodRefreshHours: 24, epgRefreshHours: 6, ...kept } as StoredSettings);
+  updateSettings({ ...input.settings, tmdbApiKey: input.apiKeys.tmdb ?? '', posterDbApiKey: input.apiKeys.posterDb ?? '', subdlApiKey: input.apiKeys.subdl ?? '' });
+  store.set('sources', []);
+  for (const { playlist: _playlist, ...source } of input.sources) saveSource(source as Source);
+}
+
+/** Local backups: a random key sealed by this computer's keyring (as passwords are). */
+export const keyringProtector: KeyProtector = {
+  protect: (key) => encryptPassword(key.toString('base64')),
+  unprotect: (sealed) => {
+    const key = Buffer.from(decryptPassword(sealed), 'base64');
+    if (key.length !== 32) throw new Error('not this computer');
+    return key;
+  },
+};

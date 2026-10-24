@@ -1,4 +1,5 @@
 import type { Source, DataSettings } from '@sbtltv/core';
+import { needsLogin } from '@sbtltv/core';
 
 export interface SourceMetaWire {
   source_id: string;
@@ -19,7 +20,7 @@ function stale(last: number | null | undefined, hours: number, nowMs: number): b
 
 export function dueSyncs(metas: SourceMetaWire[], sources: Source[], settings: DataSettings, nowMs: number): { sourceId: string; channels: boolean; vod: boolean }[] {
   const byId = new Map(metas.map((m) => [m.source_id, m]));
-  return sources.filter((s) => s.enabled).map((s) => {
+  return sources.filter((s) => s.enabled && !needsLogin(s)).map((s) => {
     const m = byId.get(s.id);
     return {
       sourceId: s.id,

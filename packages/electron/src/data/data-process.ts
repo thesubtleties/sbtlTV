@@ -15,6 +15,7 @@ import { routeRendererMessage, type SyncJob } from './router.js';
 import { JobLanes, type LaneName } from './lanes.js';
 import { dueSyncs } from './scheduler.js';
 import { runQuery } from './queries.js';
+import { needsLogin } from '@sbtltv/core';
 
 const parent = process.parentPort;
 if (!parent) throw new Error('data-process must run as an Electron utility process');
@@ -74,9 +75,9 @@ function scheduleDue(): void {
   if (!db || !settings) return;
   const metas = runQuery(db, { id: 0, type: 'syncStatus' }) as Parameters<typeof dueSyncs>[0];
   for (const d of dueSyncs(metas, sources, settings, Date.now())) {
-    const name = sources.find((s) => s.id === d.sourceId)?.name ?? d.sourceId;
-    if (d.channels) { log('sync', `Source ${name} is stale, syncing...`); enqueue({ kind: 'channels', sourceId: d.sourceId }); }
-    if (d.vod) { log('vod', `Source ${name} is stale, syncing VOD...`); enqueue({ kind: 'vod', sourceId: d.sourceId }); }
+    // By id, never by name (a name can say who the provider is); the log shows it as [source N].
+    if (d.channels) { log('sync', `Source ${d.sourceId} is stale, syncing...`); enqueue({ kind: 'channels', sourceId: d.sourceId }); }
+    if (d.vod) { log('vod', `Source ${d.sourceId} is stale, syncing VOD...`); enqueue({ kind: 'vod', sourceId: d.sourceId }); }
   }
 }
 
@@ -162,7 +163,7 @@ function attachRendererPort(port: MessagePortMain): void {
       if (typeof id === 'number') port.postMessage({ id, ok: false, error: 'data process is still starting' });
       return;
     }
-    routeRendererMessage(db, e.data, (reply) => port.postMessage(reply), enqueue, () => sources.filter((s) => s.enabled).map((s) => s.id));
+    routeRendererMessage(db, e.data, (reply) => port.postMessage(reply), enqueue, () => sources.filter((s) => s.enabled && !needsLogin(s)).map((s) => s.id));
   });
   port.on('close', () => rendererPorts.delete(port));
   port.start();
