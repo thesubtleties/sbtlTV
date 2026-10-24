@@ -121,15 +121,21 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
     if (r.success) await apply(r.data.token, false);
   }
 
+  // Export crashed a Windows portable install (not reproducible here); export and import stay in the installed version
+  if (window.platform?.isPortable) {
+    return (
+      <SettingsTab>
+        <Section title="Backup & transfer"
+          description={<>Not in the portable version. Install sbtlTV to export or import your setup; it also keeps itself up to date. <a href="https://github.com/thesubtleties/sbtlTV/releases/latest" target="_blank" rel="noopener noreferrer">Download</a></>} />
+      </SettingsTab>
+    );
+  }
+
   return (
     <SettingsTab>
       <Section title="Export setup" description="Your setup in one file, locked with a passphrase. For another computer, or someone else's."
         actions={<Button variant="primary" onClick={() => void exportSetup()} disabled={exporting || parts.size === 0 || imp.step === 'applying'}>{exporting ? 'Exporting…' : 'Export…'}</Button>}>
-        {EXPORT_PARTS.map((p) => (
-          <OptionRow key={p.id} title={p.title} help={p.help}>
-            <OnOff value={parts.has(p.id)} onChange={(on) => toggle(p.id, on)} disabled={p.id === 'logins' && !parts.has('sources')} />
-          </OptionRow>
-        ))}
+        {/* Above the choices: on a short screen it would land out of sight */}
         {exported && (
           <div className="setup-passphrase">
             <div className="setup-passphrase__label">Passphrase for {exported.filePath.split(/[\\/]/).pop()}</div>
@@ -143,6 +149,11 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
             </div>
           </div>
         )}
+        {EXPORT_PARTS.map((p) => (
+          <OptionRow key={p.id} title={p.title} help={p.help}>
+            <OnOff value={parts.has(p.id)} onChange={(on) => toggle(p.id, on)} disabled={p.id === 'logins' && !parts.has('sources')} />
+          </OptionRow>
+        ))}
         {exportError && <Hint tone="danger">{exportError}</Hint>}
       </Section>
 
