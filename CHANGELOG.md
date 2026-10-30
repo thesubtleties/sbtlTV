@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.14.1] - 2026-10-29
+
+### Fixed
+- **Scrolling to the end of Movies or Series jumped back up** - the home page counted rows it hadn't drawn yet as taller than they are, so the end moved while you scrolled to it. Most noticeable with a Mac trackpad
+
 ## [0.14.0] - 2026-10-24
 
 Subtitles from SubDL, moving your setup to another computer, and bug reports that leave you out.
