@@ -92,6 +92,11 @@ const CarouselRowContent = (
 };
 
 // Stable components object for Virtuoso
+// Every home row's real height (.carousel in HorizontalCarousel.css). Virtuoso counts rows it
+// hasn't drawn at this height; if it's off, the list shrinks as rows draw and a scroll that
+// reaches the end is pulled back.
+const CAROUSEL_ROW_HEIGHT = 374;
+
 const homeVirtuosoComponents = {
   Header: HomeHeader,
 };
@@ -472,7 +477,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             data={carouselRows}
             context={homeVirtuosoContext}
             overscan={200}
-            fixedItemHeight={394}
+            fixedItemHeight={CAROUSEL_ROW_HEIGHT}
             computeItemKey={(_, row) => row.key}
             components={homeVirtuosoComponents}
             itemContent={CarouselRowContent}
