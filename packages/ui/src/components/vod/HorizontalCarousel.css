@@ -3,7 +3,7 @@
   /* Use padding instead of margin - Virtuoso can't measure margins correctly */
   margin-bottom: 0;
   padding-bottom: 0;
-  /* Fixed height for Virtuoso - all rows must be same size (VodPage fixedItemHeight is 20 more) */
+  /* Fixed height for Virtuoso - all rows must be same size; VodPage CAROUSEL_ROW_HEIGHT must match */
   height: 374px;
   box-sizing: border-box;
   overflow: hidden;
