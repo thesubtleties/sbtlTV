@@ -118,6 +118,7 @@ interface StoredSettings {
   subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
   rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
   rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
+  alwaysOnTop?: boolean;  // Windows/macOS: keep the window above others (title bar pin)
 }
 
 const store = new Store<StoreSchema>({
@@ -292,6 +293,15 @@ export function getSettings(): AppSettings {
  */
 export function getLinuxPlayerMode(): LinuxPlayerMode {
   return normalizeLinuxPlayerMode(store.get('settings').linuxPlayerMode);
+}
+
+/** Title bar pin (Windows/macOS); kept here only, not in AppSettings: it belongs to this computer. */
+export function getAlwaysOnTop(): boolean {
+  return store.get('settings').alwaysOnTop === true;
+}
+
+export function setAlwaysOnTop(on: boolean): void {
+  store.set('settings', { ...store.get('settings'), alwaysOnTop: on });
 }
 
 /** Rewind size for the next live load; read per load, so no key decryption (unlike getSettings). */

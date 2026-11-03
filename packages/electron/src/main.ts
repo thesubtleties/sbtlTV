@@ -475,6 +475,9 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
     },
   });
 
+  // Linux is left out: Wayland doesn't let a window keep itself on top
+  if (process.platform !== 'linux' && storage.getAlwaysOnTop()) mainWindow.setAlwaysOnTop(true);
+
   // Load the React app
   // In dev, load from Vite server; in prod, load from built files
   if (process.argv.includes('--dev')) {
@@ -1526,6 +1529,13 @@ ipcMain.handle('window-maximize', () => {
   }
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
+ipcMain.handle('window-get-always-on-top', () => mainWindow?.isAlwaysOnTop() ?? false);
+ipcMain.handle('window-set-always-on-top', (_event, on: unknown) => {
+  if (process.platform === 'linux' || !mainWindow) return false;
+  mainWindow.setAlwaysOnTop(on === true);
+  storage.setAlwaysOnTop(on === true);
+  return mainWindow.isAlwaysOnTop();
+});
 
 // Window resize for frameless windows
 ipcMain.handle('window-get-size', () => mainWindow?.getSize());
@@ -1566,12 +1576,20 @@ ipcMain.handle('window-set-fullscreen', () => {
 // Linux in-window player only: mpv's stats overlay (I shows it for a few
 // seconds, Shift+I keeps it up). Elsewhere this is a no-op.
 ipcMain.handle('mpv-toggle-stats', async (_event, persistent: boolean) => {
-  if (process.platform !== 'linux' || !useNativeMpv || !mpvBridge) {
-    return { error: 'Stats overlay is only available with the Linux in-window player' };
+  const binding = persistent ? 'stats/display-stats-toggle' : 'stats/display-stats';
+  if (useNativeMpv && mpvBridge) {
+    const shown = mpvBridge.command('script-binding', binding);
+    if (!shown) debugLog('stats overlay command rejected; libmpv prints the reason on stderr', 'mpv');
+    return shown ? { success: true } : { error: 'mpv rejected the stats command' };
   }
-  const shown = mpvBridge.command('script-binding', persistent ? 'stats/display-stats-toggle' : 'stats/display-stats');
-  if (!shown) debugLog('stats overlay command rejected; libmpv prints the reason on stderr', 'mpv');
-  return shown ? { success: true } : { error: 'mpv rejected the stats command' };
+  // External mpv (Windows, Linux compatibility): its window doesn't have the keyboard, the app does
+  if (!mpvSocket) return { error: 'mpv not initialized' };
+  try {
+    await sendMpvCommand('script-binding', [binding]);
+    return { success: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'mpv rejected the stats command' };
+  }
 });
 
 // Subtitle controls carry the load generation they were decided for; a late
