@@ -1,5 +1,6 @@
-# sbtlTV 0.14.1
+# sbtlTV 0.14.2
 
-## Fixed
+## Added
 
-- **Scrolling to the end of Movies or Series jumped back up** - the home page counted rows it hadn't drawn yet as taller than they are, so the end moved while you scrolled to it. Most noticeable with a Mac trackpad.
+- **Keep on top (Windows, macOS)** - the pin in the title bar keeps sbtlTV above other windows. It stays on until you turn it off.
+- **Stats on every platform** - during playback, I shows the codecs, resolution, frame rate and audio for a few seconds; Shift+I keeps them up. This was Linux only.
