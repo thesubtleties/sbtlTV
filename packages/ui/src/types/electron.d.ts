@@ -154,6 +154,9 @@ export interface ElectronWindowApi {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
   close: () => Promise<void>;
+  /** Windows/macOS only (always false on Linux) */
+  getAlwaysOnTop: () => Promise<boolean>;
+  setAlwaysOnTop: (on: boolean) => Promise<boolean>;
   getSize: () => Promise<[number, number]>;
   setSize: (width: number, height: number) => Promise<void>;
   setFullscreen: () => Promise<void>;

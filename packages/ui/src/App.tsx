@@ -264,6 +264,7 @@ function App() {
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const loadTokenRef = useRef(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   const isFullscreenRef = useRef(isFullscreen);
   const [channelScrollNonce, setChannelScrollNonce] = useState(0);
   // Resolve the next-episode VodPlayInfo for the currently-playing series episode (null if none).
@@ -849,9 +850,8 @@ function App() {
           break;
         case 'i':
         case 'I':
-          // mpv's stats overlay; Linux in-window player only (the compatibility
-          // player's own window already has the binding).
-          if (window.platform?.isLinux && !linuxExternalPlayerRef.current) window.mpv?.toggleStats(e.key === 'I');
+          // mpv's stats overlay (codecs, resolution, frame rate, audio); Shift+I keeps it up
+          void window.mpv?.toggleStats(e.key === 'I');
           break;
         case 'ArrowLeft':
         case 'ArrowRight':
@@ -926,8 +926,13 @@ function App() {
     return () => window.electronWindow?.removeFullscreenListener?.();
   }, []);
 
+  useEffect(() => {
+    if (!window.platform?.isLinux) void window.electronWindow?.getAlwaysOnTop?.().then(setAlwaysOnTop);
+  }, []);
+
   // Window control handlers
   const handleMinimize = () => window.electronWindow?.minimize();
+  const handleToggleAlwaysOnTop = () => void window.electronWindow?.setAlwaysOnTop(!alwaysOnTop).then(setAlwaysOnTop);
   const handleMaximize = () => window.electronWindow?.maximize();
   const handleClose = () => window.electronWindow?.close();
   const handleToggleFullscreen = () => {
@@ -944,6 +949,13 @@ function App() {
       <div className={`title-bar${showControls ? ' visible' : ''}`}>
         <Logo className="title-bar-logo" />
         <div className="window-controls">
+          {/* Keep on top: Windows/macOS (Wayland doesn't allow it); pointless in fullscreen */}
+          {!window.platform?.isLinux && !isFullscreen && (
+            <button onClick={handleToggleAlwaysOnTop} className={alwaysOnTop ? 'is-on' : undefined}
+              title={alwaysOnTop ? 'Kept on top (click to stop)' : 'Keep on top'} aria-pressed={alwaysOnTop}>
+              <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3 .5h4M3.5 .5v3.5L2 6h6L6.5 4V.5M5 6v3.5" /></svg>
+            </button>
+          )}
           {/* macOS can't minimize a window in a native fullscreen space — hide it there */}
           {!(isFullscreen && window.platform?.isMac) && (
             <button onClick={handleMinimize} title="Minimize">
