@@ -89,6 +89,11 @@
   background: var(--fill-3);
 }
 
+/* Keep on top while it's on */
+.window-controls button.is-on {
+  color: var(--accent);
+}
+
 /* The palette's own red; the dark bg tone reads better on it than fg in every palette */
 .window-controls button.close:hover {
   background: var(--danger);

@@ -98,6 +98,9 @@ export interface ElectronWindowApi {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
   close: () => Promise<void>;
+  /** Windows/macOS only (always false on Linux) */
+  getAlwaysOnTop: () => Promise<boolean>;
+  setAlwaysOnTop: (on: boolean) => Promise<boolean>;
   getSize: () => Promise<[number, number]>;
   setSize: (width: number, height: number) => Promise<void>;
   setFullscreen: () => Promise<void>;
@@ -173,6 +176,8 @@ contextBridge.exposeInMainWorld('electronWindow', {
   minimize: () => ipcRenderer.invoke('window-minimize'),
   maximize: () => ipcRenderer.invoke('window-maximize'),
   close: () => ipcRenderer.invoke('window-close'),
+  getAlwaysOnTop: () => ipcRenderer.invoke('window-get-always-on-top'),
+  setAlwaysOnTop: (on: boolean) => ipcRenderer.invoke('window-set-always-on-top', on),
   getSize: () => ipcRenderer.invoke('window-get-size'),
   setSize: (width: number, height: number) => ipcRenderer.invoke('window-set-size', width, height),
   setFullscreen: () => ipcRenderer.invoke('window-set-fullscreen'),
