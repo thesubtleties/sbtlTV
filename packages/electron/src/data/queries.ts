@@ -45,8 +45,10 @@ function fixChannel<T extends { tv_archive: number; is_adult: number }>(r: T) {
   return { ...r, tv_archive: r.tv_archive === 1, is_adult: r.is_adult === 1 };
 }
 
-// Enough rows for the dropdown on a very broad word; the best-ranked come first.
-const GUIDE_SEARCH_ROWS = 3000;
+// Bounded per section, so a word on thousands of airings can't push what's on now,
+// or a title match, out of the results. On now is bounded by the number of channels.
+const GUIDE_SEARCH_LIVE_ROWS = 2000;
+const GUIDE_SEARCH_LATER_ROWS = 600;
 const GUIDE_SEARCH_CHANNELS = 200;
 const CH_SRC = `(json_array_length($sources) = 0 or ch.source_id in (select value from json_each($sources)))`;
 const NOT_HIDDEN = `($hide = 0 or (ch.is_adult = 0 and not exists (
@@ -60,15 +62,20 @@ function guideSearch(db: DatabaseSync, req: Extract<DataRequest, { type: 'guideS
         .filter((c) => isAdultCategoryName(c.name)).map((c) => c.category_id)
     : [];
   const shared = { $sources: j(req.sourceIds), $hide: req.hideAdult ? 1 : 0, $adult: j(adult) };
-  const rows = stmt(db, `
-    select p.id, p.title, p.description, p.start, p.end, l.stream_id, ch.name as channel_name, ch.stream_icon,
-           bm25(epg_programs_fts, 12.0, 1.0) as rank
+  const airings = (rank: string) => `
+    select p.id, p.title, p.description, p.start, p.end, l.stream_id, ch.name as channel_name, ch.stream_icon, ${rank} as rank
     from epg_programs_fts
     join epg_programs p on p.rowid = epg_programs_fts.rowid
     join epg_links l on l.source_id = p.source_id and l.epg_source = p.epg_source and l.epg_channel_id = p.epg_channel_id
     join channels ch on ch.stream_id = l.stream_id
-    where epg_programs_fts match $match and p.end > $now and ${CH_SRC} and ${NOT_HIDDEN}
-    order by rank limit $limit`).all({ ...shared, $match: match, $now: req.nowMs, $limit: GUIDE_SEARCH_ROWS }) as unknown as GuideSearchRow[];
+    where epg_programs_fts match $match and ${CH_SRC} and ${NOT_HIDDEN}`;
+  const params = (ftsMatch: string, limit: number) => ({ ...shared, $match: ftsMatch, $now: req.nowMs, $limit: limit });
+  const later = (ftsMatch: string) => stmt(db, `${airings('0')} and p.start > $now order by p.start limit $limit`)
+    .all(params(ftsMatch, GUIDE_SEARCH_LATER_ROWS)) as unknown as GuideSearchRow[];
+  const live = stmt(db, `${airings('bm25(epg_programs_fts, 12.0, 1.0)')} and p.start <= $now and p.end > $now order by rank limit $limit`)
+    .all(params(match, GUIDE_SEARCH_LIVE_ROWS)) as unknown as GuideSearchRow[];
+  const inTitle = `title : (${match})`;
+  const rows = [...live, ...later(inTitle), ...later(`(${match}) NOT (${inTitle})`)];
   const like = `%${req.query.trim().replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
   const channelWhere = `from channels ch where ch.name like $q escape '\\' and ${CH_SRC} and ${NOT_HIDDEN}`;
   const channels = stmt(db, `select ch.stream_id, ch.name, ch.stream_icon ${channelWhere} order by ch.name collate nocase limit $limit`)

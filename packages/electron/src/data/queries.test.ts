@@ -210,3 +210,19 @@ test('guideSearch never fails on symbols and carries no stream address', () => {
   assert.equal(search(db, { query: '***' }).onNow.length, 0);
   assert.ok(!JSON.stringify(search(db)).includes('secret'));
 });
+
+test('guideSearch keeps each section when a word matches thousands of airings', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec('begin');
+  const add = db.prepare(`insert into epg_programs values (?, 's1', 'epg1', 'cbs.us', ?, ?, ?, ?)`);
+  // Thousands of short, best-ranked title matches, all starting soon
+  for (let i = 0; i < 4000; i++) add.run(`m${i}`, 10_000 + i, 10_001 + i, 'News', '');
+  add.run('live', 100, 900_000, 'A very long winded evening programme about local news', '');
+  add.run('desc', 900_000, 900_500, 'Sunday Show', 'with the news');
+  db.exec('commit');
+  reindexGuide(db);
+  const r = runQuery(db, { id: 1, type: 'guideSearch', query: 'news', sourceIds: [], nowMs: 500, hideAdult: false }) as GuideSearchResult;
+  assert.ok(r.onNow.some((a) => a.title.startsWith('A very long')), 'on now');
+  assert.ok(r.later.some((a) => a.title === 'News'), 'later');
+  assert.ok(r.mentions.some((a) => a.title === 'Sunday Show'), 'mentions');
+});
