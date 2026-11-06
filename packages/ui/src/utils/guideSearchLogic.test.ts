@@ -63,7 +63,7 @@ describe('enterItem', () => {
     expect(enterItem(items, null, true)).toBeNull();
   });
   it('does nothing with no rows', () => {
-    expect(enterItem([], -1, false)).toBeNull();
+    expect(enterItem([], null, false)).toBeNull();
   });
 });
 
