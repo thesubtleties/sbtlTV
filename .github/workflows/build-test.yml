@@ -87,6 +87,17 @@ jobs:
           pnpm --filter @sbtltv/ui test
           pnpm --filter @sbtltv/electron test
 
+      # The tests above use this runner's Node; users get the SQLite inside Electron
+      - name: Run data tests with Electron's own Node
+        shell: bash
+        working-directory: packages/electron
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+        run: |
+          electron_bin="$(node -e "console.log(require('electron'))")"
+          "$electron_bin" -p "'SQLite ' + new (require('node:sqlite').DatabaseSync)(':memory:').prepare('select sqlite_version() v').get().v"
+          "$electron_bin" --test --test-isolation=none dist/data/*.test.js
+
       # The native player's log redaction (C++; no compiler in the Windows leg's bash)
       - name: Run native log redaction tests
         if: matrix.platform == 'mac' || matrix.platform == 'linux'
