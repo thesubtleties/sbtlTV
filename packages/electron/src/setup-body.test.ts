@@ -167,3 +167,8 @@ test('the SubDL key travels under apiKeys only, typed and capped like the others
   assert.deepEqual(out.apiKeys, { subdl: 'sk' });
   assert.equal(JSON.stringify(out.settings).includes('sk'), false);
 });
+
+test('the guide search setting travels with a setup and is checked', () => {
+  assert.deepEqual(settingsForExport({ guideSearchHideAdult: true } as never), { guideSearchHideAdult: true });
+  assert.throws(() => validateSetupBody({ ...good(), settings: { guideSearchHideAdult: 'yes' } }), /invalid/);
+});

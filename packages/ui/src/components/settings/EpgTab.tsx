@@ -19,6 +19,8 @@ interface EpgTabProps {
   onSportsMatchupChange: (enabled: boolean) => void;
   guideMorphEnabled: boolean;
   onGuideMorphChange: (enabled: boolean) => void;
+  guideSearchHideAdult: boolean;
+  onGuideSearchHideAdultChange: (enabled: boolean) => void;
 }
 
 export function EpgTab({
@@ -36,6 +38,8 @@ export function EpgTab({
   onSportsMatchupChange,
   guideMorphEnabled,
   onGuideMorphChange,
+  guideSearchHideAdult,
+  onGuideSearchHideAdultChange,
 }: EpgTabProps) {
   const updateSettings = useUpdateSettings();
   const toast = useToast();
@@ -116,9 +120,16 @@ export function EpgTab({
     await window.storage.updateSettings({ guideMorphEnabled: enabled });
   }
 
+  async function handleGuideSearchHideAdultChange(enabled: boolean) {
+    onGuideSearchHideAdultChange(enabled);
+    updateSettings({ guideSearchHideAdult: enabled });
+    if (!window.storage) return;
+    await window.storage.updateSettings({ guideSearchHideAdult: enabled });
+  }
+
   return (
     <SettingsTab>
-      <Section title="Channels" description="How channels and categories are ordered in the guide.">
+      <Section title="Channels" description="How the guide orders channels and categories, and what search covers.">
         <OptionRow
           title="Channel order"
           help={channelSortOrder === 'number'
@@ -142,6 +153,9 @@ export function EpgTab({
             options={[{ id: 'alphabetical', label: 'A to Z' }, { id: 'provider', label: 'Provider' }]}
             onChange={(order) => void handleCategorySortOrderChange(order)}
           />
+        </OptionRow>
+        <OptionRow title="Leave adult categories out of search" help="Goes by the provider's flag and category names, so some may get through.">
+          <OnOff value={guideSearchHideAdult} onChange={(on) => void handleGuideSearchHideAdultChange(on)} />
         </OptionRow>
       </Section>
 

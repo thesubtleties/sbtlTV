@@ -2,6 +2,7 @@ import { useRef, useMemo, useCallback } from 'react';
 import { useGroupedCategories, useChannelCount } from '../hooks/useChannels';
 import { useFavoriteChannelCount } from '../hooks/useFavorites';
 import { useCategoryFilter, useSetCategoryFilter, useSourceNeedsLogin } from '../stores/uiStore';
+import { useDataState } from '../hooks/useDataState';
 import './CategoryStrip.css';
 
 interface CategoryStripProps {
@@ -14,6 +15,7 @@ interface CategoryStripProps {
 export function CategoryStrip({ selectedCategoryId, onSelectCategory, visible, sidebarExpanded }: CategoryStripProps) {
   const groupedCategories = useGroupedCategories();
   const waitingForLogin = useSourceNeedsLogin();
+  const dataState = useDataState();
   const totalChannels = useChannelCount();
   const favoriteCount = useFavoriteChannelCount();
   const categoryFilter = useCategoryFilter();
@@ -115,7 +117,7 @@ export function CategoryStrip({ selectedCategoryId, onSelectCategory, visible, s
           )
         )}
 
-        {groupedCategories.length === 0 && (
+        {groupedCategories.length === 0 && dataState === 'ready' && (
           <div className="category-empty">
             <p>No categories yet</p>
             <p className="hint">{waitingForLogin ? 'A source needs its password: Settings → Sources' : 'Add a source in Settings'}</p>

@@ -329,6 +329,12 @@ ipcRenderer.on('data-port', (event: IpcRendererEvent) => {
 });
 contextBridge.exposeInMainWorld('data', {
   requestPort: () => ipcRenderer.send('data-request-port'),
+  status: () => ipcRenderer.invoke('data-status'),
+  onStatus: (callback: (status: 'fatal' | 'reset') => void) => {
+    const listener = (_event: IpcRendererEvent, status: 'fatal' | 'reset') => callback(status);
+    ipcRenderer.on('data-status', listener);
+    return () => { ipcRenderer.removeListener('data-status', listener); };
+  },
 });
 
 contextBridge.exposeInMainWorld('fetchProxy', {

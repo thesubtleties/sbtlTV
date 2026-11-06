@@ -1,3 +1,4 @@
+import { watchDataStatus } from './utils/dataStatus';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { MpvStatus } from './types/electron';
 import { Settings } from './components/Settings';
@@ -12,7 +13,7 @@ import { Logo } from './components/Logo';
 import { ToastContainer } from './components/toast/ToastContainer';
 import { useToastStore } from './stores/toastStore';
 import { VideoCanvas } from './components/VideoCanvas';
-import { useSelectedCategory } from './hooks/useChannels';
+import { useChannelCount, useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
 import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode } from './stores/uiStore';
 import { data } from './data/client';
@@ -264,6 +265,7 @@ function App() {
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const loadTokenRef = useRef(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [guideSearchNonce, setGuideSearchNonce] = useState(0);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   const isFullscreenRef = useRef(isFullscreen);
   const [channelScrollNonce, setChannelScrollNonce] = useState(0);
@@ -700,6 +702,27 @@ function App() {
     }
   };
 
+  // The data file couldn't be used: say so, rather than leave an empty guide to explain itself
+  useEffect(() => watchDataStatus(window.data, (status) => {
+    useUIStore.getState().setDataProblem(status);
+    if (status === 'fatal') {
+      useToastStore.getState().addToast({ kind: 'error', title: "Guide data couldn't be opened", message: "Restart sbtlTV, and check there's free disk space." });
+      return;
+    }
+    // Sources still load below: a playlist file is the one thing that can't come back on its own
+    void window.storage?.getSources().then((r) => {
+      const hasFile = (r.data ?? []).some((source) => source.url.startsWith('imported:'));
+      const reload = 'Channels, the guide, movies and series are reloading from your sources.';
+      useToastStore.getState().addToast({ kind: 'info', title: 'Rebuilding your guide', message: hasFile ? `${reload} Import playlist files again in Settings > Sources.` : reload, duration: 10000 });
+    });
+  }), []);
+
+  // The rebuild is over once channels are back
+  const channelCount = useChannelCount();
+  useEffect(() => {
+    if (channelCount > 0 && useUIStore.getState().dataProblem === 'reset') useUIStore.getState().setDataProblem(null);
+  }, [channelCount]);
+
   // Hydrate settings from disk into Zustand (runs unconditionally, even without sources)
   useEffect(() => {
     async function loadSettings() {
@@ -895,6 +918,12 @@ function App() {
         case 'X':
           if (useSubtitleStore.getState().kind) useSubtitleStore.getState().nudgeDelay(0.1);
           break;
+        case '/':
+          // The guide's search box, from anywhere
+          e.preventDefault();
+          setActiveView('guide');
+          setGuideSearchNonce((n) => n + 1);
+          break;
         case 'g':
           // Toggle guide
           setActiveView((v) => (v === 'guide' ? 'none' : 'guide'));
@@ -1082,6 +1111,7 @@ function App() {
         onPlayChannel={playChannelFromGuide}
         onClose={closeActiveView}
         scrollTopNonce={channelScrollNonce}
+        searchFocusNonce={guideSearchNonce}
       />
 
       {/* Settings Panel */}

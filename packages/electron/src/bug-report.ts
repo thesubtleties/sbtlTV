@@ -58,7 +58,7 @@ const REPORT_SETTINGS = {
   movieGenresEnabled: 'copy', seriesGenresEnabled: 'copy', posterDbApiKey: 'secret', subdlApiKey: 'secret', rpdbBackdropsEnabled: 'copy',
   allowLanSources: 'copy', debugLoggingEnabled: 'copy', channelSortOrder: 'copy', categorySortOrder: 'copy',
   autoUpdateEnabled: 'copy', betaUpdates: 'copy', categoryBarWidth: 'copy', channelColumnWidth: 'copy', guideOpacity: 'copy',
-  liveSourceOrder: 'sourceIds', vodSourceOrder: 'sourceIds', sportsMatchupEnabled: 'copy', guideMorphEnabled: 'copy',
+  liveSourceOrder: 'sourceIds', vodSourceOrder: 'sourceIds', sportsMatchupEnabled: 'copy', guideMorphEnabled: 'copy', guideSearchHideAdult: 'copy',
   autoplayNextEpisode: 'copy', linuxPlayerMode: 'copy', linuxPerformanceMode: 'copy', appearance: 'copy', subtitles: 'copy',
   rewindLiveBytes: 'copy', rewindTipShown: 'copy',
 } as const satisfies Record<keyof AppSettings, 'copy' | 'secret' | 'sourceId' | 'sourceIds'>;

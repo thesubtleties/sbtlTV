@@ -138,6 +138,7 @@ function startWorker(lane: LaneName): void {
         break;
       }
       case 'log': log(m.category as string, m.message as string); break;
+      case 'reset': tell({ type: 'reset', reason: m.reason as string }); break;
       case 'progress': { const progress = m.progress as SyncProgress; tell({ type: 'sync', progress }); broadcast({ kind: 'sync', progress }); break; }
       case 'changed': for (const table of m.tables as DataTable[]) broadcast({ kind: 'changed', table, sourceId: m.sourceId as string | null }); break;
     }
