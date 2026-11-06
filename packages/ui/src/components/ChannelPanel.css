@@ -432,13 +432,11 @@
   align-items: center;
 }
 
-.guide-search-icon {
-  position: absolute;
-  left: 8px;
-  color: var(--faint);
-  pointer-events: none;
-  flex-shrink: 0;
+.guide-search-mode {
+  position: absolute; left: 3px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 50%; background: transparent; color: var(--faint); cursor: pointer;
 }
+.guide-search-mode:hover { background: var(--fill-3); color: var(--text); }
 
 .guide-search-input {
   background: var(--fill-2);
@@ -447,8 +445,8 @@
   color: var(--text);
   font-size: 13px;
   height: 30px;
-  padding: 0 28px;
-  width: 200px;
+  padding: 0 28px 0 32px;
+  width: 300px;
   outline: none;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
