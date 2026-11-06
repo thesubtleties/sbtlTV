@@ -226,3 +226,36 @@ test('guideSearch keeps each section when a word matches thousands of airings', 
   assert.ok(r.later.some((a) => a.title === 'News'), 'later');
   assert.ok(r.mentions.some((a) => a.title === 'Sunday Show'), 'mentions');
 });
+
+test('guideSearch: a short word finds an exact description word but not longer words', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec(`insert into epg_programs values
+    ('t1', 's1', 'epg1', 'cbs.us', 100, 900, 'State Game', 'Live from Nashville, TN tonight'),
+    ('t2', 's1', 'epg1', 'cbs.us', 100, 900, 'Other Game', 'On TNT tonight'),
+    ('t3', 's1', 'epg1', 'cbs.us', 100, 900, 'TNT Classics', '')`);
+  reindexGuide(db);
+  const r = runQuery(db, { id: 1, type: 'guideSearch', query: 'tn', sourceIds: [], nowMs: 500, hideAdult: false }) as GuideSearchResult;
+  assert.deepEqual(r.onNow.map((a) => a.title), ['TNT Classics']);
+  assert.deepEqual(r.mentions.map((a) => a.title), ['State Game']);
+});
+
+test('guideSearch: very common short words skip descriptions', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec(`insert into epg_programs values ('c1', 's1', 'epg1', 'cbs.us', 100, 900, 'The Game', ''), ('c2', 's1', 'epg1', 'cbs.us', 100, 900, 'Other', 'the game')`);
+  reindexGuide(db);
+  const r = runQuery(db, { id: 1, type: 'guideSearch', query: 'the', sourceIds: [], nowMs: 500, hideAdult: false }) as GuideSearchResult;
+  assert.deepEqual(r.onNow.map((a) => a.title), ['The Game']);
+  assert.equal(r.mentions.length, 0);
+});
+
+test('guideSearch: channels follow the same matching, and work without any guide words', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec(`insert into channels(stream_id, source_id, name, direct_url, epg_channel_id) values
+    ('s1_50', 's1', 'UK: BBC One', '', ''), ('s1_51', 's1', 'РОССИЯ 1', '', ''), ('s1_52', 's1', 'USA E! HD', '', ''), ('s1_53', 's1', 'Fútbol TV', '', '')`);
+  const names = (query: string) => (runQuery(db, { id: 1, type: 'guideSearch', query, sourceIds: [], nowMs: 500, hideAdult: false }) as GuideSearchResult).channels.map((c) => c.name);
+  assert.deepEqual(names('uk bbc'), ['UK: BBC One']);
+  assert.deepEqual(names('россия'), ['РОССИЯ 1']);
+  assert.deepEqual(names('e!'), ['USA E! HD']);
+  assert.deepEqual(names('futbol'), ['Fútbol TV']);
+  assert.deepEqual(names('c'), []);
+});

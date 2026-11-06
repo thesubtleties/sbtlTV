@@ -24,9 +24,79 @@ const wordsOf = (t: string) => t.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 
 /** The FTS5 query for what was typed: quoted prefixes, so nothing typed is ever syntax. */
 export function toFtsQuery(query: string): string | null {
-  const words = wordsOf(query.toLowerCase());
-  if (words.join('').length < GUIDE_SEARCH_MIN_CHARS) return null;
+  const words = wordsOf(fold(query));
+  if (!words.some((w) => w.length >= GUIDE_SEARCH_MIN_CHARS)) return null;
   return words.map((w) => `"${w}"*`).join(' ');
+}
+
+// So common that even as exact words they are in most descriptions.
+const COMMON_SHORT_WORDS = new Set([
+  'a', 'an', 'as', 'at', 'be', 'by', 'do', 'he', 'if', 'in', 'is', 'it', 'me', 'my', 'no', 'of', 'on', 'or', 'so', 'to', 'up', 'us', 'we',
+  'all', 'and', 'are', 'but', 'for', 'had', 'has', 'her', 'his', 'not', 'one', 'she', 'the', 'was', 'who', 'you',
+  'de', 'du', 'el', 'en', 'et', 'la', 'le', 'un',
+]);
+const SHORT_WORD = 3;
+
+export interface GuideSearchMatch {
+  /** Everything to look through for what's on now */
+  live: string;
+  /** Title matches */
+  title: string;
+  /** Description-only matches; null when descriptions are skipped */
+  mentions: string | null;
+}
+
+/**
+ * The FTS5 queries for a search. One short word would otherwise match most of the guide
+ * as a prefix (th: The, This, Thursday), so it starts a title word or is an exact word in
+ * a description (tn finds "Nashville, TN", not TNT). Very common ones stay in titles.
+ */
+export function guideSearchMatch(query: string): GuideSearchMatch | null {
+  const fts = toFtsQuery(query);
+  if (!fts) return null;
+  const words = wordsOf(fold(query));
+  if (words.length === 1 && words[0].length <= SHORT_WORD) {
+    const title = `title : ${fts}`;
+    if (COMMON_SHORT_WORDS.has(words[0])) return { live: title, title, mentions: null };
+    const description = `description : "${words[0]}"`;
+    return { live: `(${title}) OR (${description})`, title, mentions: `(${description}) NOT (${title})` };
+  }
+  const title = `title : (${fts})`;
+  return { live: fts, title, mentions: `(${fts}) NOT (${title})` };
+}
+
+/** Channel names: every word somewhere in the name. Symbols count, so E! finds E!. */
+export function matchesChannelName(name: string, query: string): boolean {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return false;
+  const folded = fold(name);
+  return words.every((w) => folded.includes(w));
+}
+
+/** Where to highlight: whole words that start with a word of the search, as offsets into `text`. */
+export function matchRanges(text: string, query: string): Array<[number, number]> {
+  const words = wordsOf(fold(query));
+  if (!words.length) return [];
+  let folded = '';
+  const offsets: number[] = [];
+  for (let i = 0; i < text.length;) {
+    const size = (text.codePointAt(i) ?? 0) > 0xffff ? 2 : 1;
+    const part = fold(text.slice(i, i + size));
+    for (let k = 0; k < part.length; k++) offsets.push(i);
+    folded += part;
+    i += size;
+  }
+  offsets.push(text.length);
+  const isWord = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}]/u.test(c);
+  const out: Array<[number, number]> = [];
+  for (let p = 0; p < folded.length; p++) {
+    if (isWord(folded[p - 1]) || !words.some((w) => folded.startsWith(w, p))) continue;
+    let end = p;
+    while (isWord(folded[end])) end++;
+    out.push([offsets[p], offsets[end]]);
+    p = end;
+  }
+  return out;
 }
 
 export function isTitleMatch(title: string, query: string): boolean {

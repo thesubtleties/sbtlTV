@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupAirings, isAdultCategoryName, isAiringLive, isTitleMatch, toFtsQuery, type GuideSearchRow } from './guide-search';
+import { groupAirings, guideSearchMatch, isAdultCategoryName, isAiringLive, isTitleMatch, matchRanges, matchesChannelName, toFtsQuery, type GuideSearchRow } from './guide-search';
 
 const row = (over: Partial<GuideSearchRow>): GuideSearchRow => ({
   id: 'p1', title: 'Football Night', description: '', start: 1000, end: 2000, rank: -5,
@@ -22,7 +22,7 @@ describe('toFtsQuery', () => {
     expect(toFtsQuery('a')).toBeNull();
   });
   it('keeps non-Latin letters', () => {
-    expect(toFtsQuery('fútbol 東京')).toBe('"fútbol"* "東京"*');
+    expect(toFtsQuery('fútbol 東京')).toBe('"futbol"* "東京"*');
   });
 });
 
@@ -87,5 +87,81 @@ describe('groupAirings', () => {
     expect(out.onNow.map((a) => a.title)).toEqual(['Football B', 'Football A']);
     expect(out.later.map((a) => a.title)).toEqual(['Football D', 'Football C']);
     expect(out.mentions.map((a) => a.title)).toEqual(['M now', 'M later']);
+  });
+});
+
+describe('toFtsQuery edge cases', () => {
+  it('needs at least one real word', () => {
+    expect(toFtsQuery('a b')).toBeNull();
+    expect(toFtsQuery('a beautiful')).toBe('"a"* "beautiful"*');
+  });
+  it('folds a capital dotted I', () => {
+    expect(toFtsQuery('İstanbul')).toBe('"istanbul"*');
+  });
+});
+
+describe('guideSearchMatch', () => {
+  it('matches a normal search anywhere, starts of words', () => {
+    expect(guideSearchMatch('man utd')).toEqual({
+      live: '"man"* "utd"*',
+      title: 'title : ("man"* "utd"*)',
+      mentions: '("man"* "utd"*) NOT (title : ("man"* "utd"*))',
+    });
+  });
+  it('takes one short word as a title start or an exact description word', () => {
+    expect(guideSearchMatch('tn')).toEqual({
+      live: '(title : "tn"*) OR (description : "tn")',
+      title: 'title : "tn"*',
+      mentions: '(description : "tn") NOT (title : "tn"*)',
+    });
+    expect(guideSearchMatch('nfl')?.live).toBe('(title : "nfl"*) OR (description : "nfl")');
+  });
+  it('looks at titles only for very common short words', () => {
+    for (const w of ['the', 'to', 'in', 'of', 'and', 'THE']) {
+      const m = guideSearchMatch(w);
+      expect(m).toEqual({ live: `title : "${w.toLowerCase()}"*`, title: `title : "${w.toLowerCase()}"*`, mentions: null });
+    }
+  });
+  it('leaves a short word in a longer search alone', () => {
+    expect(guideSearchMatch('the office')?.live).toBe('"the"* "office"*');
+  });
+  it('is null when there is nothing to search', () => {
+    expect(guideSearchMatch('c+')).toBeNull();
+    expect(guideSearchMatch('')).toBeNull();
+  });
+});
+
+describe('matchesChannelName', () => {
+  it('needs every word somewhere in the name', () => {
+    expect(matchesChannelName('UK: BBC One', 'uk bbc')).toBe(true);
+    expect(matchesChannelName('UK: BBC One', 'uk itv')).toBe(false);
+    expect(matchesChannelName('USA ESPN2 HD', 'espn2')).toBe(true);
+  });
+  it('ignores accents and case in any alphabet', () => {
+    expect(matchesChannelName('Fútbol TV', 'futbol')).toBe(true);
+    expect(matchesChannelName('РОССИЯ 1', 'россия')).toBe(true);
+  });
+  it('keeps symbols, so short names still match', () => {
+    expect(matchesChannelName('USA E! HD', 'e!')).toBe(true);
+    expect(matchesChannelName('USA ESPN', 'e!')).toBe(false);
+  });
+});
+
+describe('matchRanges', () => {
+  const marked = (text: string, q: string) => matchRanges(text, q).map(([a, b]) => text.slice(a, b));
+  it('finds the whole word from where it starts', () => {
+    expect(marked('Football Night', 'foot')).toEqual(['Football']);
+    expect(marked('The Big Show', 'big show')).toEqual(['Big', 'Show']);
+  });
+  it('handles accents and other alphabets', () => {
+    expect(marked('Fútbol Liga', 'futb')).toEqual(['Fútbol']);
+    expect(marked('Étoile', 'étoile')).toEqual(['Étoile']);
+    expect(marked('матч Футбол', 'футбол')).toEqual(['Футбол']);
+  });
+  it('does not match inside a word', () => {
+    expect(marked('Sports', 'port')).toEqual([]);
+  });
+  it('keeps offsets right after a character that folds away', () => {
+    expect(marked('é é foot', 'foot')).toEqual(['foot']);
   });
 });

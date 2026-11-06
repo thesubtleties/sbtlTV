@@ -1,13 +1,15 @@
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, renameSync } from 'node:fs';
-import { migrate } from './schema.js';
+import { migrate, reindexGuide } from './schema.js';
 
 export interface OpenOptions {
   readOnly: boolean;
   log?: (message: string) => void;
+  // Told when the file couldn't be used and the data starts over from the sources.
+  onReset?: (reason: string) => void;
   // How long a statement waits for a lock held by another connection. Writers
-  // on the two sync lanes wait for each other's transactions (a guide replace
-  // commits in a few seconds); readers under WAL rarely wait at all.
+  // on the two sync lanes wait for each other's transactions (a guide replace on a
+  // very large guide commits in tens of seconds); readers under WAL rarely wait at all.
   busyTimeoutMs?: number;
 }
 
@@ -48,6 +50,9 @@ function openHealthy(path: string, opts: OpenOptions): DatabaseSync | null {
   try {
     db = tryOpen(path, opts);
     if (healthy(db)) return db;
+    // Only the search index damaged: it is built from the programmes beside it
+    reindexGuide(db);
+    if (healthy(db)) return db;
   } catch {
     // fall through: unopenable counts as unhealthy
   }
@@ -57,6 +62,16 @@ function openHealthy(path: string, opts: OpenOptions): DatabaseSync | null {
 
 // Opens (creating if needed) the data file. The writer connection runs the
 // integrity check and migrations; readers assume the writer already did.
+// Keeps the file for a look later, out of the way of a fresh one.
+function moveAside(path: string, label: string): string {
+  const aside = `${path}.${label}-${Date.now()}`;
+  renameSync(path, aside);
+  for (const suffix of ['-wal', '-shm']) {
+    if (existsSync(path + suffix)) renameSync(path + suffix, aside + suffix);
+  }
+  return aside;
+}
+
 export function openDatabase(path: string, opts: OpenOptions): DatabaseSync {
   const log = opts.log ?? (() => {});
   if (opts.readOnly) return tryOpen(path, opts);
@@ -64,15 +79,24 @@ export function openDatabase(path: string, opts: OpenOptions): DatabaseSync {
   let db = openHealthy(path, opts);
   if (!db) {
     if (existsSync(path)) {
-      const aside = `${path}.corrupt-${Date.now()}`;
-      renameSync(path, aside);
-      for (const suffix of ['-wal', '-shm']) {
-        if (existsSync(path + suffix)) renameSync(path + suffix, aside + suffix);
-      }
+      const aside = moveAside(path, 'corrupt');
       log(`data file failed its integrity check; moved to ${aside} and starting fresh (all of it is rebuildable)`);
+      opts.onReset?.('integrity check failed');
     }
     db = tryOpen(path, opts);
   }
-  migrate(db);
+  try {
+    migrate(db);
+  } catch (e) {
+    // A file from a newer build, or a failed migration. Nothing here is the user's own:
+    // sources and settings are elsewhere, and all of this comes back from the sources.
+    const reason = e instanceof Error ? e.message : String(e);
+    try { db.close(); } catch { /* already unusable */ }
+    const aside = moveAside(path, 'aside');
+    log(`data file could not be used (${reason}); moved to ${aside} and starting fresh`);
+    opts.onReset?.(reason);
+    db = tryOpen(path, opts);
+    migrate(db);
+  }
   return db;
 }

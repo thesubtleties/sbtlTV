@@ -108,7 +108,7 @@ port.on('message', (m: { type: string } & Record<string, unknown>) => {
       // Provider requests made by the clients in this thread obey the LAN setting.
       setUrlGuard((url) => checkProviderUrl(url, settings.allowLanSources));
       try {
-        db = openDatabase(m.dbPath as string, { readOnly: false, busyTimeoutMs: 30_000, log: (msg) => post({ type: 'log', category: 'data', message: msg }) });
+        db = openDatabase(m.dbPath as string, { readOnly: false, busyTimeoutMs: 120_000, log: (msg) => post({ type: 'log', category: 'data', message: msg }), onReset: (reason) => post({ type: 'reset', reason }) });
       } catch (e) {
         // A migration that fails or a file newer than this build: report and
         // stop; the data process decides whether that is fatal for the app.

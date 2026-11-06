@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { SCHEMA_VERSION, createSchema, migrate } from './schema.js';
+import { SCHEMA_VERSION, createSchema, migrate, reindexGuide } from './schema.js';
 import { openDatabase } from './db.js';
 
 function tmpDb(): string {
@@ -69,4 +69,35 @@ test('a new database has the guide index', () => {
   createSchema(db);
   const row = db.prepare("select count(*) c from sqlite_master where name='epg_programs_fts'").get() as { c: number };
   assert.equal(row.c, 1);
+});
+
+test('a database newer than this build is moved aside and started fresh, and the caller is told', () => {
+  const file = tmpDb();
+  const first = openDatabase(file, { readOnly: false });
+  first.prepare("update meta set value=? where key='schema_version'").run(String(SCHEMA_VERSION + 1));
+  first.close();
+  const reasons: string[] = [];
+  const db = openDatabase(file, { readOnly: false, onReset: (reason) => reasons.push(reason) });
+  const v = db.prepare("select value from meta where key='schema_version'").get() as { value: string };
+  assert.equal(Number(v.value), SCHEMA_VERSION);
+  assert.equal(reasons.length, 1);
+  assert.equal(readdirSync(path.dirname(file)).filter((f) => f.includes('.aside-') && f.endsWith('.sqlite') === false).length >= 1, true);
+  db.close();
+});
+
+test('a damaged search index is rebuilt rather than discarding the file', () => {
+  const file = tmpDb();
+  const first = openDatabase(file, { readOnly: false });
+  first.exec(`insert into epg_programs values ('p1', 's1', 'g', 'c', 1, 2, 'Football', '')`);
+  reindexGuide(first);
+  first.close();
+  const vandal = new DatabaseSync(file, { defensive: false } as never);
+  vandal.exec(`delete from epg_programs_fts_data where id > 10`);
+  vandal.close();
+  const reasons: string[] = [];
+  const db = openDatabase(file, { readOnly: false, onReset: (r) => reasons.push(r) });
+  const hits = db.prepare(`select count(*) c from epg_programs_fts where epg_programs_fts match '"football"*'`).get() as { c: number };
+  assert.equal(hits.c, 1);
+  assert.deepEqual(reasons, []);
+  db.close();
 });
