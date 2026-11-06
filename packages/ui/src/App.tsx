@@ -1,3 +1,4 @@
+import { onceEachStatus } from './utils/dataStatus';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { MpvStatus } from './types/electron';
 import { Settings } from './components/Settings';
@@ -702,10 +703,10 @@ function App() {
 
   // The data file couldn't be used: say so, rather than leave an empty guide to explain itself
   useEffect(() => {
-    const show = (status: 'fatal' | 'reset' | null) => {
+    const show = onceEachStatus((status) => {
       if (status === 'reset') useToastStore.getState().addToast({ kind: 'info', title: 'Rebuilding your guide', message: "The saved data couldn't be read. Channels and the guide are reloading from your sources.", duration: 10000 });
       if (status === 'fatal') useToastStore.getState().addToast({ kind: 'error', title: "Guide data couldn't be opened", message: "Channels and the guide won't load. Details are in the debug log." });
-    };
+    });
     void window.data?.status().then(show);
     return window.data?.onStatus(show);
   }, []);
