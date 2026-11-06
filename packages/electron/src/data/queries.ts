@@ -1,5 +1,5 @@
 import type { DatabaseSync, StatementSync, SQLInputValue } from 'node:sqlite';
-import type { DataRequest } from '@sbtltv/core';
+import { groupAirings, isAdultCategoryName, toFtsQuery, type DataRequest, type GuideSearchResult, type GuideSearchRow } from '@sbtltv/core';
 
 // Every request compiles to a fixed statement. Lists travel as JSON text and
 // are expanded with json_each, so a 10-id and a 10,000-id request are the
@@ -45,6 +45,38 @@ function fixChannel<T extends { tv_archive: number; is_adult: number }>(r: T) {
   return { ...r, tv_archive: r.tv_archive === 1, is_adult: r.is_adult === 1 };
 }
 
+// Enough rows for the dropdown on a very broad word; the best-ranked come first.
+const GUIDE_SEARCH_ROWS = 3000;
+const GUIDE_SEARCH_CHANNELS = 200;
+const CH_SRC = `(json_array_length($sources) = 0 or ch.source_id in (select value from json_each($sources)))`;
+const NOT_HIDDEN = `($hide = 0 or (ch.is_adult = 0 and not exists (
+  select 1 from channel_categories cc where cc.stream_id = ch.stream_id and cc.category_id in (select value from json_each($adult)))))`;
+
+function guideSearch(db: DatabaseSync, req: Extract<DataRequest, { type: 'guideSearch' }>): GuideSearchResult {
+  const match = toFtsQuery(req.query);
+  if (!match) return { channels: [], channelTotal: 0, onNow: [], later: [], mentions: [] };
+  const adult = req.hideAdult
+    ? (stmt(db, `select category_id, name from categories`).all() as { category_id: string; name: string }[])
+        .filter((c) => isAdultCategoryName(c.name)).map((c) => c.category_id)
+    : [];
+  const shared = { $sources: j(req.sourceIds), $hide: req.hideAdult ? 1 : 0, $adult: j(adult) };
+  const rows = stmt(db, `
+    select p.id, p.title, p.description, p.start, p.end, l.stream_id, ch.name as channel_name, ch.stream_icon,
+           bm25(epg_programs_fts, 12.0, 1.0) as rank
+    from epg_programs_fts
+    join epg_programs p on p.rowid = epg_programs_fts.rowid
+    join epg_links l on l.source_id = p.source_id and l.epg_source = p.epg_source and l.epg_channel_id = p.epg_channel_id
+    join channels ch on ch.stream_id = l.stream_id
+    where epg_programs_fts match $match and p.end > $now and ${CH_SRC} and ${NOT_HIDDEN}
+    order by rank limit $limit`).all({ ...shared, $match: match, $now: req.nowMs, $limit: GUIDE_SEARCH_ROWS }) as unknown as GuideSearchRow[];
+  const like = `%${req.query.trim().replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
+  const channelWhere = `from channels ch where ch.name like $q escape '\\' and ${CH_SRC} and ${NOT_HIDDEN}`;
+  const channels = stmt(db, `select ch.stream_id, ch.name, ch.stream_icon ${channelWhere} order by ch.name collate nocase limit $limit`)
+    .all({ ...shared, $q: like, $limit: GUIDE_SEARCH_CHANNELS }) as unknown as GuideSearchResult['channels'];
+  const total = stmt(db, `select count(*) as c ${channelWhere}`).get({ ...shared, $q: like }) as { c: number };
+  return { channels, channelTotal: total.c, ...groupAirings(rows, req.query, req.nowMs) };
+}
+
 export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
   switch (req.type) {
     case 'categories': {
@@ -84,6 +116,7 @@ export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
         .all({ $sources: j(req.sourceIds), $q: `%${req.query.replace(/[%_\\]/g, (m) => `\\${m}`)}%`, $limit: req.limit });
       return withCategoryIds(db, (rows as ChannelWire[]).map(fixChannel), 'channel');
     }
+    case 'guideSearch': return guideSearch(db, req);
     case 'programsInRange':
       return stmt(db, `
         select ${PROGRAM_COLS}

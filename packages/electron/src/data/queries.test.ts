@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { createSchema, reindexGuide } from './schema.js';
 import { runQuery } from './queries.js';
+import type { GuideSearchResult } from '@sbtltv/core';
 
 export function seedFixture(db: DatabaseSync): void {
   createSchema(db);
@@ -146,4 +147,66 @@ test('playlistRows lists a source as one row per channel and group, for rebuildi
   db.exec(`insert into channels(stream_id, source_id, name, direct_url) values ('s1_99', 's1', 'Loose', 'http://x/99')`);
   const withLoose = runQuery(db, { id: 2, type: 'playlistRows', sourceId: 's1' }) as { name: string; group_name: string | null }[];
   assert.deepEqual([withLoose.at(-1)?.name, withLoose.at(-1)?.group_name], ['Loose', null]);
+});
+
+function seedSearch(db: DatabaseSync): void {
+  seedFixture(db);
+  db.exec(`
+    insert into categories values ('s1_adult', 's1', 'Adults (18+)', 2);
+    insert into channels(stream_id, source_id, name, direct_url, epg_channel_id) values ('s1_90', 's1', 'Night Football XX', 'http://x/secret', 'x.us');
+    insert into channel_categories values ('s1_90', 's1_adult');
+    insert into epg_links values ('s1_90', 'epg1', 'x.us', 's1', 'exact', 'exact_id');
+    insert into epg_programs values
+      ('f1', 's1', 'epg1', 'cbs.us', 100, 900, 'Football Tonight', 'kickoff'),
+      ('f2', 's2', 'epg1', 'cbs.us', 100, 900, 'Football Tonight', 'kickoff'),
+      ('f3', 's1', 'epg1', 'cbs.us', 5000, 6000, 'Football Late', ''),
+      ('f4', 's1', 'epg1', 'cbs.us', 50, 90, 'Football Past', ''),
+      ('f5', 's1', 'epg1', 'cbs.us', 200, 800, 'Sunday Show', 'all the football'),
+      ('f6', 's1', 'epg1', 'x.us', 100, 900, 'Football After Dark', '');
+  `);
+  reindexGuide(db);
+}
+const search = (db: DatabaseSync, over: Record<string, unknown> = {}) =>
+  runQuery(db, { id: 1, type: 'guideSearch', query: 'football', sourceIds: [], nowMs: 500, hideAdult: false, ...over } as never) as GuideSearchResult;
+
+test('guideSearch groups an airing across channels and sorts it into sections', () => {
+  const db = new DatabaseSync(':memory:'); seedSearch(db);
+  const r = search(db);
+  const tonight = r.onNow.find((a) => a.title === 'Football Tonight')!;
+  assert.deepEqual(tonight.channels.map((c) => c.stream_id).sort(), ['s1_10', 's2_20']);
+  assert.deepEqual(r.later.map((a) => a.title), ['Football Late']);
+  assert.deepEqual(r.mentions.map((a) => a.title), ['Sunday Show']);
+  assert.ok(![...r.onNow, ...r.later].some((a) => a.title === 'Football Past'));
+});
+
+test('guideSearch finds channels by name and counts them all', () => {
+  const db = new DatabaseSync(':memory:'); seedSearch(db);
+  const r = search(db, { query: 'cbs' });
+  assert.deepEqual(r.channels.map((c) => c.name), ['CBS', 'CBS HD']);
+  assert.equal(r.channelTotal, 2);
+});
+
+test('guideSearch respects enabled sources', () => {
+  const db = new DatabaseSync(':memory:'); seedSearch(db);
+  const r = search(db, { sourceIds: ['s1'] });
+  assert.deepEqual(r.onNow.find((a) => a.title === 'Football Tonight')!.channels.map((c) => c.stream_id), ['s1_10']);
+  assert.deepEqual(search(db, { query: 'cbs', sourceIds: ['s1'] }).channels.map((c) => c.name), ['CBS']);
+});
+
+test('guideSearch hides adult categories only when asked, in both programmes and channels', () => {
+  const db = new DatabaseSync(':memory:'); seedSearch(db);
+  assert.ok(search(db).onNow.some((a) => a.title === 'Football After Dark'));
+  assert.ok(search(db).channels.some((c) => c.stream_id === 's1_90'));
+  const hidden = search(db, { hideAdult: true });
+  assert.ok(!hidden.onNow.some((a) => a.title === 'Football After Dark'));
+  assert.ok(!hidden.channels.some((c) => c.stream_id === 's1_90'));
+  db.exec(`update channels set is_adult = 1 where stream_id = 's1_10'`);
+  assert.ok(!search(db, { hideAdult: true }).channels.some((c) => c.stream_id === 's1_10'));
+});
+
+test('guideSearch never fails on symbols and carries no stream address', () => {
+  const db = new DatabaseSync(':memory:'); seedSearch(db);
+  for (const query of ['c++', '"', '(', 'NOT', '-', '*', 'AT&T', 'a']) search(db, { query });
+  assert.equal(search(db, { query: '***' }).onNow.length, 0);
+  assert.ok(!JSON.stringify(search(db)).includes('secret'));
 });

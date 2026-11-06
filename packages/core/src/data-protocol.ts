@@ -1,4 +1,5 @@
 import type { Channel, Category, Movie, Series, Episode, Source } from './types';
+import type { GuideSearchResult } from './guide-search';
 
 // ---- Tables the data process owns (rebuildable) ----
 export type DataTable =
@@ -47,6 +48,7 @@ export type DataRequest =
   | { id: number; type: 'channelsByIds'; streamIds: string[] }
   | { id: number; type: 'channelCount'; sourceIds: string[] }
   | { id: number; type: 'channelSearch'; query: string; sourceIds: string[]; limit: number }
+  | { id: number; type: 'guideSearch'; query: string; sourceIds: string[]; nowMs: number; hideAdult: boolean }
   | { id: number; type: 'programsInRange'; streamIds: string[]; windowStartMs: number; windowEndMs: number }
   | { id: number; type: 'currentProgram'; streamId: string; nowMs: number }
   | { id: number; type: 'syncStatus' }
@@ -89,6 +91,7 @@ export type ReplyFor<R extends DataRequest> =
   R extends { type: 'categories' } ? CategoryRow[] :
   R extends { type: 'channels' | 'channelsByIds' | 'channelSearch' } ? ChannelRow[] :
   R extends { type: 'channelCount' } ? number :
+  R extends { type: 'guideSearch' } ? GuideSearchResult :
   R extends { type: 'programsInRange' } ? ProgramRow[] :
   R extends { type: 'currentProgram' } ? ProgramRow | null :
   R extends { type: 'syncStatus' } ? SourceMetaRow[] :
