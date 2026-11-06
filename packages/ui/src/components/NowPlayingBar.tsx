@@ -340,6 +340,7 @@ export function NowPlayingBar({
                     onSeek={onSeek}
                     bump={rewindBump}
                     lagS={rewindLag}
+                    atLive={rewindAtLive}
                   />
                 ) : (
                   <div className="npb-progress-bar">
