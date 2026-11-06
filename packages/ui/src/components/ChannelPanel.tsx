@@ -401,7 +401,7 @@ function ChannelPanelImpl({
               </button>
             )}
             {searchMode === 'search' && (results || failed) && searchQuery.trim() && dropdownOpen && (
-              <div className="gsr-panel" style={{ maxWidth: Math.max(240, availableWidth + effectiveColumnWidth - 190) }} onMouseDown={(e) => e.preventDefault()}>
+              <div className="gsr-panel" style={{ maxWidth: Math.max(240, availableWidth + effectiveColumnWidth - 215) }} onMouseDown={(e) => e.preventDefault()}>
                 {failed && <div className="gsr-empty">Search didn't work. Details are in the debug log.</div>}
                 {results && !failed && (
                   <GuideSearchResults
