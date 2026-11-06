@@ -1,5 +1,5 @@
 .gsr-panel {
-  position: absolute; top: calc(100% + 6px); right: 0; width: min(480px, calc(100cqw - 190px)); max-height: 68vh; overflow-y: auto; z-index: 40;
+  position: absolute; top: calc(100% + 6px); right: 0; width: min(480px, calc(100cqw - 214px)); max-height: 68vh; overflow-y: auto; z-index: 40;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-panel);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5); backdrop-filter: blur(16px);
 }
