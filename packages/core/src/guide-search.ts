@@ -4,10 +4,14 @@ export interface GuideSearchRow {
   id: string; title: string; description: string; start: number; end: number; rank: number;
   stream_id: string; channel_name: string; stream_icon: string;
 }
-export interface GuideSearchChannel { stream_id: string; name: string; stream_icon: string }
+export interface GuideSearchChannel { stream_id: string; name: string; stream_icon: string; has_guide?: number }
 export interface GuideAiring {
   key: string; title: string; description: string; startMs: number; endMs: number;
   channels: GuideSearchChannel[]; programIds: string[];
+  /** Later: this show's other airings, soonest first */
+  more?: GuideAiring[];
+  /** On now only because its description matches */
+  byDescription?: boolean;
 }
 export interface GuideSearchResult {
   channels: GuideSearchChannel[];
@@ -22,11 +26,35 @@ export const GUIDE_SEARCH_MIN_CHARS = 2;
 const fold = (t: string) => t.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 const wordsOf = (t: string) => t.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 
-/** The FTS5 query for what was typed: quoted prefixes, so nothing typed is ever syntax. */
+const MAX_WORDS = 8;
+const POSSESSIVE_FROM = 3;
+
+/**
+ * What was typed, as the index stores it. Case and form only: the tokenizer does the accent
+ * folding, and folding here too would lose what it keeps (Korean, й, Hindi vowel signs).
+ * A word with symbols inside is a phrase (9-1-1, spider-man), as the index splits it.
+ */
+function searchTerms(query: string): string[] {
+  const chunks = query.normalize('NFC').toLowerCase().split(/\s+/)
+    .map((c) => c.split(/[^\p{L}\p{N}\p{M}]+/u).filter(Boolean)).filter((p) => p.length > 0);
+  if (chunks.length >= 3 && chunks.every((p) => p.length === 1 && p[0].length === 1)) return [chunks.flat().join(' ')];
+  const terms = [...new Set(chunks.map((p) => p.join(' ')))];
+  return (terms.length > 1 ? terms.filter((t) => t !== 'and') : terms).slice(0, MAX_WORDS);
+}
+
+const isSearchable = (terms: string[]) => terms.some((t) => t.replace(/ /g, '').length >= GUIDE_SEARCH_MIN_CHARS);
+
+/** Quoted, so nothing typed is ever syntax. In a longer search, greys also finds Grey's. */
+function termMatch(term: string, possessive: boolean): string {
+  if (!possessive || term.includes(' ') || term.length < POSSESSIVE_FROM || !term.endsWith('s')) return `"${term}"*`;
+  return `("${term}"* OR "${term.slice(0, -1)} s"*)`;
+}
+
+/** The FTS5 query for what was typed. */
 export function toFtsQuery(query: string): string | null {
-  const words = wordsOf(fold(query));
-  if (!words.some((w) => w.length >= GUIDE_SEARCH_MIN_CHARS)) return null;
-  return words.map((w) => `"${w}"*`).join(' ');
+  const terms = searchTerms(query);
+  if (!isSearchable(terms)) return null;
+  return terms.map((t) => termMatch(t, terms.length > 1)).join(' AND ');
 }
 
 // So common that even as exact words they are in most descriptions.
@@ -54,14 +82,18 @@ export interface GuideSearchMatch {
 export function guideSearchMatch(query: string): GuideSearchMatch | null {
   const fts = toFtsQuery(query);
   if (!fts) return null;
-  const words = wordsOf(fold(query));
-  if (words.length === 1 && words[0].length <= SHORT_WORD) {
+  const terms = searchTerms(query);
+  const [only] = terms;
+  if (terms.length === 1 && !only.includes(' ') && only.length <= SHORT_WORD) {
     const title = `title : ${fts}`;
-    if (COMMON_SHORT_WORDS.has(words[0])) return { live: title, title, mentions: null };
-    const description = `description : "${words[0]}"`;
+    if (COMMON_SHORT_WORDS.has(only)) return { live: title, title, mentions: null };
+    const description = `description : "${only}"`;
     return { live: `(${title}) OR (${description})`, title, mentions: `(${description}) NOT (${title})` };
   }
   const title = `title : (${fts})`;
+  // Mid-word in a longer search (the w...): descriptions would be most of the guide
+  const last = terms[terms.length - 1];
+  if (terms.length > 1 && !last.includes(' ') && last.length < SHORT_WORD) return { live: title, title, mentions: null };
   return { live: fts, title, mentions: `(${fts}) NOT (${title})` };
 }
 
@@ -99,25 +131,53 @@ export function matchRanges(text: string, query: string): Array<[number, number]
   return out;
 }
 
+/** Every word starts a word of the title. Grey's counts as greys, and & as and. */
 export function isTitleMatch(title: string, query: string): boolean {
-  const inTitle = wordsOf(fold(title));
-  return wordsOf(fold(query)).every((w) => inTitle.some((t) => t.startsWith(w)));
+  const folded = fold(title);
+  const inTitle = [...wordsOf(folded), ...wordsOf(folded.replace(/['\u2019]/g, ''))];
+  const words = wordsOf(fold(query));
+  return (words.length > 1 ? words.filter((w) => w !== 'and') : words).every((w) => inTitle.some((t) => t.startsWith(w)));
+}
+
+/** Names with a word starting so come first, then channels that have a guide. */
+export function sortChannels<T extends { name: string; has_guide?: number }>(channels: T[], query: string): T[] {
+  const score = (c: T) => (isTitleMatch(c.name, query) ? 0 : 2) + (c.has_guide ? 0 : 1);
+  return channels.map((c) => ({ c, s: score(c) })).sort((a, b) => a.s - b.s).map((x) => x.c);
 }
 
 /** By name, because providers rarely set is_adult. Best effort: "Adult Swim" is not. */
 export function isAdultCategoryName(name: string): boolean {
   if (/\badult swim\b/i.test(name)) return false;
-  return /\b(adults?|xxx)\b/i.test(name) || name.includes('18+');
+  return /\b(adult(s|es|os|i)?|xxx)\b/i.test(name) || name.includes('18+') || name.includes('+18');
 }
 
 export function isAiringLive(airing: { startMs: number }, nowMs: number): boolean {
   return airing.startMs <= nowMs;
 }
 
+const MAX_SHOWS = 40;
+const LIVE_MENTIONS = 3;
+
+type Grouped = GuideAiring & { rank: number; titleHit: boolean };
+
+/** One row per show: its next airing, the rest under it, an exact title first. */
+function byShow(airings: Grouped[], query: string): GuideAiring[] {
+  const shows = new Map<string, Grouped[]>();
+  for (const a of [...airings].sort((x, y) => x.startMs - y.startMs)) {
+    const key = fold(a.title);
+    (shows.get(key) ?? shows.set(key, []).get(key)!).push(a);
+  }
+  const exact = fold(query.trim());
+  return [...shows.entries()]
+    .sort(([ka, a], [kb, b]) => Number(kb === exact) - Number(ka === exact) || a[0].startMs - b[0].startMs)
+    .slice(0, MAX_SHOWS)
+    .map(([, [next, ...rest]]) => ({ ...next, ...(rest.length ? { more: rest } : {}) }));
+}
+
 export function groupAirings(rows: GuideSearchRow[], query: string, nowMs: number): Pick<GuideSearchResult, 'onNow' | 'later' | 'mentions'> {
-  const groups = new Map<string, GuideAiring & { rank: number; titleHit: boolean }>();
+  const groups = new Map<string, Grouped>();
   for (const r of rows) {
-    const key = `${r.title}|${r.start}`;
+    const key = `${fold(r.title)}|${r.start}`;
     let g = groups.get(key);
     if (!g) {
       g = { key, title: r.title, description: r.description, startMs: r.start, endMs: r.end, channels: [], programIds: [], rank: r.rank, titleHit: isTitleMatch(r.title, query) };
@@ -128,13 +188,15 @@ export function groupAirings(rows: GuideSearchRow[], query: string, nowMs: numbe
     g.programIds.push(r.id);
   }
   const all = [...groups.values()];
-  const clean = (list: typeof all): GuideAiring[] => list.map(({ rank: _rank, titleHit: _hit, ...a }) => a);
+  const live = (g: GuideAiring) => isAiringLive(g, nowMs);
+  const byRank = (a: Grouped, b: Grouped) => a.rank - b.rank;
   const hits = all.filter((g) => g.titleHit);
   const mentions = all.filter((g) => !g.titleHit);
-  const live = (g: GuideAiring) => isAiringLive(g, nowMs);
+  // A game whose title says nothing (Jaguars at Ravens for nfl) still belongs near what's on
+  const liveMentions = mentions.filter(live).sort(byRank);
   return {
-    onNow: clean(hits.filter(live).sort((a, b) => a.rank - b.rank)),
-    later: clean(hits.filter((g) => !live(g)).sort((a, b) => a.startMs - b.startMs)),
-    mentions: clean(mentions.sort((a, b) => Number(live(b)) - Number(live(a)) || a.startMs - b.startMs)),
+    onNow: [...hits.filter(live).sort(byRank), ...liveMentions.slice(0, LIVE_MENTIONS).map((g) => ({ ...g, byDescription: true }))],
+    later: byShow(hits.filter((g) => !live(g)), query),
+    mentions: [...liveMentions.slice(LIVE_MENTIONS), ...byShow(mentions.filter((g) => !live(g)), query)],
   };
 }

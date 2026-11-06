@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { GuideSearchResult } from '@sbtltv/core';
@@ -66,5 +66,41 @@ describe('flattenResults', () => {
     expect(ids.slice(ids.indexOf('airing:Sports Later'), ids.indexOf('airing:Other'))).toEqual([
       'airing:Sports Later', 'feed:Sports Later:c1', 'feed:Sports Later:c2',
     ]);
+  });
+});
+
+describe('GuideSearchResults: no way to the rest when there is no rest', () => {
+  const three = { ...results, channels: [ch(1), ch(2), ch(3)], channelTotal: 3 };
+  it('has no Show all row for the keyboard to land on', () => {
+    expect(flattenResults(three, false, null).map((i) => i.id)).not.toContain('more');
+  });
+  it('has no Show all button', () => {
+    expect(render({ results: three })).not.toContain('Show all');
+  });
+});
+
+describe('GuideSearchResults: times and mentions', () => {
+  const noon = new Date(2026, 10, 5, 12, 0).getTime();
+  const hour = 3600000;
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(noon); });
+  afterEach(() => { vi.useRealTimers(); });
+  const only = (over: Partial<GuideSearchResult>): GuideSearchResult => ({ channels: [], channelTotal: 0, onNow: [], later: [], mentions: [], ...over });
+
+  it('names today and tomorrow, then the weekday', () => {
+    const at = (ms: number) => render({ results: only({ later: [airing('Sports', ms)] }) });
+    expect(at(noon + 2 * hour)).toContain('Today');
+    expect(at(noon + 24 * hour)).toContain('Tomorrow');
+    expect(at(noon + 48 * hour)).toContain(new Date(noon + 48 * hour).toLocaleDateString([], { weekday: 'long' }));
+  });
+  it('says how long is left in hours and minutes', () => {
+    const on = { ...airing('Sports', noon - hour), endMs: noon + 90 * 60000 };
+    expect(render({ results: only({ onNow: [on] }) })).toContain('1h 30m left');
+  });
+  it('shows the part of a description around a word deep in it', () => {
+    const long = `${'lorem ipsum '.repeat(20)}and then the sports begin`;
+    const html = render({ results: only({ mentions: [{ ...airing('Other', noon + hour), description: long }] }) });
+    expect(html).toContain('<mark>sports</mark> begin');
+    expect(html).toContain('…');
+    expect(html.match(/lorem/g)!.length).toBeLessThan(10);
   });
 });

@@ -78,7 +78,7 @@ function AiringRow({ airing, activeId, expanded, query, showDescription, onToggl
   return (
     <div className={`gsr-row${activeId === id ? ' gsr-row--active' : ''}`} data-row={id}>
       <div className="gsr-row__line">
-        <button className="gsr-row__main" tabIndex={-1} onClick={() => (live && many ? onToggleFeeds(airing.key) : onPickAiring(airing))}>
+        <button className="gsr-row__main" tabIndex={-1} onClick={() => onPickAiring(airing)}>
           <span className="gsr-when">
             {live ? (
               <>

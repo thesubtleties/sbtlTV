@@ -40,6 +40,7 @@ const READS = new Set(['categories', 'channels', 'channelsByIds', 'channelCount'
 const MAX_LIST = 100_000;
 const MAX_LIMIT = 10_000;
 const MAX_TEXT = 1_000;
+const MAX_SEARCH = 200;
 function bad(what: string): never { throw new Error(`invalid request: ${what}`); }
 function list(v: unknown, name: string, item: 'string' | 'number'): void {
   if (!Array.isArray(v)) bad(`${name} must be an array`);
@@ -67,7 +68,7 @@ export function validateRequest(req: DataRequest): DataRequest {
     case 'channels': list(r.sourceIds, 'sourceIds', 'string'); if (r.categoryId !== null) text(r.categoryId, 'categoryId'); if (r.sort !== 'alphabetical' && r.sort !== 'number') bad('sort'); break;
     case 'channelsByIds': list(r.streamIds, 'streamIds', 'string'); break;
     case 'channelSearch': list(r.sourceIds, 'sourceIds', 'string'); text(r.query, 'query'); num(r.limit, 'limit'); if ((r.limit as number) < 1) bad('limit must be positive'); r.limit = Math.min(r.limit as number, MAX_LIMIT); break;
-    case 'guideSearch': list(r.sourceIds, 'sourceIds', 'string'); text(r.query, 'query'); num(r.nowMs, 'nowMs'); if (typeof r.hideAdult !== 'boolean') bad('hideAdult must be a boolean'); break;
+    case 'guideSearch': list(r.sourceIds, 'sourceIds', 'string'); text(r.query, 'query'); if ((r.query as string).length > MAX_SEARCH) bad(`query is longer than ${MAX_SEARCH}`); num(r.nowMs, 'nowMs'); if (typeof r.hideAdult !== 'boolean') bad('hideAdult must be a boolean'); break;
     case 'programsInRange': list(r.streamIds, 'streamIds', 'string'); num(r.windowStartMs, 'windowStartMs'); num(r.windowEndMs, 'windowEndMs'); break;
     case 'currentProgram': text(r.streamId, 'streamId'); num(r.nowMs, 'nowMs'); break;
     case 'syncStatus': case 'clearAll': break;

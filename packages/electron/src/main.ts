@@ -1531,7 +1531,12 @@ ipcMain.handle('window-maximize', () => {
   }
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
-ipcMain.handle('data-status', () => dataStatus);
+// 'reset' is news once; 'fatal' stays true for a window opened later
+ipcMain.handle('data-status', () => {
+  const status = dataStatus;
+  if (status === 'reset') dataStatus = null;
+  return status;
+});
 ipcMain.handle('window-get-always-on-top', () => mainWindow?.isAlwaysOnTop() ?? false);
 ipcMain.handle('window-set-always-on-top', (_event, on: unknown) => {
   if (process.platform === 'linux' || !mainWindow) return false;

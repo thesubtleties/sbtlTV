@@ -9,7 +9,8 @@ import { useChannelSortOrder, useChannelColumnWidth, useSourceNeedsLogin } from 
 import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import { loadGuideSearchMode, saveGuideSearchMode, type GuideSearchMode } from '../utils/guideSearchMode';
-import { isAiringLive, type GuideAiring, type GuideSearchChannel } from '@sbtltv/core';
+import { type GuideAiring, type GuideSearchChannel } from '@sbtltv/core';
+import { airingAction, enterItem, feedsAfterKey, jumpAnchor, moveActive } from '../utils/guideSearchLogic';
 import { data } from '../data/client';
 import { useGuideSearch } from '../hooks/useGuideSearch';
 import { GuideHighlight, GuideSearchResults, flattenResults, type GuideItem } from './GuideSearchResults';
@@ -221,9 +222,7 @@ function ChannelPanelImpl({
     try {
       const rows = await data.query({ type: 'channelsByIds', streamIds });
       if (rows.length === 0) { gone(); return; }
-      const start = new Date(airing.startMs);
-      start.setMinutes(start.getMinutes() < 30 ? 0 : 30, 0, 0);
-      goTo(start);
+      goTo(jumpAnchor(airing.startMs));
       const when = new Date(airing.startMs);
       setJump({
         title: airing.title,
@@ -238,17 +237,18 @@ function ChannelPanelImpl({
   const toggleFeeds = (key: string) => setExpandedKey((k) => (k === key ? null : key));
   // Live is decided at the click: a Later row may have started while the dropdown was open
   const pickAiring = (a: GuideAiring) => {
-    if (!isAiringLive(a, Date.now())) void jumpTo(a, a.channels.map((c) => c.stream_id));
+    const action = airingAction(a, Date.now());
+    if (action === 'jump') void jumpTo(a, a.channels.map((c) => c.stream_id));
+    else if (action === 'feeds') toggleFeeds(a.key);
     else if (a.channels[0]) void playStream(a.channels[0].stream_id);
   };
   const pickFeed = (a: GuideAiring, c: GuideSearchChannel) => {
-    if (isAiringLive(a, Date.now())) void playStream(c.stream_id); else void jumpTo(a, [c.stream_id]);
+    if (airingAction(a, Date.now()) === 'jump') void jumpTo(a, [c.stream_id]); else void playStream(c.stream_id);
   };
   const pickItem = (item: GuideItem) => {
     if (item.kind === 'channel') void playStream(item.channel.stream_id);
     else if (item.kind === 'more') setAllChannels(true);
     else if (item.kind === 'feed') pickFeed(item.airing, item.channel);
-    else if (isAiringLive(item.airing, Date.now()) && item.airing.channels.length > 1) toggleFeeds(item.airing.key);
     else pickAiring(item.airing);
   };
 
@@ -374,17 +374,17 @@ function ChannelPanelImpl({
                 } else if (searchMode === 'search' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
                   e.preventDefault();
                   e.stopPropagation();
-                  setActiveIndex((i) => Math.max(-1, Math.min(items.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1))));
+                  const key = e.key;
+                  setActiveIndex((i) => moveActive(i, key, items.length));
                 } else if (searchMode === 'search' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
                   // Right and Left open and close a row's feeds; otherwise they stay the caret's
-                  const item = items[activeIndex];
-                  if (item?.kind !== 'airing' || item.airing.channels.length < 2) return;
+                  const open = feedsAfterKey(items[activeIndex], e.key);
+                  if (open === undefined) return;
                   e.preventDefault();
-                  setExpandedKey(e.key === 'ArrowRight' ? item.airing.key : null);
+                  setExpandedKey(open);
                 } else if (searchMode === 'search' && e.key === 'Enter') {
                   // Never on results for what was typed a moment ago
-                  if (pending) return;
-                  const item = items[activeIndex] ?? items[0];
+                  const item = enterItem(items, activeIndex, pending);
                   if (item) pickItem(item);
                 }
               }}

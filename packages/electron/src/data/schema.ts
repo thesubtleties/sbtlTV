@@ -173,6 +173,8 @@ const MIGRATIONS: Array<(db: DatabaseSync) => void> = [
   (db) => { db.exec(GUIDE_INDEX_DDL); reindexGuide(db); },
 ];
 
+export class NewerSchemaError extends Error {}
+
 export function migrate(db: DatabaseSync): void {
   const current = readSchemaVersion(db);
   if (current === 0) {
@@ -180,7 +182,7 @@ export function migrate(db: DatabaseSync): void {
     return;
   }
   if (current > SCHEMA_VERSION) {
-    throw new Error(`database schema ${current} is newer than this build supports (${SCHEMA_VERSION})`);
+    throw new NewerSchemaError(`database schema ${current} is newer than this build supports (${SCHEMA_VERSION})`);
   }
   for (let v = current; v < SCHEMA_VERSION; v++) {
     db.exec('begin');

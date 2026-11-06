@@ -1,5 +1,5 @@
 import type { DatabaseSync, StatementSync, SQLInputValue } from 'node:sqlite';
-import { GUIDE_SEARCH_MIN_CHARS, groupAirings, guideSearchMatch, isAdultCategoryName, matchesChannelName, type DataRequest, type GuideSearchResult, type GuideSearchRow } from '@sbtltv/core';
+import { GUIDE_SEARCH_MIN_CHARS, groupAirings, guideSearchMatch, isAdultCategoryName, matchesChannelName, sortChannels, type DataRequest, type GuideSearchResult, type GuideSearchRow } from '@sbtltv/core';
 
 // Every request compiles to a fixed statement. Lists travel as JSON text and
 // are expanded with json_each, so a 10-id and a 10,000-id request are the
@@ -48,7 +48,8 @@ function fixChannel<T extends { tv_archive: number; is_adult: number }>(r: T) {
 // Bounded per section, so a word on thousands of airings can't push what's on now,
 // or a title match, out of the results. On now is bounded by the number of channels.
 const GUIDE_SEARCH_LIVE_ROWS = 2000;
-const GUIDE_SEARCH_LATER_ROWS = 600;
+const GUIDE_SEARCH_LATER_ROWS = 5000;
+const GUIDE_SEARCH_DESCRIPTION = 600;  // Enough for a snippet; EPG text has no size limit
 const GUIDE_SEARCH_CHANNELS = 200;
 const CH_SRC = `(json_array_length($sources) = 0 or ch.source_id in (select value from json_each($sources)))`;
 const NOT_HIDDEN = `($hide = 0 or (ch.is_adult = 0 and not exists (
@@ -62,19 +63,21 @@ function guideSearch(db: DatabaseSync, req: Extract<DataRequest, { type: 'guideS
         .filter((c) => isAdultCategoryName(c.name)).map((c) => c.category_id)
     : [];
   const shared = { $sources: j(req.sourceIds), $hide: req.hideAdult ? 1 : 0, $adult: j(adult) };
-  const named = (stmt(db, `select ch.stream_id, ch.name, ch.stream_icon from channels ch where ${CH_SRC} and ${NOT_HIDDEN} order by ch.name collate nocase`)
-    .all(shared) as unknown as GuideSearchResult['channels']).filter((c) => matchesChannelName(c.name, req.query));
+  const named = sortChannels((stmt(db, `select ch.stream_id, ch.name, ch.stream_icon,
+      exists(select 1 from epg_links l where l.stream_id = ch.stream_id) as has_guide
+    from channels ch where ${CH_SRC} and ${NOT_HIDDEN} order by ch.name collate nocase`)
+    .all(shared) as unknown as GuideSearchResult['channels']).filter((c) => matchesChannelName(c.name, req.query)), req.query);
   const channels = { channels: named.slice(0, GUIDE_SEARCH_CHANNELS), channelTotal: named.length };
   const match = guideSearchMatch(req.query);
   if (!match) return { ...empty, ...channels };
   const airings = (rank: string) => `
-    select p.id, p.title, p.description, p.start, p.end, l.stream_id, ch.name as channel_name, ch.stream_icon, ${rank} as rank
+    select p.id, p.title, substr(p.description, 1, $maxDescription) as description, p.start, p.end, l.stream_id, ch.name as channel_name, ch.stream_icon, ${rank} as rank
     from epg_programs_fts
     join epg_programs p on p.rowid = epg_programs_fts.rowid
     join epg_links l on l.source_id = p.source_id and l.epg_source = p.epg_source and l.epg_channel_id = p.epg_channel_id
     join channels ch on ch.stream_id = l.stream_id
     where epg_programs_fts match $match and ${CH_SRC} and ${NOT_HIDDEN}`;
-  const params = (ftsMatch: string, limit: number) => ({ ...shared, $match: ftsMatch, $now: req.nowMs, $limit: limit });
+  const params = (ftsMatch: string, limit: number) => ({ ...shared, $match: ftsMatch, $now: req.nowMs, $limit: limit, $maxDescription: GUIDE_SEARCH_DESCRIPTION });
   const later = (ftsMatch: string) => stmt(db, `${airings('0')} and p.start > $now order by p.start limit $limit`)
     .all(params(ftsMatch, GUIDE_SEARCH_LATER_ROWS)) as unknown as GuideSearchRow[];
   const live = stmt(db, `${airings('bm25(epg_programs_fts, 12.0, 1.0)')} and p.start <= $now and p.end > $now order by rank limit $limit`)

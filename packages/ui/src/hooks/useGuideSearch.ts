@@ -3,6 +3,7 @@ import { GUIDE_SEARCH_MIN_CHARS, type GuideSearchResult } from '@sbtltv/core';
 import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
 import { useGuideSearchHideAdult } from '../stores/uiStore';
+import { searchStatus } from '../utils/guideSearchLogic';
 
 const DEBOUNCE_MS = 60;
 
@@ -30,5 +31,5 @@ export function useGuideSearch(query: string, enabled: boolean, minute: number):
     ['epg_programs', 'epg_links', 'channels'],
     [active ? settled : '', sourceIds.join(','), hideAdult, minute],
   );
-  return { results: active ? data ?? null : null, pending: text !== settled || stale || (loading && data === undefined), failed: error };
+  return { results: active ? data ?? null : null, ...searchStatus({ text, settled, active, stale, loading, hasData: data !== undefined, error }) };
 }

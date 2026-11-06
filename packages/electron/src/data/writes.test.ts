@@ -211,7 +211,7 @@ test('openDatabase recovers a corrupt file that has stale WAL and shm siblings',
   assert.equal((db.prepare("select count(*) c from sqlite_master where name='channels'").get() as { c: number }).c, 1, 'fresh schema in place');
   db.close();
   const files = readdirSync(path.dirname(p));
-  assert.ok(files.some((f) => /^data\.sqlite\.corrupt-\d+$/.test(f)), 'corrupt file moved aside');
+  assert.ok(!files.some((f) => /corrupt|aside/.test(f)), 'no copy kept');
   // SQLite discards the siblings of a file it cannot read; none must survive next to the fresh file.
   assert.ok(!files.includes('data.sqlite-wal') || existsSync(p));
   assert.ok(existsSync(p));

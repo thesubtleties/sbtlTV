@@ -104,3 +104,20 @@ test('guideSearch is routed and its fields are checked', () => {
   routeRendererMessage(db, { id: 2, type: 'guideSearch', query: 'noon', sourceIds: 's1', nowMs: 2500, hideAdult: false }, (r) => replies.push(r), () => {});
   assert.equal(replies[1].ok, false);
 });
+
+test('guideSearch refuses each wrong field', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const good = { type: 'guideSearch', query: 'noon', sourceIds: [], nowMs: 2500, hideAdult: false };
+  for (const [i, bad] of [{ query: 1 }, { nowMs: 'soon' }, { hideAdult: 'yes' }].entries()) {
+    const replies: DataReply[] = [];
+    routeRendererMessage(db, { ...good, ...bad, id: i + 1 }, (r) => replies.push(r), () => {});
+    assert.equal(replies[0].ok, false, JSON.stringify(bad));
+  }
+});
+
+test('guideSearch refuses a query far longer than anyone types', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const replies: DataReply[] = [];
+  routeRendererMessage(db, { id: 1, type: 'guideSearch', query: 'x'.repeat(201), sourceIds: [], nowMs: 1, hideAdult: false }, (r) => replies.push(r), () => {});
+  assert.equal(replies[0].ok, false);
+});
