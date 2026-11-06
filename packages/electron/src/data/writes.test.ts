@@ -253,3 +253,29 @@ test('a stored sync error keeps where it failed but never a login (Settings show
   setSourceError(db, 's1', null);
   assert.equal((db.prepare(`select error from sources_meta where source_id = 's1'`).get() as { error: string | null }).error, null);
 });
+
+const fts = (db: DatabaseSync, word: string) =>
+  (db.prepare(`select count(*) c from epg_programs_fts where epg_programs_fts match ?`).get(`"${word}"*`) as { c: number }).c;
+const epg = (title: string) => ({ programs: [{ epg_channel_id: 'cbs.us', startMs: 5000, endMs: 6000, title, description: '' }], links: [] });
+
+test('replaceEpg keeps the search index in step, and leaves the other source indexed', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  replaceEpg(db, 's1', 'epg1', epg('Football'));
+  assert.equal(fts(db, 'football'), 1);
+  assert.equal(fts(db, 'morning'), 0);   // s1's old programme
+  assert.equal(fts(db, 'noon'), 1);      // s2's is still there
+  replaceEpg(db, 's1', 'epg1', epg('Tennis'));
+  assert.equal(fts(db, 'football'), 0);
+  assert.equal(fts(db, 'tennis'), 1);
+});
+
+test('deleteSource and clearAll leave no programme in the search index', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  deleteSource(db, 's2');
+  assert.equal(fts(db, 'noon'), 1);      // s1's Noon stays
+  deleteSource(db, 's1');
+  assert.equal(fts(db, 'noon'), 0);
+  const again = new DatabaseSync(':memory:'); seedFixture(again);
+  clearAll(again);
+  assert.equal(fts(again, 'noon'), 0);
+});

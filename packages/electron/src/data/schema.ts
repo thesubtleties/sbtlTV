@@ -1,6 +1,14 @@
 import type { DatabaseSync } from 'node:sqlite';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+// Search over the guide. External content: the text lives in epg_programs, so a write
+// that changes programmes must end with reindexGuide or the index points at wrong rows.
+const GUIDE_INDEX_DDL = `
+create virtual table if not exists epg_programs_fts using fts5(
+  title, description, content='epg_programs', content_rowid='rowid',
+  tokenize="unicode61 remove_diacritics 2");
+`;
 
 const DDL = `
 create table if not exists meta (key text primary key, value text not null);
@@ -140,6 +148,7 @@ export function createSchema(db: DatabaseSync): void {
   db.exec('begin');
   try {
     db.exec(DDL);
+    db.exec(GUIDE_INDEX_DDL);
     db.prepare("insert or replace into meta(key, value) values ('schema_version', ?)").run(String(SCHEMA_VERSION));
     db.exec('commit');
   } catch (e) {
@@ -155,9 +164,14 @@ export function readSchemaVersion(db: DatabaseSync): number {
   return row ? Number(row.value) : 0;
 }
 
-// Migrations are numbered functions from version n to n+1. Version 1 is the
-// initial schema, so the list is empty until the schema changes.
-const MIGRATIONS: Array<(db: DatabaseSync) => void> = [];
+export function reindexGuide(db: DatabaseSync): void {
+  db.exec(`insert into epg_programs_fts(epg_programs_fts) values('rebuild')`);
+}
+
+// Migrations are numbered functions from version n to n+1.
+const MIGRATIONS: Array<(db: DatabaseSync) => void> = [
+  (db) => { db.exec(GUIDE_INDEX_DDL); reindexGuide(db); },
+];
 
 export function migrate(db: DatabaseSync): void {
   const current = readSchemaVersion(db);

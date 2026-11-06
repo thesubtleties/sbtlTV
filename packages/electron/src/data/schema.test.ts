@@ -51,3 +51,22 @@ test('openDatabase moves a corrupt file aside and starts fresh', () => {
   assert.ok(logs.some((m) => /corrupt/i.test(m)));
   assert.ok(existsSync(p));
 });
+
+test('migration 1 to 2 indexes the guide that is already there', () => {
+  const db = new DatabaseSync(':memory:');
+  createSchema(db);
+  db.exec(`drop table epg_programs_fts`);
+  db.exec(`insert into epg_programs values ('p1', 's1', 'g', 'c', 1, 2, 'Football Night', 'desc')`);
+  db.prepare("update meta set value='1' where key='schema_version'").run();
+  migrate(db);
+  const hits = db.prepare(`select count(*) c from epg_programs_fts where epg_programs_fts match '"football"*'`).get() as { c: number };
+  assert.equal(hits.c, 1);
+  assert.equal(SCHEMA_VERSION, 2);
+});
+
+test('a new database has the guide index', () => {
+  const db = new DatabaseSync(':memory:');
+  createSchema(db);
+  const row = db.prepare("select count(*) c from sqlite_master where name='epg_programs_fts'").get() as { c: number };
+  assert.equal(row.c, 1);
+});

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
-import { createSchema } from './schema.js';
+import { createSchema, reindexGuide } from './schema.js';
 import { runQuery } from './queries.js';
 
 export function seedFixture(db: DatabaseSync): void {
@@ -29,6 +29,7 @@ export function seedFixture(db: DatabaseSync): void {
     insert into vod_item_categories values ('s1_sr1', 'series', 's1_drama');
     insert into vod_episodes(id, series_id, season_num, episode_num, title, direct_url) values ('s1_e1', 's1_sr1', 1, 1, 'Pilot', 'http://x/e1'), ('s1_e2', 's1_sr1', 1, 2, 'Pilot 2', 'http://x/e2');
   `);
+  reindexGuide(db);
 }
 
 test('categories carry channel counts filtered by source', () => {

@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { Category, Channel, Movie, Series, Episode, DataTable, VodDetailFields } from '@sbtltv/core';
 import { cleanErrorText } from '../log-redact.js';
+import { reindexGuide } from './schema.js';
 
 export interface EpgProgramInput { epg_channel_id: string; startMs: number; endMs: number; title: string; description: string }
 export interface EpgLinkInput { stream_id: string; epg_channel_id: string; confidence: string; strategy: string }
@@ -90,6 +91,7 @@ export function replaceEpg(db: DatabaseSync, sourceId: string, epgSource: string
     const insL = db.prepare(`insert or replace into epg_links(stream_id, epg_source, epg_channel_id, source_id, confidence, strategy) values (?, ?, ?, ?, ?, ?)`);
     for (const l of input.links) insL.run(l.stream_id, epgSource, l.epg_channel_id, sourceId, l.confidence, l.strategy);
     db.prepare(`insert into sources_meta(source_id, last_epg_sync) values (?, ?) on conflict(source_id) do update set last_epg_sync = excluded.last_epg_sync`).run(sourceId, Date.now());
+    reindexGuide(db);
     return ['epg_programs', 'epg_links', 'sources_meta'];
   });
 }
@@ -192,6 +194,7 @@ export function deleteSource(db: DatabaseSync, sourceId: string): DataTable[] {
     for (const t of ['vod_movies', 'vod_series', 'vod_categories', 'epg_programs', 'epg_links', 'channels', 'categories', 'sources_meta']) {
       db.prepare(`delete from ${t} where source_id = ?`).run(sourceId);
     }
+    reindexGuide(db);
     return ['vod_movies', 'vod_series', 'vod_episodes', 'vod_categories', 'epg_programs', 'epg_links', 'channels', 'categories', 'sources_meta'];
   });
 }
@@ -199,6 +202,7 @@ export function deleteSource(db: DatabaseSync, sourceId: string): DataTable[] {
 export function clearAll(db: DatabaseSync): DataTable[] {
   return tx(db, () => {
     for (const t of ['vod_episodes', 'vod_item_categories', 'vod_movies', 'vod_series', 'vod_categories', 'epg_programs', 'epg_links', 'channel_categories', 'channels', 'categories', 'sources_meta']) db.exec(`delete from ${t}`);
+    reindexGuide(db);
     return ['vod_movies', 'vod_series', 'vod_episodes', 'vod_categories', 'epg_programs', 'epg_links', 'channels', 'categories', 'sources_meta'];
   });
 }
