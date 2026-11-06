@@ -4,14 +4,17 @@
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5); backdrop-filter: blur(16px);
 }
 .gsr-list { padding: 6px; }
-.gsr-section h3 { margin: 10px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+.gsr-section h3 { margin: 10px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
 .gsr-row { border-radius: var(--r-inner); }
+.gsr-row__line { display: flex; align-items: center; gap: 6px; }
 .gsr-row__main, .gsr-channel, .gsr-feed, .gsr-more {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: none; background: transparent;
   color: var(--text); font: inherit; text-align: left; cursor: pointer; border-radius: var(--r-inner);
 }
-.gsr-row__main:hover, .gsr-channel:hover, .gsr-feed:hover, .gsr-more:hover, .gsr-row--active, .gsr-row--active > .gsr-row__main { background: var(--fill-2); }
-.gsr-when { flex: 0 0 66px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; line-height: 1.15; }
+.gsr-row__main { flex: 1; min-width: 0; }
+.gsr-row__main:hover, .gsr-channel:hover, .gsr-feed:hover, .gsr-more:hover { background: var(--fill-1); }
+.gsr-row--active { background: var(--fill-3); box-shadow: inset 2px 0 0 var(--accent); }
+.gsr-when { flex: 0 0 74px; white-space: nowrap; display: flex; flex-direction: column; gap: 4px; font-size: 12px; line-height: 1.15; }
 .gsr-when__left { color: var(--accent); font-weight: 500; }
 .gsr-when__day { color: var(--text-3); font-size: 11px; }
 .gsr-bar { height: 3px; border-radius: 2px; background: var(--fill-3); overflow: hidden; }
@@ -21,22 +24,26 @@
 .gsr-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .gsr-title { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gsr-sub { font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gsr-count { flex: none; font-size: 12px; color: var(--text-2); padding: 3px 7px; border-radius: 999px; background: var(--fill-1); }
+.gsr-count { flex: none; margin-right: 8px; font: inherit; font-size: 12px; color: var(--text-2); padding: 3px 7px; border: none; border-radius: 999px; background: var(--fill-1); cursor: pointer; }
+.gsr-count:hover { background: var(--fill-3); }
 .gsr-chev { display: inline-block; transition: transform 0.12s ease; }
 .gsr-chev--open { transform: rotate(90deg); }
 .gsr-feeds { padding: 2px 8px 8px 84px; display: grid; gap: 1px; }
 .gsr-feed { padding: 4px 6px; font-size: 12.5px; color: var(--text-2); }
+.gsr-feed span:last-child, .gsr-channel__name { min-width: 0; overflow-wrap: anywhere; }
 .gsr-feed .gsr-logo { flex-basis: 26px; width: 26px; height: 20px; }
 .gsr-channel { font-size: 13.5px; }
 .gsr-more { padding: 5px 8px; font-size: 12px; color: var(--text-2); }
-.gsr-list mark { background: none; color: var(--accent); font-weight: 600; }
+.gsr-list mark { background: none; color: inherit; font-weight: 700; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 2px; }
+.gsr-note { padding: 4px 8px; font-size: 12px; color: var(--text-3); }
 .gsr-empty { padding: 28px 12px; text-align: center; color: var(--text-3); font-size: 13px; }
 .gsr-strip {
   display: flex; align-items: center; gap: 12px; padding: 7px 24px; font-size: 13px; color: var(--text-2);
   border-bottom: 1px solid var(--line); background: var(--accent-faint); flex-shrink: 0;
 }
+.gsr-strip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gsr-strip strong { color: var(--text); font-weight: 500; }
 .gsr-strip button {
-  margin-left: auto; height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-control);
+  margin-left: auto; flex: none; white-space: nowrap; height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-control);
   background: var(--fill-2); color: var(--text); font: inherit; font-size: 12px; cursor: pointer;
 }

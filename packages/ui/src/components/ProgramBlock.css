@@ -161,4 +161,4 @@
 }
 
 /* The airing a guide search jumped to */
-.program-block.program-block--found { background: var(--accent-soft); border-left-color: var(--accent); }
+.program-block.program-block--found { background: var(--accent-soft); border-left-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-line); }

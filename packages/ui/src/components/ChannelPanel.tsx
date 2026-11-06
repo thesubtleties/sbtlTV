@@ -13,6 +13,8 @@ import { isAiringLive, type GuideAiring, type GuideSearchChannel } from '@sbtltv
 import { data } from '../data/client';
 import { useGuideSearch } from '../hooks/useGuideSearch';
 import { GuideHighlight, GuideSearchResults, flattenResults, type GuideItem } from './GuideSearchResults';
+import { useToastStore } from '../stores/toastStore';
+import { debugLog } from '../utils/debugLog';
 import './ChannelPanel.css';
 
 interface ChannelPanelProps {
@@ -45,15 +47,17 @@ function ChannelPanelImpl({
   const [searchQuery, setSearchQuery] = useState('');
 
   const [searchMode, setSearchMode] = useState<GuideSearchMode>(loadGuideSearchMode);
-  const results = useGuideSearch(searchQuery, searchMode === 'search');
   const [dropdownOpen, setDropdownOpen] = useState(true);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [allChannels, setAllChannels] = useState(false);
   const [jump, setJump] = useState<{ title: string; when: string; rows: StoredChannel[]; ids: Set<string> } | null>(null);
   const searchBoxRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const items = useMemo(() => (results ? flattenResults(results, allChannels) : []), [results, allChannels]);
-  useEffect(() => { setActiveIndex(-1); setAllChannels(false); }, [searchQuery]);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  useEffect(() => { setActiveIndex(-1); setAllChannels(false); setExpandedKey(null); }, [searchQuery]);
+  // Until the data process has opened the file, an empty guide means "not yet", not "no channels"
+  const [dataReady, setDataReady] = useState(false);
+  useEffect(() => { void data.ready.then(() => setDataReady(true)); }, []);
 
   useEffect(() => {
     const close = (e: MouseEvent) => { if (!searchBoxRef.current?.contains(e.target as Node)) setDropdownOpen(false); };
@@ -94,20 +98,20 @@ function ChannelPanelImpl({
     channelListRef.current?.scrollToIndex({ index: 0 });
   }, [scrollTopNonce]);
 
-  // Scroll the channel list to top whenever the search query or the category
-  // changes. The list used to empty for a frame between categories, which reset
-  // the scroll on its own; the data client keeps the previous rows on screen
-  // while the next category loads, so the reset is explicit now.
+  // Scroll the channel list to top whenever the filter or the category changes (Search mode
+  // leaves the guide where it is). The list used to empty for a frame between categories, which
+  // reset the scroll on its own; the data client keeps the previous rows on screen while the
+  // next category loads, so the reset is explicit now.
+  const filterText = searchMode === 'filter' ? searchQuery : '';
   useEffect(() => {
     channelListRef.current?.scrollToIndex({ index: 0 });
-  }, [searchQuery, categoryId]);
+  }, [filterText, categoryId]);
 
   // Clear the search when switching categories - the search is scoped to the current category,
   // so a leftover query would filter the new category against the wrong term. useLayoutEffect so
   // the clear lands before paint (no one-frame flash of the new category filtered by the old query).
   useLayoutEffect(() => {
     setSearchQuery('');
-    setJump(null);
   }, [categoryId]);
 
   // Track window width to differentiate window resize vs category toggle
@@ -185,27 +189,53 @@ function ChannelPanelImpl({
     goTo,
   } = useTimeGrid({ availableWidth });
 
+  const { results, pending, failed } = useGuideSearch(searchQuery, searchMode === 'search', now.getTime());
+  const items = useMemo(() => (results ? flattenResults(results, allChannels, expandedKey) : []), [results, allChannels, expandedKey]);
+  const activeId = items[activeIndex]?.id ?? null;
+
+  // However a jump ends, the guide goes back to now: it never shows Thursday as if it were today
+  const endJump = useCallback(() => { setJump(null); goToNow(); }, [goToNow]);
+  const jumping = jump !== null;
+  useEffect(() => { if (jumping) endJump(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [categoryId]);
+  useEffect(() => { if (!visible && jumping) endJump(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [visible]);
+
+  const pickFailed = (what: string, e: unknown) => {
+    debugLog(`Guide search: ${what} failed: ${e instanceof Error ? e.message : String(e)}`, 'app');
+    useToastStore.getState().addToast({ kind: 'error', title: "Couldn't open that", message: 'Details are in the debug log.', duration: 5000 });
+  };
+  const gone = () => useToastStore.getState().addToast({ kind: 'info', title: 'No longer available', message: 'That channel is gone from your sources.', duration: 4000 });
+  // A pick hands the keyboard back to the guide and the player
+  const leaveBox = () => { setSearchQuery(''); searchInputRef.current?.blur(); };
+
   const playStream = useCallback(async (streamId: string) => {
-    const [channel] = await data.query({ type: 'channelsByIds', streamIds: [streamId] });
-    if (channel) { setSearchQuery(''); onPlayChannel(channel as unknown as StoredChannel); }
-  }, [onPlayChannel]);
+    try {
+      const [channel] = await data.query({ type: 'channelsByIds', streamIds: [streamId] });
+      if (!channel) { gone(); return; }
+      leaveBox();
+      onPlayChannel(channel as unknown as StoredChannel);
+    } catch (e) { pickFailed('play', e); }
+  }, [onPlayChannel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Later: the guide goes to that time, showing only this airing's channels
   const jumpTo = useCallback(async (airing: GuideAiring, streamIds: string[]) => {
-    const rows = await data.query({ type: 'channelsByIds', streamIds });
-    const start = new Date(airing.startMs);
-    start.setMinutes(start.getMinutes() < 30 ? 0 : 30, 0, 0);
-    goTo(start);
-    const when = new Date(airing.startMs);
-    setJump({
-      title: airing.title,
-      when: `${when.toLocaleDateString([], { weekday: 'short' })} ${when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
-      rows: rows as unknown as StoredChannel[],
-      ids: new Set(airing.programIds),
-    });
-    setSearchQuery('');
-  }, [goTo]);
+    try {
+      const rows = await data.query({ type: 'channelsByIds', streamIds });
+      if (rows.length === 0) { gone(); return; }
+      const start = new Date(airing.startMs);
+      start.setMinutes(start.getMinutes() < 30 ? 0 : 30, 0, 0);
+      goTo(start);
+      const when = new Date(airing.startMs);
+      setJump({
+        title: airing.title,
+        when: `${when.toLocaleDateString([], { weekday: 'short' })} ${when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
+        rows: rows as unknown as StoredChannel[],
+        ids: new Set(airing.programIds),
+      });
+      leaveBox();
+    } catch (e) { pickFailed('jump', e); }
+  }, [goTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const toggleFeeds = (key: string) => setExpandedKey((k) => (k === key ? null : key));
   // Live is decided at the click: a Later row may have started while the dropdown was open
   const pickAiring = (a: GuideAiring) => {
     if (!isAiringLive(a, Date.now())) void jumpTo(a, a.channels.map((c) => c.stream_id));
@@ -214,8 +244,13 @@ function ChannelPanelImpl({
   const pickFeed = (a: GuideAiring, c: GuideSearchChannel) => {
     if (isAiringLive(a, Date.now())) void playStream(c.stream_id); else void jumpTo(a, [c.stream_id]);
   };
-  const pickItem = (item: GuideItem) => (item.kind === 'channel' ? void playStream(item.channel.stream_id) : pickAiring(item.airing));
-  const leaveJump = () => { setJump(null); goToNow(); };
+  const pickItem = (item: GuideItem) => {
+    if (item.kind === 'channel') void playStream(item.channel.stream_id);
+    else if (item.kind === 'more') setAllChannels(true);
+    else if (item.kind === 'feed') pickFeed(item.airing, item.channel);
+    else if (isAiringLive(item.airing, Date.now()) && item.airing.channels.length > 1) toggleFeeds(item.airing.key);
+    else pickAiring(item.airing);
+  };
 
   // Programs are read only for the rows Virtuoso is rendering (see useGuideRowRange).
   const { handleRangeChange, loadedStreamIds } = useGuideRowRange(displayChannels);
@@ -297,7 +332,7 @@ function ChannelPanelImpl({
           <span className="guide-current-time">{formatTime(now)}</span>
           <span className="guide-category">{categoryName}</span>
           <span className="guide-channel-count">
-            {searchMode === 'filter' && searchQuery.trim() ? `${displayChannels.length} of ${channels.length}` : `${channels.length} channels`}
+            {jump || (searchMode === 'filter' && searchQuery.trim()) ? `${displayChannels.length} of ${channels.length}` : `${channels.length} channels`}
           </span>
         </div>
         <div className="guide-header-right">
@@ -328,16 +363,27 @@ function ChannelPanelImpl({
               placeholder={searchMode === 'search' ? 'Search channels and shows…' : 'Filter channels…'}
               value={searchQuery}
               onFocus={() => setDropdownOpen(true)}
-              onChange={(e) => { setSearchQuery(e.target.value); setDropdownOpen(true); setJump(null); }}
+              onChange={(e) => { setSearchQuery(e.target.value); setDropdownOpen(true); if (jump) endJump(); }}
               onKeyDown={(e) => {
-                if (e.key === 'Escape' && searchQuery) {
-                  setSearchQuery('');
+                if (e.nativeEvent.isComposing) return;
+                if (e.key === 'Escape') {
                   e.stopPropagation();
+                  if (searchQuery) { setSearchQuery(''); return; }
+                  e.currentTarget.blur();
+                  onClose();
                 } else if (searchMode === 'search' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
                   e.preventDefault();
                   e.stopPropagation();
                   setActiveIndex((i) => Math.max(-1, Math.min(items.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1))));
+                } else if (searchMode === 'search' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+                  // Right and Left open and close a row's feeds; otherwise they stay the caret's
+                  const item = items[activeIndex];
+                  if (item?.kind !== 'airing' || item.airing.channels.length < 2) return;
+                  e.preventDefault();
+                  setExpandedKey(e.key === 'ArrowRight' ? item.airing.key : null);
                 } else if (searchMode === 'search' && e.key === 'Enter') {
+                  // Never on results for what was typed a moment ago
+                  if (pending) return;
                   const item = items[activeIndex] ?? items[0];
                   if (item) pickItem(item);
                 }
@@ -354,18 +400,23 @@ function ChannelPanelImpl({
                 </svg>
               </button>
             )}
-            {searchMode === 'search' && results && searchQuery.trim() && dropdownOpen && (
-              <div className="gsr-panel">
-                <GuideSearchResults
-                  results={results}
-                  query={searchQuery}
-                  activeIndex={activeIndex}
-                  allChannels={allChannels}
-                  onShowAllChannels={() => setAllChannels(true)}
-                  onPickAiring={pickAiring}
-                  onPickFeed={pickFeed}
-                  onPickChannel={(c) => void playStream(c.stream_id)}
-                />
+            {searchMode === 'search' && (results || failed) && searchQuery.trim() && dropdownOpen && (
+              <div className="gsr-panel" style={{ maxWidth: Math.max(240, availableWidth + effectiveColumnWidth - 190) }} onMouseDown={(e) => e.preventDefault()}>
+                {failed && <div className="gsr-empty">Search didn't work. Details are in the debug log.</div>}
+                {results && !failed && (
+                  <GuideSearchResults
+                    results={results}
+                    query={searchQuery}
+                    activeId={activeId}
+                    allChannels={allChannels}
+                    expandedKey={expandedKey}
+                    onShowAllChannels={() => setAllChannels(true)}
+                    onToggleFeeds={toggleFeeds}
+                    onPickAiring={pickAiring}
+                    onPickFeed={pickFeed}
+                    onPickChannel={(c) => void playStream(c.stream_id)}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -379,7 +430,7 @@ function ChannelPanelImpl({
             </button>
             <button
               className={`guide-now-btn ${isAtNow ? 'inactive' : ''}`}
-              onClick={goToNow}
+              onClick={jump ? endJump : goToNow}
               disabled={isAtNow}
               title="Go to now"
             >
@@ -403,7 +454,7 @@ function ChannelPanelImpl({
       {jump && (
         <div className="gsr-strip">
           <span><strong>{jump.title}</strong> · {jump.when} · {jump.rows.length === 1 ? jump.rows[0].name : `${jump.rows.length} channels`}</span>
-          <button onClick={leaveJump}>Back to guide</button>
+          <button onClick={endJump}>Back to guide</button>
         </div>
       )}
 
@@ -461,7 +512,9 @@ function ChannelPanelImpl({
                     <path d="M17 2l-5 5-5-5" />
                   </svg>
                 </div>
-                {searchQuery.trim() ? (
+                {!dataReady ? (
+                  <h3>Loading the guide…</h3>
+                ) : filterText.trim() ? (
                   <>
                     <h3>No results for "{searchQuery}"</h3>
                     <p>Try a different search term</p>

@@ -6,8 +6,16 @@ import { useGuideSearchHideAdult } from '../stores/uiStore';
 
 const DEBOUNCE_MS = 60;
 
-/** Results for what's typed; the last ones stay up while the next arrive. Null when not searching. */
-export function useGuideSearch(query: string, enabled: boolean): GuideSearchResult | null {
+export interface GuideSearchState {
+  /** The latest results; they stay up while the next arrive. Null when not searching. */
+  results: GuideSearchResult | null;
+  /** The results on screen aren't for what's typed yet: nothing may act on them. */
+  pending: boolean;
+  failed: boolean;
+}
+
+/** `minute` is the guide's clock: results refresh with it, so shows that end drop out. */
+export function useGuideSearch(query: string, enabled: boolean, minute: number): GuideSearchState {
   const [settled, setSettled] = useState('');
   const text = enabled ? query.trim() : '';
   useEffect(() => {
@@ -17,10 +25,10 @@ export function useGuideSearch(query: string, enabled: boolean): GuideSearchResu
   const sourceIds = useEnabledSourceIds();
   const hideAdult = useGuideSearchHideAdult();
   const active = settled.length >= GUIDE_SEARCH_MIN_CHARS && text.length >= GUIDE_SEARCH_MIN_CHARS;
-  const { data } = useDataQuery(
-    active ? { type: 'guideSearch', query: settled, sourceIds, nowMs: Date.now(), hideAdult } : null,
+  const { data, loading, stale, error } = useDataQuery(
+    active ? { type: 'guideSearch', query: settled, sourceIds, nowMs: minute, hideAdult } : null,
     ['epg_programs', 'epg_links', 'channels'],
-    [active ? settled : '', sourceIds.join(','), hideAdult],
+    [active ? settled : '', sourceIds.join(','), hideAdult, minute],
   );
-  return active ? data ?? null : null;
+  return { results: active ? data ?? null : null, pending: text !== settled || stale || (loading && data === undefined), failed: error };
 }

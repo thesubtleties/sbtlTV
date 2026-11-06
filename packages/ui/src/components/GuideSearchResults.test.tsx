@@ -11,8 +11,8 @@ const results: GuideSearchResult = {
   onNow: [airing('Sports Tonight', Date.now() - 60000)], later: [airing('Sports Later', Date.now() + 3600000)], mentions: [airing('Other', Date.now() + 7200000)],
 };
 const render = (over = {}) => renderToStaticMarkup(createElement(GuideSearchResults, {
-  results, query: 'sports', activeIndex: -1, allChannels: false,
-  onShowAllChannels: () => {}, onPickAiring: () => {}, onPickFeed: () => {}, onPickChannel: () => {}, ...over,
+  results, query: 'sports', activeId: null, allChannels: false, expandedKey: null,
+  onShowAllChannels: () => {}, onToggleFeeds: () => {}, onPickAiring: () => {}, onPickFeed: () => {}, onPickChannel: () => {}, ...over,
 }));
 
 describe('GuideSearchResults', () => {
@@ -29,15 +29,42 @@ describe('GuideSearchResults', () => {
     expect(html).toContain('Sports</mark> 4');
     expect(html).not.toContain('Show all');
   });
+  it('is honest when there are more channels than it will list', () => {
+    const many = { ...results, channels: Array.from({ length: 200 }, (_, i) => ch(i)), channelTotal: 1200 };
+    expect(render({ results: many })).toContain('Show 200 of 1200');
+    expect(render({ results: many, allChannels: true })).toContain('200 of 1200 shown');
+  });
   it('says so when nothing matches', () => {
     const html = render({ results: { channels: [], channelTotal: 0, onNow: [], later: [], mentions: [] } });
     expect(html).toContain('Nothing on the guide for');
   });
+  it('lists the feeds of the expanded airing', () => {
+    expect(render({ expandedKey: 'Sports Tonight' })).toContain('gsr-feed');
+    expect(render()).not.toContain('gsr-feed');
+  });
+  it('marks the active row', () => {
+    expect(render({ activeId: 'airing:Sports Tonight' })).toContain('gsr-row--active');
+  });
+  it('highlights accented matches', () => {
+    const r = { ...results, onNow: [airing('Fútbol Liga', Date.now() - 60000)] };
+    expect(render({ results: r, query: 'futb' })).toContain('<mark>Fútbol</mark>');
+  });
 });
 
 describe('flattenResults', () => {
-  it('lists rows in the order they show', () => {
-    expect(flattenResults(results, false).map((i) => (i.kind === 'channel' ? i.channel.name : i.airing.title)))
-      .toEqual(['Sports 1', 'Sports 2', 'Sports 3', 'Sports Tonight', 'Sports Later', 'Other']);
+  const names = (items: ReturnType<typeof flattenResults>) => items.map((i) => i.id);
+  it('lists rows in the order they show, Show all included', () => {
+    expect(names(flattenResults(results, false, null))).toEqual([
+      'channel:c1', 'channel:c2', 'channel:c3', 'more', 'airing:Sports Tonight', 'airing:Sports Later', 'airing:Other',
+    ]);
+  });
+  it('has no Show all once expanded or when everything shows', () => {
+    expect(names(flattenResults(results, true, null))).not.toContain('more');
+  });
+  it('puts open feeds right after their airing', () => {
+    const ids = names(flattenResults(results, false, 'Sports Later'));
+    expect(ids.slice(ids.indexOf('airing:Sports Later'), ids.indexOf('airing:Other'))).toEqual([
+      'airing:Sports Later', 'feed:Sports Later:c1', 'feed:Sports Later:c2',
+    ]);
   });
 });

@@ -399,6 +399,8 @@ export interface SharedTextureApi {
 declare global {
   interface DataApi {
     requestPort(): void;
+    status(): Promise<'fatal' | 'reset' | null>;
+    onStatus(callback: (status: 'fatal' | 'reset') => void): () => void;
   }
 
   interface Window {

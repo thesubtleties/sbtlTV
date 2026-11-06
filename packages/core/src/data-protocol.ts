@@ -145,7 +145,8 @@ export type ControlReply =
   | { type: 'ready' }
   | { type: 'log'; category: string; message: string }
   | { type: 'sync'; progress: SyncProgress }
-  | { type: 'fatal'; error: string };
+  | { type: 'fatal'; error: string }
+  | { type: 'reset'; reason: string };
 
 // ---- Guards ----
 export function isDataRequest(value: unknown): value is DataRequest {

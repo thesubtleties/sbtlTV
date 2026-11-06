@@ -700,6 +700,16 @@ function App() {
     }
   };
 
+  // The data file couldn't be used: say so, rather than leave an empty guide to explain itself
+  useEffect(() => {
+    const show = (status: 'fatal' | 'reset' | null) => {
+      if (status === 'reset') useToastStore.getState().addToast({ kind: 'info', title: 'Rebuilding your guide', message: "The saved data couldn't be read. Channels and the guide are reloading from your sources.", duration: 10000 });
+      if (status === 'fatal') useToastStore.getState().addToast({ kind: 'error', title: "Guide data couldn't be opened", message: "Channels and the guide won't load. Details are in the debug log." });
+    };
+    void window.data?.status().then(show);
+    return window.data?.onStatus(show);
+  }, []);
+
   // Hydrate settings from disk into Zustand (runs unconditionally, even without sources)
   useEffect(() => {
     async function loadSettings() {

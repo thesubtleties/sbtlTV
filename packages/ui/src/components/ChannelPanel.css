@@ -65,6 +65,10 @@
   display: flex;
   align-items: center;
   gap: 20px;
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .guide-current-time {
@@ -91,6 +95,9 @@
   display: flex;
   align-items: center;
   gap: 16px;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 /* Navigation Controls */
@@ -430,6 +437,8 @@
   position: relative;
   display: flex;
   align-items: center;
+  flex: 0 1 280px;
+  min-width: 120px;
 }
 
 .guide-search-mode {
@@ -446,7 +455,8 @@
   font-size: 13px;
   height: 30px;
   padding: 0 28px 0 32px;
-  width: 300px;
+  width: 100%;
+  box-sizing: border-box;
   outline: none;
   transition: border-color 0.15s ease, background 0.15s ease;
 }

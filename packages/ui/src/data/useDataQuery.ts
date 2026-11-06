@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DataRequestBody, DataTable, ReplyForBody } from '@sbtltv/core';
 import { data } from './client';
+import { debugLog } from '../utils/debugLog';
 
 // Runs a query, re-runs it when any of `tables` changes, and keeps the previous
 // result while a new one is in flight (no flash to empty). `req` null = idle.
@@ -8,10 +9,11 @@ import { data } from './client';
 // on hand was fetched for a different request than the current one, so callers
 // that must not mix answers with questions (the guide's per-row "unread"
 // state) can wait for the matching reply.
-export function useDataQuery<B extends DataRequestBody>(req: B | null, tables: DataTable[], deps: unknown[]): { data: ReplyForBody<B> | undefined; loading: boolean; stale: boolean } {
+export function useDataQuery<B extends DataRequestBody>(req: B | null, tables: DataTable[], deps: unknown[]): { data: ReplyForBody<B> | undefined; loading: boolean; stale: boolean; error: boolean } {
   const key = JSON.stringify(deps);
   const [result, setResult] = useState<{ key: string; data: ReplyForBody<B> } | undefined>(undefined);
   const [loading, setLoading] = useState(req !== null);
+  const [error, setError] = useState(false);
   const reqRef = useRef(req);
   reqRef.current = req;
   const tablesKey = tables.join(',');
@@ -26,9 +28,10 @@ export function useDataQuery<B extends DataRequestBody>(req: B | null, tables: D
       setLoading(true);
       try {
         const out = await data.query(r);
-        if (alive && mine === generation) { setResult({ key, data: out }); setLoading(false); }
-      } catch {
-        if (alive && mine === generation) setLoading(false);
+        if (alive && mine === generation) { setResult({ key, data: out }); setLoading(false); setError(false); }
+      } catch (e) {
+        if (alive && mine === generation) { setLoading(false); setError(true); }
+        debugLog(`Query ${r.type} failed: ${e instanceof Error ? e.message : String(e)}`, 'data');
       }
     };
     void run();
@@ -36,5 +39,5 @@ export function useDataQuery<B extends DataRequestBody>(req: B | null, tables: D
     return () => { alive = false; unsubscribe(); };
   }, [key, tablesKey]);
 
-  return { data: result?.data, loading, stale: result !== undefined && result.key !== key };
+  return { data: result?.data, loading, stale: result !== undefined && result.key !== key, error };
 }
