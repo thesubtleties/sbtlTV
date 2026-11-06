@@ -23,6 +23,7 @@ export interface TimeGridActions {
   goBack: () => void;
   goForward: () => void;
   goToNow: () => void;
+  goTo: (date: Date) => void;
 }
 
 // Clamp a value between min and max
@@ -172,6 +173,8 @@ export function useTimeGrid({
     refreshNow();
   }, [refreshNow]);
 
+  const goTo = useCallback((date: Date) => setBrowseAnchor(date), []);
+
   return {
     now,
     anchor,
@@ -185,5 +188,6 @@ export function useTimeGrid({
     goBack,
     goForward,
     goToNow,
+    goTo,
   };
 }

@@ -159,3 +159,6 @@
 .program-block.current .program-block-desc {
   color: var(--muted);
 }
+
+/* The airing a guide search jumped to */
+.program-block.program-block--found { background: var(--accent-soft); border-left-color: var(--accent); }
