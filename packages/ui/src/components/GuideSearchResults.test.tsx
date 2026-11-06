@@ -104,3 +104,33 @@ describe('GuideSearchResults: times and mentions', () => {
     expect(html.match(/lorem/g)!.length).toBeLessThan(10);
   });
 });
+
+describe('a show with other airings', () => {
+  const later = { ...airing('Sports Later', Date.now() + 3600000), more: [airing('Sports Later', Date.now() + 7200000), airing('Sports Later', Date.now() + 9000000)] };
+  later.more[0].key = 'm1'; later.more[1].key = 'm2';
+  const r = { ...results, later: [later] };
+  it('says how many, as well as how many channels', () => {
+    const html = render({ results: r });
+    expect(html).toContain('2 more');
+    expect(html).toContain('2 channels');
+  });
+  it('lists them when opened', () => {
+    expect(render({ results: r, expandedKey: 'Sports Later' })).toContain('data-row="airing:m1"');
+    expect(render({ results: r })).not.toContain('data-row="airing:m1"');
+  });
+  it('lets the keys reach them, after its feeds', () => {
+    const ids = flattenResults(r, false, 'Sports Later').map((i) => i.id);
+    expect(ids.slice(ids.indexOf('airing:Sports Later'), ids.indexOf('airing:Other'))).toEqual([
+      'airing:Sports Later', 'feed:Sports Later:c1', 'feed:Sports Later:c2', 'airing:m1', 'airing:m2',
+    ]);
+  });
+});
+
+describe('rows found by their description', () => {
+  it('name the channel beside the words that matched', () => {
+    const a = { ...airing('Other', Date.now() - 1000), byDescription: true };
+    const html = render({ results: { ...results, onNow: [a] } });
+    expect(html).toContain('Sports 1 · ');
+    expect(html).toContain('<mark>sports</mark> here');
+  });
+});

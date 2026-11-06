@@ -10,9 +10,10 @@ import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import { loadGuideSearchMode, saveGuideSearchMode, type GuideSearchMode } from '../utils/guideSearchMode';
 import { type GuideAiring, type GuideSearchChannel } from '@sbtltv/core';
-import { airingAction, enterItem, feedsAfterKey, jumpAnchor, moveActive } from '../utils/guideSearchLogic';
+import { airingAction, enterItem, expandAfterKey, jumpAnchor, moveActive } from '../utils/guideSearchLogic';
 import { data } from '../data/client';
 import { useGuideSearch } from '../hooks/useGuideSearch';
+import { useDataState } from '../hooks/useDataState';
 import { GuideHighlight, GuideSearchResults, flattenResults, type GuideItem } from './GuideSearchResults';
 import { useToastStore } from '../stores/toastStore';
 import { debugLog } from '../utils/debugLog';
@@ -26,6 +27,8 @@ interface ChannelPanelProps {
   onPlayChannel: (channel: StoredChannel) => void;
   onClose: () => void;
   scrollTopNonce?: number;
+  /** Changes when / asks for the search box */
+  searchFocusNonce?: number;
 }
 
 function ChannelPanelImpl({
@@ -36,6 +39,7 @@ function ChannelPanelImpl({
   onPlayChannel,
   onClose,
   scrollTopNonce,
+  searchFocusNonce,
 }: ChannelPanelProps) {
   const channelSortOrder = useChannelSortOrder();
   const isFavoritesView = categoryId === '__favorites__';
@@ -49,16 +53,14 @@ function ChannelPanelImpl({
 
   const [searchMode, setSearchMode] = useState<GuideSearchMode>(loadGuideSearchMode);
   const [dropdownOpen, setDropdownOpen] = useState(true);
-  const [activeIndex, setActiveIndex] = useState(-1);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [allChannels, setAllChannels] = useState(false);
   const [jump, setJump] = useState<{ title: string; when: string; rows: StoredChannel[]; ids: Set<string> } | null>(null);
   const searchBoxRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  useEffect(() => { setActiveIndex(-1); setAllChannels(false); setExpandedKey(null); }, [searchQuery]);
-  // Until the data process has opened the file, an empty guide means "not yet", not "no channels"
-  const [dataReady, setDataReady] = useState(false);
-  useEffect(() => { void data.ready.then(() => setDataReady(true)); }, []);
+  useEffect(() => { setActiveId(null); setAllChannels(false); setExpandedKey(null); }, [searchQuery]);
+  const dataState = useDataState();
 
   useEffect(() => {
     const close = (e: MouseEvent) => { if (!searchBoxRef.current?.contains(e.target as Node)) setDropdownOpen(false); };
@@ -108,7 +110,7 @@ function ChannelPanelImpl({
     channelListRef.current?.scrollToIndex({ index: 0 });
   }, [filterText, categoryId]);
 
-  // Clear the search when switching categories - the search is scoped to the current category,
+  // Clear the search when switching categories - Filter mode works on the current category,
   // so a leftover query would filter the new category against the wrong term. useLayoutEffect so
   // the clear lands before paint (no one-frame flash of the new category filtered by the old query).
   useLayoutEffect(() => {
@@ -190,19 +192,24 @@ function ChannelPanelImpl({
     goTo,
   } = useTimeGrid({ availableWidth });
 
-  const { results, pending, failed } = useGuideSearch(searchQuery, searchMode === 'search', now.getTime());
+  const { results, pending, failed } = useGuideSearch(searchQuery, searchMode === 'search' && visible, now.getTime());
   const items = useMemo(() => (results ? flattenResults(results, allChannels, expandedKey) : []), [results, allChannels, expandedKey]);
-  const activeId = items[activeIndex]?.id ?? null;
 
   // However a jump ends, the guide goes back to now: it never shows Thursday as if it were today
   const endJump = useCallback(() => { setJump(null); goToNow(); }, [goToNow]);
   const jumping = jump !== null;
   useEffect(() => { if (jumping) endJump(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [categoryId]);
   useEffect(() => { if (!visible && jumping) endJump(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [visible]);
+  useEffect(() => { if (jumping) endJump(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [scrollTopNonce]);
+
+  // / from anywhere: the guide opens and the box takes the keys
+  useEffect(() => {
+    if (searchFocusNonce) searchInputRef.current?.focus();
+  }, [searchFocusNonce]);
 
   const pickFailed = (what: string, e: unknown) => {
     debugLog(`Guide search: ${what} failed: ${e instanceof Error ? e.message : String(e)}`, 'app');
-    useToastStore.getState().addToast({ kind: 'error', title: "Couldn't open that", message: 'Details are in the debug log.', duration: 5000 });
+    useToastStore.getState().addToast({ kind: 'error', title: "Couldn't open that", message: 'Try it again.', duration: 5000 });
   };
   const gone = () => useToastStore.getState().addToast({ kind: 'info', title: 'No longer available', message: 'That channel is gone from your sources.', duration: 4000 });
   // A pick hands the keyboard back to the guide and the player
@@ -362,29 +369,33 @@ function ChannelPanelImpl({
               type="text"
               placeholder={searchMode === 'search' ? 'Search channels and shows…' : 'Filter channels…'}
               value={searchQuery}
+              maxLength={120}
               onFocus={() => setDropdownOpen(true)}
+              onBlur={() => setDropdownOpen(false)}
               onChange={(e) => { setSearchQuery(e.target.value); setDropdownOpen(true); if (jump) endJump(); }}
               onKeyDown={(e) => {
                 if (e.nativeEvent.isComposing) return;
                 if (e.key === 'Escape') {
                   e.stopPropagation();
                   if (searchQuery) { setSearchQuery(''); return; }
+                  // Out of the box, the app's own Esc: it knows about fullscreen and the category strip
                   e.currentTarget.blur();
-                  onClose();
+                  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
                 } else if (searchMode === 'search' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
                   e.preventDefault();
                   e.stopPropagation();
-                  const key = e.key;
-                  setActiveIndex((i) => moveActive(i, key, items.length));
+                  setActiveId(moveActive(activeId, e.key, items));
                 } else if (searchMode === 'search' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
-                  // Right and Left open and close a row's feeds; otherwise they stay the caret's
-                  const open = feedsAfterKey(items[activeIndex], e.key);
+                  // Right opens a row's feeds and other airings, Left closes them; otherwise they stay the caret's
+                  const item = items.find((i) => i.id === activeId);
+                  const open = expandAfterKey(item, e.key, expandedKey);
                   if (open === undefined) return;
                   e.preventDefault();
+                  if (open === null) setActiveId(`airing:${expandedKey}`);
                   setExpandedKey(open);
                 } else if (searchMode === 'search' && e.key === 'Enter') {
                   // Never on results for what was typed a moment ago
-                  const item = enterItem(items, activeIndex, pending);
+                  const item = enterItem(items, activeId, pending);
                   if (item) pickItem(item);
                 }
               }}
@@ -392,7 +403,8 @@ function ChannelPanelImpl({
             {searchQuery && (
               <button
                 className="guide-search-clear"
-                onClick={() => setSearchQuery('')}
+                onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}
+                onMouseDown={(e) => e.preventDefault()}
                 title="Clear search"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -401,8 +413,8 @@ function ChannelPanelImpl({
               </button>
             )}
             {searchMode === 'search' && (results || failed) && searchQuery.trim() && dropdownOpen && (
-              <div className="gsr-panel" style={{ maxWidth: Math.max(240, availableWidth + effectiveColumnWidth - 215) }} onMouseDown={(e) => e.preventDefault()}>
-                {failed && <div className="gsr-empty">Search didn't work. Details are in the debug log.</div>}
+              <div className="gsr-panel" onMouseDown={(e) => e.preventDefault()}>
+                {failed && <div className="gsr-empty">Search didn't work. Try again.</div>}
                 {results && !failed && (
                   <GuideSearchResults
                     results={results}
@@ -512,8 +524,13 @@ function ChannelPanelImpl({
                     <path d="M17 2l-5 5-5-5" />
                   </svg>
                 </div>
-                {!dataReady ? (
-                  <h3>Loading the guide…</h3>
+                {dataState === 'failed' ? (
+                  <>
+                    <h3>Guide data couldn't be opened</h3>
+                    <p>Restart sbtlTV, and check there's free disk space.</p>
+                  </>
+                ) : dataState !== 'ready' ? (
+                  <h3>{dataState === 'rebuilding' ? 'Rebuilding your guide…' : 'Loading the guide…'}</h3>
                 ) : filterText.trim() ? (
                   <>
                     <h3>No results for "{searchQuery}"</h3>

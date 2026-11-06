@@ -129,7 +129,7 @@ export function EpgTab({
 
   return (
     <SettingsTab>
-      <Section title="Channels" description="How channels and categories are ordered in the guide.">
+      <Section title="Channels" description="How the guide orders channels and categories, and what search covers.">
         <OptionRow
           title="Channel order"
           help={channelSortOrder === 'number'

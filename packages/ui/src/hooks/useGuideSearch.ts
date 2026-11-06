@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { GUIDE_SEARCH_MIN_CHARS, type GuideSearchResult } from '@sbtltv/core';
 import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
@@ -15,7 +15,7 @@ export interface GuideSearchState {
   failed: boolean;
 }
 
-/** `minute` is the guide's clock: results refresh with it, so shows that end drop out. */
+/** `minute` is the guide's clock: results refresh with it, so shows that end drop out. A refresh of the same search leaves its rows usable. */
 export function useGuideSearch(query: string, enabled: boolean, minute: number): GuideSearchState {
   const [settled, setSettled] = useState('');
   const text = enabled ? query.trim() : '';
@@ -31,5 +31,7 @@ export function useGuideSearch(query: string, enabled: boolean, minute: number):
     ['epg_programs', 'epg_links', 'channels'],
     [active ? settled : '', sourceIds.join(','), hideAdult, minute],
   );
-  return { results: active ? data ?? null : null, ...searchStatus({ text, settled, active, stale, loading, hasData: data !== undefined, error }) };
+  const answered = useRef('');
+  if (active && !stale && data !== undefined) answered.current = settled;
+  return { results: active ? data ?? null : null, ...searchStatus({ text, settled, active, stale: answered.current !== settled, loading, hasData: data !== undefined, error }) };
 }

@@ -1,21 +1,26 @@
 import { isAiringLive, type GuideAiring } from '@sbtltv/core';
 import type { GuideItem } from '../components/GuideSearchResults';
 
-/** Up and Down through the rows; -1 is back in the box, with nothing highlighted. */
-export function moveActive(index: number, key: 'ArrowUp' | 'ArrowDown', count: number): number {
-  return Math.max(-1, Math.min(count - 1, index + (key === 'ArrowDown' ? 1 : -1)));
+/** Up and Down through the rows; null is back in the box, with nothing highlighted. */
+export function moveActive(activeId: string | null, key: 'ArrowUp' | 'ArrowDown', items: GuideItem[]): string | null {
+  const at = items.findIndex((i) => i.id === activeId);
+  if (at < 0) return key === 'ArrowDown' ? items[0]?.id ?? null : null;
+  const next = at + (key === 'ArrowDown' ? 1 : -1);
+  return next < 0 ? null : items[Math.min(next, items.length - 1)].id;
 }
 
-/** Right and Left on a row with feeds: which row to leave open. undefined = the caret's key. */
-export function feedsAfterKey(item: GuideItem | undefined, key: 'ArrowLeft' | 'ArrowRight'): string | null | undefined {
-  if (item?.kind !== 'airing' || item.airing.channels.length < 2) return undefined;
-  return key === 'ArrowRight' ? item.airing.key : null;
+/** Right opens a row with feeds or other airings, Left closes what's open. undefined = the caret's key. */
+export function expandAfterKey(item: GuideItem | undefined, key: 'ArrowLeft' | 'ArrowRight', expandedKey: string | null): string | null | undefined {
+  if (key === 'ArrowLeft') return expandedKey !== null && item ? null : undefined;
+  if (item?.kind !== 'airing' || (item.airing.channels.length < 2 && !item.airing.more?.length)) return undefined;
+  return item.airing.key;
 }
 
-/** What Enter acts on: never results for what was typed a moment ago. */
-export function enterItem(items: GuideItem[], activeIndex: number, pending: boolean): GuideItem | null {
+/** What Enter acts on: never results for what was typed a moment ago, nor a row that has gone. */
+export function enterItem(items: GuideItem[], activeId: string | null, pending: boolean): GuideItem | null {
   if (pending) return null;
-  return items[activeIndex] ?? items[0] ?? null;
+  if (activeId === null) return items[0] ?? null;
+  return items.find((i) => i.id === activeId) ?? null;
 }
 
 /** What picking an airing's row does: on now it plays or offers its feeds, later it jumps. */
@@ -35,5 +40,5 @@ export interface SearchRead { text: string; settled: string; active: boolean; st
 
 /** Nothing may act on results while `pending`; `failed` is about the search on screen. */
 export function searchStatus(r: SearchRead): { pending: boolean; failed: boolean } {
-  return { pending: r.text !== r.settled || r.stale || (r.loading && !r.hasData), failed: r.error };
+  return { pending: r.text !== r.settled || r.stale || (r.loading && !r.hasData), failed: r.active && r.error };
 }

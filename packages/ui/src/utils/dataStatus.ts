@@ -19,6 +19,8 @@ export interface DataStatusSource {
 export function watchDataStatus(source: DataStatusSource | undefined, notify: (status: DataStatus) => void): (() => void) | undefined {
   if (!source) return undefined;
   const show = onceEachStatus(notify);
-  void source.status().then(show, () => { /* the live event still arrives */ });
-  return source.onStatus(show);
+  const check = () => source.status().then(show, () => { /* the live event still arrives */ });
+  void check();
+  // Reading it marks it delivered, so a window opened later doesn't hear it again
+  return source.onStatus((status) => { show(status); void check(); });
 }

@@ -73,6 +73,9 @@ interface UIState {
   // App settings (hydrated from electron-store on startup)
   settings: AppSettings;
   settingsLoaded: boolean;
+  /** The data file couldn't be used (from main) */
+  dataProblem: 'fatal' | 'reset' | null;
+  setDataProblem: (problem: 'fatal' | 'reset' | null) => void;
   hydrateSettings: (data: AppSettings) => void;
   updateSettings: (partial: Partial<AppSettings>) => void;
 
@@ -165,6 +168,8 @@ export const useUIStore = create<UIState>((set) => ({
   // App settings
   settings: DEFAULT_SETTINGS,
   settingsLoaded: false,
+  dataProblem: null,
+  setDataProblem: (dataProblem) => set({ dataProblem }),
   hydrateSettings: (data) => set({ settings: { ...DEFAULT_SETTINGS, ...data }, settingsLoaded: true }),
   updateSettings: (partial) => set((state) => {
     const merged = { ...state.settings, ...partial };

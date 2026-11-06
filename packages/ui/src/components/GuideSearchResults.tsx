@@ -1,4 +1,4 @@
-import { createContext, useEffect, useRef, useState } from 'react';
+import { createContext, memo, useEffect, useRef, useState } from 'react';
 import { isAiringLive, matchRanges, type GuideAiring, type GuideSearchChannel, type GuideSearchResult } from '@sbtltv/core';
 import './GuideSearchResults.css';
 
@@ -21,7 +21,8 @@ export function flattenResults(r: GuideSearchResult, allChannels: boolean, expan
   for (const airing of [...r.onNow, ...r.later, ...r.mentions]) {
     items.push({ id: `airing:${airing.key}`, kind: 'airing', airing });
     if (airing.key !== expandedKey) continue;
-    for (const channel of airing.channels) items.push({ id: `feed:${airing.key}:${channel.stream_id}`, kind: 'feed', airing, channel });
+    if (airing.channels.length > 1) for (const channel of airing.channels) items.push({ id: `feed:${airing.key}:${channel.stream_id}`, kind: 'feed', airing, channel });
+    for (const other of airing.more ?? []) items.push({ id: `airing:${other.key}`, kind: 'airing', airing: other });
   }
   return items;
 }
@@ -36,7 +37,8 @@ function timeLeft(endMs: number, now: number): string {
   return left >= 60 ? `${Math.floor(left / 60)}h ${left % 60}m left` : `${left}m left`;
 }
 
-function Marked({ text, query }: { text: string; query: string }) {
+// Memoised: this runs for every row on every arrow key
+const Marked = memo(function Marked({ text, query }: { text: string; query: string }) {
   const out: React.ReactNode[] = [];
   let at = 0;
   for (const [start, end] of matchRanges(text, query)) {
@@ -45,7 +47,7 @@ function Marked({ text, query }: { text: string; query: string }) {
   }
   out.push(text.slice(at));
   return <>{out}</>;
-}
+});
 
 /** Starts near the first match, so a word deep in a description is in view. */
 function snippet(text: string, query: string): string {
@@ -73,6 +75,7 @@ function AiringRow({ airing, activeId, expanded, query, showDescription, onToggl
   const now = Date.now();
   const live = isAiringLive(airing, now);
   const many = airing.channels.length > 1;
+  const others = airing.more?.length ?? 0;
   const pct = Math.min(100, Math.max(0, ((now - airing.startMs) / (airing.endMs - airing.startMs)) * 100));
   const id = `airing:${airing.key}`;
   return (
@@ -96,17 +99,18 @@ function AiringRow({ airing, activeId, expanded, query, showDescription, onToggl
           <span className="gsr-text">
             <span className="gsr-title"><Marked text={airing.title} query={query} /></span>
             <span className="gsr-sub">
-              {showDescription ? <Marked text={snippet(airing.description, query)} query={query} /> : airing.channels[0]?.name}
+              {airing.channels[0]?.name}
+              {showDescription && <> · <Marked text={snippet(airing.description, query)} query={query} /></>}
             </span>
           </span>
         </button>
-        {many && (
+        {(many || others > 0) && (
           <button className="gsr-count" tabIndex={-1} onClick={() => onToggleFeeds(airing.key)}>
-            {airing.channels.length} channels <span className={`gsr-chev${expanded ? ' gsr-chev--open' : ''}`}>›</span>
+            {many && `${airing.channels.length} channels`}{many && others > 0 && ' · '}{others > 0 && `${others} more`} <span className={`gsr-chev${expanded ? ' gsr-chev--open' : ''}`}>›</span>
           </button>
         )}
       </div>
-      {expanded && (
+      {expanded && many && (
         <div className="gsr-feeds">
           {airing.channels.map((c) => {
             const feed = `feed:${airing.key}:${c.stream_id}`;
@@ -116,6 +120,14 @@ function AiringRow({ airing, activeId, expanded, query, showDescription, onToggl
               </button>
             );
           })}
+        </div>
+      )}
+      {expanded && others > 0 && (
+        <div className="gsr-others">
+          {airing.more?.map((a) => (
+            <AiringRow key={a.key} airing={a} activeId={activeId} expanded={false} query={query} showDescription={false}
+              onToggleFeeds={onToggleFeeds} onPickAiring={onPickAiring} onPickFeed={onPickFeed} />
+          ))}
         </div>
       )}
     </div>
@@ -134,7 +146,7 @@ export function GuideSearchResults({ results, query, activeId, allChannels, expa
 
   const channels = allChannels ? results.channels : results.channels.slice(0, CHANNELS_SHOWN);
   const capped = results.channels.length < results.channelTotal;
-  const row = (a: GuideAiring, showDescription = false) => (
+  const row = (a: GuideAiring, showDescription = a.byDescription === true) => (
     <AiringRow key={a.key} airing={a} activeId={activeId} expanded={a.key === expandedKey} query={query} showDescription={showDescription}
       onToggleFeeds={onToggleFeeds} onPickAiring={onPickAiring} onPickFeed={onPickFeed} />
   );

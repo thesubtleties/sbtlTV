@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { GuideAiring } from '@sbtltv/core';
 import type { GuideItem } from '../components/GuideSearchResults';
-import { airingAction, enterItem, feedsAfterKey, jumpAnchor, moveActive, searchStatus } from './guideSearchLogic';
+import { airingAction, enterItem, expandAfterKey, jumpAnchor, moveActive, searchStatus } from './guideSearchLogic';
 
 const ch = (n: number) => ({ stream_id: `c${n}`, name: `C${n}`, stream_icon: '' });
 const airing = (channels: number, startMs = 1000): GuideAiring => ({
@@ -9,47 +9,67 @@ const airing = (channels: number, startMs = 1000): GuideAiring => ({
 });
 const row = (a: GuideAiring): GuideItem => ({ id: `airing:${a.key}`, kind: 'airing', airing: a });
 
+const a1 = row({ ...airing(1), key: 'a' });
+const b1 = row({ ...airing(1), key: 'b' });
+const c1 = row({ ...airing(1), key: 'c' });
+const list = [a1, b1, c1];
+
 describe('moveActive', () => {
-  it('moves one row at a time', () => {
-    expect(moveActive(-1, 'ArrowDown', 3)).toBe(0);
-    expect(moveActive(0, 'ArrowDown', 3)).toBe(1);
-    expect(moveActive(1, 'ArrowUp', 3)).toBe(0);
+  it('moves one row at a time, by row, not position', () => {
+    expect(moveActive(null, 'ArrowDown', list)).toBe('airing:a');
+    expect(moveActive('airing:a', 'ArrowDown', list)).toBe('airing:b');
+    expect(moveActive('airing:b', 'ArrowUp', list)).toBe('airing:a');
   });
   it('stops at the last row, and Up from the first goes back to the box', () => {
-    expect(moveActive(2, 'ArrowDown', 3)).toBe(2);
-    expect(moveActive(0, 'ArrowUp', 3)).toBe(-1);
-    expect(moveActive(-1, 'ArrowUp', 3)).toBe(-1);
+    expect(moveActive('airing:c', 'ArrowDown', list)).toBe('airing:c');
+    expect(moveActive('airing:a', 'ArrowUp', list)).toBeNull();
+    expect(moveActive(null, 'ArrowUp', list)).toBeNull();
   });
   it('stays in the box with no rows', () => {
-    expect(moveActive(-1, 'ArrowDown', 0)).toBe(-1);
+    expect(moveActive(null, 'ArrowDown', [])).toBeNull();
+  });
+  it('starts over when the highlighted row has gone', () => {
+    expect(moveActive('airing:gone', 'ArrowDown', list)).toBe('airing:a');
   });
 });
 
-describe('feedsAfterKey', () => {
-  it('opens and closes the feeds of a row that has several', () => {
-    expect(feedsAfterKey(row(airing(2)), 'ArrowRight')).toBe('k');
-    expect(feedsAfterKey(row(airing(2)), 'ArrowLeft')).toBeNull();
+describe('expandAfterKey', () => {
+  it('opens a row with feeds or other airings', () => {
+    expect(expandAfterKey(row(airing(2)), 'ArrowRight', null)).toBe('k');
+    expect(expandAfterKey(row({ ...airing(1), more: [airing(1)] }), 'ArrowRight', null)).toBe('k');
+  });
+  it('closes whatever is open from anywhere inside it', () => {
+    expect(expandAfterKey(row(airing(2)), 'ArrowLeft', 'k')).toBeNull();
+    expect(expandAfterKey({ id: 'feed:k:c1', kind: 'feed', airing: airing(2), channel: ch(1) }, 'ArrowLeft', 'k')).toBeNull();
   });
   it('leaves the key to the caret everywhere else', () => {
-    expect(feedsAfterKey(undefined, 'ArrowRight')).toBeUndefined();
-    expect(feedsAfterKey(row(airing(1)), 'ArrowRight')).toBeUndefined();
-    expect(feedsAfterKey({ id: 'more', kind: 'more' }, 'ArrowLeft')).toBeUndefined();
-    expect(feedsAfterKey({ id: 'channel:c', kind: 'channel', channel: ch(1) }, 'ArrowRight')).toBeUndefined();
+    expect(expandAfterKey(undefined, 'ArrowRight', null)).toBeUndefined();
+    expect(expandAfterKey(row(airing(1)), 'ArrowRight', null)).toBeUndefined();
+    expect(expandAfterKey(row(airing(2)), 'ArrowLeft', null)).toBeUndefined();
+    expect(expandAfterKey({ id: 'more', kind: 'more' }, 'ArrowLeft', null)).toBeUndefined();
+    expect(expandAfterKey({ id: 'channel:c', kind: 'channel', channel: ch(1) }, 'ArrowRight', null)).toBeUndefined();
   });
 });
 
 describe('enterItem', () => {
   const items: GuideItem[] = [row(airing(1)), { id: 'more', kind: 'more' }];
   it('takes the highlighted row, or the first if none', () => {
-    expect(enterItem(items, 1, false)?.id).toBe('more');
-    expect(enterItem(items, -1, false)?.id).toBe('airing:k');
+    expect(enterItem(items, 'more', false)?.id).toBe('more');
+    expect(enterItem(items, null, false)?.id).toBe('airing:k');
   });
   it('does nothing on results that are not for what is typed', () => {
-    expect(enterItem(items, 1, true)).toBeNull();
-    expect(enterItem(items, -1, true)).toBeNull();
+    expect(enterItem(items, 'more', true)).toBeNull();
+    expect(enterItem(items, null, true)).toBeNull();
+    expect(enterItem(items, null, true)).toBeNull();
   });
   it('does nothing with no rows', () => {
     expect(enterItem([], -1, false)).toBeNull();
+  });
+});
+
+describe('enterItem when the highlighted row has gone', () => {
+  it('does nothing, rather than act on the first row', () => {
+    expect(enterItem([row(airing(1))], 'airing:ended', false)).toBeNull();
   });
 });
 

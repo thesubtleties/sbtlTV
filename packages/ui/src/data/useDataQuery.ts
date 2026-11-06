@@ -26,6 +26,7 @@ export function useDataQuery<B extends DataRequestBody>(req: B | null, tables: D
       if (!r) { setResult(undefined); setLoading(false); return; }
       const mine = ++generation;
       setLoading(true);
+      setError(false);
       try {
         const out = await data.query(r);
         if (alive && mine === generation) { setResult({ key, data: out }); setLoading(false); setError(false); }
