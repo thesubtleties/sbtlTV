@@ -277,6 +277,7 @@ export interface AppSettings {
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
   sportsMatchupEnabled?: boolean;  // Show team logos in the bar on a live sports game (default off: the logos load from ESPN)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a noticeable wait (default true)
+  guideSearchHideAdult?: boolean;  // Leave adult categories out of guide search (default off)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video
