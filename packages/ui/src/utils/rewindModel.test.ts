@@ -43,6 +43,26 @@ describe('rewind bar', () => {
   });
 });
 
+describe('rewind bar without guide data, at live', () => {
+  // A few seconds after tuning in: the buffer is short, so the cushion's wobble is a big share of the bar
+  const short = { generation: 1, rangeStart: 0, liveEdge: 10, bytesPerSecond: 625_000 };
+  const shortAnchor = anchorFor(short, t0);
+  const head = (position: number, atLive: boolean) =>
+    rewindBar({ state: short, anchor: shortAnchor, position, program: null, lagS: 3, atLive }).headPct;
+  it('holds the dot at live however the cushion moves', () => {
+    expect(head(4, true)).toBe(100);
+    expect(head(6, true)).toBe(100);
+    expect(rewindBar({ state: short, anchor: shortAnchor, position: 6, program: null, lagS: 3, atLive: true }).fillTo).toBe(100);
+  });
+  it('shows the real spot once the viewer has gone back', () => {
+    expect(head(3.5, false)).toBeCloseTo(50, 0);
+  });
+  it('leaves a bar with guide data alone', () => {
+    const shown = rewindBar({ state, anchor, position: 660, program: { startMs: t0, endMs: t0 + 60 * MIN }, atLive: true });
+    expect(shown.headPct).toBeCloseTo(51.67, 1);
+  });
+});
+
 describe('pill', () => {
   it('is LIVE within 3 s of the edge, else shows the distance', () => {
     expect(pillText(state, 899)).toEqual({ live: true, text: 'LIVE' });

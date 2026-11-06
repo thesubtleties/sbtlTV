@@ -5,7 +5,7 @@ import { clampToReach, liveTarget, rewindBar, showNav, wallAt, type ClockAnchor 
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 
 /** Live progress with rewind: show span, dotted before the buffer, tint to live, tick, edge, playhead. */
-export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, lagS = 0 }: {
+export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, lagS = 0, atLive = false }: {
   state: RewindStateUpdate;
   anchor: ClockAnchor;
   position: number;
@@ -15,6 +15,8 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
   bump?: number;
   /** mpv's cushion behind the newest data: "live" is this far before the edge */
   lagS?: number;
+  /** Not behind live by the viewer's own doing: without guide data the dot stays at live */
+  atLive?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [hoverPct, setHoverPct] = useState<number | null>(null);
@@ -31,7 +33,7 @@ export function LiveRewindBar({ state, anchor, position, program, onSeek, bump, 
     return () => clearTimeout(t);
   }, [bump]);
 
-  const bar = rewindBar({ state, anchor, position, program, lagS });
+  const bar = rewindBar({ state, anchor, position, program, lagS, atLive });
   const from = bar.spansBuffer || !program ? wallAt(anchor, state.rangeStart) : program.startMs;
   const to = bar.spansBuffer || !program ? wallAt(anchor, liveTarget(state, lagS)) : program.endMs;
   const wallAtPct = (pct: number) => from + ((to - from) * pct) / 100;

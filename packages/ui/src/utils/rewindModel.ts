@@ -42,10 +42,12 @@ export function liveTarget(state: RewindStateUpdate, lagS: number): number {
   return Math.max(state.rangeStart, state.liveEdge - lagS);
 }
 
-export function rewindBar({ state, anchor, position, program, lagS = 0 }: {
+export function rewindBar({ state, anchor, position, program, lagS = 0, atLive = false }: {
   state: RewindStateUpdate; anchor: ClockAnchor; position: number; program: { startMs: number; endMs: number } | null;
   /** mpv's natural distance behind the newest data (see liveTarget) */
   lagS?: number;
+  /** Not paused or seeked back since tuning in or jumping to live (see pillText) */
+  atLive?: boolean;
 }): RewindBar {
   const startWall = wallAt(anchor, state.rangeStart);
   const liveWall = wallAt(anchor, liveTarget(state, lagS));
@@ -55,7 +57,9 @@ export function rewindBar({ state, anchor, position, program, lagS = 0 }: {
   const to = show ? show.endMs : liveWall;
   const pct = (ms: number) => (to > from ? clampPct(((ms - from) / (to - from)) * 100) : 0);
   const tickPct = pct(startWall);
-  const headPct = pct(headWall);
+  // With no guide data the bar is the buffer itself, so at first a second of cushion moving
+  // with network bursts is a big share of it. At live the dot stays at live.
+  const headPct = !show && atLive ? pct(liveWall) : pct(headWall);
   return {
     gonePct: tickPct,
     tintFrom: tickPct,
