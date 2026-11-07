@@ -8,6 +8,15 @@ import { ChannelRow } from './ChannelRow';
 import { useChannelSortOrder, useChannelColumnWidth, useSourceNeedsLogin } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
+import { loadGuideSearchMode, saveGuideSearchMode, type GuideSearchMode } from '../utils/guideSearchMode';
+import { type GuideAiring, type GuideSearchChannel } from '@sbtltv/core';
+import { airingAction, enterItem, expandAfterKey, jumpAnchor, moveActive } from '../utils/guideSearchLogic';
+import { data } from '../data/client';
+import { useGuideSearch } from '../hooks/useGuideSearch';
+import { useDataState } from '../hooks/useDataState';
+import { GuideHighlight, GuideSearchResults, flattenResults, type GuideItem } from './GuideSearchResults';
+import { useToastStore } from '../stores/toastStore';
+import { debugLog } from '../utils/debugLog';
 import './ChannelPanel.css';
 
 interface ChannelPanelProps {
@@ -18,6 +27,8 @@ interface ChannelPanelProps {
   onPlayChannel: (channel: StoredChannel) => void;
   onClose: () => void;
   scrollTopNonce?: number;
+  /** Changes when / asks for the search box */
+  searchFocusNonce?: number;
 }
 
 function ChannelPanelImpl({
@@ -28,6 +39,7 @@ function ChannelPanelImpl({
   onPlayChannel,
   onClose,
   scrollTopNonce,
+  searchFocusNonce,
 }: ChannelPanelProps) {
   const channelSortOrder = useChannelSortOrder();
   const isFavoritesView = categoryId === '__favorites__';
@@ -39,9 +51,37 @@ function ChannelPanelImpl({
   const [availableWidth, setAvailableWidth] = useState(800);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Channels filtered by the in-guide search box. This is the list Virtuoso renders, so
-  // the program query below is sliced from it by row index.
-  const displayChannels = useMemo(() => filterChannelsByName(channels, searchQuery), [channels, searchQuery]);
+  const [searchMode, setSearchMode] = useState<GuideSearchMode>(loadGuideSearchMode);
+  const [dropdownOpen, setDropdownOpen] = useState(true);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [allChannels, setAllChannels] = useState(false);
+  const [jump, setJump] = useState<{ title: string; when: string; rows: StoredChannel[]; ids: Set<string> } | null>(null);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  useEffect(() => { setActiveId(null); setAllChannels(false); setExpandedKey(null); }, [searchQuery]);
+  const dataState = useDataState();
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (!searchBoxRef.current?.contains(e.target as Node)) setDropdownOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  const swapSearchMode = () => {
+    const next = searchMode === 'search' ? 'filter' : 'search';
+    setSearchMode(next);
+    saveGuideSearchMode(next);
+    setDropdownOpen(true);
+    searchInputRef.current?.focus();
+  };
+
+  // Channels shown in the guide: Filter mode narrows the open category, a jump shows one airing's channels.
+  // This is the list Virtuoso renders, so the program query below is sliced from it by row index.
+  const displayChannels = useMemo(() => {
+    if (jump) return jump.rows;
+    return searchMode === 'filter' ? filterChannelsByName(channels, searchQuery) : channels;
+  }, [channels, jump, searchMode, searchQuery]);
 
   // Channel column width is a persisted setting; the EFFECTIVE width yields a bit on narrow
   // windows so the EPG grid never drops below 200px. The ref lets the mount-once ResizeObserver
@@ -61,15 +101,16 @@ function ChannelPanelImpl({
     channelListRef.current?.scrollToIndex({ index: 0 });
   }, [scrollTopNonce]);
 
-  // Scroll the channel list to top whenever the search query or the category
-  // changes. The list used to empty for a frame between categories, which reset
-  // the scroll on its own; the data client keeps the previous rows on screen
-  // while the next category loads, so the reset is explicit now.
+  // Scroll the channel list to top whenever the filter or the category changes (Search mode
+  // leaves the guide where it is). The list used to empty for a frame between categories, which
+  // reset the scroll on its own; the data client keeps the previous rows on screen while the
+  // next category loads, so the reset is explicit now.
+  const filterText = searchMode === 'filter' ? searchQuery : '';
   useEffect(() => {
     channelListRef.current?.scrollToIndex({ index: 0 });
-  }, [searchQuery, categoryId]);
+  }, [filterText, categoryId]);
 
-  // Clear the search when switching categories - the search is scoped to the current category,
+  // Clear the search when switching categories - Filter mode works on the current category,
   // so a leftover query would filter the new category against the wrong term. useLayoutEffect so
   // the clear lands before paint (no one-frame flash of the new category filtered by the old query).
   useLayoutEffect(() => {
@@ -148,7 +189,75 @@ function ChannelPanelImpl({
     goBack,
     goForward,
     goToNow,
+    goTo,
   } = useTimeGrid({ availableWidth });
+
+  const { results, pending, failed } = useGuideSearch(searchQuery, searchMode === 'search' && visible, now.getTime());
+  const items = useMemo(() => (results ? flattenResults(results, allChannels, expandedKey) : []), [results, allChannels, expandedKey]);
+
+  // However a jump ends, the guide goes back to now: it never shows Thursday as if it were today
+  const endJump = useCallback(() => { setJump(null); goToNow(); }, [goToNow]);
+  const jumping = jump !== null;
+  useEffect(() => { if (jumping) endJump(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [categoryId]);
+  useEffect(() => { if (!visible && jumping) endJump(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [visible]);
+  useEffect(() => { if (jumping) endJump(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [scrollTopNonce]);
+
+  // / from anywhere: the guide opens and the box takes the keys
+  useEffect(() => {
+    if (searchFocusNonce) searchInputRef.current?.focus();
+  }, [searchFocusNonce]);
+
+  const pickFailed = (what: string, e: unknown) => {
+    debugLog(`Guide search: ${what} failed: ${e instanceof Error ? e.message : String(e)}`, 'app');
+    useToastStore.getState().addToast({ kind: 'error', title: "Couldn't open that", message: 'Try it again.', duration: 5000 });
+  };
+  const gone = () => useToastStore.getState().addToast({ kind: 'info', title: 'No longer available', message: 'That channel is gone from your sources.', duration: 4000 });
+  // A pick hands the keyboard back to the guide and the player
+  const leaveBox = () => { setSearchQuery(''); searchInputRef.current?.blur(); };
+
+  const playStream = useCallback(async (streamId: string) => {
+    try {
+      const [channel] = await data.query({ type: 'channelsByIds', streamIds: [streamId] });
+      if (!channel) { gone(); return; }
+      leaveBox();
+      onPlayChannel(channel as unknown as StoredChannel);
+    } catch (e) { pickFailed('play', e); }
+  }, [onPlayChannel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Later: the guide goes to that time, showing only this airing's channels
+  const jumpTo = useCallback(async (airing: GuideAiring, streamIds: string[]) => {
+    try {
+      const rows = await data.query({ type: 'channelsByIds', streamIds });
+      if (rows.length === 0) { gone(); return; }
+      goTo(jumpAnchor(airing.startMs));
+      const when = new Date(airing.startMs);
+      setJump({
+        title: airing.title,
+        when: `${when.toLocaleDateString([], { weekday: 'short' })} ${when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
+        rows: rows as unknown as StoredChannel[],
+        ids: new Set(airing.programIds),
+      });
+      leaveBox();
+    } catch (e) { pickFailed('jump', e); }
+  }, [goTo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleFeeds = (key: string) => setExpandedKey((k) => (k === key ? null : key));
+  // Live is decided at the click: a Later row may have started while the dropdown was open
+  const pickAiring = (a: GuideAiring) => {
+    const action = airingAction(a, Date.now());
+    if (action === 'jump') void jumpTo(a, a.channels.map((c) => c.stream_id));
+    else if (action === 'feeds') toggleFeeds(a.key);
+    else if (a.channels[0]) void playStream(a.channels[0].stream_id);
+  };
+  const pickFeed = (a: GuideAiring, c: GuideSearchChannel) => {
+    if (airingAction(a, Date.now()) === 'jump') void jumpTo(a, [c.stream_id]); else void playStream(c.stream_id);
+  };
+  const pickItem = (item: GuideItem) => {
+    if (item.kind === 'channel') void playStream(item.channel.stream_id);
+    else if (item.kind === 'more') setAllChannels(true);
+    else if (item.kind === 'feed') pickFeed(item.airing, item.channel);
+    else pickAiring(item.airing);
+  };
 
   // Programs are read only for the rows Virtuoso is rendering (see useGuideRowRange).
   const { handleRangeChange, loadedStreamIds } = useGuideRowRange(displayChannels);
@@ -230,39 +339,97 @@ function ChannelPanelImpl({
           <span className="guide-current-time">{formatTime(now)}</span>
           <span className="guide-category">{categoryName}</span>
           <span className="guide-channel-count">
-            {searchQuery.trim() ? `${displayChannels.length} of ${channels.length}` : `${channels.length} channels`}
+            {jump || (searchMode === 'filter' && searchQuery.trim()) ? `${displayChannels.length} of ${channels.length}` : `${channels.length} channels`}
           </span>
         </div>
         <div className="guide-header-right">
           {/* Channel search */}
-          <div className="guide-search-wrapper">
-            <svg className="guide-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.35-4.35" />
-            </svg>
+          <div className="guide-search-wrapper" ref={searchBoxRef}>
+            <button
+              type="button"
+              className="guide-search-mode"
+              onClick={swapSearchMode}
+              title={searchMode === 'search' ? 'Filter this category instead' : 'Search channels and shows instead'}
+              aria-label={searchMode === 'search' ? 'Switch to filtering this category' : 'Switch to searching channels and shows'}
+            >
+              {searchMode === 'search' ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="M21 21l-4.35-4.35" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 5h18l-7 8v6l-4 2v-8z" />
+                </svg>
+              )}
+            </button>
             <input
+              ref={searchInputRef}
               className="guide-search-input"
               type="text"
-              placeholder="Search channels…"
+              placeholder={searchMode === 'search' ? 'Search channels and shows…' : 'Filter channels…'}
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              maxLength={120}
+              onFocus={() => setDropdownOpen(true)}
+              onBlur={() => setDropdownOpen(false)}
+              onChange={(e) => { setSearchQuery(e.target.value); setDropdownOpen(true); if (jump) endJump(); }}
               onKeyDown={(e) => {
-                if (e.key === 'Escape' && searchQuery) {
-                  setSearchQuery('');
+                if (e.nativeEvent.isComposing) return;
+                if (e.key === 'Escape') {
                   e.stopPropagation();
+                  if (searchQuery) { setSearchQuery(''); return; }
+                  // Out of the box, the app's own Esc: it knows about fullscreen and the category strip
+                  e.currentTarget.blur();
+                  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                } else if (searchMode === 'search' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setActiveId(moveActive(activeId, e.key, items));
+                } else if (searchMode === 'search' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+                  // Right opens a row's feeds and other airings, Left closes them; otherwise they stay the caret's
+                  const item = items.find((i) => i.id === activeId);
+                  const open = expandAfterKey(item, e.key, expandedKey);
+                  if (open === undefined) return;
+                  e.preventDefault();
+                  if (open === null) setActiveId(`airing:${expandedKey}`);
+                  setExpandedKey(open);
+                } else if (searchMode === 'search' && e.key === 'Enter') {
+                  // Never on results for what was typed a moment ago
+                  const item = enterItem(items, activeId, pending);
+                  if (item) pickItem(item);
                 }
               }}
             />
             {searchQuery && (
               <button
                 className="guide-search-clear"
-                onClick={() => setSearchQuery('')}
+                onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}
+                onMouseDown={(e) => e.preventDefault()}
                 title="Clear search"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               </button>
+            )}
+            {searchMode === 'search' && (results || failed) && searchQuery.trim() && dropdownOpen && (
+              <div className="gsr-panel" onMouseDown={(e) => e.preventDefault()}>
+                {failed && <div className="gsr-empty">Search didn't work. Try again.</div>}
+                {results && !failed && (
+                  <GuideSearchResults
+                    results={results}
+                    query={searchQuery}
+                    activeId={activeId}
+                    allChannels={allChannels}
+                    expandedKey={expandedKey}
+                    onShowAllChannels={() => setAllChannels(true)}
+                    onToggleFeeds={toggleFeeds}
+                    onPickAiring={pickAiring}
+                    onPickFeed={pickFeed}
+                    onPickChannel={(c) => void playStream(c.stream_id)}
+                  />
+                )}
+              </div>
             )}
           </div>
 
@@ -275,7 +442,7 @@ function ChannelPanelImpl({
             </button>
             <button
               className={`guide-now-btn ${isAtNow ? 'inactive' : ''}`}
-              onClick={goToNow}
+              onClick={jump ? endJump : goToNow}
               disabled={isAtNow}
               title="Go to now"
             >
@@ -295,6 +462,13 @@ function ChannelPanelImpl({
           </button>
         </div>
       </div>
+
+      {jump && (
+        <div className="gsr-strip">
+          <span><strong>{jump.title}</strong> · {jump.when} · {jump.rows.length === 1 ? jump.rows[0].name : `${jump.rows.length} channels`}</span>
+          <button onClick={endJump}>Back to guide</button>
+        </div>
+      )}
 
       {/* Time Header - Aligned to grid */}
       <div className="guide-time-header">
@@ -319,6 +493,7 @@ function ChannelPanelImpl({
 
       {/* EPG Grid Area */}
       <div className="guide-content">
+        <GuideHighlight.Provider value={jump?.ids ?? null}>
         <Virtuoso
           ref={channelListRef}
           data={displayChannels}
@@ -349,7 +524,14 @@ function ChannelPanelImpl({
                     <path d="M17 2l-5 5-5-5" />
                   </svg>
                 </div>
-                {searchQuery.trim() ? (
+                {dataState === 'failed' ? (
+                  <>
+                    <h3>Guide data couldn't be opened</h3>
+                    <p>Restart sbtlTV, and check there's free disk space.</p>
+                  </>
+                ) : dataState !== 'ready' ? (
+                  <h3>{dataState === 'rebuilding' ? 'Rebuilding your guide…' : 'Loading the guide…'}</h3>
+                ) : filterText.trim() ? (
                   <>
                     <h3>No results for "{searchQuery}"</h3>
                     <p>Try a different search term</p>
@@ -371,6 +553,7 @@ function ChannelPanelImpl({
             ),
           }}
         />
+        </GuideHighlight.Provider>
       </div>
     </div>
   );

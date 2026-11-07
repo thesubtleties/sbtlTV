@@ -1,5 +1,6 @@
 /* Full-width EPG-style Guide Panel */
 .guide-panel {
+  container-type: inline-size;
   position: fixed;
   left: 0;
   right: 0;
@@ -65,6 +66,9 @@
   display: flex;
   align-items: center;
   gap: 20px;
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .guide-current-time {
@@ -78,6 +82,9 @@
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .guide-channel-count {
@@ -91,6 +98,9 @@
   display: flex;
   align-items: center;
   gap: 16px;
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 /* Navigation Controls */
@@ -430,15 +440,16 @@
   position: relative;
   display: flex;
   align-items: center;
+  flex: 0 1 280px;
+  width: 280px;
+  min-width: 170px;
 }
 
-.guide-search-icon {
-  position: absolute;
-  left: 8px;
-  color: var(--faint);
-  pointer-events: none;
-  flex-shrink: 0;
+.guide-search-mode {
+  position: absolute; left: 3px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 50%; background: transparent; color: var(--faint); cursor: pointer;
 }
+.guide-search-mode:hover { background: var(--fill-3); color: var(--text); }
 
 .guide-search-input {
   background: var(--fill-2);
@@ -447,14 +458,16 @@
   color: var(--text);
   font-size: 13px;
   height: 30px;
-  padding: 0 28px;
-  width: 200px;
+  padding: 0 28px 0 32px;
+  width: 100%;
+  box-sizing: border-box;
   outline: none;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .guide-search-input::placeholder {
   color: var(--faint);
+  text-overflow: ellipsis;
 }
 
 .guide-search-input:focus {

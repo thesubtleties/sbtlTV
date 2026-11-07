@@ -121,6 +121,8 @@ const MIN_WIDTH = 640;
 const MIN_HEIGHT = 620;
 
 let mainWindow: BrowserWindow | null = null;
+// Kept for a window that loads after the data process has reported
+let dataStatus: 'fatal' | 'reset' | null = null;
 let dataHost: DataHost | null = null;
 let mpvProcess: ChildProcess | null = null;
 let mpvSocket: net.Socket | null = null;
@@ -1529,6 +1531,12 @@ ipcMain.handle('window-maximize', () => {
   }
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
+// 'reset' is news once; 'fatal' stays true for a window opened later
+ipcMain.handle('data-status', () => {
+  const status = dataStatus;
+  if (status === 'reset') dataStatus = null;
+  return status;
+});
 ipcMain.handle('window-get-always-on-top', () => mainWindow?.isAlwaysOnTop() ?? false);
 ipcMain.handle('window-set-always-on-top', (_event, on: unknown) => {
   if (process.platform === 'linux' || !mainWindow) return false;
@@ -2911,6 +2919,7 @@ app.whenReady().then(async () => {
     },
     log: (category, message) => debugLog(message, category),
     onSync: () => {},
+    onStatus: (status) => { dataStatus = status; sendToRenderer('data-status', status); },
   });
 
   await createWindow();

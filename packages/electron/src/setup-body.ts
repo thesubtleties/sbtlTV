@@ -33,7 +33,7 @@ export const SETUP_SETTING_KEYS = [
   'theme', 'lastSourceId', 'vodRefreshHours', 'epgRefreshHours', 'movieGenresEnabled', 'seriesGenresEnabled',
   'rpdbBackdropsEnabled', 'channelSortOrder', 'categorySortOrder', 'categoryBarWidth',
   'channelColumnWidth', 'guideOpacity', 'liveSourceOrder', 'vodSourceOrder', 'sportsMatchupEnabled',
-  'guideMorphEnabled', 'autoplayNextEpisode', 'appearance', 'subtitles',
+  'guideMorphEnabled', 'guideSearchHideAdult', 'autoplayNextEpisode', 'appearance', 'subtitles',
 ] as const satisfies readonly (keyof AppSettings)[];
 const SETTING_KEYS = new Set<string>(SETUP_SETTING_KEYS);
 const SECRET_STORED_KEYS = new Set(['encryptedTmdbApiKey', 'encryptedPosterDbApiKey', 'encryptedSubdlApiKey']);
@@ -111,6 +111,7 @@ const SETTING_CHECKS: Record<(typeof SETUP_SETTING_KEYS)[number], Check> = {
   vodSourceOrder: list(shortText),
   sportsMatchupEnabled: bool,
   guideMorphEnabled: bool,
+  guideSearchHideAdult: bool,
   autoplayNextEpisode: bool,
   appearance: record,
   subtitles: record,

@@ -58,6 +58,7 @@ export interface AppSettings {
   vodSourceOrder?: string[];    // Source IDs in priority order for VOD (Xtream only)
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game (default off: the logos load from ESPN)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait (default true)
+  guideSearchHideAdult?: boolean;  // Leave adult categories out of guide search (default off)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: 'compatibility' runs mpv in its own window (default 'native'); takes effect on restart
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video (immediate); default false
@@ -111,6 +112,7 @@ interface StoredSettings {
   sportsMatchupEnabled?: boolean;  // Show team logos on a live sports game
   sportsDefaultSettled?: boolean;  // The 0.12.1 team logos default has been applied (settings-upgrades.ts)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a wait
+  guideSearchHideAdult?: boolean;  // Leave adult categories out of guide search (default off)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series
   linuxPlayerMode?: LinuxPlayerMode;  // Linux only: video player used at next launch
   linuxPerformanceMode?: boolean;  // Linux only: cheaper rendering for slower GPUs
@@ -277,6 +279,7 @@ export function getSettings(): AppSettings {
   result.vodSourceOrder = stored.vodSourceOrder;
   result.sportsMatchupEnabled = stored.sportsMatchupEnabled ?? false;
   result.guideMorphEnabled = stored.guideMorphEnabled ?? true;
+  result.guideSearchHideAdult = stored.guideSearchHideAdult ?? false;
   result.autoplayNextEpisode = stored.autoplayNextEpisode ?? true;
   result.linuxPlayerMode = normalizeLinuxPlayerMode(stored.linuxPlayerMode);
   result.linuxPerformanceMode = stored.linuxPerformanceMode === true;
@@ -376,6 +379,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.guideMorphEnabled !== undefined) {
     updated.guideMorphEnabled = settings.guideMorphEnabled;
+  }
+  if (settings.guideSearchHideAdult !== undefined) {
+    updated.guideSearchHideAdult = settings.guideSearchHideAdult;
   }
   if (settings.autoplayNextEpisode !== undefined) {
     updated.autoplayNextEpisode = settings.autoplayNextEpisode;

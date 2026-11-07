@@ -1,4 +1,5 @@
-import { useMemo, memo } from 'react';
+import { useContext, useMemo, memo } from 'react';
+import { GuideHighlight } from './GuideSearchResults';
 import type { StoredProgram } from '../db';
 import './ProgramBlock.css';
 
@@ -81,6 +82,9 @@ export const ProgramBlock = memo(function ProgramBlock({
     [program, windowStart, windowEnd, pixelsPerHour]
   );
 
+  const highlight = useContext(GuideHighlight);
+  const lit = highlight?.has(program.id) ?? false;
+
   // Check if this program contains "now"
   const isCurrent = isProgramCurrent(program, now);
 
@@ -99,7 +103,7 @@ export const ProgramBlock = memo(function ProgramBlock({
 
   return (
     <div
-      className={`program-block ${isCurrent ? 'current' : ''}${className ? ` ${className}` : ''}`}
+      className={`program-block ${isCurrent ? 'current' : ''}${className ? ` ${className}` : ''}${lit ? ' program-block--found' : ''}`}
       style={{
         left: `${style.left}px`,
         width: `${style.width}px`,

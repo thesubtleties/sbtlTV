@@ -73,6 +73,9 @@ interface UIState {
   // App settings (hydrated from electron-store on startup)
   settings: AppSettings;
   settingsLoaded: boolean;
+  /** The data file couldn't be used (from main) */
+  dataProblem: 'fatal' | 'reset' | null;
+  setDataProblem: (problem: 'fatal' | 'reset' | null) => void;
   hydrateSettings: (data: AppSettings) => void;
   updateSettings: (partial: Partial<AppSettings>) => void;
 
@@ -104,6 +107,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoUpdateEnabled: true,
   sportsMatchupEnabled: false,
   guideMorphEnabled: true,
+  guideSearchHideAdult: false,
   autoplayNextEpisode: true,
 };
 
@@ -164,6 +168,8 @@ export const useUIStore = create<UIState>((set) => ({
   // App settings
   settings: DEFAULT_SETTINGS,
   settingsLoaded: false,
+  dataProblem: null,
+  setDataProblem: (dataProblem) => set({ dataProblem }),
   hydrateSettings: (data) => set({ settings: { ...DEFAULT_SETTINGS, ...data }, settingsLoaded: true }),
   updateSettings: (partial) => set((state) => {
     const merged = { ...state.settings, ...partial };
@@ -230,6 +236,7 @@ export const useSetCacheClearing = () => useUIStore((s) => s.setCacheClearing);
 // A source waiting for its password (e.g. after importing a setup shared without logins)
 export const useSourceNeedsLogin = () => useUIStore((s) => s.sources.some((src) => src.enabled && needsLogin(src)));
 export const useChannelSortOrder = () => useUIStore((s) => s.settings.channelSortOrder ?? 'alphabetical');
+export const useGuideSearchHideAdult = () => useUIStore((s) => s.settings.guideSearchHideAdult ?? false);
 export const useCategorySortOrder = () => useUIStore((s) => s.settings.categorySortOrder ?? 'alphabetical');
 export const useCategoryBarWidth = () => useUIStore((s) => s.settings.categoryBarWidth ?? 160);
 export const useChannelColumnWidth = () => useUIStore((s) => s.settings.channelColumnWidth ?? 300);

@@ -16,6 +16,8 @@ export interface DataHostOptions {
   getSettings(): DataSettings;
   log(category: string, message: string): void;
   onSync(p: SyncProgress): void;
+  /** The data file couldn't be used: 'fatal' = no data this run, 'reset' = rebuilding from the sources */
+  onStatus(status: 'fatal' | 'reset'): void;
 }
 export interface DataHost {
   pushSources(): void;
@@ -65,7 +67,8 @@ export function startDataHost(opts: DataHostOptions): DataHost {
           break;
         case 'log': opts.log(m.category, m.message); break;
         case 'sync': opts.onSync(m.progress); break;
-        case 'fatal': fatal = true; opts.log('data', `FATAL: ${m.error}`); break;
+        case 'fatal': fatal = true; opts.log('data', `FATAL: ${m.error}`); opts.onStatus('fatal'); break;
+        case 'reset': opts.log('data', `data file reset: ${m.reason}`); opts.onStatus('reset'); break;
       }
     });
     child.on('exit', (code) => {

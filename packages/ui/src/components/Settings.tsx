@@ -80,6 +80,7 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
   // Sports matchup state
   const [sportsMatchupEnabled, setSportsMatchupEnabled] = useState(false);
   const [guideMorphEnabled, setGuideMorphEnabled] = useState(true);
+  const [guideSearchHideAdult, setGuideSearchHideAdult] = useState(false);
   const [autoplayNextEpisode, setAutoplayNextEpisode] = useState(true);
 
   // Loading state for settings
@@ -175,6 +176,7 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
     // Load sports matchup setting (default off: the logos load from ESPN)
     setSportsMatchupEnabled(s.sportsMatchupEnabled ?? false);
     setGuideMorphEnabled(s.guideMorphEnabled ?? true);
+    setGuideSearchHideAdult(s.guideSearchHideAdult ?? false);
     setAutoplayNextEpisode(s.autoplayNextEpisode ?? true);
 
     setSettingsLoaded(true);
@@ -251,6 +253,8 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
             onSportsMatchupChange={setSportsMatchupEnabled}
             guideMorphEnabled={guideMorphEnabled}
             onGuideMorphChange={setGuideMorphEnabled}
+            guideSearchHideAdult={guideSearchHideAdult}
+            onGuideSearchHideAdultChange={setGuideSearchHideAdult}
           />
         );
       case 'movies':
