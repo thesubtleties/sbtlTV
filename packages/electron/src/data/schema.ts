@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // Search over the guide. External content: the text lives in epg_programs, so a write
 // that changes programmes must end with reindexGuide or the index points at wrong rows.
@@ -117,7 +117,8 @@ create table if not exists vod_series (
   cover text not null default '',
   plot text, "cast" text, genre text, release_date text, rating text,
   tmdb_id integer, imdb_id text, added integer, backdrop_path text,
-  popularity real, match_attempted integer
+  popularity real, match_attempted integer,
+  episodes_fetched integer   -- when replaceEpisodes last stored this series' list (ms); not read by queries
 );
 create index if not exists vod_series_source_tmdb on vod_series(source_id, tmdb_id);
 create index if not exists vod_series_tmdb on vod_series(tmdb_id);
@@ -171,6 +172,11 @@ export function reindexGuide(db: DatabaseSync): void {
 // Migrations are numbered functions from version n to n+1.
 const MIGRATIONS: Array<(db: DatabaseSync) => void> = [
   (db) => { db.exec(GUIDE_INDEX_DDL); reindexGuide(db); },
+  // Lists stored before this have no time, so the first open or hover refreshes them once.
+  (db) => {
+    const cols = db.prepare(`select name from pragma_table_info('vod_series')`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'episodes_fetched')) db.exec(`alter table vod_series add column episodes_fetched integer`);
+  },
 ];
 
 export class NewerSchemaError extends Error {}

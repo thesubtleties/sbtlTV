@@ -61,7 +61,20 @@ test('migration 1 to 2 indexes the guide that is already there', () => {
   migrate(db);
   const hits = db.prepare(`select count(*) c from epg_programs_fts where epg_programs_fts match '"football"*'`).get() as { c: number };
   assert.equal(hits.c, 1);
-  assert.equal(SCHEMA_VERSION, 2);
+});
+
+test('migration 2 to 3 adds the episode fetch time, keeping series and their episodes', () => {
+  const db = new DatabaseSync(':memory:');
+  createSchema(db);
+  db.exec(`alter table vod_series drop column episodes_fetched`);
+  db.exec(`insert into vod_series(series_id, source_id, name) values ('s1_sr1', 's1', 'Show')`);
+  db.exec(`insert into vod_episodes(id, series_id, season_num, episode_num, title, direct_url) values ('e1', 's1_sr1', 1, 1, 'Pilot', 'http://x')`);
+  db.prepare("update meta set value='2' where key='schema_version'").run();
+  migrate(db);
+  const row = db.prepare(`select name, episodes_fetched from vod_series`).get() as { name: string; episodes_fetched: number | null };
+  assert.deepEqual({ ...row }, { name: 'Show', episodes_fetched: null });
+  assert.equal((db.prepare(`select count(*) c from vod_episodes`).get() as { c: number }).c, 1);
+  assert.equal(SCHEMA_VERSION, 3);
 });
 
 test('a new database has the guide index', () => {

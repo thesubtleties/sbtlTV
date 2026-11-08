@@ -100,7 +100,9 @@ test('replaceVod keeps enrichment on surviving rows and deletes vanished ones', 
 
 test('replaceEpisodes and applyTmdbMatches', () => {
   const db = new DatabaseSync(':memory:'); seedFixture(db);
-  replaceEpisodes(db, 's1_sr1', [{ id: 's1_e9', title: 'Finale', episode_num: 9, season_num: 1, direct_url: 'http://x/e9' }]);
+  const tables = replaceEpisodes(db, 's1_sr1', [{ id: 's1_e9', title: 'Finale', episode_num: 9, season_num: 1, direct_url: 'http://x/e9' }], 1234);
+  assert.deepEqual(tables, ['vod_episodes'], 'the fetch stamp alone must not re-query every series row');
+  assert.equal((db.prepare(`select episodes_fetched t from vod_series where series_id = 's1_sr1'`).get() as { t: number }).t, 1234);
   assert.deepEqual((runQuery(db, { id: 1, type: 'episodes', seriesIds: ['s1_sr1'] }) as { id: string }[]).map((e) => e.id), ['s1_e9']);
   applyTmdbMatches(db, 'series', [{ id: 's1_sr1', tmdb_id: 4607, popularity: 99, matchAttemptedMs: 123 }]);
   const s = db.prepare("select popularity, match_attempted from vod_series where series_id='s1_sr1'").get() as { popularity: number; match_attempted: number };

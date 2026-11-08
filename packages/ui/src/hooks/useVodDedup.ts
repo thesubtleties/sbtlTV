@@ -3,6 +3,7 @@ import type { StoredMovie, StoredSeries, StoredEpisode } from '../db';
 import { data } from '../data/client';
 import { useDataQuery } from '../data/useDataQuery';
 import { usePreferredSourceResolver, useEnabledSourceIds } from './useSourceFiltering';
+import { EPISODES_MAX_AGE_MS } from '../services/hoverPrefetch';
 
 export interface DedupedMovie {
   item: StoredMovie;
@@ -121,7 +122,7 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
   const [error, setError] = useState<string | null>(null);
 
   // Find all series with same tmdb_id
-  const { data: related } = useDataQuery(
+  const { data: related, stale: relatedStale } = useDataQuery(
     tmdbId ? { type: 'series', by: { kind: 'tmdbIds', tmdbIds: [tmdbId] }, sourceIds: enabledIds } : null,
     ['vod_series'], [tmdbId, enabledIds.join(',')],
   );
@@ -147,21 +148,25 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
     ['vod_episodes'], [relatedKey],
   );
 
-  // Fetch episodes (on demand) for related series that have none stored
-  const fetchAll = useCallback(async () => {
+  // Ask the provider for each related series' list. On open (maxAgeMs) the data
+  // process skips lists stored within the last day and refreshes older ones in the
+  // background while the stored list shows; Try again (no maxAgeMs) always asks.
+  const fetchEpisodes = useCallback(async (maxAgeMs?: number) => {
     setError(null);
-    const have = new Set((allEpisodes ?? []).map((e) => e.series_id));
     try {
-      await Promise.all(relatedSeriesIds.filter((sid) => !have.has(sid)).map((seriesId) => data.query({ type: 'syncEpisodes', seriesId })));
+      await Promise.all(relatedSeriesIds.map((seriesId) => data.query({ type: 'syncEpisodes', seriesId, ...(maxAgeMs !== undefined ? { maxAgeMs } : {}) })));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch episodes');
     }
-  }, [relatedSeriesIds, allEpisodes]);
+  }, [relatedSeriesIds]);
+  const refetch = useCallback(() => fetchEpisodes(), [fetchEpisodes]);
 
-  // Trigger once the stored episodes are known
+  // Once per opened series (and its related set). Waits for the related query so a
+  // provisional single-id set does not ask twice.
+  const relatedPending = !!tmdbId && (related === undefined || relatedStale);
   useEffect(() => {
-    if (allEpisodes) void fetchAll();
-  }, [relatedKey, allEpisodes === undefined]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!relatedPending) void fetchEpisodes(EPISODES_MAX_AGE_MS);
+  }, [relatedKey, relatedPending]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The fetches run in the data process; a failure for any related series arrives as a progress event.
   useEffect(() => data.onSync((p) => {
@@ -208,7 +213,7 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
     seasons,
     loading,
     error,
-    refetch: fetchAll,
+    refetch,
     sourceCount: relatedSeriesIds.length,
   };
 }

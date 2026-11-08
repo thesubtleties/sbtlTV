@@ -5,7 +5,7 @@ import { runQuery } from './queries.js';
 export type SyncJob =
   | { kind: 'channels'; sourceId: string }
   | { kind: 'vod'; sourceId: string }
-  | { kind: 'episodes'; sourceId: string; seriesId: string }
+  | { kind: 'episodes'; sourceId: string; seriesId: string; prefetch?: true }
   | { kind: 'rematch'; sourceId: string }
   | { kind: 'vodDetails'; itemKind: 'movie' | 'series'; itemId: string; fields: VodDetailFields }
   | { kind: 'importPlaylist'; sourceId: string; content: string }
@@ -80,7 +80,11 @@ export function validateRequest(req: DataRequest): DataRequest {
     case 'episodes': list(r.seriesIds, 'seriesIds', 'string'); break;
     case 'vodCategories': list(r.sourceIds, 'sourceIds', 'string'); if (r.kind !== 'movie' && r.kind !== 'series') bad('kind'); break;
     case 'syncNow': if (r.sourceId !== undefined) text(r.sourceId, 'sourceId'); if (!['channels', 'vod', 'all'].includes(r.what as string)) bad('what'); break;
-    case 'syncEpisodes': text(r.seriesId, 'seriesId'); break;
+    case 'syncEpisodes':
+      text(r.seriesId, 'seriesId');
+      if (r.maxAgeMs !== undefined) { num(r.maxAgeMs, 'maxAgeMs'); if ((r.maxAgeMs as number) < 0) bad('maxAgeMs must not be negative'); }
+      if (r.prefetch !== undefined && typeof r.prefetch !== 'boolean') bad('prefetch must be a boolean');
+      break;
     case 'rematchEpg': text(r.sourceId, 'sourceId'); break;
     case 'updateVodDetails': if (r.kind !== 'movie' && r.kind !== 'series') bad('kind'); text(r.itemId, 'itemId'); if (!r.fields || typeof r.fields !== 'object') bad('fields'); break;
     case 'importPlaylist': text(r.sourceId, 'sourceId'); if (typeof r.content !== 'string' || r.content.length > 64 * 1024 * 1024) bad('content must be a string under 64MB'); break;
@@ -88,7 +92,7 @@ export function validateRequest(req: DataRequest): DataRequest {
   return req;
 }
 
-export function routeRendererMessage(db: DatabaseSync, msg: unknown, send: (reply: DataReply) => void, enqueue: (job: SyncJob) => void, sourceIdsForAll: () => string[] = () => []): void {
+export function routeRendererMessage(db: DatabaseSync, msg: unknown, send: (reply: DataReply) => void, enqueue: (job: SyncJob) => void, sourceIdsForAll: () => string[] = () => [], now: () => number = Date.now): void {
   if (!isDataRequest(msg)) return;
   let req = msg as DataRequest;
   try {
@@ -102,9 +106,10 @@ export function routeRendererMessage(db: DatabaseSync, msg: unknown, send: (repl
           if (req.what !== 'channels') enqueue({ kind: 'vod', sourceId });
         }
       } else if (req.type === 'syncEpisodes') {
-        const row = db.prepare('select source_id from vod_series where series_id = ?').get(req.seriesId) as { source_id: string } | undefined;
+        const row = db.prepare('select source_id, episodes_fetched from vod_series where series_id = ?').get(req.seriesId) as { source_id: string; episodes_fetched: number | null } | undefined;
         const sourceId = row?.source_id ?? req.seriesId.slice(0, req.seriesId.indexOf('_'));
-        enqueue({ kind: 'episodes', sourceId, seriesId: req.seriesId });
+        const fresh = req.maxAgeMs !== undefined && row?.episodes_fetched != null && now() - row.episodes_fetched < req.maxAgeMs;
+        if (!fresh) enqueue({ kind: 'episodes', sourceId, seriesId: req.seriesId, ...(req.prefetch ? { prefetch: true as const } : {}) });
       } else if (req.type === 'rematchEpg') {
         enqueue({ kind: 'rematch', sourceId: req.sourceId });
       } else if (req.type === 'updateVodDetails') {

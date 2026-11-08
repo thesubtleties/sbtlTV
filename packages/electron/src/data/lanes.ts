@@ -38,8 +38,27 @@ export class JobLanes {
     if (this.lanes[name].dead) name = 'sync';
     const lane = this.lanes[name];
     if (lane.inFlight && isSameJob(lane.inFlight, job)) return false;
+    if (job.kind === 'episodes') return this.enqueueEpisodes(name, lane, job);
     if (lane.queue.some((q) => isSameJob(q, job))) return false;
     lane.queue.push(job);
+    this.pump(name);
+    return true;
+  }
+
+  // Episode lists the user opened go to the front, ahead of hover prefetches (and
+  // take over a queued prefetch of the same series). Only the latest prefetch
+  // waits: hovering across a row should not leave a trail of provider requests.
+  private enqueueEpisodes(name: LaneName, lane: Lane, job: Extract<SyncJob, { kind: 'episodes' }>): boolean {
+    const queued = lane.queue.findIndex((q) => isSameJob(q, job));
+    if (job.prefetch) {
+      if (queued >= 0) return false;
+      lane.queue = lane.queue.filter((q) => !(q.kind === 'episodes' && q.prefetch));
+      lane.queue.push(job);
+    } else {
+      if (queued >= 0 && !(lane.queue[queued] as typeof job).prefetch) return false;
+      if (queued >= 0) lane.queue.splice(queued, 1);
+      lane.queue.unshift(job);
+    }
     this.pump(name);
     return true;
   }

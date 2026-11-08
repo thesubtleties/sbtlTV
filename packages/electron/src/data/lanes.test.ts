@@ -40,6 +40,22 @@ test('identical jobs collapse against the queue and the job in flight', () => {
   assert.equal(sent.length, 1);
 });
 
+test('an opened series jumps ahead of hover prefetches and takes over a queued prefetch of itself', () => {
+  const { lanes, sent } = harness();
+  lanes.setReady('quick');
+  const ep = (seriesId: string, prefetch?: true): SyncJob => ({ kind: 'episodes', sourceId: 'a', seriesId, ...(prefetch ? { prefetch } : {}) });
+  lanes.enqueue({ kind: 'vodDetails', itemKind: 'movie', itemId: 'a_m', fields: {} }); // in flight
+  assert.equal(lanes.enqueue(ep('a_1', true)), true);
+  assert.equal(lanes.enqueue(ep('a_2', true)), true);   // replaces the waiting a_1 prefetch
+  assert.equal(lanes.enqueue(ep('a_2', true)), false);  // already waiting
+  assert.equal(lanes.enqueue(ep('a_3')), true);         // opened: front
+  assert.equal(lanes.enqueue(ep('a_2')), true);         // opened while its prefetch waits: takes it over, front
+  assert.equal(lanes.enqueue(ep('a_2')), false);
+  assert.deepEqual(lanes.pending('quick').slice(1), [ep('a_2'), ep('a_3')]);
+  lanes.finished('quick'); lanes.finished('quick');
+  assert.deepEqual(sent.map(([, j]) => (j.kind === 'episodes' ? j.seriesId : j.kind)), ['vodDetails', 'a_2', 'a_3']);
+});
+
 test('a crash reports the in-flight job as failed and runs it again first once the lane is back', () => {
   const { lanes, sent, failed } = harness();
   lanes.setReady('sync');

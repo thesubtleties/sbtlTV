@@ -59,7 +59,9 @@ export type DataRequest =
   | { id: number; type: 'vodCounts'; sourceIds: string[] }
   | { id: number; type: 'playlistRows'; sourceId: string }   // a file-based playlist, to rebuild it (setup export)
   | { id: number; type: 'syncNow'; sourceId?: string; what: 'channels' | 'vod' | 'all' }
-  | { id: number; type: 'syncEpisodes'; seriesId: string }
+  // maxAgeMs: skip when the stored list is newer than that. prefetch: a hover warm-up;
+  // it queues behind opens, and a newer prefetch replaces one still waiting.
+  | { id: number; type: 'syncEpisodes'; seriesId: string; maxAgeMs?: number; prefetch?: boolean }
   | { id: number; type: 'rematchEpg'; sourceId: string }
   | { id: number; type: 'updateVodDetails'; kind: 'movie' | 'series'; itemId: string; fields: VodDetailFields }
   | { id: number; type: 'importPlaylist'; sourceId: string; content: string }   // an M3U file the user picked
