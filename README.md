@@ -152,6 +152,7 @@ sbtlTV has no account and no server of its own, and sends no analytics, tracking
 | Guide (EPG) sources | Always | Your IP address and when the guide refreshes (your provider's guide, plus any guide URLs you add) |
 | Image hosts | Always | Your IP address and which images: channel logos and posters load from the addresses in your provider's data and from TMDB's image server |
 | GitHub | Always | Two public data files, no account (the movie/series match file for library syncs, and TMDB's browse lists when you have no TMDB key), and update checks when sbtlTV starts (can be turned off): your IP address and sbtlTV version |
+| sbtltv.com | With Selected lists on (default) | Your IP address, about once a day, when sbtlTV fetches the signed Selected lists file. Nothing about you or what you watch; requests aren't logged. Off in Settings > Movies & Series |
 | TMDB | With your TMDB key | Your key, your IP address and the lists you browse. Without a key, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address |
 | RatingPosterDB | With your RPDB key | Your key, your IP address and which titles' posters you see |
 | SubDL | With your SubDL key | Your key, your IP address, and which movies and episodes you get subtitles for, in which language (searched when subtitles are on and the file has none in your language, or when you open Find subtitles) |
