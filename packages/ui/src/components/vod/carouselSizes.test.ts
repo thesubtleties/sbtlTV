@@ -38,6 +38,11 @@ describe('carousel sizes match the CSS', () => {
     const hc = css('HorizontalCarousel.css');
     expect(rule(hc, '.carousel__virtual [data-testid="virtuoso-item-list"] > div')).toMatch(/vertical-align:\s*top/);
   });
+  test('the feather sits above the left scroll fade (it hangs inside the fade\'s 48px strip)', () => {
+    const hc = css('HorizontalCarousel.css');
+    const z = (sel: string) => Number(/z-index:\s*(\d+)/.exec(rule(hc, sel))?.[1] ?? 0);
+    expect(z('.carousel__mark')).toBeGreaterThan(z('.carousel__fade'));
+  });
   test('item width is card plus gap', () => {
     expect(itemWidth('medium')).toBe(176);
   });

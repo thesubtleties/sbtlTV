@@ -45,6 +45,7 @@
   display: inline-flex;
   color: var(--accent);
   opacity: 0.9;
+  z-index: 6; /* above the left scroll fade (.carousel__fade, z 5), which covers this strip */
 }
 
 .carousel__mark svg {
