@@ -151,10 +151,16 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
   // Ask the provider for each related series' list. On open (maxAgeMs) the data
   // process skips lists stored within the last day and refreshes older ones in the
   // background while the stored list shows; Try again (no maxAgeMs) always asks.
+  // Series whose fetch is queued or running: until one lands, an empty list means
+  // "loading", not "no episodes".
+  const [fetching, setFetching] = useState<string[]>([]);
   const fetchEpisodes = useCallback(async (maxAgeMs?: number) => {
     setError(null);
     try {
-      await Promise.all(relatedSeriesIds.map((seriesId) => data.query({ type: 'syncEpisodes', seriesId, ...(maxAgeMs !== undefined ? { maxAgeMs } : {}) })));
+      await Promise.all(relatedSeriesIds.map(async (seriesId) => {
+        const r = await data.query({ type: 'syncEpisodes', seriesId, ...(maxAgeMs !== undefined ? { maxAgeMs } : {}) });
+        if (r.queued) setFetching((f) => (f.includes(seriesId) ? f : [...f, seriesId]));
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch episodes');
     }
@@ -168,10 +174,22 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
     if (!relatedPending) void fetchEpisodes(EPISODES_MAX_AGE_MS);
   }, [relatedKey, relatedPending]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The fetches run in the data process; a failure for any related series arrives as a progress event.
+  // The fetches run in the data process; each ends with a progress event, and a
+  // failure for any related series is shown.
   useEffect(() => data.onSync((p) => {
-    if (p.stage === 'episodes' && p.state === 'failed' && p.seriesId && relatedSeriesIds.includes(p.seriesId)) setError(p.message ?? 'Failed to fetch episodes');
+    if (p.stage !== 'episodes' || !p.seriesId || !relatedSeriesIds.includes(p.seriesId)) return;
+    if (p.state === 'finished' || p.state === 'failed') setFetching((f) => f.filter((id) => id !== p.seriesId));
+    if (p.state === 'failed') setError(p.message ?? 'Failed to fetch episodes');
   }), [relatedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A new series starts clean; a lost progress event cannot leave a spinner forever.
+  useEffect(() => { setFetching([]); }, [relatedKey]);
+  useEffect(() => {
+    if (fetching.length === 0) return;
+    const t = setTimeout(() => setFetching([]), 30_000);
+    return () => clearTimeout(t);
+  }, [fetching.length]);
+  const waitingForFirst = fetching.length > 0 && (allEpisodes?.length ?? 0) === 0;
 
   // Merge: prefer primary/preferred source, fill gaps
   const seasons = useMemo(() => {
@@ -211,7 +229,7 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
 
   return {
     seasons,
-    loading,
+    loading: loading || waitingForFirst,
     error,
     refetch,
     sourceCount: relatedSeriesIds.length,

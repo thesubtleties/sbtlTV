@@ -102,7 +102,8 @@ export type ReplyFor<R extends DataRequest> =
   R extends { type: 'episodes' } ? EpisodeRow[] :
   R extends { type: 'vodCategories' } ? VodCategoryRow[] :
   R extends { type: 'vodCounts' } ? { movies: number; series: number } :
-  R extends { type: 'syncNow' | 'syncEpisodes' | 'rematchEpg' | 'updateVodDetails' | 'importPlaylist' | 'clearAll' } ? { accepted: true } :
+  R extends { type: 'syncEpisodes' } ? { accepted: true; queued: boolean } :   // queued false: the stored list is fresh
+  R extends { type: 'syncNow' | 'rematchEpg' | 'updateVodDetails' | 'importPlaylist' | 'clearAll' } ? { accepted: true } :
   never;
 
 // A request without its id, one variant at a time (a plain Omit over the union

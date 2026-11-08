@@ -110,6 +110,8 @@ export function routeRendererMessage(db: DatabaseSync, msg: unknown, send: (repl
         const sourceId = row?.source_id ?? req.seriesId.slice(0, req.seriesId.indexOf('_'));
         const fresh = req.maxAgeMs !== undefined && row?.episodes_fetched != null && now() - row.episodes_fetched < req.maxAgeMs;
         if (!fresh) enqueue({ kind: 'episodes', sourceId, seriesId: req.seriesId, ...(req.prefetch ? { prefetch: true as const } : {}) });
+        send({ id: req.id, ok: true, data: { accepted: true, queued: !fresh } });
+        return;
       } else if (req.type === 'rematchEpg') {
         enqueue({ kind: 'rematch', sourceId: req.sourceId });
       } else if (req.type === 'updateVodDetails') {

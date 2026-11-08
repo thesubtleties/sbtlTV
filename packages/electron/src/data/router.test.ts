@@ -60,7 +60,7 @@ test('syncEpisodes with maxAgeMs skips a list fetched recently and refreshes an 
     { kind: 'episodes', sourceId: 's1', seriesId: 's1_sr1' },
     { kind: 'episodes', sourceId: 's1', seriesId: 's1_sr1', prefetch: true },
   ]);
-  assert.ok(replies.every((r) => r.ok), 'a skipped request is still acknowledged');
+  assert.deepEqual(replies.map((r) => r.ok && (r.data as { queued: boolean }).queued), [true, false, true, true], 'a skipped request is acknowledged as not queued');
 });
 
 test('syncEpisodes refuses a bad maxAgeMs or prefetch', () => {
