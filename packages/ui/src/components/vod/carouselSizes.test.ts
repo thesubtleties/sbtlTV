@@ -43,6 +43,13 @@ describe('carousel sizes match the CSS', () => {
     const z = (sel: string) => Number(/z-index:\s*(\d+)/.exec(rule(hc, sel))?.[1] ?? 0);
     expect(z('.carousel__mark')).toBeGreaterThan(z('.carousel__fade'));
   });
+  test('rows keep hover blur layers warm only while hovered (200 always-on layers made sideways scroll hitch)', () => {
+    const mc = css('MediaCard.css');
+    const cold = rule(mc, '.carousel:not(:hover) .media-card__play-icon,\n.carousel:not(:hover) .media-card__heart:not(.media-card__heart--active)::after,\n.carousel:not(:hover) .media-card__remove::before');
+    expect(cold).toMatch(/backdrop-filter:\s*none/);
+    expect(cold).toMatch(/will-change:\s*auto/);
+    expect(rule(mc, '.carousel .media-card__poster')).toMatch(/will-change:\s*auto/);
+  });
   test('item width is card plus gap', () => {
     expect(itemWidth('medium')).toBe(176);
   });
