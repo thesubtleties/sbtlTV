@@ -29,27 +29,30 @@
 .carousel__heading {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 14px;
   min-width: 0;
 }
 
-/* Selected rows (sbtltv.com): a quiet mark, only the feather in the accent */
-.carousel__tag {
+/* Selected rows (sbtltv.com): a small feather hung just left of the title, so every row's title
+   still starts on the same line as the cards below. The only accent in the header. */
+.carousel__heading { position: relative; }
+
+.carousel__mark {
+  position: absolute;
+  right: calc(100% + 9px);
+  top: 50%;
+  transform: translateY(-50%);
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  font-size: 0.75rem;
-  color: var(--text-2);
-}
-
-.carousel__tag svg {
-  width: 13px;
-  height: 13px;
   color: var(--accent);
-  align-self: center;
+  opacity: 0.9;
 }
 
+.carousel__mark svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* The blurb: a quiet aside after the title, never competing with it */
 .carousel__subtitle {
   min-width: 0;
   font-size: 0.8125rem;
@@ -57,6 +60,16 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Read by screen readers only */
+.carousel__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .carousel__title {
@@ -152,6 +165,13 @@
   content: '';
   display: inline-block;
   width: 32px;
+}
+
+/* Virtuoso lays items out as inline-blocks, which line up on their text baseline: a card without a
+   poster (placeholder) sat lower than its neighbours and stretched the row. Align to the top instead. */
+.carousel__virtual [data-testid="virtuoso-item-list"],
+.carousel__virtual [data-testid="virtuoso-item-list"] > div {
+  vertical-align: top;
 }
 
 /* One card. Top and bottom padding are room for the hover scale(1.05) and its glow, which the

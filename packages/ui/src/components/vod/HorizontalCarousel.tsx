@@ -133,10 +133,11 @@ export function HorizontalCarousel({
     <section className="carousel" onKeyDown={handleKeyDown}>
       <div className="carousel__header">
         <div className="carousel__heading">
-          <h2 className="carousel__title">{title}</h2>
-          {tag === 'selected' && (
-            <span className="carousel__tag"><FeatherFilledIcon />Selected</span>
-          )}
+          {tag === 'selected' && <span className="carousel__mark"><FeatherFilledIcon /></span>}
+          <h2 className="carousel__title">
+            {tag === 'selected' && <span className="carousel__sr">Selected list: </span>}
+            {title}
+          </h2>
           {subtitle && <span className="carousel__subtitle">{subtitle}</span>}
         </div>
         <div className="carousel__nav">

@@ -34,6 +34,10 @@ describe('carousel sizes match the CSS', () => {
     expect(sc).toMatch(/overflow-x:\s*auto/);
     expect(sc).not.toMatch(/padding-inline/);
   });
+  test('items align to the top, not the text baseline (a card without a poster sank 225px)', () => {
+    const hc = css('HorizontalCarousel.css');
+    expect(rule(hc, '.carousel__virtual [data-testid="virtuoso-item-list"] > div')).toMatch(/vertical-align:\s*top/);
+  });
   test('item width is card plus gap', () => {
     expect(itemWidth('medium')).toBe(176);
   });
