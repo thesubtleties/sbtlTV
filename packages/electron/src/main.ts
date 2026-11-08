@@ -2267,7 +2267,7 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
     if (!settings.subdlApiKey) followUp('clearing downloaded subtitles', () => subtitleCache.clear());
   }
   if (settings.selectedListsEnabled === false) followUp('removing the Selected lists copy', dropListsCache);
-  if (settings.selectedListsEnabled === true) followUp('checking for Selected lists', () => void refreshSelectedLists());
+  if (settings.selectedListsEnabled === true) followUp('checking for Selected lists', () => { listsFailedAt = 0; void refreshSelectedLists(); });
   followUp('sending settings to the data process', () => dataHost?.pushSettings());
   return { success: true };
 });
@@ -2283,6 +2283,9 @@ const listsKeys = !app.isPackaged && process.env.SBTLTV_LISTS_PUBKEY ? [fs.readF
 const listsCachePath = () => path.join(app.getPath('userData'), 'selected-lists.json');
 const EMPTY_LISTS: SelectedLists = { movies: [], series: [] };
 let listsRefresh: Promise<void> | null = null;
+/** After a failed fetch, wait an hour before asking again (a broken file shouldn't mean a request per page open). */
+let listsFailedAt = 0;
+const LISTS_RETRY_MS = 3600 * 1000;
 
 const listsEnabled = () => storage.getSettings().selectedListsEnabled !== false;
 const dropListsCache = () => fs.rmSync(listsCachePath(), { force: true });
@@ -2328,6 +2331,7 @@ function refreshSelectedLists(): Promise<void> {
     if (!listsEnabled()) return;
     const current = loadListsCache();
     if (!isStale(current?.cache.fetchedAt, Date.now())) return;
+    if (Date.now() - listsFailedAt < LISTS_RETRY_MS) return;
     try {
       const answer = await getListsText(listsUrl, MAX_LISTS_BYTES, current?.cache.etag ? { 'If-None-Match': current.cache.etag } : {});
       if (!listsEnabled()) return; // turned off while we were asking
@@ -2343,6 +2347,7 @@ function refreshSelectedLists(): Promise<void> {
       debugLog('Selected lists updated', 'lists');
       sendToRenderer('selected-lists-updated', null);
     } catch (error) {
+      listsFailedAt = Date.now();
       debugLog(`Selected lists not updated: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`, 'lists');
     }
   })().finally(() => { listsRefresh = null; });
