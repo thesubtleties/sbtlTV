@@ -125,6 +125,15 @@ export type SubdlFailure = 'auth' | 'quota' | 'not-found' | 'network' | 'bad-res
 export interface SubdlLanguage { code: string; label: string; iso: string[] }
 
 /** Downloaded subtitles: main does every SubDL request and file */
+/** One hand-chosen home row from sbtltv.com (ids are TMDB ids, matched to the user's library). */
+export interface SelectedList { id: string; name: string; blurb: string; items: number[]; from?: string; until?: string }
+export interface SelectedLists { movies: SelectedList[]; series: SelectedList[] }
+export interface SelectedListsApi {
+  /** Today's lists from the last verified copy (empty when off or none yet). */
+  get(): Promise<SelectedLists>;
+  onUpdated(callback: () => void): () => void;
+}
+
 export interface SubdlApi {
   languages: () => Promise<SubdlLanguage[]>;
   /** Tries a key before it is saved */
@@ -409,6 +418,7 @@ declare global {
     mpv?: MpvApi;
     subtitles?: SubtitlesApi;
     subdl?: SubdlApi;
+    selectedLists?: SelectedListsApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
     appearance?: AppearanceApi;
