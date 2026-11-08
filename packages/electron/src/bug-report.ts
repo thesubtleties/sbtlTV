@@ -60,7 +60,7 @@ const REPORT_SETTINGS = {
   autoUpdateEnabled: 'copy', betaUpdates: 'copy', categoryBarWidth: 'copy', channelColumnWidth: 'copy', guideOpacity: 'copy',
   liveSourceOrder: 'sourceIds', vodSourceOrder: 'sourceIds', sportsMatchupEnabled: 'copy', guideMorphEnabled: 'copy', guideSearchHideAdult: 'copy',
   autoplayNextEpisode: 'copy', linuxPlayerMode: 'copy', linuxPerformanceMode: 'copy', appearance: 'copy', subtitles: 'copy',
-  rewindLiveBytes: 'copy', rewindTipShown: 'copy',
+  rewindLiveBytes: 'copy', rewindTipShown: 'copy', selectedListsEnabled: 'copy',
 } as const satisfies Record<keyof AppSettings, 'copy' | 'secret' | 'sourceId' | 'sourceIds'>;
 
 const iso = (ms: number | null | undefined): string | null => {
