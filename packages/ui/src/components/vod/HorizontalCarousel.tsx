@@ -1,17 +1,21 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import type { StoredMovie, StoredSeries } from '../../db';
 import { MediaCard } from './MediaCard';
 import { getMovieProgress } from '../../hooks/useWatchProgress';
+import { itemWidth, type CardSize } from './carouselSizes';
 import './HorizontalCarousel.css';
+
+type CarouselItem = StoredMovie | StoredSeries;
 
 export interface HorizontalCarouselProps {
   title: string;
-  items: (StoredMovie | StoredSeries)[];
+  items: CarouselItem[];
   type: 'movie' | 'series';
-  onItemClick?: (item: StoredMovie | StoredSeries) => void;
-  cardSize?: 'small' | 'medium' | 'large';
+  onItemClick?: (item: CarouselItem) => void;
+  cardSize?: CardSize;
   loading?: boolean;
-  maxItems?: number; // Limit items for performance
+  maxItems?: number; // Optional cap; rows are virtualized, so long rows are fine without one
   hidden?: boolean; // Hide but maintain minimal height for Virtuoso
   progressMap?: Map<string, number>; // Bulk movie progress lookup
   tag?: 'selected'; // Hand-chosen row from sbtltv.com
@@ -30,6 +34,31 @@ function FeatherFilledIcon() {
   );
 }
 
+// Virtuoso renders only the cards near the visible part of the row. Defined outside the
+// component so rows don't remount their cards on every render.
+interface RowContext {
+  type: 'movie' | 'series';
+  cardSize: CardSize;
+  onItemClick?: (item: CarouselItem) => void;
+  progressMap?: Map<string, number>;
+}
+const itemKey = (_index: number, item: CarouselItem) =>
+  'stream_id' in item ? `m:${item.stream_id}` : `s:${(item as StoredSeries).series_id}`;
+const renderCard = (_index: number, item: CarouselItem, ctx: RowContext) => (
+  <div className="carousel__item">
+    <MediaCard
+      item={item}
+      type={ctx.type}
+      onClick={ctx.onItemClick}
+      size={ctx.cardSize}
+      progress={ctx.progressMap ? getMovieProgress(ctx.progressMap, item) : undefined}
+    />
+  </div>
+);
+// Cards beyond the visible width rendered ahead of time: covers the side padding (which
+// Virtuoso can't see) and fast flicks. `top`/`bottom` mean left/right in horizontal mode.
+const OVERSCAN = { top: 600, bottom: 600 };
+
 export function HorizontalCarousel({
   title,
   items,
@@ -37,50 +66,50 @@ export function HorizontalCarousel({
   onItemClick,
   cardSize = 'medium',
   loading = false,
-  maxItems = 20,
+  maxItems,
   hidden = false,
   progressMap,
   tag,
   subtitle,
 }: HorizontalCarouselProps) {
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
-  // Limit items for performance
   const displayItems = maxItems ? items.slice(0, maxItems) : items;
+
+  const scrollerRef = useCallback((el: HTMLElement | Window | null) => {
+    setScroller(el instanceof HTMLElement ? el : null);
+  }, []);
 
   // Update scroll button visibility
   const updateScrollButtons = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const { scrollLeft, scrollWidth, clientWidth } = container;
+    if (!scroller) return;
+    const { scrollLeft, scrollWidth, clientWidth } = scroller;
     setCanScrollLeft(scrollLeft > 0);
     setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 1);
-  }, []);
+  }, [scroller]);
 
   useEffect(() => {
+    if (!scroller) return;
     updateScrollButtons();
+    scroller.addEventListener('scroll', updateScrollButtons, { passive: true });
     window.addEventListener('resize', updateScrollButtons);
-    return () => window.removeEventListener('resize', updateScrollButtons);
-  }, [updateScrollButtons, items.length]);
+    return () => {
+      scroller.removeEventListener('scroll', updateScrollButtons);
+      window.removeEventListener('resize', updateScrollButtons);
+    };
+  }, [scroller, updateScrollButtons, displayItems.length]);
 
-  // Scroll by amount
+  // Scroll by most of a screen
   const scroll = useCallback((direction: 'left' | 'right') => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const scrollAmount = container.clientWidth * 0.75;
-    const targetScroll = direction === 'left'
-      ? container.scrollLeft - scrollAmount
-      : container.scrollLeft + scrollAmount;
-
-    container.scrollTo({
-      left: targetScroll,
+    if (!scroller) return;
+    const amount = scroller.clientWidth * 0.75;
+    scroller.scrollTo({
+      left: direction === 'left' ? scroller.scrollLeft - amount : scroller.scrollLeft + amount,
       behavior: 'smooth',
     });
-  }, []);
+  }, [scroller]);
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -110,7 +139,7 @@ export function HorizontalCarousel({
           <button
             className="carousel__nav-btn"
             onClick={() => scroll('left')}
-            disabled={!canScrollLeft}
+            disabled={loading || !canScrollLeft}
             aria-label="Scroll left"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -120,7 +149,7 @@ export function HorizontalCarousel({
           <button
             className="carousel__nav-btn"
             onClick={() => scroll('right')}
-            disabled={!canScrollRight}
+            disabled={loading || !canScrollRight}
             aria-label="Scroll right"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -130,35 +159,31 @@ export function HorizontalCarousel({
         </div>
       </div>
 
-      <div
-        className="carousel__scroll-container"
-        ref={scrollContainerRef}
-        onScroll={updateScrollButtons}
-      >
-        <div className="carousel__track">
-          {loading ? (
-            // Loading skeletons
-            Array.from({ length: 8 }).map((_, i) => (
+      {loading ? (
+        <div className="carousel__static">
+          <div className="carousel__track">
+            {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className={`media-card-skeleton media-card-skeleton--${cardSize}`} />
-            ))
-          ) : (
-            displayItems.map((item) => (
-              <MediaCard
-                key={type === 'movie' ? (item as StoredMovie).stream_id : (item as StoredSeries).series_id}
-                item={item}
-                type={type}
-                onClick={onItemClick}
-                size={cardSize}
-                progress={progressMap ? getMovieProgress(progressMap, item) : undefined}
-              />
-            ))
-          )}
+            ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <Virtuoso<CarouselItem, RowContext>
+          className="carousel__scroll-container"
+          horizontalDirection
+          data={displayItems}
+          fixedItemHeight={itemWidth(cardSize)}
+          increaseViewportBy={OVERSCAN}
+          computeItemKey={itemKey}
+          itemContent={renderCard}
+          context={{ type, cardSize, onItemClick, progressMap }}
+          scrollerRef={scrollerRef}
+        />
+      )}
 
       {/* Scroll fade indicators */}
-      {canScrollLeft && <div className="carousel__fade carousel__fade--left" />}
-      {canScrollRight && <div className="carousel__fade carousel__fade--right" />}
+      {!loading && canScrollLeft && <div className="carousel__fade carousel__fade--left" />}
+      {!loading && canScrollRight && <div className="carousel__fade carousel__fade--right" />}
     </section>
   );
 }
