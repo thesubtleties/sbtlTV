@@ -26,6 +26,39 @@
   margin-bottom: 12px;
 }
 
+.carousel__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Selected rows (sbtltv.com): a quiet mark, only the feather in the accent */
+.carousel__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+
+.carousel__tag svg {
+  width: 13px;
+  height: 13px;
+  color: var(--accent);
+  align-self: center;
+}
+
+.carousel__subtitle {
+  min-width: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .carousel__title {
   font-size: 1.125rem;
   font-weight: 500;
