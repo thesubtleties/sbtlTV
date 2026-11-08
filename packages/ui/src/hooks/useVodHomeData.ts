@@ -83,7 +83,7 @@ export function useVodHomeData(type: VodType) {
   const localPopularItems = type === 'movie' ? localPopularMovies : localPopularSeries;
 
   // VOD categories (grouped by name across sources)
-  const { groupedCategories } = useGroupedVodCategories(type);
+  const { groupedCategories, ready: categoriesReady } = useGroupedVodCategories(type);
 
   // Enabled genres from settings
   const enabledMovieGenres = useEnabledMovieGenres();
@@ -126,8 +126,10 @@ export function useVodHomeData(type: VodType) {
   const selectedMovies = useMoviesByTmdbIds(type === 'movie' ? selectedIds : []);
   const selectedSeries = useSeriesByTmdbIds(type === 'series' ? selectedIds : []);
   const adultCategoryIds = useMemo(
-    () => new Set(groupedCategories.filter((g) => isAdultCategoryName(g.name)).flatMap((g) => g.categoryIds)),
-    [groupedCategories],
+    () => categoriesReady
+      ? new Set(groupedCategories.filter((g) => isAdultCategoryName(g.name)).flatMap((g) => g.categoryIds))
+      : null,
+    [groupedCategories, categoriesReady],
   );
   const selectedRows = useMemo(() => {
     const found: { tmdb_id?: number; category_ids: string[] }[] = (type === 'movie' ? selectedMovies : selectedSeries) ?? [];

@@ -86,7 +86,9 @@ export function listsInWindow(lists: SelectedLists, today: string): SelectedList
   return { movies: lists.movies.filter(shown), series: lists.series.filter(shown) };
 }
 
-export const isStale = (fetchedAt: number | undefined, now: number): boolean => fetchedAt === undefined || now - fetchedAt >= REFRESH_MS;
+/** Never fetched, a day old, or saved with a clock that ran ahead of now. */
+export const isStale = (fetchedAt: number | undefined, now: number): boolean =>
+  fetchedAt === undefined || fetchedAt > now || now - fetchedAt >= REFRESH_MS;
 
 /** A cache file is trusted only if it still verifies with the current keys and still validates. */
 export function readCache(raw: unknown, keys: string[] = LISTS_PUBLIC_KEYS): { cache: ListsCache; lists: SelectedLists } | null {

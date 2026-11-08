@@ -52,6 +52,7 @@ test('stale after 24 h, or when never fetched', () => {
   assert.equal(isStale(undefined, 1000), true);
   assert.equal(isStale(0, 24 * 3600 * 1000 - 1), false);
   assert.equal(isStale(0, 24 * 3600 * 1000), true);
+  assert.equal(isStale(10_000, 5_000), true, 'saved with a clock that ran ahead');
 });
 
 test('cache: good one loads; tampered, unsigned, malformed or unknown-key cache is rejected', () => {

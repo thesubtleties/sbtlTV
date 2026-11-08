@@ -113,9 +113,13 @@ export function HorizontalCarousel({
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // preventDefault: a focused row's scroller would also do the browser's own small
+    // arrow scroll, which cancels our smooth page (one press moved 40px instead of 75%)
     if (e.key === 'ArrowLeft') {
+      e.preventDefault();
       scroll('left');
     } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
       scroll('right');
     }
   }, [scroll]);
@@ -160,7 +164,7 @@ export function HorizontalCarousel({
       </div>
 
       {loading ? (
-        <div className="carousel__static">
+        <div className="carousel__scroll-container">
           <div className="carousel__track">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className={`media-card-skeleton media-card-skeleton--${cardSize}`} />
@@ -169,7 +173,7 @@ export function HorizontalCarousel({
         </div>
       ) : (
         <Virtuoso<CarouselItem, RowContext>
-          className="carousel__scroll-container"
+          className="carousel__virtual"
           horizontalDirection
           data={displayItems}
           fixedItemHeight={itemWidth(cardSize)}

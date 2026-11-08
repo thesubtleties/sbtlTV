@@ -26,6 +26,9 @@ describe('buildSelectedRows', () => {
     const rows = buildSelectedRows([L({ name: '<script>x</script>' })], [1, 2, 3, 4, 5, 6].map((n) => m(n)), new Set());
     expect(rows[0]!.title).toBe('<script>x</script>');
   });
+  test('no rows until the categories are known (else adult titles could slip through)', () => {
+    expect(buildSelectedRows([L()], [1, 2, 3, 4, 5, 6, 7].map((n) => m(n)), null)).toEqual([]);
+  });
   test('several lists, each its own row, in list order', () => {
     const items = Array.from({ length: 12 }, (_, i) => m(i + 1));
     const rows = buildSelectedRows([L({ id: 'a', items: [1, 2, 3, 4, 5, 6] }), L({ id: 'b', items: [7, 8, 9, 10, 11, 12] })], items, new Set());

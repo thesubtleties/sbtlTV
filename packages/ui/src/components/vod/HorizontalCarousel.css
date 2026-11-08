@@ -102,13 +102,13 @@
   height: 18px;
 }
 
-/* Scroll container: the Virtuoso scroller (horizontalDirection). Its items are inline-block,
-   measured by offsetWidth, so spacing lives in padding: the gap is each item's right padding,
-   the row's left/right edge is this padding. carouselSizes.ts must match these numbers. */
+/* Plain scroller: Continue Watching and the loading skeletons (not virtualized) */
 .carousel__scroll-container {
   flex: 1;
   min-height: 0;
-  padding-inline: 48px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
 }
@@ -117,10 +117,38 @@
   display: none; /* Chrome/Safari */
 }
 
+.carousel__track {
+  display: flex;
+  gap: 16px;
+  /* Room for the hover scale(1.05) and its glow, which the scroll container would
+     otherwise clip (a horizontal scroller cannot let content spill vertically). The
+     row's bottom spacing lives here, inside the scroller, for the same reason. */
+  padding: 16px 48px 24px;
+  /* As wide as its cards: otherwise the box ends at the visible width and the
+     right padding never reaches the scroll end, so the last card sat flush
+     against the edge (and its hover zoom was clipped). */
+  width: max-content;
+}
+
+/* Virtualized scroller (react-virtuoso horizontalDirection). Its items are inline-block and
+   measured by offsetWidth, so spacing lives in padding: the gap is each item's right padding,
+   the row's left edge is this padding. carouselSizes.ts must match these numbers. */
+.carousel__virtual {
+  flex: 1;
+  min-height: 0;
+  padding-inline: 48px;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.carousel__virtual::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
 /* Chromium leaves the scroller's own end padding out of the scroll width, so the last card would
    sit 16px from the edge. A spacer after the cards makes up the rest (48 = 16 + 32). It's a
    pseudo-element, so Virtuoso never measures it and no card moves. */
-.carousel__scroll-container [data-testid="virtuoso-item-list"]::after {
+.carousel__virtual [data-testid="virtuoso-item-list"]::after {
   content: '';
   display: inline-block;
   width: 32px;
@@ -133,20 +161,6 @@
   box-sizing: border-box;
   height: 100%;
   white-space: normal; /* Virtuoso's list is nowrap */
-}
-
-/* Loading skeletons: a plain, non-scrolling track */
-.carousel__static {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.carousel__track {
-  display: flex;
-  gap: 16px;
-  padding: 16px 48px 24px;
-  width: max-content;
 }
 
 /* Scroll fade indicators */
