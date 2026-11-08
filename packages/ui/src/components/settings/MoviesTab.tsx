@@ -1,5 +1,6 @@
 import { useMovieGenres, useMultipleMoviesByGenre } from '../../hooks/useTmdbLists';
 import { GenreCarouselTab } from './GenreCarouselTab';
+import { SelectedListsSection } from './SelectedListsSection';
 
 interface MoviesTabProps {
   tmdbApiKey: string | null;
@@ -12,6 +13,7 @@ export function MoviesTab(props: MoviesTabProps) {
   return (
     <GenreCarouselTab
       {...props}
+      before={<SelectedListsSection />}
       useGenres={useMovieGenres}
       useMultipleByGenre={useMultipleMoviesByGenre}
       settingsKey="movieGenresEnabled"

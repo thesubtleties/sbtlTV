@@ -172,3 +172,7 @@ test('the guide search setting travels with a setup and is checked', () => {
   assert.deepEqual(settingsForExport({ guideSearchHideAdult: true } as never), { guideSearchHideAdult: true });
   assert.throws(() => validateSetupBody({ ...good(), settings: { guideSearchHideAdult: 'yes' } }), /invalid/);
 });
+
+test('selectedListsEnabled stays on this machine (0.15.0 rejects unknown setting keys on import)', () => {
+  assert.deepEqual(settingsForExport({ selectedListsEnabled: false } as never), {});
+});

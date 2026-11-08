@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { IpCheckResult, StorageProtection } from '../../types/electron';
 import { debugLog } from '../../utils/debugLog';
+import { useSelectedListsEnabled } from '../../stores/uiStore';
 import { Button, Hint, OptionRow, Section, Segmented, SettingsTab } from './ui';
 import './PrivacyTab.css';
 
@@ -130,6 +131,7 @@ function KeyringRow({ protection }: { protection: StorageProtection }) {
 /** What sbtlTV keeps, what IP the outside services see, and who sees what. */
 export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosEnabled, autoUpdateEnabled, debugLoggingEnabled }: PrivacyTabProps) {
   const [ipCheck, setIpCheck] = useState<IpCheck>({ state: 'idle' });
+  const selectedListsEnabled = useSelectedListsEnabled();
   const [protection, setProtection] = useState<StorageProtection | null>(null);
 
   useEffect(() => {
@@ -206,6 +208,9 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
           sees="Channel logos and posters load from the addresses in your provider's data and from TMDB's image server; each sees your IP address and which images." />
         <Who title="GitHub" status="always"
           sees={`Two public data files with no account: the movie and series match file used by library syncs, and TMDB's browse lists when you have no TMDB key. Also ${autoUpdateEnabled ? 'the update check when sbtlTV starts' : 'update checks, only when you click Check for updates'} (your IP address and sbtlTV version).`} />
+        <Who title="sbtltv.com" status={selectedListsEnabled ? 'on' : 'off'}
+          sees="With Selected lists on: your IP address, about once a day, when sbtlTV checks for new lists. Nothing about you or what you watch is sent, and requests aren't logged."
+          note="Settings > Movies & Series > Selected lists." />
         <Who title="TMDB" status={tmdbKeySet ? 'on' : 'not-set-up'}
           sees="With your TMDB key: the key, your IP address and the lists you browse. Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
         <Who title="RatingPosterDB" status={posterDbKeySet ? 'on' : 'not-set-up'}

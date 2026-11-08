@@ -20,7 +20,12 @@ import {
   useEnabledSeriesGenres,
   useMultipleMoviesByGenre,
   useMultipleSeriesByGenre,
+  useMoviesByTmdbIds,
+  useSeriesByTmdbIds,
 } from './useTmdbLists';
+import { isAdultCategoryName } from '@sbtltv/core';
+import { useSelectedLists } from './useSelectedLists';
+import { buildSelectedRows } from '../utils/selectedRows';
 import { useWatchlistMovies, useWatchlistSeries } from './useWatchlist';
 import { useMovieProgressMap } from './useWatchProgress';
 
@@ -78,7 +83,7 @@ export function useVodHomeData(type: VodType) {
   const localPopularItems = type === 'movie' ? localPopularMovies : localPopularSeries;
 
   // VOD categories (grouped by name across sources)
-  const { groupedCategories } = useGroupedVodCategories(type);
+  const { groupedCategories, ready: categoriesReady } = useGroupedVodCategories(type);
 
   // Enabled genres from settings
   const enabledMovieGenres = useEnabledMovieGenres();
@@ -115,6 +120,22 @@ export function useVodHomeData(type: VodType) {
   );
   const genreData = type === 'movie' ? movieGenreData : seriesGenreData;
 
+  // Selected lists (sbtltv.com): one query for every list's ids, then one row per list
+  const selectedLists = useSelectedLists(type);
+  const selectedIds = useMemo(() => [...new Set(selectedLists.flatMap((l) => l.items))], [selectedLists]);
+  const selectedMovies = useMoviesByTmdbIds(type === 'movie' ? selectedIds : []);
+  const selectedSeries = useSeriesByTmdbIds(type === 'series' ? selectedIds : []);
+  const adultCategoryIds = useMemo(
+    () => categoriesReady
+      ? new Set(groupedCategories.filter((g) => isAdultCategoryName(g.name)).flatMap((g) => g.categoryIds))
+      : null,
+    [groupedCategories, categoriesReady],
+  );
+  const selectedRows = useMemo(() => {
+    const found: { tmdb_id?: number; category_ids: string[] }[] = (type === 'movie' ? selectedMovies : selectedSeries) ?? [];
+    return buildSelectedRows(selectedLists, found, adultCategoryIds);
+  }, [selectedLists, selectedMovies, selectedSeries, adultCategoryIds, type]);
+
   return {
     tmdbApiKey,
     featuredItems,
@@ -132,5 +153,6 @@ export function useVodHomeData(type: VodType) {
     groupedCategories,
     genresToShow,
     genreData,
+    selectedRows,
   };
 }

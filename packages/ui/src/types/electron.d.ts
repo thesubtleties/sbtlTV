@@ -125,6 +125,15 @@ export type SubdlFailure = 'auth' | 'quota' | 'not-found' | 'network' | 'bad-res
 export interface SubdlLanguage { code: string; label: string; iso: string[] }
 
 /** Downloaded subtitles: main does every SubDL request and file */
+/** One hand-chosen home row from sbtltv.com (ids are TMDB ids, matched to the user's library). */
+export interface SelectedList { id: string; name: string; blurb: string; items: number[]; from?: string; until?: string }
+export interface SelectedLists { movies: SelectedList[]; series: SelectedList[] }
+export interface SelectedListsApi {
+  /** Today's lists from the last verified copy (empty when off or none yet). */
+  get(): Promise<SelectedLists>;
+  onUpdated(callback: () => void): () => void;
+}
+
 export interface SubdlApi {
   languages: () => Promise<SubdlLanguage[]>;
   /** Tries a key before it is saved */
@@ -278,6 +287,7 @@ export interface AppSettings {
   sportsMatchupEnabled?: boolean;  // Show team logos in the bar on a live sports game (default off: the logos load from ESPN)
   guideMorphEnabled?: boolean;     // Animate guide rows into place after a noticeable wait (default true)
   guideSearchHideAdult?: boolean;  // Leave adult categories out of guide search (default off)
+  selectedListsEnabled?: boolean;  // Selected rows on the Movies/Series homes from sbtltv.com (default on)
   autoplayNextEpisode?: boolean;  // Autoplay next episode for series (default true)
   linuxPlayerMode?: 'native' | 'compatibility';  // Linux only: player used at next launch (default native)
   linuxPerformanceMode?: boolean;  // Linux only: cheaper mpv rendering (next launch) and no blur over video
@@ -408,6 +418,7 @@ declare global {
     mpv?: MpvApi;
     subtitles?: SubtitlesApi;
     subdl?: SubdlApi;
+    selectedLists?: SelectedListsApi;
     electronWindow?: ElectronWindowApi;
     storage?: StorageApi;
     appearance?: AppearanceApi;
