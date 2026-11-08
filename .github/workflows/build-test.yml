@@ -82,7 +82,10 @@ jobs:
           printf '{"sha":"%s","run":"%s","ref":"%s"}\n' "${GITHUB_SHA:0:7}" "$GITHUB_RUN_ID" "$GITHUB_REF_NAME" > packages/electron/dist/build-info.json
           cat packages/electron/dist/build-info.json
 
+      # bash (runs with -e): on Windows the default PowerShell keeps going after a failing command and only
+      # the last one's result counted, so UI test failures there passed the job unnoticed.
       - name: Run unit tests
+        shell: bash
         run: |
           pnpm --filter @sbtltv/ui test
           pnpm --filter @sbtltv/electron test

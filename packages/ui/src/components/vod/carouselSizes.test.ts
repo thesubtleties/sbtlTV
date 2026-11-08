@@ -6,7 +6,8 @@ import { CARD_GAP, CARD_WIDTH, SIDE_PAD, itemWidth } from './carouselSizes';
 // Read the real CSS files. Vitest runs in Node; the UI has no Node types, so a minimal one here.
 const fsMod = 'node:fs';
 const { readFileSync } = (await import(/* @vite-ignore */ fsMod)) as { readFileSync(path: URL, enc: 'utf8'): string };
-const css = (file: string) => readFileSync(new URL(`./${file}`, import.meta.url), 'utf8');
+// CRLF on Windows checkouts: normalise line endings so selectors match on every platform
+const css = (file: string) => readFileSync(new URL(`./${file}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const rule = (src: string, selector: string) => {
   const m = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(src);
   if (!m) throw new Error(`no rule for ${selector}`);
