@@ -214,7 +214,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         <Who title="TMDB" status={tmdbKeySet ? 'on' : 'not-set-up'}
           sees="With your TMDB key: the key, your IP address, the lists you browse and the titles you open or point at. Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
         <Who title="RatingPosterDB" status={posterDbKeySet ? 'on' : 'not-set-up'}
-          sees="With your RPDB key: the key, your IP address and which titles' posters you see." />
+          sees="With your RPDB key: the key, your IP address and which titles' posters you see; with RPDB backdrops on, also the titles you open or point at." />
         <Who title="SubDL" status={subdlKeySet ? 'on' : 'not-set-up'}
           sees="With your SubDL key: the key, your IP address, and which movies and episodes you get subtitles for, in which language. It's asked when subtitles are on and the file has none in your language, or when you open Find subtitles." />
         <Who title="ESPN" status={teamLogosEnabled ? 'on' : 'off'}

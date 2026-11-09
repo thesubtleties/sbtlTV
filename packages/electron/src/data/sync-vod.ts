@@ -96,6 +96,14 @@ export async function syncEpisodes(ctx: StageContext, source: Source, client: Vo
   try {
     const seasons = await client.getSeriesInfo(seriesId);
     const episodes = seasons.flatMap((s) => s.episodes.map((e) => ({ ...e, source_id: source.id })));
+    // Providers answer a rate limit or a hiccup with an empty list. Keep what is
+    // stored and leave the series unstamped so the next open asks again; the page
+    // sees counts.episodes 0 and says so.
+    if (episodes.length === 0) {
+      ctx.log('vod', `Episode fetch for ${seriesId}: provider sent no episodes; stored list kept`);
+      ctx.progress({ sourceId: source.id, stage: 'episodes', state: 'finished', seriesId, counts: { episodes: 0 } });
+      return 0;
+    }
     ctx.changed(replaceEpisodes(ctx.db, seriesId, episodes), source.id);
     ctx.progress({ sourceId: source.id, stage: 'episodes', state: 'finished', seriesId, counts: { episodes: episodes.length } });
     return episodes.length;

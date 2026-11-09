@@ -4,13 +4,19 @@
  *
  * - after DETAILS_DWELL_MS: TMDB details and credits the stored row lacks (only
  *   with a TMDB key; shared with the detail hooks, so nothing is fetched twice),
- *   then the backdrop image is preloaded.
+ *   then the backdrop image is preloaded (from stored data without a key).
  * - after EPISODES_DWELL_MS, series only: the episode list from the provider. The
  *   data process skips it when the stored list is under a day old, so a fresh
- *   series costs no provider request; a failed attempt is not retried for a while.
+ *   series costs no provider request. The same series is not asked again for
+ *   EPISODES_RETRY_AFTER_MS.
  *
  * Leaving the card before a timer fires cancels it. One card at a time.
  */
+
+import { getTmdbImageUrl, TMDB_BACKDROP_SIZES } from './tmdb';
+import { getRpdbBackdropUrl } from './rpdb';
+import { isMovie } from '../types/media';
+import type { StoredMovie, StoredSeries } from '../db';
 
 export const DETAILS_DWELL_MS = 200;
 export const EPISODES_DWELL_MS = 300;
@@ -106,5 +112,27 @@ export function createHoverPrefetch(deps: PrefetchDeps): HoverPrefetch {
       if (token !== undefined && token !== current) return;
       cancel();
     },
+  };
+}
+
+// What the detail page's lazy hooks would fetch for this row (keep in step with
+// useLazyBackdrop / useLazyPlot / useLazyCredits).
+export function prefetchTargetFor(
+  item: StoredMovie | StoredSeries,
+  apiKey: string | null,
+  rpdb: { apiKey: string | null; backdropsEnabled: boolean },
+): PrefetchTarget {
+  const movie = isMovie(item);
+  const kind = movie ? 'movie' : 'series';
+  const tmdbId = item.tmdb_id ?? null;
+  const rpdbUrl = rpdb.apiKey && rpdb.backdropsEnabled && tmdbId != null ? getRpdbBackdropUrl(rpdb.apiKey, tmdbId, kind) : null;
+  return {
+    kind,
+    tmdbId,
+    seriesId: movie ? null : item.series_id,
+    apiKey: apiKey || null,
+    needsDetails: !item.backdrop_path || !item.plot || !item.genre,
+    needsCredits: !item.cast?.trim() || (movie && !item.director?.trim()),
+    backdropUrl: (fetchedPath) => rpdbUrl ?? getTmdbImageUrl(item.backdrop_path || fetchedPath, TMDB_BACKDROP_SIZES.large),
   };
 }

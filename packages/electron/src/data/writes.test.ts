@@ -186,12 +186,14 @@ test('a reader on a second connection sees the old rows until the writer commits
 
 test('replaceVod keeps surviving series with their episodes and enrichment, drops the rest with theirs', () => {
   const db = new DatabaseSync(':memory:'); seedFixture(db);
+  db.exec("update vod_series set episodes_fetched = 777 where series_id = 's1_sr1'");
   db.exec("insert into vod_series(series_id, source_id, name, tmdb_id, popularity) values ('s1_sr2', 's1', 'Gone', 1, 1)");
   db.exec("insert into vod_episodes(id, series_id, season_num, episode_num, title, direct_url) values ('s1_e9', 's1_sr2', 1, 1, 'Bye', 'u')");
   replaceVod(db, 's1', { categories: [], movies: [], series: [{ series_id: 's1_sr1', source_id: 's1', name: 'Lost (2004)', cover: '', category_ids: ['s1_drama'] }] });
   const kept = db.prepare("select name, tmdb_id, popularity from vod_series where series_id='s1_sr1'").get() as { name: string; tmdb_id: number; popularity: number };
   assert.deepEqual({ ...kept }, { name: 'Lost (2004)', tmdb_id: 4607, popularity: 30 });
   assert.equal(count(db, "select count(*) c from vod_episodes where series_id='s1_sr1'"), 2, 'survivor keeps its episodes');
+  assert.equal(count(db, "select episodes_fetched c from vod_series where series_id='s1_sr1'"), 777, 'a VOD sync keeps the episode fetch time');
   assert.equal(count(db, "select count(*) c from vod_series where series_id='s1_sr2'"), 0);
   assert.equal(count(db, "select count(*) c from vod_episodes where series_id='s1_sr2'"), 0, 'dropped series loses its episodes');
   assert.equal(count(db, "select count(*) c from vod_item_categories where item_id in ('s1_m1', 's1_m2')"), 0, 'deleted movies lose their category links');

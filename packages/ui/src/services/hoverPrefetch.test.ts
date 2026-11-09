@@ -5,6 +5,7 @@ import {
   EPISODES_DWELL_MS,
   EPISODES_RETRY_AFTER_MS,
   type PrefetchTarget,
+  prefetchTargetFor,
 } from './hoverPrefetch';
 
 function setup() {
@@ -114,5 +115,56 @@ describe('hover prefetch', () => {
     prefetch.enter(series({ backdropUrl: (p) => (p ? `img${p}` : 'img/cover.jpg') }));
     await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
     expect(deps.preload).toHaveBeenCalledWith('img/cover.jpg');
+  });
+});
+
+describe('prefetchTargetFor (mirrors the detail hooks)', () => {
+  const series = { series_id: 's1_sr1', source_id: 's1', name: 'Show', cover: '', tmdb_id: 1399, backdrop_path: '/b.jpg', plot: 'p', genre: 'g', cast: 'A, B' } as unknown as Parameters<typeof prefetchTargetFor>[0];
+  const movie = { stream_id: 's1_m1', source_id: 's1', name: 'Film', stream_icon: '', direct_url: 'http://x', tmdb_id: 603, backdrop_path: '/m.jpg', plot: 'p', genre: 'g', cast: 'A', director: 'D' } as unknown as Parameters<typeof prefetchTargetFor>[0];
+  const noRpdb = { apiKey: null, backdropsEnabled: false };
+
+  it('a complete row needs nothing from TMDB; the stored backdrop is preloaded', () => {
+    const t = prefetchTargetFor(series, 'key', noRpdb);
+    expect(t).toMatchObject({ kind: 'series', tmdbId: 1399, seriesId: 's1_sr1', apiKey: 'key', needsDetails: false, needsCredits: false });
+    expect(t.backdropUrl('/other.jpg')).toContain('/b.jpg');
+  });
+
+  it('any of backdrop, plot or genre missing needs details; blank cast or a movie without director needs credits', () => {
+    expect(prefetchTargetFor({ ...series, genre: undefined } as typeof series, 'k', noRpdb).needsDetails).toBe(true);
+    expect(prefetchTargetFor({ ...series, cast: '  ' } as typeof series, 'k', noRpdb).needsCredits).toBe(true);
+    expect(prefetchTargetFor({ ...movie, director: '' } as typeof movie, 'k', noRpdb).needsCredits).toBe(true);
+    expect(prefetchTargetFor(movie, 'k', noRpdb)).toMatchObject({ kind: 'movie', seriesId: null, needsCredits: false });
+  });
+
+  it('without a stored backdrop the fetched one is used; an empty key is no key', () => {
+    const t = prefetchTargetFor({ ...series, backdrop_path: undefined } as typeof series, '', noRpdb);
+    expect(t.apiKey).toBeNull();
+    expect(t.backdropUrl('/fetched.jpg')).toContain('/fetched.jpg');
+    expect(t.backdropUrl(null)).toBeNull();
+  });
+
+  it('RPDB backdrops win only with a key, backdrops on and a TMDB id', () => {
+    const on = { apiKey: 't2-abc', backdropsEnabled: true }; // tier 2+ keys have backdrops
+    expect(prefetchTargetFor(series, 'k', on).backdropUrl(null)).not.toContain('/b.jpg');
+    expect(prefetchTargetFor(series, 'k', { ...on, backdropsEnabled: false }).backdropUrl(null)).toContain('/b.jpg');
+    expect(prefetchTargetFor({ ...series, tmdb_id: undefined } as typeof series, 'k', on).backdropUrl(null)).toContain('/b.jpg');
+  });
+});
+
+describe('hover prefetch failures', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('a failed episode ask is not repeated within the retry window, and nothing is left unhandled', async () => {
+    const { deps, prefetch } = setup();
+    deps.episodes.mockRejectedValue(new Error('offline'));
+    deps.credits.mockRejectedValue(new Error('429'));
+    prefetch.enter(series());
+    await vi.advanceTimersByTimeAsync(EPISODES_DWELL_MS);
+    prefetch.leave();
+    await vi.advanceTimersByTimeAsync(EPISODES_RETRY_AFTER_MS - EPISODES_DWELL_MS - 1);
+    prefetch.enter(series());
+    await vi.advanceTimersByTimeAsync(EPISODES_DWELL_MS);
+    expect(deps.episodes).toHaveBeenCalledTimes(1);
   });
 });

@@ -7,6 +7,8 @@
  * - User has TMDB API key configured
  *
  * Caches result to DB so we don't refetch.
+ * The request goes through services/tmdbDetails, so a hover prefetch may already
+ * have it (useHoverPrefetch mirrors when this hook fetches; keep them in step).
  */
 
 import { useState, useEffect, useRef } from 'react';

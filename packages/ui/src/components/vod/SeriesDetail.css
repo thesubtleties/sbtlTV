@@ -550,3 +550,51 @@
     font-size: 0.8rem;
   }
 }
+
+/* A stored list kept after a refresh came back empty or failed */
+.series-detail__refresh-warning {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.85rem;
+  color: var(--text-3);
+}
+
+.series-detail__refresh-warning > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.series-detail__refresh-warning-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+.series-detail__refresh-button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  background: var(--fill-3);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.series-detail__refresh-button:hover {
+  background: var(--fill-4);
+  color: var(--text);
+}
+
+.series-detail__refresh-button svg {
+  width: 16px;
+  height: 16px;
+}

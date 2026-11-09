@@ -14,7 +14,8 @@ export type SyncJob =
 
 // Whether two jobs would do the same work (a scheduler pass and a Sync button,
 // or two scheduler passes): the lanes collapse such a job against the queue and
-// the job in flight. Jobs carrying data never collapse.
+// the job in flight. Jobs carrying data never collapse. Episodes compare by series
+// only: a hover prefetch and an open of the same series are the same job.
 export function isSameJob(a: SyncJob, b: SyncJob): boolean {
   if (a.kind !== b.kind) return false;
   switch (a.kind) {

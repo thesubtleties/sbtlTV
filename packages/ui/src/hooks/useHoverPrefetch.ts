@@ -4,13 +4,10 @@
  */
 import { useCallback, useEffect, useRef } from 'react';
 import { data } from '../data/client';
-import { getTmdbImageUrl, TMDB_BACKDROP_SIZES } from '../services/tmdb';
-import { getRpdbBackdropUrl } from '../services/rpdb';
 import { tmdbDetails, tmdbCredits } from '../services/tmdbDetails';
-import { createHoverPrefetch, EPISODES_MAX_AGE_MS, type PrefetchTarget } from '../services/hoverPrefetch';
+import { createHoverPrefetch, prefetchTargetFor, EPISODES_MAX_AGE_MS } from '../services/hoverPrefetch';
 import { useTmdbApiKey } from '../stores/uiStore';
 import { useRpdbSettings } from './useRpdbSettings';
-import { isMovie } from '../types/media';
 import type { StoredMovie, StoredSeries } from '../db';
 
 // A few recent preloads stay referenced so a collected Image cannot drop its request.
@@ -31,28 +28,6 @@ const hoverPrefetch = createHoverPrefetch({
   setTimeout: (fn, ms) => window.setTimeout(fn, ms),
   clearTimeout: (h) => window.clearTimeout(h as number),
 });
-
-// What the detail page's lazy hooks would fetch for this row (keep in step with
-// useLazyBackdrop / useLazyPlot / useLazyCredits).
-export function prefetchTargetFor(
-  item: StoredMovie | StoredSeries,
-  apiKey: string | null,
-  rpdb: { apiKey: string | null; backdropsEnabled: boolean },
-): PrefetchTarget {
-  const movie = isMovie(item);
-  const kind = movie ? 'movie' : 'series';
-  const tmdbId = item.tmdb_id ?? null;
-  const rpdbUrl = rpdb.apiKey && rpdb.backdropsEnabled && tmdbId != null ? getRpdbBackdropUrl(rpdb.apiKey, tmdbId, kind) : null;
-  return {
-    kind,
-    tmdbId,
-    seriesId: movie ? null : item.series_id,
-    apiKey: apiKey || null,
-    needsDetails: !item.backdrop_path || !item.plot || !item.genre,
-    needsCredits: !item.cast?.trim() || (movie && !item.director?.trim()),
-    backdropUrl: (fetchedPath) => rpdbUrl ?? getTmdbImageUrl(item.backdrop_path || fetchedPath, TMDB_BACKDROP_SIZES.large),
-  };
-}
 
 export function useHoverPrefetch(item: StoredMovie | StoredSeries) {
   const apiKey = useTmdbApiKey();

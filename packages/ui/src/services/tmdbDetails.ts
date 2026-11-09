@@ -1,9 +1,8 @@
 /**
- * One TMDB request per title for details and credits, shared by everything that
- * asks: the detail page's backdrop and plot hooks (which used to fetch details
- * twice), the hero, and the hover prefetch. Calls in flight share one promise; a
- * finished answer is kept for the session (small, bounded); a failure is dropped
- * so the next ask tries again.
+ * One TMDB request per title for details and credits, shared by the detail hooks
+ * (useLazyBackdrop, useLazyPlot, useLazyCredits) and the hover prefetch. Calls in
+ * flight share one promise; a finished answer is kept for the session (up to
+ * MAX_ENTRIES); a failure is dropped so the next ask tries again.
  */
 import {
   getMovieDetails,
@@ -16,7 +15,7 @@ import {
 } from './tmdb';
 
 type Kind = 'movie' | 'series';
-const MAX_ENTRIES = 400;
+const MAX_ENTRIES = 200;   // credits answers are large; 200 titles is plenty for a session
 const entries = new Map<string, Promise<unknown>>();
 
 function shared<T>(key: string, load: () => Promise<T>): Promise<T> {

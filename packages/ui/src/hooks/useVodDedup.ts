@@ -1,9 +1,10 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useReducer, useRef } from 'react';
 import type { StoredMovie, StoredSeries, StoredEpisode } from '../db';
 import { data } from '../data/client';
 import { useDataQuery } from '../data/useDataQuery';
 import { usePreferredSourceResolver, useEnabledSourceIds } from './useSourceFiltering';
 import { EPISODES_MAX_AGE_MS } from '../services/hoverPrefetch';
+import { episodeFetchReducer, initialEpisodeFetchState, EPISODE_FETCH_TIMEOUT_MS } from './episodeFetchState';
 
 export interface DedupedMovie {
   item: StoredMovie;
@@ -122,7 +123,7 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
   const [error, setError] = useState<string | null>(null);
 
   // Find all series with same tmdb_id
-  const { data: related, stale: relatedStale } = useDataQuery(
+  const { data: related, stale: relatedStale, error: relatedError } = useDataQuery(
     tmdbId ? { type: 'series', by: { kind: 'tmdbIds', tmdbIds: [tmdbId] }, sourceIds: enabledIds } : null,
     ['vod_series'], [tmdbId, enabledIds.join(',')],
   );
@@ -148,48 +149,52 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
     ['vod_episodes'], [relatedKey],
   );
 
-  // Ask the provider for each related series' list. On open (maxAgeMs) the data
-  // process skips lists stored within the last day and refreshes older ones in the
-  // background while the stored list shows; Try again (no maxAgeMs) always asks.
-  // Series whose fetch is queued or running: until one lands, an empty list means
-  // "loading", not "no episodes".
-  const [fetching, setFetching] = useState<string[]>([]);
+  // Asks the data process for each related series' list. On open (maxAgeMs) it
+  // skips lists under a day old; Try again (no maxAgeMs) always asks.
+  const [fetchState, dispatch] = useReducer(episodeFetchReducer, initialEpisodeFetchState);
+  const currentIds = useRef(relatedSeriesIds);
+  currentIds.current = relatedSeriesIds;
+  const sourceOf = useMemo(() => {
+    const m = new Map((related ?? []).map((s) => [s.series_id, s.source_id]));
+    return (seriesId: string) => m.get(seriesId) ?? seriesId.slice(0, Math.max(0, seriesId.indexOf('_')));
+  }, [related]);
   const fetchEpisodes = useCallback(async (maxAgeMs?: number) => {
     setError(null);
     try {
       await Promise.all(relatedSeriesIds.map(async (seriesId) => {
         const r = await data.query({ type: 'syncEpisodes', seriesId, ...(maxAgeMs !== undefined ? { maxAgeMs } : {}) });
-        if (r.queued) setFetching((f) => (f.includes(seriesId) ? f : [...f, seriesId]));
+        // A reply for a series the page has since left is dropped.
+        if (r.queued && currentIds.current.includes(seriesId)) dispatch({ type: 'queued', seriesId, sourceId: sourceOf(seriesId) });
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch episodes');
+      if (relatedSeriesIds.every((id) => currentIds.current.includes(id))) setError(err instanceof Error ? err.message : 'Failed to fetch episodes');
     }
-  }, [relatedSeriesIds]);
+  }, [relatedSeriesIds, sourceOf]);
   const refetch = useCallback(() => fetchEpisodes(), [fetchEpisodes]);
 
   // Once per opened series (and its related set). Waits for the related query so a
-  // provisional single-id set does not ask twice.
-  const relatedPending = !!tmdbId && (related === undefined || relatedStale);
+  // provisional single-id set does not ask twice; if that query fails, goes ahead
+  // with the primary series alone.
+  const relatedPending = !!tmdbId && !relatedError && (related === undefined || relatedStale);
   useEffect(() => {
+    dispatch({ type: 'reset' });
     if (!relatedPending) void fetchEpisodes(EPISODES_MAX_AGE_MS);
   }, [relatedKey, relatedPending]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The fetches run in the data process; each ends with a progress event, and a
-  // failure for any related series is shown.
-  useEffect(() => data.onSync((p) => {
-    if (p.stage !== 'episodes' || !p.seriesId || !relatedSeriesIds.includes(p.seriesId)) return;
-    if (p.state === 'finished' || p.state === 'failed') setFetching((f) => f.filter((id) => id !== p.seriesId));
-    if (p.state === 'failed') setError(p.message ?? 'Failed to fetch episodes');
-  }), [relatedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Each fetch ends with a progress event for its series.
+  useEffect(() => data.onSync((progress) => {
+    if (progress.stage === 'episodes' && progress.seriesId && currentIds.current.includes(progress.seriesId)) dispatch({ type: 'progress', progress });
+  }), []);
 
-  // A new series starts clean; a lost progress event cannot leave a spinner forever.
-  useEffect(() => { setFetching([]); }, [relatedKey]);
+  // A lost progress event or a provider that never answers cannot spin forever.
+  const fetchingKey = fetchState.fetching.map((f) => f.seriesId).join(',');
   useEffect(() => {
-    if (fetching.length === 0) return;
-    const t = setTimeout(() => setFetching([]), 30_000);
+    if (!fetchingKey) return;
+    const t = setTimeout(() => dispatch({ type: 'timeout' }), EPISODE_FETCH_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [fetching.length]);
-  const waitingForFirst = fetching.length > 0 && (allEpisodes?.length ?? 0) === 0;
+  }, [fetchingKey]);
+  const hasEpisodes = (allEpisodes?.length ?? 0) > 0;
+  const waitingForFirst = fetchState.fetching.length > 0 && !hasEpisodes;
 
   // Merge: prefer primary/preferred source, fill gaps
   const seasons = useMemo(() => {
@@ -230,7 +235,9 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
   return {
     seasons,
     loading: loading || waitingForFirst,
-    error,
+    error,                      // the request itself failed (data process unreachable)
+    issues: fetchState.issues,  // per source: last fetch empty or failed (see episodeFetchState)
+    hasEpisodes,
     refetch,
     sourceCount: relatedSeriesIds.length,
   };
