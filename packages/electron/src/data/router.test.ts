@@ -44,6 +44,35 @@ test('syncEpisodes resolves the source from the stored series', () => {
   assert.deepEqual(jobs, [{ kind: 'episodes', sourceId: 's1', seriesId: 's1_sr1' }]);
 });
 
+test('syncEpisodes with maxAgeMs skips a list fetched recently and refreshes an old or unstamped one', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const jobs: SyncJob[] = []; const replies: DataReply[] = [];
+  const now = () => 100 * 3_600_000;
+  const ask = (id: number, extra: Record<string, unknown> = {}) => routeRendererMessage(db, { id, type: 'syncEpisodes', seriesId: 's1_sr1', ...extra }, (r) => replies.push(r), (j) => jobs.push(j), undefined, now);
+  ask(1, { maxAgeMs: 86_400_000 });                     // never stamped: fetch
+  db.prepare(`update vod_series set episodes_fetched = ? where series_id = 's1_sr1'`).run(now() - 3_600_000);
+  ask(2, { maxAgeMs: 86_400_000 });                     // an hour old: fresh, skipped
+  ask(3);                                               // no maxAgeMs (Try again): always
+  db.prepare(`update vod_series set episodes_fetched = ? where series_id = 's1_sr1'`).run(now() - 25 * 3_600_000);
+  ask(4, { maxAgeMs: 86_400_000, prefetch: true });     // a day old: refresh, marked as prefetch
+  assert.deepEqual(jobs, [
+    { kind: 'episodes', sourceId: 's1', seriesId: 's1_sr1' },
+    { kind: 'episodes', sourceId: 's1', seriesId: 's1_sr1' },
+    { kind: 'episodes', sourceId: 's1', seriesId: 's1_sr1', prefetch: true },
+  ]);
+  assert.deepEqual(replies.map((r) => r.ok && (r.data as { queued: boolean }).queued), [true, false, true, true], 'a skipped request is acknowledged as not queued');
+});
+
+test('syncEpisodes refuses a bad maxAgeMs or prefetch', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const replies: DataReply[] = []; const jobs: SyncJob[] = [];
+  routeRendererMessage(db, { id: 1, type: 'syncEpisodes', seriesId: 's1_sr1', maxAgeMs: 'soon' }, (r) => replies.push(r), (j) => jobs.push(j));
+  routeRendererMessage(db, { id: 2, type: 'syncEpisodes', seriesId: 's1_sr1', maxAgeMs: -1 }, (r) => replies.push(r), (j) => jobs.push(j));
+  routeRendererMessage(db, { id: 3, type: 'syncEpisodes', seriesId: 's1_sr1', prefetch: 'yes' }, (r) => replies.push(r), (j) => jobs.push(j));
+  assert.deepEqual(replies.map((r) => r.ok), [false, false, false]);
+  assert.deepEqual(jobs, []);
+});
+
 test('updateVodDetails is acknowledged and queued', () => {
   const db = new DatabaseSync(':memory:'); seedFixture(db);
   const replies: DataReply[] = []; const jobs: SyncJob[] = [];

@@ -1,8 +1,10 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useReducer, useRef } from 'react';
 import type { StoredMovie, StoredSeries, StoredEpisode } from '../db';
 import { data } from '../data/client';
 import { useDataQuery } from '../data/useDataQuery';
 import { usePreferredSourceResolver, useEnabledSourceIds } from './useSourceFiltering';
+import { EPISODES_MAX_AGE_MS } from '../services/hoverPrefetch';
+import { episodeFetchReducer, initialEpisodeFetchState, EPISODE_FETCH_TIMEOUT_MS } from './episodeFetchState';
 
 export interface DedupedMovie {
   item: StoredMovie;
@@ -121,7 +123,7 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
   const [error, setError] = useState<string | null>(null);
 
   // Find all series with same tmdb_id
-  const { data: related } = useDataQuery(
+  const { data: related, stale: relatedStale, error: relatedError } = useDataQuery(
     tmdbId ? { type: 'series', by: { kind: 'tmdbIds', tmdbIds: [tmdbId] }, sourceIds: enabledIds } : null,
     ['vod_series'], [tmdbId, enabledIds.join(',')],
   );
@@ -147,26 +149,52 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
     ['vod_episodes'], [relatedKey],
   );
 
-  // Fetch episodes (on demand) for related series that have none stored
-  const fetchAll = useCallback(async () => {
+  // Asks the data process for each related series' list. On open (maxAgeMs) it
+  // skips lists under a day old; Try again (no maxAgeMs) always asks.
+  const [fetchState, dispatch] = useReducer(episodeFetchReducer, initialEpisodeFetchState);
+  const currentIds = useRef(relatedSeriesIds);
+  currentIds.current = relatedSeriesIds;
+  const sourceOf = useMemo(() => {
+    const m = new Map((related ?? []).map((s) => [s.series_id, s.source_id]));
+    return (seriesId: string) => m.get(seriesId) ?? seriesId.slice(0, Math.max(0, seriesId.indexOf('_')));
+  }, [related]);
+  const fetchEpisodes = useCallback(async (maxAgeMs?: number) => {
     setError(null);
-    const have = new Set((allEpisodes ?? []).map((e) => e.series_id));
     try {
-      await Promise.all(relatedSeriesIds.filter((sid) => !have.has(sid)).map((seriesId) => data.query({ type: 'syncEpisodes', seriesId })));
+      await Promise.all(relatedSeriesIds.map(async (seriesId) => {
+        const r = await data.query({ type: 'syncEpisodes', seriesId, ...(maxAgeMs !== undefined ? { maxAgeMs } : {}) });
+        // A reply for a series the page has since left is dropped.
+        if (r.queued && currentIds.current.includes(seriesId)) dispatch({ type: 'queued', seriesId, sourceId: sourceOf(seriesId) });
+      }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch episodes');
+      if (relatedSeriesIds.every((id) => currentIds.current.includes(id))) setError(err instanceof Error ? err.message : 'Failed to fetch episodes');
     }
-  }, [relatedSeriesIds, allEpisodes]);
+  }, [relatedSeriesIds, sourceOf]);
+  const refetch = useCallback(() => fetchEpisodes(), [fetchEpisodes]);
 
-  // Trigger once the stored episodes are known
+  // Once per opened series (and its related set). Waits for the related query so a
+  // provisional single-id set does not ask twice; if that query fails, goes ahead
+  // with the primary series alone.
+  const relatedPending = !!tmdbId && !relatedError && (related === undefined || relatedStale);
   useEffect(() => {
-    if (allEpisodes) void fetchAll();
-  }, [relatedKey, allEpisodes === undefined]); // eslint-disable-line react-hooks/exhaustive-deps
+    dispatch({ type: 'reset' });
+    if (!relatedPending) void fetchEpisodes(EPISODES_MAX_AGE_MS);
+  }, [relatedKey, relatedPending]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The fetches run in the data process; a failure for any related series arrives as a progress event.
-  useEffect(() => data.onSync((p) => {
-    if (p.stage === 'episodes' && p.state === 'failed' && p.seriesId && relatedSeriesIds.includes(p.seriesId)) setError(p.message ?? 'Failed to fetch episodes');
-  }), [relatedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Each fetch ends with a progress event for its series.
+  useEffect(() => data.onSync((progress) => {
+    if (progress.stage === 'episodes' && progress.seriesId && currentIds.current.includes(progress.seriesId)) dispatch({ type: 'progress', progress });
+  }), []);
+
+  // A lost progress event or a provider that never answers cannot spin forever.
+  const fetchingKey = fetchState.fetching.map((f) => f.seriesId).join(',');
+  useEffect(() => {
+    if (!fetchingKey) return;
+    const t = setTimeout(() => dispatch({ type: 'timeout' }), EPISODE_FETCH_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [fetchingKey]);
+  const hasEpisodes = (allEpisodes?.length ?? 0) > 0;
+  const waitingForFirst = fetchState.fetching.length > 0 && !hasEpisodes;
 
   // Merge: prefer primary/preferred source, fill gaps
   const seasons = useMemo(() => {
@@ -206,9 +234,12 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
 
   return {
     seasons,
-    loading,
-    error,
-    refetch: fetchAll,
+    loading: loading || waitingForFirst,
+    error,                      // the request itself failed (data process unreachable)
+    issues: fetchState.issues,  // per source: last fetch empty or failed (see episodeFetchState)
+    refreshing: fetchState.fetching.length > 0,
+    hasEpisodes,
+    refetch,
     sourceCount: relatedSeriesIds.length,
   };
 }

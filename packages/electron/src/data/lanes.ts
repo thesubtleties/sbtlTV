@@ -12,6 +12,15 @@ export type LaneName = 'sync' | 'quick';
 export interface LaneHooks {
   send(lane: LaneName, job: SyncJob): void;
   failed(job: SyncJob): void;
+  now?(): number;
+}
+
+// A hover prefetch still waiting after this is dropped: the user has moved on,
+// and a backed-up lane should not reach the provider for cards left long ago.
+export const PREFETCH_EXPIRY_MS = 15_000;
+
+function isPrefetch(job: SyncJob): boolean {
+  return job.kind === 'episodes' && job.prefetch === true;
 }
 
 const QUICK = new Set<SyncJob['kind']>(['episodes', 'vodDetails', 'importPlaylist']);
@@ -30,7 +39,13 @@ export class JobLanes {
     quick: { ready: false, dead: false, queue: [], inFlight: null },
   };
 
+  private queuedAt = new WeakMap<SyncJob, number>();
+
   constructor(private hooks: LaneHooks) {}
+
+  private now(): number {
+    return this.hooks.now ? this.hooks.now() : Date.now();
+  }
 
   // Returns false when an identical job is already queued or running on the lane.
   enqueue(job: SyncJob): boolean {
@@ -38,8 +53,28 @@ export class JobLanes {
     if (this.lanes[name].dead) name = 'sync';
     const lane = this.lanes[name];
     if (lane.inFlight && isSameJob(lane.inFlight, job)) return false;
+    if (job.kind === 'episodes') return this.enqueueEpisodes(name, lane, job);
     if (lane.queue.some((q) => isSameJob(q, job))) return false;
     lane.queue.push(job);
+    this.pump(name);
+    return true;
+  }
+
+  // Episode lists the user opened go to the front, ahead of hover prefetches (and
+  // take over a queued prefetch of the same series). Only the latest prefetch
+  // waits: hovering across a row should not leave a trail of provider requests.
+  private enqueueEpisodes(name: LaneName, lane: Lane, job: Extract<SyncJob, { kind: 'episodes' }>): boolean {
+    const queued = lane.queue.findIndex((q) => isSameJob(q, job));
+    if (job.prefetch) {
+      if (queued >= 0) return false;
+      lane.queue = lane.queue.filter((q) => !isPrefetch(q));
+      lane.queue.push(job);
+      this.queuedAt.set(job, this.now());
+    } else {
+      if (queued >= 0 && !(lane.queue[queued] as typeof job).prefetch) return false;
+      if (queued >= 0) lane.queue.splice(queued, 1);
+      lane.queue.unshift(job);
+    }
     this.pump(name);
     return true;
   }
@@ -63,7 +98,9 @@ export class JobLanes {
       const job = lane.inFlight;
       lane.inFlight = null;
       this.hooks.failed(job);
-      lane.queue.unshift(job);
+      // A hover warm-up retries behind what the user opened, unless a newer one waits.
+      if (!isPrefetch(job)) lane.queue.unshift(job);
+      else if (!lane.queue.some(isPrefetch)) { lane.queue.push(job); this.queuedAt.set(job, this.now()); }
     }
   }
 
@@ -86,7 +123,10 @@ export class JobLanes {
 
   private pump(name: LaneName): void {
     const lane = this.lanes[name];
-    if (!lane.ready || lane.dead || lane.inFlight || lane.queue.length === 0) return;
+    if (!lane.ready || lane.dead || lane.inFlight) return;
+    const now = this.now();
+    lane.queue = lane.queue.filter((q) => !isPrefetch(q) || now - (this.queuedAt.get(q) ?? now) < PREFETCH_EXPIRY_MS);
+    if (lane.queue.length === 0) return;
     lane.inFlight = lane.queue.shift()!;
     this.hooks.send(name, lane.inFlight);
   }

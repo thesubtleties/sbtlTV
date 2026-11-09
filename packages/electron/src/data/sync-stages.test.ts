@@ -180,3 +180,16 @@ test('data-process log lines name a source by id, never by its name', async () =
     assert.doesNotMatch(readFileSync(path.join(dir, f), 'utf8'), /\blog\([^\n]*(?:\.name\b|\$\{name\})/, f);
   }
 });
+
+test('syncEpisodes keeps a stored list when the provider sends none, leaves it unstamped, and says so', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  db.exec("insert into vod_series(series_id, source_id, name, episodes_fetched) values ('s1_sr', 's1', 'Lost', 5)");
+  db.exec("insert into vod_episodes(id, series_id, season_num, episode_num, title, direct_url) values ('s1_e1', 's1_sr', 1, 1, 'Pilot', 'u')");
+  const { c, changed, progress } = ctx(db);
+  const vod = { async getSeriesInfo() { return []; } } as unknown as VodClient;
+  assert.equal(await syncEpisodes(c, source, vod, 's1_sr'), 0);
+  assert.equal((db.prepare("select count(*) c from vod_episodes where series_id='s1_sr'").get() as { c: number }).c, 1, 'stored list kept');
+  assert.equal((db.prepare("select episodes_fetched t from vod_series").get() as { t: number }).t, 5, 'not stamped fresh');
+  assert.deepEqual(changed, []);
+  assert.deepEqual(progress.at(-1), { sourceId: 's1', stage: 'episodes', state: 'finished', seriesId: 's1_sr', counts: { episodes: 0 } });
+});

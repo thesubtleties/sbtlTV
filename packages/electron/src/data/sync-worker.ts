@@ -59,7 +59,12 @@ async function run(job: SyncJob): Promise<void> {
   if (job.kind === 'clearAll') { c.changed(clearAll(db!), null); return; }
   if (job.kind === 'vodDetails') { c.changed(updateVodDetails(db!, job.itemKind, job.itemId, job.fields), null); return; }
   const source = sources.find((s) => s.id === job.sourceId);
-  if (!source) { c.log('sync', `Job ${job.kind} for unknown source ${job.sourceId} skipped`); return; }
+  if (!source) {
+    c.log('sync', `Job ${job.kind} for unknown source ${job.sourceId} skipped`);
+    // An open series page waits for this series' finished/failed event.
+    if (job.kind === 'episodes') c.progress({ sourceId: job.sourceId, stage: 'episodes', state: 'failed', seriesId: job.seriesId, message: 'This source is no longer set up' });
+    return;
+  }
   switch (job.kind) {
     case 'channels': {
       const out = await syncChannels(c, source, makeXtreamClient(source));
@@ -83,6 +88,7 @@ async function run(job: SyncJob): Promise<void> {
     case 'episodes': {
       const client = makeXtreamClient(source);
       if (client) await syncEpisodes(c, source, client, job.seriesId);
+      else c.progress({ sourceId: source.id, stage: 'episodes', state: 'failed', seriesId: job.seriesId, message: 'This source has no login to fetch episodes with' });
       return;
     }
     case 'rematch': {

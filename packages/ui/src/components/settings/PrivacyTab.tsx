@@ -201,7 +201,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         description="sbtlTV connects directly to each of these. Like a web browser, each request also says it comes from sbtlTV and which system you use."
       >
         <Who title="Your IPTV provider" status="always"
-          sees="Your IP address, your account, and what you watch and when. They provide the streams." />
+          sees="Your IP address, your account, the series you open or point at, and what you watch and when. They provide the streams." />
         <Who title="Guide sources" status="always"
           sees="Your IP address and when the guide refreshes: your provider's guide, and any guide URLs you add." />
         <Who title="Image hosts" status="always"
@@ -212,9 +212,9 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
           sees="With Selected lists on: your IP address, about once a day, when sbtlTV checks for new lists. Nothing about you or what you watch is sent, and requests aren't logged."
           note="Settings > Movies & Series > Selected lists." />
         <Who title="TMDB" status={tmdbKeySet ? 'on' : 'not-set-up'}
-          sees="With your TMDB key: the key, your IP address and the lists you browse. Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
+          sees="With your TMDB key: the key, your IP address, the lists you browse and the titles you open or point at. Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
         <Who title="RatingPosterDB" status={posterDbKeySet ? 'on' : 'not-set-up'}
-          sees="With your RPDB key: the key, your IP address and which titles' posters you see." />
+          sees="With your RPDB key: the key, your IP address and which titles' posters you see; with RPDB backdrops on, also the titles you open or point at." />
         <Who title="SubDL" status={subdlKeySet ? 'on' : 'not-set-up'}
           sees="With your SubDL key: the key, your IP address, and which movies and episodes you get subtitles for, in which language. It's asked when subtitles are on and the file has none in your language, or when you open Find subtitles." />
         <Who title="ESPN" status={teamLogosEnabled ? 'on' : 'off'}

@@ -286,7 +286,7 @@ export class XtreamClient {
 
   async getSeriesInfo(seriesId: string): Promise<Season[]> {
     const rawSeriesId = seriesId.replace(`${this.sourceId}_`, '');
-    const url = this.buildApiUrl('get_series_info') + `&series_id=${rawSeriesId}`;
+    const url = this.buildApiUrl('get_series_info') + `&series_id=${encodeURIComponent(rawSeriesId)}`;
     const data = await this.fetchJson<XtreamSeriesInfo>(url);
 
     if (!data.episodes) return [];
