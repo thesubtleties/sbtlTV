@@ -598,3 +598,19 @@
   width: 16px;
   height: 16px;
 }
+
+.series-detail__refresh-button:disabled {
+  cursor: default;
+}
+
+.series-detail__refresh-button--spinning svg {
+  animation: series-detail-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes series-detail-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .series-detail__refresh-button--spinning svg { animation: none; opacity: 0.5; }
+}

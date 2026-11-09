@@ -45,7 +45,15 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
   }, [seriesKey, setSeriesSeason]);
 
   // Fetch episodes (cross-source merge when tmdb_id matches multiple sources)
-  const { seasons, loading, error, issues, hasEpisodes, refetch } = useMergedEpisodes(series.series_id, series.tmdb_id);
+  const { seasons, loading, error, issues, hasEpisodes, refreshing, refetch } = useMergedEpisodes(series.series_id, series.tmdb_id);
+  // A retry that fails at once (offline, blocked) still shows it tried.
+  const [retryShown, setRetryShown] = useState(false);
+  const retry = useCallback(() => {
+    setRetryShown(true);
+    window.setTimeout(() => setRetryShown(false), 700);
+    void refetch();
+  }, [refetch]);
+  const retrying = retryShown || (refreshing && hasEpisodes);
   const sources = useUIStore((s) => s.sources);
   const sourceName = useCallback((id: string) => sources.find((s) => s.id === id)?.name ?? 'Your provider', [sources]);
   // Nothing stored: the problem takes the list's place. A stored list stays, with a warning.
@@ -252,8 +260,8 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
                   <path d="M12 8v4" />
                   <path d="M12 16h.01" />
                 </svg>
-                <span>{warning}</span>
-                <button type="button" className="series-detail__refresh-button" onClick={refetch} aria-label="Try again" title="Try again">
+                <span>{retrying ? 'Trying again…' : warning}</span>
+                <button type="button" className={`series-detail__refresh-button${retrying ? ' series-detail__refresh-button--spinning' : ''}`} onClick={retry} disabled={retrying} aria-label="Try again" title="Try again">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
                     <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />

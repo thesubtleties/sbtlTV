@@ -237,6 +237,7 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
     loading: loading || waitingForFirst,
     error,                      // the request itself failed (data process unreachable)
     issues: fetchState.issues,  // per source: last fetch empty or failed (see episodeFetchState)
+    refreshing: fetchState.fetching.length > 0,
     hasEpisodes,
     refetch,
     sourceCount: relatedSeriesIds.length,
