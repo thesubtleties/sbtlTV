@@ -16,7 +16,10 @@ sbtlTV aims to be a dead-simple, low-latency player that looks good and stays ou
 ## Features
 
 - **Live TV with EPG** - Browse channels by category with a full program guide
-- **Movies & Series** - Netflix-style home page with hero section, carousels, and detail views
+- **Guide Search** - Press / to find a show, game or team across all your channels: on now, later, and matches in descriptions
+- **Rewind Live TV** - Pause and scrub back on live channels, kept in memory (Off, or a size you choose)
+- **Movies & Series** - Netflix-style home page with hero section, carousels, and detail views; resting on a card loads its page ahead, and episode lists refresh when they're more than a day old
+- **Selected Lists** - Hand-picked themed rows on the Movies and Series homes, matched to your own library (a signed list from sbtltv.com, checked once a day; can be turned off)
 - **Multi-source with Priority** - Connect multiple Xtream sources; drag-and-drop to set priority for dedup and playback order
 - **Cross-source Merging** - VOD deduplicates across sources; series gap-fill episodes from other providers
 - **Watchlist & Favorites** - Save movies/series to a watchlist carousel; favorite channels for quick access
@@ -29,8 +32,12 @@ sbtlTV aims to be a dead-simple, low-latency player that looks good and stays ou
 - **Channel & Category Ordering** - Sort channels by provider number or alphabetically, and keep categories in your provider's original order (or A-Z)
 - **Offline Storage** - Channels, EPG, and catalog cached locally for fast browsing
 - **Subtitles & Live Captions** - Movie and episode subtitle tracks, and closed captions on live TV (checked for station-data junk before they show), in your language; size, style, and a per-title delay that is remembered
+- **SubDL Subtitles** - With your SubDL key, subtitles for movies and episodes that have none in your language, picked automatically or from a list
 - **Themes** - sbtl plus Catppuccin, Gruvbox, Nord, Tokyo Night and more palettes, an optional system accent, and your choice of typeface
 - **Stream Recovery** - Provider cuts reconnect on their own, and a stalled stream is reloaded where it was before you ever see an error
+- **Backup & Transfer** - Move your setup to another computer in one passphrase-protected file
+- **Bug Reports** - Settings > Debug saves a zip with the log and system details, with addresses and logins left out
+- **Beta Updates** - Opt in under Settings > About to get new features early
 
 ## Installation
 
@@ -148,13 +155,13 @@ sbtlTV has no account and no server of its own, and sends no analytics, tracking
 
 | Who | When | What they see |
 |-----|------|---------------|
-| Your IPTV provider | Always | Your IP address, your account, and what you watch and when |
+| Your IPTV provider | Always | Your IP address, your account, the series you open or point at, and what you watch and when |
 | Guide (EPG) sources | Always | Your IP address and when the guide refreshes (your provider's guide, plus any guide URLs you add) |
 | Image hosts | Always | Your IP address and which images: channel logos and posters load from the addresses in your provider's data and from TMDB's image server |
 | GitHub | Always | Two public data files, no account (the movie/series match file for library syncs, and TMDB's browse lists when you have no TMDB key), and update checks when sbtlTV starts (can be turned off): your IP address and sbtlTV version |
 | sbtltv.com | With Selected lists on (default) | Your IP address, about once a day, when sbtlTV fetches the signed Selected lists file. Nothing about you or what you watch; requests aren't logged. Off in Settings > Movies & Series |
-| TMDB | With your TMDB key | Your key, your IP address and the lists you browse. Without a key, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address |
-| RatingPosterDB | With your RPDB key | Your key, your IP address and which titles' posters you see |
+| TMDB | With your TMDB key | Your key, your IP address, the lists you browse and the titles you open or point at. Without a key, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address |
+| RatingPosterDB | With your RPDB key | Your key, your IP address and which titles' posters you see; with RPDB backdrops on, also the titles you open or point at |
 | SubDL | With your SubDL key | Your key, your IP address, and which movies and episodes you get subtitles for, in which language (searched when subtitles are on and the file has none in your language, or when you open Find subtitles) |
 | ESPN | With team logos on (off by default on new installs) | Your IP address and which teams are playing on the channel you watch |
 | Mullvad | When you click Check in Settings > Privacy | Your IP address, to show you the address the others see (nothing is saved) |
