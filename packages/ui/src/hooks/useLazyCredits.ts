@@ -7,12 +7,14 @@
  * - User has TMDB API key configured
  *
  * Caches result to DB so we don't refetch.
+ * The request goes through services/tmdbDetails, so a hover prefetch may already
+ * have it (useHoverPrefetch mirrors when this hook fetches; keep them in step).
  */
 
 import { useState, useEffect, useRef } from 'react';
 import { data } from '../data/client';
 import type { VodDetailFields } from '@sbtltv/core';
-import { getMovieCredits, getTvShowCredits } from '../services/tmdb';
+import { tmdbCredits } from '../services/tmdbDetails';
 import { type MediaItem, isMovie } from '../types/media';
 
 interface Credits {
@@ -78,7 +80,7 @@ export function useLazyCredits(
         let directorString: string | null = null;
 
         if (isMovie(item)) {
-          const credits = await getMovieCredits(apiKey, item.tmdb_id!);
+          const credits = await tmdbCredits(apiKey, 'movie', item.tmdb_id!);
           if (cancelled) return;
 
           // Get top 5 cast members
@@ -104,7 +106,7 @@ export function useLazyCredits(
             await data.query({ type: 'updateVodDetails', kind: 'movie', itemId: item.stream_id, fields: updates });
           }
         } else {
-          const credits = await getTvShowCredits(apiKey, item.tmdb_id!);
+          const credits = await tmdbCredits(apiKey, 'series', item.tmdb_id!);
           if (cancelled) return;
 
           // Get top 5 cast members

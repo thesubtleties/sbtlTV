@@ -108,6 +108,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   sportsMatchupEnabled: false,
   guideMorphEnabled: true,
   guideSearchHideAdult: false,
+  selectedListsEnabled: true,
   autoplayNextEpisode: true,
 };
 
@@ -237,6 +238,7 @@ export const useSetCacheClearing = () => useUIStore((s) => s.setCacheClearing);
 export const useSourceNeedsLogin = () => useUIStore((s) => s.sources.some((src) => src.enabled && needsLogin(src)));
 export const useChannelSortOrder = () => useUIStore((s) => s.settings.channelSortOrder ?? 'alphabetical');
 export const useGuideSearchHideAdult = () => useUIStore((s) => s.settings.guideSearchHideAdult ?? false);
+export const useSelectedListsEnabled = () => useUIStore((s) => s.settings.selectedListsEnabled ?? true);
 export const useCategorySortOrder = () => useUIStore((s) => s.settings.categorySortOrder ?? 'alphabetical');
 export const useCategoryBarWidth = () => useUIStore((s) => s.settings.categoryBarWidth ?? 160);
 export const useChannelColumnWidth = () => useUIStore((s) => s.settings.channelColumnWidth ?? 300);

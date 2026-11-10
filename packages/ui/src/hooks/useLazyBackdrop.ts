@@ -7,16 +7,14 @@
  * - User has TMDB API key configured
  *
  * Caches result to DB so we don't refetch.
+ * The request goes through services/tmdbDetails, so a hover prefetch may already
+ * have it (useHoverPrefetch mirrors when this hook fetches; keep them in step).
  */
 
 import { useState, useEffect, useRef } from 'react';
 import { data } from '../data/client';
-import {
-  getMovieDetails,
-  getTvShowDetails,
-  getTmdbImageUrl,
-  TMDB_BACKDROP_SIZES,
-} from '../services/tmdb';
+import { getTmdbImageUrl, TMDB_BACKDROP_SIZES } from '../services/tmdb';
+import { tmdbDetails } from '../services/tmdbDetails';
 import { getRpdbBackdropUrl } from '../services/rpdb';
 import { useRpdbSettings } from './useRpdbSettings';
 import { type MediaItem, isMovie } from '../types/media';
@@ -93,7 +91,7 @@ export function useLazyBackdrop(
         let backdropPath: string | null = null;
 
         if (isMovie(item)) {
-          const details = await getMovieDetails(apiKey, item.tmdb_id!);
+          const details = await tmdbDetails(apiKey, 'movie', item.tmdb_id!);
           if (cancelled) return;
           backdropPath = details.backdrop_path;
 
@@ -102,7 +100,7 @@ export function useLazyBackdrop(
             await data.query({ type: 'updateVodDetails', kind: 'movie', itemId: item.stream_id, fields: { backdrop_path: backdropPath } });
           }
         } else {
-          const details = await getTvShowDetails(apiKey, item.tmdb_id!);
+          const details = await tmdbDetails(apiKey, 'series', item.tmdb_id!);
           if (cancelled) return;
           backdropPath = details.backdrop_path;
 

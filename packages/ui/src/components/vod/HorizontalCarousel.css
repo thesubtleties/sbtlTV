@@ -26,6 +26,53 @@
   margin-bottom: 12px;
 }
 
+.carousel__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* Selected rows (sbtltv.com): a small feather hung just left of the title, so every row's title
+   still starts on the same line as the cards below. The only accent in the header. */
+.carousel__heading { position: relative; }
+
+.carousel__mark {
+  position: absolute;
+  right: calc(100% + 9px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  color: var(--accent);
+  opacity: 0.9;
+  z-index: 6; /* above the left scroll fade (.carousel__fade, z 5), which covers this strip */
+}
+
+.carousel__mark svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* The blurb: a quiet aside after the title, never competing with it */
+.carousel__subtitle {
+  min-width: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Read by screen readers only */
+.carousel__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .carousel__title {
   font-size: 1.125rem;
   font-weight: 500;
@@ -69,7 +116,7 @@
   height: 18px;
 }
 
-/* Scroll container */
+/* Plain scroller: Continue Watching and the loading skeletons (not virtualized) */
 .carousel__scroll-container {
   flex: 1;
   min-height: 0;
@@ -95,6 +142,46 @@
      right padding never reaches the scroll end, so the last card sat flush
      against the edge (and its hover zoom was clipped). */
   width: max-content;
+}
+
+/* Virtualized scroller (react-virtuoso horizontalDirection). Its items are inline-block and
+   measured by offsetWidth, so spacing lives in padding: the gap is each item's right padding,
+   the row's left edge is this padding. carouselSizes.ts must match these numbers. */
+.carousel__virtual {
+  flex: 1;
+  min-height: 0;
+  padding-inline: 48px;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.carousel__virtual::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+/* Chromium leaves the scroller's own end padding out of the scroll width, so the last card would
+   sit 16px from the edge. A spacer after the cards makes up the rest (48 = 16 + 32). It's a
+   pseudo-element, so Virtuoso never measures it and no card moves. */
+.carousel__virtual [data-testid="virtuoso-item-list"]::after {
+  content: '';
+  display: inline-block;
+  width: 32px;
+}
+
+/* Virtuoso lays items out as inline-blocks, which line up on their text baseline: a card without a
+   poster (placeholder) sat lower than its neighbours and stretched the row. Align to the top instead. */
+.carousel__virtual [data-testid="virtuoso-item-list"],
+.carousel__virtual [data-testid="virtuoso-item-list"] > div {
+  vertical-align: top;
+}
+
+/* One card. Top and bottom padding are room for the hover scale(1.05) and its glow, which the
+   scroller would otherwise clip (a horizontal scroller can't let content spill vertically). */
+.carousel__item {
+  padding: 16px 16px 24px 0;
+  box-sizing: border-box;
+  height: 100%;
+  white-space: normal; /* Virtuoso's list is nowrap */
 }
 
 /* Scroll fade indicators */

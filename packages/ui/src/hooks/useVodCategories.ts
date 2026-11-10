@@ -16,7 +16,8 @@ export function useVodCategories(type: 'movie' | 'series') {
     { type: 'vodCategories', kind: type, sourceIds: enabledIds },
     ['vod_categories', 'vod_movies', 'vod_series'], [type, enabledIds.join(',')],
   );
-  return { categories: data ?? [], loading };
+  // ready: the categories really arrived (an error leaves data undefined and the list empty)
+  return { categories: data ?? [], loading, ready: data !== undefined };
 }
 
 // Grouped VOD category (deduped by name across sources)
@@ -31,7 +32,7 @@ export interface GroupedVodCategory {
  * Merges categories with the same name across sources into one entry
  */
 export function useGroupedVodCategories(type: 'movie' | 'series') {
-  const { categories, loading } = useVodCategories(type);
+  const { categories, loading, ready } = useVodCategories(type);
 
   const grouped = useMemo((): GroupedVodCategory[] => {
     const groupMap = new Map<string, GroupedVodCategory>();
@@ -54,5 +55,5 @@ export function useGroupedVodCategories(type: 'movie' | 'series') {
     return Array.from(groupMap.values());
   }, [categories]);
 
-  return { groupedCategories: grouped, loading };
+  return { groupedCategories: grouped, loading, ready };
 }

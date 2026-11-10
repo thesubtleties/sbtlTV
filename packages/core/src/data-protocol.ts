@@ -59,7 +59,9 @@ export type DataRequest =
   | { id: number; type: 'vodCounts'; sourceIds: string[] }
   | { id: number; type: 'playlistRows'; sourceId: string }   // a file-based playlist, to rebuild it (setup export)
   | { id: number; type: 'syncNow'; sourceId?: string; what: 'channels' | 'vod' | 'all' }
-  | { id: number; type: 'syncEpisodes'; seriesId: string }
+  // maxAgeMs: skip when the stored list is newer than that. prefetch: a hover warm-up;
+  // it queues behind opens, and a newer prefetch replaces one still waiting.
+  | { id: number; type: 'syncEpisodes'; seriesId: string; maxAgeMs?: number; prefetch?: boolean }
   | { id: number; type: 'rematchEpg'; sourceId: string }
   | { id: number; type: 'updateVodDetails'; kind: 'movie' | 'series'; itemId: string; fields: VodDetailFields }
   | { id: number; type: 'importPlaylist'; sourceId: string; content: string }   // an M3U file the user picked
@@ -100,7 +102,8 @@ export type ReplyFor<R extends DataRequest> =
   R extends { type: 'episodes' } ? EpisodeRow[] :
   R extends { type: 'vodCategories' } ? VodCategoryRow[] :
   R extends { type: 'vodCounts' } ? { movies: number; series: number } :
-  R extends { type: 'syncNow' | 'syncEpisodes' | 'rematchEpg' | 'updateVodDetails' | 'importPlaylist' | 'clearAll' } ? { accepted: true } :
+  R extends { type: 'syncEpisodes' } ? { accepted: true; queued: boolean } :   // queued false only when the stored list is fresh
+  R extends { type: 'syncNow' | 'rematchEpg' | 'updateVodDetails' | 'importPlaylist' | 'clearAll' } ? { accepted: true } :
   never;
 
 // A request without its id, one variant at a time (a plain Omit over the union

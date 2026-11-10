@@ -27,6 +27,8 @@ type CarouselRow = {
   loading?: boolean;
   kind?: 'continue';
   continueItems?: ContinueItem[];
+  tag?: 'selected';
+  subtitle?: string;
 };
 
 // Context passed to Virtuoso components (must be defined outside render)
@@ -87,6 +89,8 @@ const CarouselRowContent = (
       onItemClick={onItemClick}
       loading={row.loading}
       progressMap={type === 'movie' ? progressMap : undefined}
+      tag={row.tag}
+      subtitle={row.subtitle}
     />
   );
 };
@@ -201,7 +205,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     nowOrOnAirItems, nowOrOnAirLoading,
     watchlistItems, movieProgressMap,
     localPopularItems, groupedCategories,
-    genresToShow, genreData,
+    genresToShow, genreData, selectedRows,
   } = useVodHomeData(type);
 
   const continueItems = useContinueWatchingResolved(type);
@@ -250,6 +254,11 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       });
     }
 
+    // Selected lists (sbtltv.com), after Trending and Popular
+    for (const r of selectedRows) {
+      rows.push({ key: r.key, title: r.title, items: r.items as MediaItem[], tag: 'selected', subtitle: r.blurb });
+    }
+
     // Top Rated
     if (topRatedItems.length > 0 || topRatedLoading) {
       rows.push({
@@ -292,6 +301,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     watchlistItems,
     trendingItems, trendingLoading,
     popularItems, popularLoading,
+    selectedRows,
     topRatedItems, topRatedLoading,
     nowOrOnAirItems, nowOrOnAirLoading,
     genresToShow, genreData,

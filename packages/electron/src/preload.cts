@@ -261,6 +261,16 @@ contextBridge.exposeInMainWorld('subtitles', {
   },
 });
 
+// Selected lists (home rows): main fetches, verifies and caches; the page only reads.
+contextBridge.exposeInMainWorld('selectedLists', {
+  get: () => ipcRenderer.invoke('selected-lists-get'),
+  onUpdated: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('selected-lists-updated', handler);
+    return () => { ipcRenderer.removeListener('selected-lists-updated', handler); };
+  },
+});
+
 // Downloaded subtitles (SubDL): main does every request and file; the page only asks
 contextBridge.exposeInMainWorld('subdl', {
   languages: () => ipcRenderer.invoke('subdl-languages'),

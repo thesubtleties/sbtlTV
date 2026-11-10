@@ -148,11 +148,14 @@ export function replaceVod(db: DatabaseSync, sourceId: string, input: { movies: 
   });
 }
 
-export function replaceEpisodes(db: DatabaseSync, seriesId: string, episodes: Episode[]): DataTable[] {
+// Also stamps the series with when its list was fetched. Only the router reads that
+// column, so vod_series is not reported changed (that would re-query every series row).
+export function replaceEpisodes(db: DatabaseSync, seriesId: string, episodes: Episode[], fetchedMs: number = Date.now()): DataTable[] {
   return tx(db, () => {
     db.prepare(`delete from vod_episodes where series_id = ?`).run(seriesId);
     const ins = db.prepare(`insert or replace into vod_episodes(id, series_id, season_num, episode_num, title, direct_url, plot, duration, info, tmdb_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const e of episodes) ins.run(e.id, seriesId, e.season_num, e.episode_num, e.title, e.direct_url, e.plot ?? null, e.duration ?? null, e.info ? JSON.stringify(e.info) : null, e.tmdb_id ?? null);
+    db.prepare(`update vod_series set episodes_fetched = ? where series_id = ?`).run(fetchedMs, seriesId);
     return ['vod_episodes'];
   });
 }

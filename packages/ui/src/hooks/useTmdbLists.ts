@@ -98,7 +98,7 @@ export function useEnabledSeriesGenres(): number[] | undefined {
  * Query local movies by TMDB IDs using the tmdb_id index
  * Much faster than filtering all movies!
  */
-function useMoviesByTmdbIds(tmdbIds: number[]): StoredMovie[] | undefined {
+export function useMoviesByTmdbIds(tmdbIds: number[]): StoredMovie[] | undefined {
   const enabledIds = useEnabledSourceIds();
   const { data } = useDataQuery(
     { type: 'movies', by: { kind: 'tmdbIds', tmdbIds }, sourceIds: enabledIds },
@@ -110,7 +110,7 @@ function useMoviesByTmdbIds(tmdbIds: number[]): StoredMovie[] | undefined {
 /**
  * Query local series by TMDB IDs using the tmdb_id index (source-filtered)
  */
-function useSeriesByTmdbIds(tmdbIds: number[]): StoredSeries[] | undefined {
+export function useSeriesByTmdbIds(tmdbIds: number[]): StoredSeries[] | undefined {
   const enabledIds = useEnabledSourceIds();
   const { data } = useDataQuery(
     { type: 'series', by: { kind: 'tmdbIds', tmdbIds }, sourceIds: enabledIds },

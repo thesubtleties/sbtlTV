@@ -7,12 +7,14 @@
  * - User has TMDB API key configured
  *
  * Caches result to DB so we don't refetch.
+ * The request goes through services/tmdbDetails, so a hover prefetch may already
+ * have it (useHoverPrefetch mirrors when this hook fetches; keep them in step).
  */
 
 import { useState, useEffect, useRef } from 'react';
 import { data } from '../data/client';
 import type { VodDetailFields } from '@sbtltv/core';
-import { getMovieDetails, getTvShowDetails } from '../services/tmdb';
+import { tmdbDetails } from '../services/tmdbDetails';
 import { type MediaItem, isMovie } from '../types/media';
 
 interface LazyDetails {
@@ -80,7 +82,7 @@ export function useLazyPlot(
         let genreStr: string | null = null;
 
         if (isMovie(item)) {
-          const details = await getMovieDetails(apiKey, item.tmdb_id!);
+          const details = await tmdbDetails(apiKey, 'movie', item.tmdb_id!);
           if (cancelled) return;
 
           overview = details.overview || null;
@@ -98,7 +100,7 @@ export function useLazyPlot(
             await data.query({ type: 'updateVodDetails', kind: 'movie', itemId: item.stream_id, fields: updates });
           }
         } else {
-          const details = await getTvShowDetails(apiKey, item.tmdb_id!);
+          const details = await tmdbDetails(apiKey, 'series', item.tmdb_id!);
           if (cancelled) return;
 
           overview = details.overview || null;

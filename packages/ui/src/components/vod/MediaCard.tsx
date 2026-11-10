@@ -3,6 +3,7 @@ import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { useIsOnWatchlist, useToggleWatchlist } from '../../hooks/useWatchlist';
+import { useHoverPrefetch } from '../../hooks/useHoverPrefetch';
 import type { StoredMovie, StoredSeries } from '../../db';
 import { isMovie } from '../../types/media';
 import './MediaCard.css';
@@ -73,6 +74,8 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
     toggleWatchlist(type, { tmdbId: item.tmdb_id, streamId, name: item.name });
   }, [toggleWatchlist, type, item]);
 
+  const prefetch = useHoverPrefetch(item);
+
   const handleClick = useCallback(() => {
     onClick?.(item);
   }, [item, onClick]);
@@ -92,6 +95,7 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
       className={`media-card media-card--${size}`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
+      {...prefetch}
       tabIndex={0}
       role="button"
       aria-label={`${item.name}${year ? ` (${year})` : ''}`}

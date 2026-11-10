@@ -1,5 +1,6 @@
 import { useTvGenres, useMultipleSeriesByGenre } from '../../hooks/useTmdbLists';
 import { GenreCarouselTab } from './GenreCarouselTab';
+import { SelectedListsSection } from './SelectedListsSection';
 import { useUpdateSettings } from '../../stores/uiStore';
 import { OnOff, OptionRow, Section } from './ui';
 
@@ -28,6 +29,8 @@ export function SeriesTab({ autoplayNextEpisode, onAutoplayNextEpisodeChange, ..
       title="Genre rows"
       description="Which genres get a row on the Series home page."
       before={
+        <>
+        <SelectedListsSection />
         <Section title="Playback">
           <OptionRow
             title="Next episode"
@@ -38,6 +41,7 @@ export function SeriesTab({ autoplayNextEpisode, onAutoplayNextEpisodeChange, ..
             <OnOff value={autoplayNextEpisode} offLabel="Stop" onLabel="Autoplay" onChange={(enabled) => void handleAutoplayChange(enabled)} />
           </OptionRow>
         </Section>
+        </>
       }
     />
   );

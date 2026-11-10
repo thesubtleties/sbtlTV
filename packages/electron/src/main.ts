@@ -17,6 +17,7 @@ import { isTransientDecodeError } from './mpv-error-filter.js';
 import { LogPolicy } from './log-policy.js';
 import { createLineBuffer } from './line-buffer.js';
 import { IP_CHECK_URL, IP_CHECK_MAX_BYTES, parseIpCheck } from './ip-check.js';
+import { LISTS_URL, LISTS_SIG_URL, LISTS_PUBLIC_KEYS, MAX_LISTS_BYTES, MAX_SIG_BYTES, isStale, listsInWindow, parseListsFile, readCache, verifyListsSignature, type ListsCache, type SelectedLists } from './selected-lists.js';
 import { LinuxPerfProbe } from './linux-perf-probe.js';
 import { StatusThrottle } from './status-throttle.js';
 import { readDesktopColors, watchDesktopColors } from './desktop-colors.js';
@@ -2265,8 +2266,102 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
     // Without a key the downloaded subtitles go too (their folders are a list of what was watched)
     if (!settings.subdlApiKey) followUp('clearing downloaded subtitles', () => subtitleCache.clear());
   }
+  if (settings.selectedListsEnabled === false) followUp('removing the Selected lists copy', dropListsCache);
+  if (settings.selectedListsEnabled === true) followUp('checking for Selected lists', () => { listsFailedAt = 0; void refreshSelectedLists(); });
   followUp('sending settings to the data process', () => dataHost?.pushSettings());
   return { success: true };
+});
+
+// Selected lists (Movies/Series home rows) from sbtltv.com, at most once a day. The file is
+// signed; a copy that fails the signature or the rules is ignored and the last good one kept.
+// Off in settings: no request, and the copy is deleted.
+// Dev-only overrides for a local test server; a packaged app always uses sbtltv.com and its key.
+const listsDevUrl = !app.isPackaged ? process.env.SBTLTV_LISTS_URL : undefined;
+const listsUrl = listsDevUrl ?? LISTS_URL;
+const listsSigUrl = listsDevUrl ? `${listsDevUrl}.sig` : LISTS_SIG_URL;
+const listsKeys = !app.isPackaged && process.env.SBTLTV_LISTS_PUBKEY ? [fs.readFileSync(process.env.SBTLTV_LISTS_PUBKEY, 'utf8')] : LISTS_PUBLIC_KEYS;
+const listsCachePath = () => path.join(app.getPath('userData'), 'selected-lists.json');
+const EMPTY_LISTS: SelectedLists = { movies: [], series: [] };
+let listsRefresh: Promise<void> | null = null;
+/** After a failed fetch, wait an hour before asking again (a broken file shouldn't mean a request per page open). */
+let listsFailedAt = 0;
+const LISTS_RETRY_MS = 3600 * 1000;
+
+const listsEnabled = () => storage.getSettings().selectedListsEnabled !== false;
+const dropListsCache = () => fs.rmSync(listsCachePath(), { force: true });
+
+function loadListsCache(): { cache: ListsCache; lists: SelectedLists } | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(listsCachePath(), 'utf8'));
+  } catch {
+    return null; // no copy yet
+  }
+  const parsed = readCache(raw, listsKeys);
+  if (!parsed) {
+    dropListsCache();
+    debugLog('Selected lists copy failed its check; removed', 'lists');
+  }
+  return parsed;
+}
+
+function localDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function getListsText(url: string, max: number, headers: Record<string, string> = {}): Promise<{ status: number; etag: string | null; text: string }> {
+  const response = await electronNet.fetch(url, {
+    cache: 'no-store',
+    credentials: 'omit',
+    redirect: 'error',
+    headers: { 'User-Agent': 'sbtlTV', ...headers },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (response.status === 304) return { status: 304, etag: null, text: '' };
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const body = Buffer.from(await response.arrayBuffer());
+  if (body.length > max) throw new Error(`answer of ${body.length} bytes`);
+  return { status: response.status, etag: response.headers.get('etag'), text: body.toString('utf8') };
+}
+
+function refreshSelectedLists(): Promise<void> {
+  if (listsRefresh) return listsRefresh;
+  listsRefresh = (async () => {
+    if (!listsEnabled()) return;
+    const current = loadListsCache();
+    if (!isStale(current?.cache.fetchedAt, Date.now())) return;
+    if (Date.now() - listsFailedAt < LISTS_RETRY_MS) return;
+    try {
+      const answer = await getListsText(listsUrl, MAX_LISTS_BYTES, current?.cache.etag ? { 'If-None-Match': current.cache.etag } : {});
+      if (!listsEnabled()) return; // turned off while we were asking
+      if (answer.status === 304) {
+        if (current) fs.writeFileSync(listsCachePath(), JSON.stringify({ ...current.cache, fetchedAt: Date.now() } satisfies ListsCache));
+        return;
+      }
+      const sig = await getListsText(listsSigUrl, MAX_SIG_BYTES);
+      if (!verifyListsSignature(Buffer.from(answer.text, 'utf8'), sig.text, listsKeys)) throw new Error('signature does not verify');
+      if (!parseListsFile(answer.text)) throw new Error('the file breaks the list rules');
+      if (!listsEnabled()) return;
+      fs.writeFileSync(listsCachePath(), JSON.stringify({ etag: answer.etag, fetchedAt: Date.now(), body: answer.text, sig: sig.text.trim() } satisfies ListsCache));
+      debugLog('Selected lists updated', 'lists');
+      sendToRenderer('selected-lists-updated', null);
+    } catch (error) {
+      listsFailedAt = Date.now();
+      debugLog(`Selected lists not updated: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`, 'lists');
+    }
+  })().finally(() => { listsRefresh = null; });
+  return listsRefresh;
+}
+
+ipcMain.handle('selected-lists-get', (): SelectedLists => {
+  if (!listsEnabled()) {
+    dropListsCache();
+    return EMPTY_LISTS;
+  }
+  const current = loadListsCache();
+  void refreshSelectedLists();
+  return current ? listsInWindow(current.lists, localDate()) : EMPTY_LISTS;
 });
 
 ipcMain.handle('storage-is-encryption-available', async () => {
@@ -2923,6 +3018,7 @@ app.whenReady().then(async () => {
   });
 
   await createWindow();
+  setTimeout(() => void refreshSelectedLists(), 15_000);
 
   // Caelestia rewrites its palette on every wallpaper change.
   watchDesktopColors(() => {

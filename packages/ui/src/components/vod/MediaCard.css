@@ -490,3 +490,21 @@
 .media-card--large .media-card__placeholder span {
   font-size: 4rem;
 }
+
+/* Home rows (virtualized, cards mount while scrolling): each card above keeps three GPU layers
+   alive (poster, play-icon blur, heart blur) so hover is instant. With ~60 cards that is ~200
+   layers, and every card mounting mid-scroll made Chromium re-layerize all of them (~38 ms each),
+   so sideways scrolling hitched (104 of 239 frames over 20 ms). In a row, the blur layers stay warm
+   only while the row is hovered (the pointer reaches the row before any card, so hover is still
+   instant) and the poster layer isn't needed: 2-3 frames over 20 ms, none over 33 ms. */
+.carousel .media-card__poster {
+  will-change: auto;
+}
+
+.carousel:not(:hover) .media-card__play-icon,
+.carousel:not(:hover) .media-card__heart:not(.media-card__heart--active)::after,
+.carousel:not(:hover) .media-card__remove::before {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  will-change: auto;
+}
