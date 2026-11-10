@@ -1,6 +1,6 @@
-# sbtlTV 0.16.0 beta 1
+# sbtlTV 0.16.0
 
-Hand-picked rows on the Movies and Series homes, smoother rows, and detail pages that open filled in. If something feels off, save a bug report (Settings > Debug) and attach it to an issue.
+Hand-picked rows on the Movies and Series homes, smoother rows, and detail pages that open filled in.
 
 ## Added
 
