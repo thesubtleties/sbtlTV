@@ -20,6 +20,7 @@ sbtlTV aims to be a dead-simple, low-latency player that looks good and stays ou
 - **Rewind Live TV** - Pause and scrub back on live channels, kept in memory (Off, or a size you choose)
 - **Movies & Series** - Netflix-style home page with hero section, carousels, and detail views; More like this rows from your own library (with a TMDB key); resting on a card loads its page ahead, and episode lists refresh when they're more than a day old
 - **Selected Lists** - Hand-picked themed rows on the Movies and Series homes, matched to your own library (a signed list from sbtltv.com, checked once a day; can be turned off)
+- **Send a Setup** - Set up someone's sbtlTV from yours with a short code and three matching words; end-to-end encrypted, even we can't read it. Providers and keys can be ones you enter just for them
 - **Multi-source with Priority** - Connect multiple Xtream sources; drag-and-drop to set priority for dedup and playback order
 - **Cross-source Merging** - VOD deduplicates across sources; series gap-fill episodes from other providers
 - **Watchlist & Favorites** - Save movies/series to a watchlist carousel; favorite channels for quick access
@@ -35,7 +36,7 @@ sbtlTV aims to be a dead-simple, low-latency player that looks good and stays ou
 - **SubDL Subtitles** - With your SubDL key, subtitles for movies and episodes that have none in your language, picked automatically or from a list
 - **Themes** - sbtl plus Catppuccin, Gruvbox, Nord, Tokyo Night and more palettes, an optional system accent, and your choice of typeface
 - **Stream Recovery** - Provider cuts reconnect on their own, and a stalled stream is reloaded where it was before you ever see an error
-- **Backup & Transfer** - Move your setup to another computer in one passphrase-protected file
+- **Sync & Transfer** - Move your setup to another computer by code (Send a Setup) or in one passphrase-protected file
 - **Bug Reports** - Settings > Debug saves a zip with the log and system details, with addresses and logins left out
 - **Beta Updates** - Opt in under Settings > About to get new features early
 
@@ -163,6 +164,7 @@ sbtlTV has no account and no server of its own, and sends no analytics, tracking
 | Image hosts | Always | Your IP address and which images: channel logos and posters load from the addresses in your provider's data and from TMDB's image server |
 | GitHub | Always | Two public data files, no account (the movie/series match file for library syncs, and TMDB's browse lists when you have no TMDB key), and update checks when sbtlTV starts (can be turned off): your IP address and sbtlTV version |
 | sbtltv.com | With Selected lists on (default) | Your IP address, about once a day, when sbtlTV fetches the signed Selected lists file. Nothing about you or what you watch; requests aren't logged. Off in Settings > Movies & Series |
+| sbtlTV mailbox | Only while you send or receive a setup | The setup, end-to-end encrypted so even we can't read it, and your IP address; requests aren't logged. Deleted when picked up, or after 10 minutes |
 | TMDB | With your TMDB key | Your key, your IP address, the lists you browse and the titles you open or point at. Without a key, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address |
 | RatingPosterDB | With your RPDB key | Your key, your IP address and which titles' posters you see; with RPDB backdrops on, also the titles you open or point at |
 | SubDL | With your SubDL key | Your key, your IP address, and which movies and episodes you get subtitles for, in which language (searched when subtitles are on and the file has none in your language, or when you open Find subtitles) |

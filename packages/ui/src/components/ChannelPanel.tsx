@@ -5,7 +5,7 @@ import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
-import { useChannelSortOrder, useChannelColumnWidth, useSourceNeedsLogin } from '../stores/uiStore';
+import { useChannelSortOrder, useChannelColumnWidth, useSourceNeedsLogin, useUIStore } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import { loadGuideSearchMode, saveGuideSearchMode, type GuideSearchMode } from '../utils/guideSearchMode';
@@ -29,6 +29,8 @@ interface ChannelPanelProps {
   scrollTopNonce?: number;
   /** Changes when / asks for the search box */
   searchFocusNonce?: number;
+  /** No sources yet: offer to receive a setup from another computer (Sync & transfer) */
+  onReceiveSetup?: () => void;
 }
 
 function ChannelPanelImpl({
@@ -40,7 +42,9 @@ function ChannelPanelImpl({
   onClose,
   scrollTopNonce,
   searchFocusNonce,
+  onReceiveSetup,
 }: ChannelPanelProps) {
+  const noSources = useUIStore((s) => s.sources.length === 0);
   const channelSortOrder = useChannelSortOrder();
   const isFavoritesView = categoryId === '__favorites__';
   const regularChannels = useChannels(isFavoritesView ? null : categoryId, channelSortOrder);
@@ -545,6 +549,9 @@ function ChannelPanelImpl({
                       <>
                         <p>Sync your sources to load channels</p>
                         <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                        {noSources && onReceiveSetup && (
+                          <button type="button" className="st-btn st-btn--default" onClick={onReceiveSetup}>Receive a setup</button>
+                        )}
                       </>
                     )}
                   </>

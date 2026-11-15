@@ -14,8 +14,8 @@ interface PrivacyTabProps {
   debugLoggingEnabled: boolean;
 }
 
-type Status = 'always' | 'on' | 'off' | 'not-set-up';
-const STATUS_LABEL: Record<Status, string> = { always: 'Always', on: 'On', off: 'Off', 'not-set-up': 'Not set up' };
+type Status = 'always' | 'on' | 'off' | 'not-set-up' | 'when-used';
+const STATUS_LABEL: Record<Status, string> = { always: 'Always', on: 'On', off: 'Off', 'not-set-up': 'Not set up', 'when-used': 'When used' };
 
 /** A service: what it sees across the row, whether it applies now on the right. */
 function Who({ title, sees, status, note }: { title: string; sees: string; status: Status; note?: string }) {
@@ -211,6 +211,9 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         <Who title="sbtltv.com" status={selectedListsEnabled ? 'on' : 'off'}
           sees="With Selected lists on: your IP address, about once a day, when sbtlTV checks for new lists. Nothing about you or what you watch is sent, and requests aren't logged."
           note="Settings > Movies & Series > Selected lists." />
+        <Who title="sbtlTV mailbox" status="when-used"
+          sees="Only while you send or receive a setup: the setup, end-to-end encrypted so even we can't read it, and your IP address. Requests aren't logged. Deleted when picked up, or after 10 minutes."
+          note="Settings > System > Sync & transfer." />
         <Who title="TMDB" status={tmdbKeySet ? 'on' : 'not-set-up'}
           sees="With your TMDB key: the key, your IP address, the lists you browse and the titles you open or point at. Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
         <Who title="RatingPosterDB" status={posterDbKeySet ? 'on' : 'not-set-up'}
