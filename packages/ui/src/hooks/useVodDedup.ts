@@ -234,7 +234,9 @@ export function useMergedEpisodes(primarySeriesId: string, tmdbId?: number) {
 
   return {
     seasons,
-    loading: loading || waitingForFirst,
+    // A refresh (any episodes change, e.g. a hover warming another series) keeps the list on screen;
+    // swapping it for a spinner shrank the page and threw the scroll back to the top.
+    loading: (loading && allEpisodes === undefined) || waitingForFirst,
     error,                      // the request itself failed (data process unreachable)
     issues: fetchState.issues,  // per source: last fetch empty or failed (see episodeFetchState)
     refreshing: fetchState.fetching.length > 0,
