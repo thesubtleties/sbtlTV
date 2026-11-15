@@ -1,0 +1,66 @@
+/**
+ * The knock's crypto. The receiver commits to its key (hash) before it sees the giver's, so a man
+ * in the middle (even our own server) can't search keys until the three words match.
+ * Node built-ins only: X25519, HKDF-SHA256, AES-256-GCM.
+ */
+import { createCipheriv, createDecipheriv, createHash, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes, timingSafeEqual, type KeyObject } from 'node:crypto';
+
+export interface KeyPair { privateKey: KeyObject; publicRaw: Buffer }
+
+// DER prefix of an X25519 SubjectPublicKeyInfo; the raw key is the last 32 bytes
+const X25519_SPKI_PREFIX = Buffer.from('302a300506032b656e032100', 'hex');
+
+export function newKeyPair(): KeyPair {
+  const { privateKey, publicKey } = generateKeyPairSync('x25519');
+  const der = publicKey.export({ format: 'der', type: 'spki' });
+  return { privateKey, publicRaw: Buffer.from(der.subarray(der.length - 32)) };
+}
+
+function publicFromRaw(raw: Buffer): KeyObject {
+  if (raw.length !== 32) throw new Error('bad key');
+  return createPublicKey({ key: Buffer.concat([X25519_SPKI_PREFIX, raw]), format: 'der', type: 'spki' });
+}
+
+const sha256 = (...parts: Buffer[]) => createHash('sha256').update(Buffer.concat(parts)).digest();
+
+export function newReceiverSecret(): { keys: KeyPair; r: Buffer; commitment: Buffer } {
+  const keys = newKeyPair();
+  const r = randomBytes(16);
+  return { keys, r, commitment: sha256(keys.publicRaw, r) };
+}
+
+export function checkReveal(commitment: Buffer, receiverPub: Buffer, r: Buffer): boolean {
+  if (commitment.length !== 32 || receiverPub.length !== 32 || r.length !== 16) return false;
+  return timingSafeEqual(commitment, sha256(receiverPub, r));
+}
+
+/** Three words from 16-bit chunks mod list length (EFF: 7776; bias under 0.02 %). */
+export function knockWords(commitment: Buffer, giverPub: Buffer, receiverPub: Buffer, wordlist: readonly string[]): [string, string, string] {
+  const bytes = Buffer.from(hkdfSync('sha256', sha256(commitment, giverPub, receiverPub), Buffer.alloc(0), 'sbtl-sas', 6));
+  const pick = (i: number) => wordlist[bytes.readUInt16BE(i * 2) % wordlist.length];
+  return [pick(0), pick(1), pick(2)];
+}
+
+export function dropKey(mine: KeyPair, theirPub: Buffer, commitment: Buffer): Buffer {
+  const shared = diffieHellman({ privateKey: mine.privateKey, publicKey: publicFromRaw(theirPub) });
+  return Buffer.from(hkdfSync('sha256', shared, commitment, 'sbtl-drop', 32));
+}
+
+export function seal(key: Buffer, plaintext: Buffer, aad: Buffer): Buffer {
+  const nonce = randomBytes(12);
+  const c = createCipheriv('aes-256-gcm', key, nonce);
+  c.setAAD(aad);
+  const body = Buffer.concat([c.update(plaintext), c.final()]);
+  return Buffer.concat([nonce, body, c.getAuthTag()]);
+}
+
+export function open(key: Buffer, sealed: Buffer, aad: Buffer): Buffer {
+  if (sealed.length < 28) throw new Error('sealed too short');
+  const d = createDecipheriv('aes-256-gcm', key, sealed.subarray(0, 12));
+  d.setAAD(aad);
+  d.setAuthTag(sealed.subarray(sealed.length - 16));
+  return Buffer.concat([d.update(sealed.subarray(12, sealed.length - 16)), d.final()]);
+}
+
+/** Additional data for a drop: the knock's commitment (base64), which both sides know. */
+export const dropAad = (commitmentB64: string) => Buffer.from(`sbtl-drop|${commitmentB64}`);
