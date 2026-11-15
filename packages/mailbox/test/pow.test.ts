@@ -1,0 +1,29 @@
+import { describe, expect, it } from 'vitest';
+import { checkPow, powInput, solvePow } from '../src/protocol/pow';
+import { versionAtLeast } from '../src/protocol/version';
+
+describe('proof-of-work', () => {
+  it('a solved nonce checks; it is bound to version, route, body and minute', () => {
+    const input = powInput('/v1/knock', '{"commitment":"x"}', 29_000_000, '0.17.0');
+    const nonce = solvePow(input, 12);
+    expect(checkPow(input, nonce, 12)).toBe(true);
+    expect(checkPow(powInput('/v1/ring', '{"commitment":"x"}', 29_000_000, '0.17.0'), nonce, 12)).toBe(false);
+    expect(checkPow(powInput('/v1/knock', '{"commitment":"y"}', 29_000_000, '0.17.0'), nonce, 12)).toBe(false);
+    expect(checkPow(powInput('/v1/knock', '{"commitment":"x"}', 29_000_001, '0.17.0'), nonce, 12)).toBe(false);
+    expect(checkPow(powInput('/v1/knock', '{"commitment":"x"}', 29_000_000, '0.18.0'), nonce, 12)).toBe(false); // another version
+  });
+  it('rejects junk nonces', () => {
+    expect(checkPow('a', 'not a number', 1)).toBe(false);
+    expect(checkPow('a', '1'.repeat(40), 1)).toBe(false);
+  });
+});
+
+describe('version gate', () => {
+  it('compares numerically and ignores pre-release tags', () => {
+    expect(versionAtLeast('0.17.0', '0.17.0')).toBe(true);
+    expect(versionAtLeast('0.17.0-beta.1', '0.17.0')).toBe(true);
+    expect(versionAtLeast('0.9.0', '0.17.0')).toBe(false);
+    expect(versionAtLeast('1.0.0', '0.17.0')).toBe(true);
+    expect(versionAtLeast('garbage', '0.17.0')).toBe(false);
+  });
+});
