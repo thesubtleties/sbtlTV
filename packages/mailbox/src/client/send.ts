@@ -1,6 +1,6 @@
 /** The giving side of a knock: rings a code, checks the commitment, seals and drops the payload. */
-import { checkReveal, dropAad, dropKey, knockWords, newKeyPair, normaliseCode, seal, MAX_DROP_BYTES, type GiverPoll, type RingRes } from '../protocol';
-import { MailboxError, type Transport } from './transport';
+import { checkReveal, dropAad, dropKey, knockWords, newKeyPair, normaliseCode, seal, MAX_DROP_BYTES, type GiverPoll, type RingRes } from '../protocol/index.js';
+import { MailboxError, type Transport } from './transport.js';
 
 export type SendState =
   | { step: 'ringing' }
@@ -38,10 +38,12 @@ export class Sender {
     if (!code) return this.set({ step: 'failed', reason: 'not-found' });
     const mine = newKeyPair();
     try {
-      const r = (await this.t.post<RingRes>('/v1/ring', { code, giverKey: b64(mine.publicRaw) }, true))!;
+      // Commitment first, key after: the receiver's key is fixed before ours is seen
+      const r = (await this.t.post<RingRes>('/v1/ring', { code }, true))!;
       this.ticket = r.ticket;
       this.commitmentB64 = r.commitment;
       const commitment = fromB64(r.commitment);
+      await this.t.post(`/v1/ring/${r.ticket}/key`, { giverKey: b64(mine.publicRaw) }, false);
       // Polls until the words show, then on while they're shown so a cancel on their side shows here
       while (!this.stopped && (this.state.step === 'ringing' || this.state.step === 'words')) {
         await this.wait();

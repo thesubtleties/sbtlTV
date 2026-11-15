@@ -22,6 +22,17 @@ function setup() {
   return { clock, call };
 }
 const b64 = (n: number, fill = 1) => Buffer.alloc(n, fill).toString('base64');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Call = (method: string, path: string, body?: unknown, opts?: any) => Promise<{ status: number; json: any }>;
+/** The giver's two steps: claim the code (get the commitment), then send its key. */
+async function ringWithKey(call: Call, code: string, giverKey: string, opts: { pow?: boolean } | boolean = { pow: true }) {
+  const ring = await call('POST', '/v1/ring', { code }, opts);
+  if (ring.status === 201) {
+    const key = await call('POST', `/v1/ring/${ring.json.ticket}/key`, { giverKey });
+    expect(key.status).toBe(204);
+  }
+  return ring;
+}
 
 describe('mailbox server', () => {
   it('runs a full knock: create, ring, reveal, drop, one pickup', async () => {
@@ -30,7 +41,7 @@ describe('mailbox server', () => {
     expect(k.status).toBe(201);
     expect(await call('GET', `/v1/knock/${k.json.id}`)).toMatchObject({ json: { status: 'waiting' } });
 
-    const ring = await call('POST', '/v1/ring', { code: k.json.code, giverKey: b64(32, 2) }, { pow: true });
+    const ring = await ringWithKey(call, k.json.code, b64(32, 2), { pow: true });
     expect(ring.status).toBe(201);
     expect(ring.json.commitment).toBe(b64(32));
     expect((await call('GET', `/v1/knock/${k.json.id}`)).json).toEqual({ status: 'rung', giverKey: b64(32, 2) });
@@ -49,21 +60,22 @@ describe('mailbox server', () => {
   it('a code rings once; a wrong code is just not found', async () => {
     const { call } = setup();
     const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
-    expect((await call('POST', '/v1/ring', { code: k.json.code, giverKey: b64(32) }, { pow: true })).status).toBe(201);
-    expect((await call('POST', '/v1/ring', { code: k.json.code, giverKey: b64(32, 3) }, { pow: true })).json).toEqual({ error: 'not-found' });
-    expect((await call('POST', '/v1/ring', { code: 'ZZZZZZZZ', giverKey: b64(32) }, { pow: true })).json).toEqual({ error: 'not-found' });
+    expect((await ringWithKey(call, k.json.code, b64(32), { pow: true })).status).toBe(201);
+    expect((await ringWithKey(call, k.json.code.toLowerCase(), b64(32, 3), { pow: true })).json).toEqual({ error: 'not-found' }); // same code, typed differently
+    expect((await ringWithKey(call, 'ZZZZZZZZ', b64(32), { pow: true })).json).toEqual({ error: 'not-found' });
   });
 
-  it('codes expire after 10 minutes; drops after 24 hours', async () => {
+  it('codes expire after 10 minutes; drops after 10 more (the receiver waits live)', async () => {
     const { call, clock } = setup();
     const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
     clock.advance(KNOCK_TTL_MS + 1);
-    expect((await call('POST', '/v1/ring', { code: k.json.code, giverKey: b64(32) }, { pow: true })).status).toBe(404);
+    expect((await ringWithKey(call, k.json.code, b64(32), { pow: true })).status).toBe(404);
 
     const k2 = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
-    const ring = await call('POST', '/v1/ring', { code: k2.json.code, giverKey: b64(32) }, { pow: true });
+    const ring = await ringWithKey(call, k2.json.code, b64(32), { pow: true });
     await call('POST', `/v1/knock/${k2.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
     await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10) }, { pow: true });
+    expect(DROP_TTL_MS).toBe(10 * 60 * 1000);
     clock.advance(DROP_TTL_MS + 1);
     expect((await call('GET', `/v1/knock/${k2.json.id}/drop`)).status).toBe(404);
   });
@@ -75,25 +87,26 @@ describe('mailbox server', () => {
     expect((await call('POST', '/v1/knock', { commitment: 'short' }, { pow: true })).json).toEqual({ error: 'bad-request' });
     const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
     expect((await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) })).status).toBe(404); // not rung yet
-    const ring = await call('POST', '/v1/ring', { code: k.json.code, giverKey: b64(32) }, { pow: true });
+    const ring = await ringWithKey(call, k.json.code, b64(32), { pow: true });
     expect((await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10) }, { pow: true })).status).toBe(404); // not revealed
     await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
     expect((await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(2 * 1024 * 1024 + 1) }, { pow: true })).json).toEqual({ error: 'too-big' });
   });
 
   it('a proof is used once', async () => {
-    const { call } = setup();
-    // Same body + same minute: solvePow is deterministic, so the second request replays the first proof
-    const first = await call('POST', '/v1/knock', { commitment: b64(32, 9) }, { pow: true });
-    const second = await call('POST', '/v1/knock', { commitment: b64(32, 9) }, { pow: true });
-    expect(first.status).toBe(201);
-    expect(second.status).toBe(428);
+    const { app } = createApp({ now: () => 1_800_000_000_000, powBits: BITS, minVersion: '0.17.0' });
+    const text = JSON.stringify({ commitment: b64(32, 9) });
+    const minute = Math.floor(1_800_000_000_000 / 60_000);
+    const headers = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${minute}.${solvePow(powInput('/v1/knock', text, minute, '0.17.0'), BITS)}` };
+    const send = () => app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers, body: text }));
+    expect((await send()).status).toBe(201);
+    expect((await send()).status).toBe(428);   // the very same request again
   });
 
   it('either side can cancel; the other sees cancelled', async () => {
     const { call } = setup();
     const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
-    const ring = await call('POST', '/v1/ring', { code: k.json.code, giverKey: b64(32) }, { pow: true });
+    const ring = await ringWithKey(call, k.json.code, b64(32), { pow: true });
     expect((await call('POST', `/v1/knock/${k.json.id}/cancel`)).status).toBe(204);
     expect((await call('GET', `/v1/ring/${ring.json.ticket}`)).json.status).toBe('cancelled');
   });
@@ -129,7 +142,7 @@ describe('mailbox server', () => {
     };
     const ready = async (fill: number) => {
       const k = await call('POST', '/v1/knock', { commitment: b64(32, fill) }, true);
-      const r = await call('POST', '/v1/ring', { code: k.json.code, giverKey: b64(32, fill) }, true);
+      const r = await ringWithKey(call, k.json.code, b64(32, fill), true);
       await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
       return { k, r };
     };
@@ -154,5 +167,39 @@ describe('mailbox server', () => {
     expect(await knock('1.1.1.1, 9.9.9.9', 1)).toBe(201);
     expect(await knock('2.2.2.2, 9.9.9.9', 2)).toBe(201);
     expect(await knock('3.3.3.3, 9.9.9.9', 3)).toBe(429);
+  });
+
+  it('the commitment comes before the giver sends its key; a ticket takes one key', async () => {
+    const { call } = setup();
+    const k = await call('POST', '/v1/knock', { commitment: b64(32, 6) }, { pow: true });
+    const ring = await call('POST', '/v1/ring', { code: k.json.code }, { pow: true });
+    expect(ring.json).toEqual({ ticket: expect.any(String), commitment: b64(32, 6) });
+    expect((await call('GET', `/v1/knock/${k.json.id}`)).json).toEqual({ status: 'claimed' }); // no key yet, nothing to reveal to
+    expect((await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) })).status).toBe(404);
+    expect((await call('POST', `/v1/ring/${ring.json.ticket}/key`, { giverKey: b64(32, 2) })).status).toBe(204);
+    expect((await call('POST', `/v1/ring/${ring.json.ticket}/key`, { giverKey: b64(32, 3) })).status).toBe(404);
+    expect((await call('GET', `/v1/knock/${k.json.id}`)).json).toEqual({ status: 'rung', giverKey: b64(32, 2) });
+  });
+
+  it('a big drop needs more proof-of-work', async () => {
+    const { call } = setup();
+    const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
+    const ring = await ringWithKey(call, k.json.code, b64(32));
+    await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
+    // 1 MB at the base difficulty is refused with the bits it needs
+    const res = await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(1024 * 1024) }, { pow: true });
+    expect(res.status).toBe(428);
+  });
+
+  it('two drops at once on one knock store one', async () => {
+    const { call } = setup();
+    const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
+    const ring = await ringWithKey(call, k.json.code, b64(32));
+    await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
+    const [a, b] = await Promise.all([
+      call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10, 1) }, { pow: true }),
+      call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10, 2) }, { pow: true }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([204, 404]);
   });
 });

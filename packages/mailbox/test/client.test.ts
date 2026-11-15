@@ -27,6 +27,7 @@ describe('knock clients', () => {
     void sender.ring(codeOf(receiver.state).toLowerCase());
     await until(() => sender.state.step === 'words' && receiver.state.step === 'words');
     expect((sender.state as { words: string[] }).words).toEqual((receiver.state as { words: string[] }).words);
+    receiver.confirmWords();
     void sender.confirm(Buffer.from('the setup'));
     await until(() => receiver.state.step === 'received' && sender.state.step === 'received');
     expect((receiver.state as { payload: Buffer }).payload.toString()).toBe('the setup');
@@ -90,5 +91,39 @@ describe('knock clients', () => {
     await until(() => receiver.state.step === 'code');
     await sender.ring(codeOf(receiver.state));
     expect(sender.state).toEqual({ step: 'failed', reason: 'mismatch' });
+  });
+
+  it('the receiver opens nothing until its person confirms the words', async () => {
+    const { receiver, sender } = pair();
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    void sender.ring(codeOf(receiver.state));
+    await until(() => sender.state.step === 'words' && receiver.state.step === 'words');
+    void sender.confirm(Buffer.from('x'));
+    await until(() => sender.state.step === 'sent');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(receiver.state.step).toBe('words');           // dropped, but not fetched or opened
+    receiver.confirmWords();
+    await until(() => receiver.state.step === 'received');
+  });
+
+  it('the giver sends its key only after it holds the commitment', async () => {
+    const { app } = createApp({ powBits: 4, minVersion: '0.17.0' });
+    const seen: { path: string; body: string }[] = [];
+    const spy = async (r: Request) => {
+      seen.push({ path: new URL(r.url).pathname, body: r.method === 'GET' ? '' : await r.clone().text() });
+      return app.fetch(r);
+    };
+    const receiver = new Receiver(transport((r) => Promise.resolve(app.fetch(r))), WORDS, () => {}, { pollMs: 5 });
+    const sender = new Sender(transport(spy), WORDS, () => {}, { pollMs: 5 });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    void sender.ring(codeOf(receiver.state));
+    await until(() => sender.state.step === 'words');
+    const ring = seen.findIndex((x) => x.path === '/v1/ring');
+    const key = seen.findIndex((x) => x.path.endsWith('/key'));
+    expect(Object.keys(JSON.parse(seen[ring].body))).toEqual(['code']);
+    expect(key).toBeGreaterThan(ring);
+    expect(JSON.parse(seen[key].body)).toHaveProperty('giverKey');
   });
 });

@@ -4,9 +4,9 @@
  */
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { MAX_DROP_BYTES, POW_HEADER, VERSION_HEADER, checkPow, normaliseCode, powInput, versionAtLeast, type ErrorCode } from '../protocol';
-import { KnockStore } from './store';
-import { SeenProofs, SenderLimiter } from './limits';
+import { MAX_DROP_BYTES, POW_HEADER, VERSION_HEADER, checkPow, normaliseCode, powBitsFor, powInput, versionAtLeast, type ErrorCode } from '../protocol/index.js';
+import { KnockStore } from './store.js';
+import { SeenProofs, SenderLimiter } from './limits.js';
 
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const isB64 = (v: unknown, bytes: number): v is string => typeof v === 'string' && B64.test(v) && Buffer.from(v, 'base64').length === bytes;
@@ -37,18 +37,19 @@ export function createApp(opts: MailboxOptions = {}) {
     await next();
   });
 
-  /** Proof-of-work and the per-sender cap for writes. Returns the body text or a Response. */
+  /** Proof-of-work (more for bigger bodies) and the per-sender cap for writes. Returns the body text or a Response. */
   async function guardWrite(c: Context): Promise<string | Response> {
     // The proxy appends the address it saw; anything before it is whatever the client wrote
     const ip = (c.req.header('x-forwarded-for') ?? '').split(',').pop()?.trim() || 'unknown';
     if (!limiter.hit(ip)) return err(c, 429, 'busy');
     const text = await c.req.text();
+    const need = powBitsFor(bits, Buffer.byteLength(text));
     const [minuteText, nonce] = (c.req.header(POW_HEADER) ?? '').split('.');
     const minute = Number(minuteText);
     const fresh = Number.isInteger(minute) && Math.abs(Math.floor(now() / 60_000) - minute) <= 2;
     const input = fresh ? powInput(c.req.path, text, minute, c.req.header(VERSION_HEADER) ?? '') : '';
-    if (!fresh || !nonce || !checkPow(input, nonce, bits) || !proofs.use(input + nonce)) {
-      return err(c, 428, 'pow', { 'x-sbtltv-pow-bits': String(bits) });
+    if (!fresh || !nonce || !checkPow(input, nonce, need) || !proofs.use(input + nonce)) {
+      return err(c, 428, 'pow', { 'x-sbtltv-pow-bits': String(need) });
     }
     return text;
   }
@@ -105,12 +106,22 @@ export function createApp(opts: MailboxOptions = {}) {
     const text = await guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
     const code = typeof body?.code === 'string' ? normaliseCode(body.code) : null;
-    if (!body || !code || !isB64(body.giverKey, 32)) return err(c, 400, 'bad-request');
-    // Unknown, expired and already-rung codes look the same: a code rings once
+    if (!body || !code) return err(c, 400, 'bad-request');
+    // Unknown, expired and already-used codes look the same: a code rings once
     const k = store.byCodeLive(code);
     if (!k || k.status !== 'waiting') return err(c, 404, 'not-found');
-    const ticket = store.ring(k, body.giverKey);
+    const ticket = store.claim(k);
     return c.json({ ticket, commitment: k.commitment }, 201);
+  });
+
+  // Only after the giver holds the commitment: its key can't be matched to one chosen later
+  app.post('/v1/ring/:ticket/key', async (c) => {
+    const k = store.byTicketLive(c.req.param('ticket'));
+    if (!k || k.status !== 'claimed') return err(c, 404, 'not-found');
+    const body = parse(await c.req.text());
+    if (!body || !isB64(body.giverKey, 32)) return err(c, 400, 'bad-request');
+    if (!store.setGiverKey(k, body.giverKey)) return err(c, 404, 'not-found');
+    return c.body(null, 204);
   });
 
   app.get('/v1/ring/:ticket', (c) => {
@@ -123,11 +134,15 @@ export function createApp(opts: MailboxOptions = {}) {
   app.put('/v1/ring/:ticket/drop', async (c) => {
     const k = store.byTicketLive(c.req.param('ticket'));
     if (!k || k.status !== 'revealed') return err(c, 404, 'not-found');
+    // Too big is said before any proof-of-work is checked (the client wouldn't solve a harder one for nothing)
+    const raw = parse(await c.req.text());
+    if (raw && typeof raw.sealed === 'string' && Buffer.byteLength(raw.sealed, 'base64') > MAX_DROP_BYTES) return err(c, 413, 'too-big');
     const text = await guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
     if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) return err(c, 400, 'bad-request');
-    if (Buffer.byteLength(body.sealed, 'base64') > MAX_DROP_BYTES) return err(c, 413, 'too-big');
-    if (!store.drop(k, body.sealed)) return err(c, 429, 'busy');
+    const stored = store.drop(k, body.sealed);
+    if (stored === 'gone') return err(c, 404, 'not-found');
+    if (stored === 'busy') return err(c, 429, 'busy');
     return c.body(null, 204);
   });
 

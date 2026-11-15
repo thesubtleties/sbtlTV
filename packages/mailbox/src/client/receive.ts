@@ -1,6 +1,6 @@
 /** The receiving side of a knock: shows a code, reveals its key once rung, opens the drop. */
-import { dropAad, dropKey, knockWords, newReceiverSecret, open, type CreateKnockRes, type DropRes, type ReceiverPoll } from '../protocol';
-import { MailboxError, type Transport } from './transport';
+import { dropAad, dropKey, knockWords, newReceiverSecret, open, type CreateKnockRes, type DropRes, type ReceiverPoll } from '../protocol/index.js';
+import { MailboxError, type Transport } from './transport.js';
 
 export type ReceiveState =
   | { step: 'starting' }
@@ -16,6 +16,7 @@ export class Receiver {
   state: ReceiveState = { step: 'starting' };
   private id: string | null = null;
   private stopped = false;
+  private wordsConfirmed = false;   // the person said the words match; only then is the drop opened
   constructor(private t: Transport, private wordlist: readonly string[], private onChange: (s: ReceiveState) => void, private opts: { pollMs?: number } = {}) {}
 
   private set(s: ReceiveState) { this.state = s; this.onChange(s); }
@@ -27,8 +28,12 @@ export class Receiver {
     this.set({ step: 'failed', reason });
   }
 
+  /** The person saw the same words as the giver. Until then a drop is left unfetched. */
+  confirmWords(): void { if (this.state.step === 'words') this.wordsConfirmed = true; }
+
   async start(): Promise<void> {
     this.stopped = false;
+    this.wordsConfirmed = false;
     this.set({ step: 'starting' });
     const secret = newReceiverSecret();
     const commitment = b64(secret.commitment);
@@ -48,7 +53,7 @@ export class Receiver {
           await this.t.post(`/v1/knock/${k.id}/reveal`, { receiverKey: b64(secret.keys.publicRaw), r: b64(secret.r) }, false);
           this.set({ step: 'words', words: knockWords(secret.commitment, giverKey, secret.keys.publicRaw, this.wordlist) });
         }
-        if (p.status === 'dropped' && giverKey) {
+        if (p.status === 'dropped' && giverKey && this.wordsConfirmed) {
           const d = await this.t.get<DropRes>(`/v1/knock/${k.id}/drop`);
           if (!fromB64(d.giverKey).equals(giverKey)) throw new MailboxError('bad-request');
           const payload = open(dropKey(secret.keys, giverKey, secret.commitment), fromB64(d.sealed), dropAad(commitment));

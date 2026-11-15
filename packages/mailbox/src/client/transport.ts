@@ -1,5 +1,5 @@
 /** HTTP to the mailbox: version header, proof-of-work on writes, errors as MailboxError codes. */
-import { POW_HEADER, VERSION_HEADER, powInput, solvePow, type ErrorCode } from '../protocol';
+import { POW_HEADER, VERSION_HEADER, powInput, solvePow, type ErrorCode } from '../protocol/index.js';
 
 export type Fetch = (req: Request) => Promise<Response>;
 export interface TransportOpts { base: string; version: string; fetch: Fetch; now?: () => number; bits?: number }

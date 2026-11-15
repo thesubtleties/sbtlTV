@@ -1,6 +1,6 @@
 /** Knocks in memory. One replica; a restart loses knocks in flight, which users simply start again. */
 import { randomBytes } from 'node:crypto';
-import { DROP_TTL_MS, KNOCK_TTL_MS, newCode, type KnockStatus } from '../protocol';
+import { DROP_TTL_MS, KNOCK_TTL_MS, newCode, type KnockStatus } from '../protocol/index.js';
 
 export interface Knock {
   id: string; ticket: string | null; code: string; commitment: string;
@@ -17,7 +17,7 @@ export class KnockStore {
   private byTicket = new Map<string, Knock>();
   /** Bytes of sealed drops held right now (base64 length), kept under maxStoredBytes. */
   private storedBytes = 0;
-  constructor(private now: () => number, private maxActive = 10_000, private maxStoredBytes = 128 * 1024 * 1024) {}
+  constructor(private now: () => number, private maxActive = 50_000, private maxStoredBytes = 256 * 1024 * 1024) {}
 
   create(commitment: string): Knock | null {
     this.sweep();
@@ -39,21 +39,29 @@ export class KnockStore {
   byCodeLive(code: string) { return this.live(this.byCode.get(code)); }
   byTicketLive(ticket: string) { return this.live(this.byTicket.get(ticket)); }
 
-  ring(k: Knock, giverKey: string): string {
+  /** The code is used: from now on only the ticket reaches this knock. */
+  claim(k: Knock): string {
     k.ticket = randomBytes(16).toString('hex');
-    k.giverKey = giverKey; k.status = 'rung';
+    k.status = 'claimed';
     this.byTicket.set(k.ticket, k);
     this.byCode.delete(k.code);            // a code rings once
     return k.ticket;
   }
 
-  /** false = no room right now (memory budget); the giver can try again later. */
-  drop(k: Knock, sealed: string): boolean {
+  setGiverKey(k: Knock, giverKey: string): boolean {
+    if (k.status !== 'claimed') return false;
+    k.giverKey = giverKey; k.status = 'rung';
+    return true;
+  }
+
+  /** 'busy' = no room right now (memory budget); 'gone' = not waiting for a drop any more. */
+  drop(k: Knock, sealed: string): 'ok' | 'busy' | 'gone' {
     this.sweep();
-    if (this.storedBytes + sealed.length > this.maxStoredBytes) return false;
+    if (k.status !== 'revealed') return 'gone';   // checked again here: two drops may race
+    if (this.storedBytes + sealed.length > this.maxStoredBytes) return 'busy';
     this.storedBytes += sealed.length;
     k.sealed = sealed; k.status = 'dropped'; k.expiresAt = this.now() + DROP_TTL_MS;
-    return true;
+    return 'ok';
   }
 
   private forgetDrop(k: Knock): void {

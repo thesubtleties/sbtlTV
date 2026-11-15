@@ -4,7 +4,7 @@
  * elsewhere or later, and a home-made script has to keep claiming a current version.
  * 20 bits ≈ 1 M hashes ≈ about a second in Node.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomInt } from 'node:crypto';
 
 export const POW_HEADER = 'x-sbtltv-pow';
 
@@ -26,9 +26,15 @@ export function checkPow(input: string, nonce: string, bits: number): boolean {
   return leadingZeroBits(createHash('sha256').update(input + nonce).digest()) >= bits;
 }
 
+/** Starts at a random point, so two people solving the same input never send the same proof. */
 export function solvePow(input: string, bits: number): string {
-  for (let i = 0; ; i++) {
+  for (let i = randomInt(0, 2 ** 47); ; i++) {
     const nonce = String(i);
     if (checkPow(input, nonce, bits)) return nonce;
   }
+}
+
+/** Bigger bodies cost more: one extra bit (twice the work) per doubling above 64 KB. */
+export function powBitsFor(baseBits: number, bodyBytes: number): number {
+  return baseBits + Math.max(0, Math.ceil(Math.log2(bodyBytes / (64 * 1024))));
 }

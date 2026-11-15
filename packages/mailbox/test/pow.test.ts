@@ -12,6 +12,10 @@ describe('proof-of-work', () => {
     expect(checkPow(powInput('/v1/knock', '{"commitment":"x"}', 29_000_001, '0.17.0'), nonce, 12)).toBe(false);
     expect(checkPow(powInput('/v1/knock', '{"commitment":"x"}', 29_000_000, '0.18.0'), nonce, 12)).toBe(false); // another version
   });
+  it('two people solving the same input get different proofs (one is never a replay of the other)', () => {
+    const input = powInput('/v1/ring', '{"code":"7KQ4M2XD"}', 29_000_000, '0.17.0');
+    expect(solvePow(input, 4)).not.toBe(solvePow(input, 4));
+  });
   it('rejects junk nonces', () => {
     expect(checkPow('a', 'not a number', 1)).toBe(false);
     expect(checkPow('a', '1'.repeat(40), 1)).toBe(false);
