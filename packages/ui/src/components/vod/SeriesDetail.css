@@ -614,3 +614,98 @@
 @media (prefers-reduced-motion: reduce) {
   .series-detail__refresh-button--spinning svg { animation: none; opacity: 0.5; }
 }
+
+/* Episodes | More like this */
+.series-detail__tabs {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.series-detail__tab {
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 0 0 10px;
+  cursor: pointer;
+}
+
+.series-detail__tab:hover {
+  color: var(--text);
+}
+
+.series-detail__tab--active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* Tall, wide windows: the poster, info, tabs and Season picker stay put and only the episode list
+   scrolls, in the space left below them. Shorter or narrow windows (the layout stacks at 768px)
+   scroll the whole page, and so does this layout when the list would get under --series-list-min
+   (a long plot) or the More like this row doesn't fit. */
+@media (min-height: 840px) and (min-width: 769px) {
+  .series-detail {
+    --series-list-min: 150px; /* under that, a page scroll beats a sliver of list */
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .series-detail__content {
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+  }
+
+  .series-detail__main {
+    flex: none;
+  }
+
+  /* Full width, so the mouse wheel works anywhere below the Season picker (not just over the
+     800px column); the pieces inside keep the 800px width, and the divider line too */
+  .series-detail__episodes-section {
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+    max-width: none;
+    border-top: 0;
+    background: linear-gradient(var(--line), var(--line)) top left / min(800px, 100%) 1px no-repeat;
+  }
+
+  .series-detail__episodes > * {
+    max-width: 800px;
+  }
+
+  /* More like this tab: just the tab bar here, the row follows */
+  .series-detail__episodes-section--tabs-only {
+    flex: none;
+  }
+
+  .series-detail__tabs,
+  .series-detail__season-selector {
+    flex: none;
+    max-width: 800px;
+  }
+
+  .series-detail__episodes {
+    flex: 1 1 0;
+    min-height: var(--series-list-min);
+    overflow-y: auto;
+    /* reaches the window's right edge, so the scrollbar sits where a page scrollbar would */
+    margin-right: -48px;
+    padding: 0 48px 32px 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--fill-3) transparent;
+    /* rows fade out under the Season picker instead of being cut */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
+    padding-top: 6px;
+  }
+}

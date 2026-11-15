@@ -1,4 +1,5 @@
 import type { SelectedList } from '../types/electron';
+import { cleanByTmdbId } from './tmdbLibrary';
 
 export interface SelectedRow<T> { key: string; title: string; blurb: string; items: T[] }
 
@@ -13,15 +14,7 @@ export function buildSelectedRows<T extends { tmdb_id?: number; category_ids: st
 ): SelectedRow<T>[] {
   // Categories not known yet (or failed to load): no rows, rather than rows that skip the adult check
   if (!adultCategoryIds) return [];
-  const adult = new Set<number>();
-  for (const it of items) {
-    if (it.tmdb_id !== undefined && it.category_ids.some((c) => adultCategoryIds.has(c))) adult.add(it.tmdb_id);
-  }
-  const byId = new Map<number, T>();
-  for (const it of items) {
-    if (it.tmdb_id === undefined || adult.has(it.tmdb_id) || byId.has(it.tmdb_id)) continue;
-    byId.set(it.tmdb_id, it);
-  }
+  const byId = cleanByTmdbId(items, adultCategoryIds);
   const rows: SelectedRow<T>[] = [];
   for (const list of lists) {
     const picked = list.items.map((id) => byId.get(id)).filter((x): x is T => x !== undefined);

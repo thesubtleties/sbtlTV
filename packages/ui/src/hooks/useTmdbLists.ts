@@ -95,28 +95,33 @@ export function useEnabledSeriesGenres(): number[] | undefined {
 // ===========================================================================
 
 /**
- * Query local movies by TMDB IDs using the tmdb_id index
- * Much faster than filtering all movies!
+ * Local movies / series by TMDB ids, through the tmdb_id index (source-filtered). `null` ids = idle
+ * (no query). `stale` = the data on hand is still the answer for the previous ids.
  */
-export function useMoviesByTmdbIds(tmdbIds: number[]): StoredMovie[] | undefined {
+export function useMoviesByTmdbIdsQuery(tmdbIds: number[] | null): { data: StoredMovie[] | undefined; stale: boolean } {
   const enabledIds = useEnabledSourceIds();
-  const { data } = useDataQuery(
-    { type: 'movies', by: { kind: 'tmdbIds', tmdbIds }, sourceIds: enabledIds },
-    ['vod_movies'], [tmdbIds.join(','), enabledIds.join(',')],
+  const { data, stale } = useDataQuery(
+    tmdbIds ? { type: 'movies', by: { kind: 'tmdbIds', tmdbIds }, sourceIds: enabledIds } : null,
+    ['vod_movies'], [tmdbIds?.join(',') ?? null, enabledIds.join(',')],
   );
-  return data;
+  return { data, stale };
 }
 
-/**
- * Query local series by TMDB IDs using the tmdb_id index (source-filtered)
- */
-export function useSeriesByTmdbIds(tmdbIds: number[]): StoredSeries[] | undefined {
+export function useSeriesByTmdbIdsQuery(tmdbIds: number[] | null): { data: StoredSeries[] | undefined; stale: boolean } {
   const enabledIds = useEnabledSourceIds();
-  const { data } = useDataQuery(
-    { type: 'series', by: { kind: 'tmdbIds', tmdbIds }, sourceIds: enabledIds },
-    ['vod_series'], [tmdbIds.join(','), enabledIds.join(',')],
+  const { data, stale } = useDataQuery(
+    tmdbIds ? { type: 'series', by: { kind: 'tmdbIds', tmdbIds }, sourceIds: enabledIds } : null,
+    ['vod_series'], [tmdbIds?.join(',') ?? null, enabledIds.join(',')],
   );
-  return data;
+  return { data, stale };
+}
+
+export function useMoviesByTmdbIds(tmdbIds: number[]): StoredMovie[] | undefined {
+  return useMoviesByTmdbIdsQuery(tmdbIds).data;
+}
+
+export function useSeriesByTmdbIds(tmdbIds: number[]): StoredSeries[] | undefined {
+  return useSeriesByTmdbIdsQuery(tmdbIds).data;
 }
 
 /**

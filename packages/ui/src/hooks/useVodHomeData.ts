@@ -25,6 +25,7 @@ import {
 } from './useTmdbLists';
 import { isAdultCategoryName } from '@sbtltv/core';
 import { useSelectedLists } from './useSelectedLists';
+import { adultCategoryIdsOf } from '../utils/tmdbLibrary';
 import { buildSelectedRows } from '../utils/selectedRows';
 import { useWatchlistMovies, useWatchlistSeries } from './useWatchlist';
 import { useMovieProgressMap } from './useWatchProgress';
@@ -126,9 +127,7 @@ export function useVodHomeData(type: VodType) {
   const selectedMovies = useMoviesByTmdbIds(type === 'movie' ? selectedIds : []);
   const selectedSeries = useSeriesByTmdbIds(type === 'series' ? selectedIds : []);
   const adultCategoryIds = useMemo(
-    () => categoriesReady
-      ? new Set(groupedCategories.filter((g) => isAdultCategoryName(g.name)).flatMap((g) => g.categoryIds))
-      : null,
+    () => adultCategoryIdsOf(groupedCategories, categoriesReady, isAdultCategoryName),
     [groupedCategories, categoriesReady],
   );
   const selectedRows = useMemo(() => {

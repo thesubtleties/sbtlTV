@@ -14,9 +14,12 @@ import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
+import { MoreLikeThis } from './MoreLikeThis';
+import { useMoreLikeThis } from '../../hooks/useMoreLikeThis';
 import { useMoviePlaySources } from '../../hooks/usePlayResolver';
 import { useMovieProgressByTmdb, useMovieProgress } from '../../hooks/useWatchProgress';
-import type { StoredMovie } from '../../db';
+import type { StoredMovie, StoredSeries } from '../../db';
+import type { MediaItem } from '../../types/media';
 import './MovieDetail.css';
 
 export interface MovieDetailProps {
@@ -26,9 +29,11 @@ export interface MovieDetailProps {
   isCollapsed?: boolean;
   onPlay?: (movie: StoredMovie, plot?: string | null) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
+  onSelectRelated?: (item: MediaItem) => void; // a title picked in More like this
+  onBack?: () => void; // one title back; only when opened from More like this
 }
 
-export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, apiKey }: MovieDetailProps) {
+export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, apiKey, onSelectRelated, onBack }: MovieDetailProps) {
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -46,6 +51,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
   const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(movie, apiKey);
   const lazyCredits = useLazyCredits(movie, apiKey);
 
+  const { items: related } = useMoreLikeThis('movie', movie.tmdb_id, apiKey);
   const playSources = useMoviePlaySources(movie.tmdb_id, movie.stream_id);
   const progressByTmdb = useMovieProgressByTmdb(movie.tmdb_id);
   const progressByStream = useMovieProgress(movie.stream_id);
@@ -99,7 +105,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
       </div>
 
       {/* Header with back button and collapse */}
-      <DetailHeader className="movie-detail" onBack={onClose} onCollapse={onCollapse} />
+      <DetailHeader className="movie-detail" onHome={onClose} onBack={onBack} onCollapse={onCollapse} />
 
       {/* Content */}
       <div className="movie-detail__content">
@@ -215,6 +221,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
             )}
           </div>
         </div>
+        <MoreLikeThis type="movie" items={related} onSelect={onSelectRelated} />
       </div>
     </div>
   );

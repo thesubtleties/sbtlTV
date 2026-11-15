@@ -13,6 +13,7 @@ function setup() {
   const deps = {
     details: vi.fn(async (_k: string, kind: string, id: number) => { calls.push(`details ${kind} ${id}`); return { backdrop_path: '/fetched.jpg' }; }),
     credits: vi.fn(async (_k: string, kind: string, id: number) => { calls.push(`credits ${kind} ${id}`); return {}; }),
+    related: vi.fn(async () => [] as number[]),
     episodes: vi.fn(async (sid: string) => { calls.push(`episodes ${sid}`); return {}; }),
     preload: vi.fn((url: string) => { calls.push(`preload ${url}`); }),
     now: () => Date.now(),
@@ -166,5 +167,48 @@ describe('hover prefetch failures', () => {
     prefetch.enter(series());
     await vi.advanceTimersByTimeAsync(EPISODES_DWELL_MS);
     expect(deps.episodes).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('hover prefetch warms More like this', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('asks for recommendations with a key, once per dwell, never without one', async () => {
+    const { deps } = setup();
+    const related = vi.fn(async () => [1, 2, 3]);
+    const prefetch = createHoverPrefetch({ ...deps, related });
+    prefetch.enter(series({ needsDetails: false, needsCredits: false, backdropUrl: () => null }));
+    await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
+    expect(related).toHaveBeenCalledWith('key', 'series', 1399);
+    prefetch.enter(series({ apiKey: null }));
+    await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
+    expect(related).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed recommendations request is swallowed and the rest of the warm-up still runs', async () => {
+    const { deps, calls } = setup();
+    // A plain function, not vi.fn: a spy attaches its own handler to the promise, which would hide an
+    // unhandled rejection (vitest fails the run on one).
+    const asked: unknown[][] = [];
+    const related = async (...args: unknown[]) => { asked.push(args); throw new Error('429'); };
+    const prefetch = createHoverPrefetch({ ...deps, related });
+    prefetch.enter(series());
+    await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
+    expect(asked).toEqual([['key', 'series', 1399]]);
+    expect(calls).toContain('credits series 1399');
+    expect(calls).toContain('preload img/fetched.jpg');
+  });
+
+  it('a title without a TMDB id is never asked for, even with a key; movies are asked as movies', async () => {
+    const { deps } = setup();
+    const related = vi.fn(async () => []);
+    const prefetch = createHoverPrefetch({ ...deps, related });
+    prefetch.enter(series({ tmdbId: null }));
+    await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
+    expect(related).not.toHaveBeenCalled();
+    prefetch.enter(series({ kind: 'movie', tmdbId: 603, seriesId: null }));
+    await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
+    expect(related).toHaveBeenCalledWith('key', 'movie', 603);
   });
 });

@@ -5,7 +5,7 @@
  * and episode list. Slides in as a full page, not a modal.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { DetailHeader } from './DetailHeader';
@@ -17,10 +17,13 @@ import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
 import { EpisodeRow } from './EpisodeRow';
+import { MoreLikeThis } from './MoreLikeThis';
+import { useMoreLikeThis } from '../../hooks/useMoreLikeThis';
+import { seriesSeasonKey } from '../../utils/detailNav';
 import { useEpisodeProgressMap } from '../../hooks/useWatchProgress';
 import { useUIStore } from '../../stores/uiStore';
-import type { StoredSeries, StoredEpisode } from '../../db';
-import type { VodPlayInfo } from '../../types/media';
+import type { StoredMovie, StoredSeries, StoredEpisode } from '../../db';
+import type { MediaItem, VodPlayInfo } from '../../types/media';
 import './SeriesDetail.css';
 
 export interface SeriesDetailProps {
@@ -30,10 +33,16 @@ export interface SeriesDetailProps {
   isCollapsed?: boolean;
   onPlayEpisode?: (info: VodPlayInfo) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
+  onSelectRelated?: (item: MediaItem) => void; // a title picked in More like this
+  onBack?: () => void; // one title back; only when opened from More like this
+  initialTab?: SeriesTab; // 'more' when coming Back to this series (it was left from its More like this tab)
 }
 
-export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey }: SeriesDetailProps) {
-  const seriesKey = series.tmdb_id?.toString() ?? series.series_id;
+type SeriesTab = 'episodes' | 'more';
+const TABS: { id: SeriesTab; label: string }[] = [{ id: 'episodes', label: 'Episodes' }, { id: 'more', label: 'More like this' }];
+
+export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey, onSelectRelated, onBack, initialTab }: SeriesDetailProps) {
+  const seriesKey = seriesSeasonKey(series);
   const rememberedSeason = useUIStore((s) => s.seriesSeasonMap[seriesKey]);
   const setSeriesSeason = useUIStore((s) => s.setSeriesSeason);
   const clearSeriesSeason = useUIStore((s) => s.clearSeriesSeason);
@@ -46,6 +55,12 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
 
   // Fetch episodes (cross-source merge when tmdb_id matches multiple sources)
   const { seasons, loading, error, issues, hasEpisodes, refreshing, refetch } = useMergedEpisodes(series.series_id, series.tmdb_id);
+  // Episodes | More like this tabs: shown while the row may still come (so the episodes don't jump
+  // down when it does) and when there is one; gone when there's nothing to show
+  const { items: related, pending: relatedPending } = useMoreLikeThis('series', series.tmdb_id, apiKey);
+  const [tab, setTab] = useState<SeriesTab>(initialTab ?? 'episodes');
+  const hasTabs = related.length > 0 || relatedPending;
+  const activeTab = hasTabs ? tab : 'episodes';
   // A retry that fails at once (offline, blocked) still shows it tried.
   const [retryShown, setRetryShown] = useState(false);
   const retry = useCallback(() => {
@@ -73,23 +88,27 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
     }
   }, [seasonNumbers, selectedSeason, setSelectedSeason]);
 
-  // Clear remembered season and close (back button / escape)
-  const handleBack = useCallback(() => {
+  // Leaving this series (Home, Esc, or Back to the title before) forgets its remembered season
+  const handleHome = useCallback(() => {
     clearSeriesSeason(seriesKey);
     onClose();
   }, [clearSeriesSeason, seriesKey, onClose]);
+  const handleBack = useCallback(() => {
+    clearSeriesSeason(seriesKey);
+    onBack?.();
+  }, [clearSeriesSeason, seriesKey, onBack]);
 
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        handleBack();
+        handleHome();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleBack]);
+  }, [handleHome]);
 
   // Lazy-load backdrop, plot, genre, and credits from TMDB if available
   const tmdbBackdropUrl = useLazyBackdrop(series, apiKey);
@@ -160,7 +179,7 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
       </div>
 
       {/* Header with back button and collapse */}
-      <DetailHeader className="series-detail" onBack={handleBack} onCollapse={onCollapse} />
+      <DetailHeader className="series-detail" onHome={handleHome} onBack={onBack ? handleBack : undefined} onCollapse={onCollapse} />
 
       {/* Content */}
       <div className="series-detail__content">
@@ -233,7 +252,24 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
         </div>
 
         {/* Episodes section */}
-        <div className="series-detail__episodes-section">
+        <div className={`series-detail__episodes-section${activeTab === 'more' ? ' series-detail__episodes-section--tabs-only' : ''}`}>
+          {hasTabs && (
+            <div className="series-detail__tabs" role="tablist" aria-label="Series sections">
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  role="tab"
+                  aria-selected={activeTab === t.id}
+                  className={`series-detail__tab${activeTab === t.id ? ' series-detail__tab--active' : ''}`}
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {activeTab === 'episodes' && (
+          <>
           {/* Season selector */}
           <div className="series-detail__season-selector">
             <label htmlFor="season-select">Season</label>
@@ -300,7 +336,12 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
+        {activeTab === 'more' && (
+          <MoreLikeThis type="series" items={related} inTab onSelect={onSelectRelated} />
+        )}
       </div>
     </div>
   );

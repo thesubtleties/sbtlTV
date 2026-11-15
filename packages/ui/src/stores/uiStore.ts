@@ -46,6 +46,11 @@ interface UIState {
   seriesDetailItem: MediaItem | null;
   setMoviesDetailItem: (item: MediaItem | null) => void;
   setSeriesDetailItem: (item: MediaItem | null) => void;
+  // Titles behind the open one (opened from More like this), so Back survives leaving the page
+  moviesDetailTrail: MediaItem[];
+  seriesDetailTrail: MediaItem[];
+  setMoviesDetailTrail: (trail: MediaItem[]) => void;
+  setSeriesDetailTrail: (trail: MediaItem[]) => void;
 
   // Page collapsed state (slides whole page down, preserves detail)
   moviesPageCollapsed: boolean;
@@ -138,6 +143,10 @@ export const useUIStore = create<UIState>((set) => ({
   seriesDetailItem: null,
   setMoviesDetailItem: (item) => set({ moviesDetailItem: item }),
   setSeriesDetailItem: (item) => set({ seriesDetailItem: item }),
+  moviesDetailTrail: [],
+  seriesDetailTrail: [],
+  setMoviesDetailTrail: (trail) => set({ moviesDetailTrail: trail }),
+  setSeriesDetailTrail: (trail) => set({ seriesDetailTrail: trail }),
 
   // Page collapsed state
   moviesPageCollapsed: false,
@@ -308,6 +317,8 @@ export function useVodNavigation(type: 'movie' | 'series') {
     setScrollPosition: useUIStore((s) => isMovies ? s.setMoviesHomeScrollPosition : s.setSeriesHomeScrollPosition),
     detailItem: useUIStore((s) => isMovies ? s.moviesDetailItem : s.seriesDetailItem),
     setDetailItem: useUIStore((s) => isMovies ? s.setMoviesDetailItem : s.setSeriesDetailItem),
+    detailTrail: useUIStore((s) => isMovies ? s.moviesDetailTrail : s.seriesDetailTrail),
+    setDetailTrail: useUIStore((s) => isMovies ? s.setMoviesDetailTrail : s.setSeriesDetailTrail),
     isPageCollapsed: useUIStore((s) => isMovies ? s.moviesPageCollapsed : s.seriesPageCollapsed),
     setPageCollapsed: useUIStore((s) => isMovies ? s.setMoviesPageCollapsed : s.setSeriesPageCollapsed),
   };
