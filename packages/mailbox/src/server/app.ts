@@ -3,6 +3,7 @@
  * anything it holds and writes nothing about requests anywhere.
  */
 import { Hono, type Context } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { MAX_DROP_BYTES, POW_HEADER, VERSION_HEADER, checkPow, normaliseCode, powInput, versionAtLeast, type ErrorCode } from '../protocol';
 import { KnockStore } from './store';
 import { SeenProofs, SenderLimiter } from './limits';
@@ -11,18 +12,25 @@ const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const isB64 = (v: unknown, bytes: number): v is string => typeof v === 'string' && B64.test(v) && Buffer.from(v, 'base64').length === bytes;
 const HEX32 = /^[0-9a-f]{32}$/;
 
-export interface MailboxOptions { now?: () => number; powBits?: number; minVersion?: string; maxActive?: number; writesPerHour?: number }
+export interface MailboxOptions { now?: () => number; powBits?: number; minVersion?: string; maxActive?: number; maxStoredBytes?: number; writesPerHour?: number }
 
 export function createApp(opts: MailboxOptions = {}) {
   const now = opts.now ?? Date.now;
   const bits = opts.powBits ?? 20;
   const minVersion = opts.minVersion ?? '0.0.0';
-  const store = new KnockStore(now, opts.maxActive);
+  const store = new KnockStore(now, opts.maxActive, opts.maxStoredBytes);
   const limiter = new SenderLimiter(now, opts.writesPerHour ?? 5_000);
   const proofs = new SeenProofs(now);
   const app = new Hono();
 
   const err = (c: Context, status: 400 | 404 | 413 | 426 | 428 | 429, error: ErrorCode, headers?: Record<string, string>) => c.json({ error }, status, headers);
+
+  // Bodies are capped before anything reads them: small for the knock, the drop's size for drops
+  const tooBig = (c: Context) => err(c, 413, 'too-big');
+  const DROP_ROUTE = /^\/v1\/ring\/[^/]+\/drop$/;
+  const small = bodyLimit({ maxSize: 8 * 1024, onError: tooBig });
+  const large = bodyLimit({ maxSize: Math.ceil(MAX_DROP_BYTES * 4 / 3) + 1024, onError: tooBig });
+  app.use('/v1/*', (c, next) => (DROP_ROUTE.test(c.req.path) ? large : small)(c, next));
 
   app.use('/v1/*', async (c, next) => {
     if (!versionAtLeast(c.req.header(VERSION_HEADER) ?? '', minVersion)) return err(c, 426, 'update');
@@ -31,7 +39,8 @@ export function createApp(opts: MailboxOptions = {}) {
 
   /** Proof-of-work and the per-sender cap for writes. Returns the body text or a Response. */
   async function guardWrite(c: Context): Promise<string | Response> {
-    const ip = (c.req.header('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown';
+    // The proxy appends the address it saw; anything before it is whatever the client wrote
+    const ip = (c.req.header('x-forwarded-for') ?? '').split(',').pop()?.trim() || 'unknown';
     if (!limiter.hit(ip)) return err(c, 429, 'busy');
     const text = await c.req.text();
     const [minuteText, nonce] = (c.req.header(POW_HEADER) ?? '').split('.');
@@ -118,7 +127,7 @@ export function createApp(opts: MailboxOptions = {}) {
     const body = parse(text);
     if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) return err(c, 400, 'bad-request');
     if (Buffer.byteLength(body.sealed, 'base64') > MAX_DROP_BYTES) return err(c, 413, 'too-big');
-    store.drop(k, body.sealed);
+    if (!store.drop(k, body.sealed)) return err(c, 429, 'busy');
     return c.body(null, 204);
   });
 

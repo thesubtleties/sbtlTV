@@ -106,4 +106,53 @@ describe('mailbox server', () => {
     await call('POST', '/v1/ring', 'not json', { pow: true });
     for (const s of spies) { expect(s).not.toHaveBeenCalled(); s.mockRestore(); }
   });
+
+  it('refuses oversized bodies before reading them, on every write route', async () => {
+    const { app } = createApp({ powBits: BITS, minVersion: '0.17.0' });
+    const big = 'x'.repeat(64 * 1024);
+    const res = await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { [VERSION_HEADER]: '0.17.0', 'content-type': 'application/json', 'content-length': String(big.length) }, body: big }));
+    expect(res.status).toBe(413);
+    const drop = 'x'.repeat(3 * 1024 * 1024 + 1);
+    const res2 = await app.fetch(new Request('http://mailbox/v1/ring/0123456789abcdef0123456789abcdef/drop', { method: 'PUT', headers: { [VERSION_HEADER]: '0.17.0', 'content-length': String(drop.length) }, body: drop }));
+    expect(res2.status).toBe(413);
+  });
+
+  it('keeps total drop memory under a budget', async () => {
+    let t = 1_800_000_000_000;
+    const { app } = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', maxStoredBytes: 150 });
+    const call = async (method: string, path: string, body?: unknown, pow = false) => {
+      const text = body === undefined ? '' : JSON.stringify(body);
+      const headers: Record<string, string> = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0' };
+      if (pow) { const m = Math.floor(t / 60_000); headers[POW_HEADER] = `${m}.${solvePow(powInput(path, text, m, '0.17.0'), BITS)}`; }
+      const res = await app.fetch(new Request(`http://mailbox${path}`, { method, headers, body: text || undefined }));
+      return { status: res.status, json: res.headers.get('content-type')?.includes('json') ? await res.json() : null };
+    };
+    const ready = async (fill: number) => {
+      const k = await call('POST', '/v1/knock', { commitment: b64(32, fill) }, true);
+      const r = await call('POST', '/v1/ring', { code: k.json.code, giverKey: b64(32, fill) }, true);
+      await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
+      return { k, r };
+    };
+    const a = await ready(1);
+    expect((await call('PUT', `/v1/ring/${a.r.json.ticket}/drop`, { sealed: b64(100, 1) }, true)).status).toBe(204);
+    const b = await ready(2);
+    expect((await call('PUT', `/v1/ring/${b.r.json.ticket}/drop`, { sealed: b64(100, 2) }, true)).json).toEqual({ error: 'busy' });
+    await call('GET', `/v1/knock/${a.k.json.id}/drop`);   // pickup frees the room
+    expect((await call('PUT', `/v1/ring/${b.r.json.ticket}/drop`, { sealed: b64(100, 3) }, true)).status).toBe(204);
+  });
+
+  it('rate limits by the address the proxy saw, not one the client wrote', async () => {
+    let t = 1_800_000_000_000;
+    const { app } = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', writesPerHour: 2 });
+    const knock = async (xff: string, fill: number) => {
+      const text = JSON.stringify({ commitment: b64(32, fill) });
+      const m = Math.floor(t / 60_000);
+      const headers = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${m}.${solvePow(powInput('/v1/knock', text, m, '0.17.0'), BITS)}`, 'x-forwarded-for': xff };
+      return (await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers, body: text }))).status;
+    };
+    // The client prepends a fake address each time; the proxy appends the real one (last)
+    expect(await knock('1.1.1.1, 9.9.9.9', 1)).toBe(201);
+    expect(await knock('2.2.2.2, 9.9.9.9', 2)).toBe(201);
+    expect(await knock('3.3.3.3, 9.9.9.9', 3)).toBe(429);
+  });
 });

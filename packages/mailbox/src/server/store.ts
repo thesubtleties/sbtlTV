@@ -15,7 +15,9 @@ export class KnockStore {
   private byId = new Map<string, Knock>();
   private byCode = new Map<string, Knock>();
   private byTicket = new Map<string, Knock>();
-  constructor(private now: () => number, private maxActive = 10_000) {}
+  /** Bytes of sealed drops held right now (base64 length), kept under maxStoredBytes. */
+  private storedBytes = 0;
+  constructor(private now: () => number, private maxActive = 10_000, private maxStoredBytes = 128 * 1024 * 1024) {}
 
   create(commitment: string): Knock | null {
     this.sweep();
@@ -45,18 +47,30 @@ export class KnockStore {
     return k.ticket;
   }
 
-  drop(k: Knock, sealed: string): void {
+  /** false = no room right now (memory budget); the giver can try again later. */
+  drop(k: Knock, sealed: string): boolean {
+    this.sweep();
+    if (this.storedBytes + sealed.length > this.maxStoredBytes) return false;
+    this.storedBytes += sealed.length;
     k.sealed = sealed; k.status = 'dropped'; k.expiresAt = this.now() + DROP_TTL_MS;
+    return true;
+  }
+
+  private forgetDrop(k: Knock): void {
+    if (k.sealed) this.storedBytes -= k.sealed.length;
+    k.sealed = undefined;
   }
 
   /** Picked up or cancelled: everything is forgotten; the giver's ticket keeps the outcome briefly. */
   finish(k: Knock, status: 'gone' | 'cancelled'): void {
     this.byId.delete(k.id); this.byCode.delete(k.code);
-    k.sealed = undefined; k.giverKey = undefined; k.receiverKey = undefined; k.r = undefined;
+    this.forgetDrop(k);
+    k.giverKey = undefined; k.receiverKey = undefined; k.r = undefined;
     k.status = status; k.expiresAt = Math.min(k.expiresAt, this.now() + TOMBSTONE_MS);
   }
 
   private remove(k: Knock): void {
+    this.forgetDrop(k);
     this.byId.delete(k.id); this.byCode.delete(k.code);
     if (k.ticket) this.byTicket.delete(k.ticket);
   }
