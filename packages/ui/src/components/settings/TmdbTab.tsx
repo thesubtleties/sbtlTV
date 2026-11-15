@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { validateAccessToken } from '../../services/tmdb';
 import { useUpdateSettings } from '../../stores/uiStore';
-import { Hint, KeyField, OptionRow, Section, SettingsTab } from './ui';
+import { KeyField, OptionRow, Section, SettingsTab } from './ui';
+import tmdbLogo from '../../assets/tmdb-logo.svg';
+import './TmdbTab.css';
 
 interface TmdbTabProps {
   tmdbApiKey: string;
@@ -40,7 +42,7 @@ export function TmdbTab({
     <SettingsTab>
       <Section
         title="TMDB"
-        description="Basic TMDB data works without setup. An access token adds more: cast and director on detail pages, live genre rows, and filling in metadata your provider leaves out."
+        description="Basic TMDB data works without setup. An access token adds more: cast, director and More like this on detail pages, live genre rows, and filling in metadata your provider leaves out."
       >
         <OptionRow
           title="Access token"
@@ -63,7 +65,11 @@ export function TmdbTab({
             onSave={() => void saveTmdbApiKey()}
           />
         </OptionRow>
-        <Hint>This product uses the TMDB API but is not endorsed or certified by TMDB.</Hint>
+        {/* TMDB's attribution terms: their logo plus this notice */}
+        <div className="tmdb-attribution">
+          <img src={tmdbLogo} alt="TMDB" className="tmdb-attribution__logo" />
+          <p className="st-hint">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+        </div>
       </Section>
     </SettingsTab>
   );

@@ -18,7 +18,7 @@ sbtlTV aims to be a dead-simple, low-latency player that looks good and stays ou
 - **Live TV with EPG** - Browse channels by category with a full program guide
 - **Guide Search** - Press / to find a show, game or team across all your channels: on now, later, and matches in descriptions
 - **Rewind Live TV** - Pause and scrub back on live channels, kept in memory (Off, or a size you choose)
-- **Movies & Series** - Netflix-style home page with hero section, carousels, and detail views; resting on a card loads its page ahead, and episode lists refresh when they're more than a day old
+- **Movies & Series** - Netflix-style home page with hero section, carousels, and detail views with More like this (with a TMDB key); resting on a card loads its page ahead, and episode lists refresh when they're more than a day old
 - **Selected Lists** - Hand-picked themed rows on the Movies and Series homes, matched to your own library (a signed list from sbtltv.com, checked once a day; can be turned off)
 - **Multi-source with Priority** - Connect multiple Xtream sources; drag-and-drop to set priority for dedup and playback order
 - **Cross-source Merging** - VOD deduplicates across sources; series gap-fill episodes from other providers
@@ -129,7 +129,10 @@ For genre browsing and suggested/popular lists, add a TMDB Access Token:
 2. Get an API Read Access Token from [API settings](https://www.themoviedb.org/settings/api)
 3. Add it in Settings → TMDB
 
+<img src="packages/ui/src/assets/tmdb-logo.svg" alt="TMDB" width="64" align="left" />
+
 *This product uses the TMDB API but is not endorsed or certified by TMDB.*
+<br clear="left" />
 
 ### Poster Overlays (RPDB)
 
@@ -175,6 +178,8 @@ This application is a media player only and does not provide any content. Users 
 ## Credits
 
 Video playback powered by [mpv](https://mpv.io/).
+
+Movie and series data, images and recommendations from [TMDB](https://www.themoviedb.org/) (with your own key). This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 Setup passphrases use the [EFF long wordlist](https://www.eff.org/dice) (Electronic Frontier Foundation, [CC BY 3.0 US](https://creativecommons.org/licenses/by/3.0/us/)).
 
