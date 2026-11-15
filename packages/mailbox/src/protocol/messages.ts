@@ -13,4 +13,4 @@ export interface RevealReq { receiverKey: string; r: string }
 export interface GiverPoll { status: KnockStatus; receiverKey?: string; r?: string }
 export interface DropReq { sealed: string }
 export interface DropRes { sealed: string; giverKey: string }
-export type ErrorCode = 'update' | 'pow' | 'not-found' | 'taken' | 'too-big' | 'busy' | 'bad-request';
+export type ErrorCode = 'update' | 'pow' | 'not-found' | 'too-big' | 'busy' | 'bad-request';
