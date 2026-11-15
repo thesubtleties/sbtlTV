@@ -202,4 +202,30 @@ describe('mailbox server', () => {
     ]);
     expect([a.status, b.status].sort()).toEqual([204, 404]);
   });
+
+  it('requests without a valid proof do not use up the write limit', async () => {
+    const t = 1_800_000_000_000;
+    const { app } = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', writesPerHour: 2 });
+    for (let i = 0; i < 5; i++) {
+      await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { [VERSION_HEADER]: '0.17.0', 'content-type': 'application/json' }, body: '{"commitment":"junk"}' }));
+    }
+    const text = JSON.stringify({ commitment: b64(32) });
+    const m = Math.floor(t / 60_000);
+    const res = await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${m}.${solvePow(powInput('/v1/knock', text, m, '0.17.0'), BITS)}` }, body: text }));
+    expect(res.status).toBe(201);
+  });
+
+  it('tells the client its clock, so a computer with a wrong clock can still prove work', async () => {
+    const { app } = createApp({ now: () => 1_800_000_000_000, powBits: BITS, minVersion: '0.17.0' });
+    const res = await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { [VERSION_HEADER]: '0.17.0' }, body: '{}' }));
+    expect(res.headers.get('x-sbtltv-time')).toBe('1800000000000');
+  });
+
+  it('the giver cancelling shows up on the receiver', async () => {
+    const { call } = setup();
+    const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
+    const ring = await ringWithKey(call, k.json.code, b64(32));
+    await call('POST', `/v1/ring/${ring.json.ticket}/cancel`);
+    expect((await call('GET', `/v1/knock/${k.json.id}`)).json).toEqual({ status: 'cancelled' });
+  });
 });

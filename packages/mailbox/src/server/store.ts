@@ -69,9 +69,12 @@ export class KnockStore {
     k.sealed = undefined;
   }
 
-  /** Picked up or cancelled: everything is forgotten; the giver's ticket keeps the outcome briefly. */
+  /** Picked up or cancelled: everything is forgotten except the outcome, kept briefly. */
   finish(k: Knock, status: 'gone' | 'cancelled'): void {
-    this.byId.delete(k.id); this.byCode.delete(k.code);
+    // Picked up: the receiver's id is gone, so the drop can't be fetched twice. Cancelled: both
+    // sides keep a brief tombstone so each can show "cancelled".
+    if (status === 'gone') this.byId.delete(k.id);
+    this.byCode.delete(k.code);
     this.forgetDrop(k);
     k.giverKey = undefined; k.receiverKey = undefined; k.r = undefined;
     k.status = status; k.expiresAt = Math.min(k.expiresAt, this.now() + TOMBSTONE_MS);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gzipSync } from 'node:zlib';
-import { MAX_RECEIVED_BYTES, packSetup, unpackSetup, sendBody } from './setup-send.js';
+import { MAX_RECEIVED_BYTES, fitsInDrop, packSetup, unpackSetup, sendBody } from './setup-send.js';
 import { validateSetupBody, type SetupBody } from './setup-body.js';
 
 const base: SetupBody = {
@@ -49,4 +49,10 @@ test('a received setup unpacks only within its size limit (no zip bomb)', () => 
   assert.ok(bomb.length < 1024 * 1024);
   assert.throws(() => unpackSetup(bomb));
   assert.throws(() => unpackSetup(Buffer.from('not gzip')));
+});
+
+test('too big to send is known before anyone rings', () => {
+  assert.equal(fitsInDrop(Buffer.alloc(1024)), true);
+  assert.equal(fitsInDrop(Buffer.alloc(2 * 1024 * 1024 - 28)), true);    // sealing adds 28 bytes
+  assert.equal(fitsInDrop(Buffer.alloc(2 * 1024 * 1024 - 27)), false);
 });

@@ -4,7 +4,7 @@
  */
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { MAX_DROP_BYTES, POW_HEADER, VERSION_HEADER, checkPow, normaliseCode, powBitsFor, powInput, versionAtLeast, type ErrorCode } from '../protocol/index.js';
+import { MAX_DROP_BYTES, POW_HEADER, TIME_HEADER, VERSION_HEADER, checkPow, normaliseCode, powBitsFor, powInput, versionAtLeast, type ErrorCode } from '../protocol/index.js';
 import { KnockStore } from './store.js';
 import { SeenProofs, SenderLimiter } from './limits.js';
 
@@ -25,6 +25,9 @@ export function createApp(opts: MailboxOptions = {}) {
 
   const err = (c: Context, status: 400 | 404 | 413 | 426 | 428 | 429, error: ErrorCode, headers?: Record<string, string>) => c.json({ error }, status, headers);
 
+  // Every reply carries the server's clock, so a client with a wrong clock can still prove work
+  app.use('*', async (c, next) => { await next(); c.res.headers.set(TIME_HEADER, String(now())); });
+
   // Bodies are capped before anything reads them: small for the knock, the drop's size for drops
   const tooBig = (c: Context) => err(c, 413, 'too-big');
   const DROP_ROUTE = /^\/v1\/ring\/[^/]+\/drop$/;
@@ -41,7 +44,6 @@ export function createApp(opts: MailboxOptions = {}) {
   async function guardWrite(c: Context): Promise<string | Response> {
     // The proxy appends the address it saw; anything before it is whatever the client wrote
     const ip = (c.req.header('x-forwarded-for') ?? '').split(',').pop()?.trim() || 'unknown';
-    if (!limiter.hit(ip)) return err(c, 429, 'busy');
     const text = await c.req.text();
     const need = powBitsFor(bits, Buffer.byteLength(text));
     const [minuteText, nonce] = (c.req.header(POW_HEADER) ?? '').split('.');
@@ -51,6 +53,8 @@ export function createApp(opts: MailboxOptions = {}) {
     if (!fresh || !nonce || !checkPow(input, nonce, need) || !proofs.use(input + nonce)) {
       return err(c, 428, 'pow', { 'x-sbtltv-pow-bits': String(need) });
     }
+    // Counted only once the work is proven: junk requests can't use up the limit for everyone
+    if (!limiter.hit(ip)) return err(c, 429, 'busy');
     return text;
   }
 

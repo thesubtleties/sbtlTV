@@ -38,3 +38,21 @@ export function solvePow(input: string, bits: number): string {
 export function powBitsFor(baseBits: number, bodyBytes: number): number {
   return baseBits + Math.max(0, Math.ceil(Math.log2(bodyBytes / (64 * 1024))));
 }
+
+/**
+ * The same search in slices, giving way between them, so the app stays responsive while it works
+ * (a big setup can take a minute at its difficulty).
+ */
+export async function solvePowAsync(input: string, bits: number, slice = 20_000): Promise<string> {
+  let i = randomInt(0, 2 ** 47);
+  for (;;) {
+    for (const end = i + slice; i < end; i++) {
+      const nonce = String(i);
+      if (checkPow(input, nonce, bits)) return nonce;
+    }
+    await new Promise<void>((r) => setImmediate(r));
+  }
+}
+
+/** The server's clock (ms), on every reply: proofs carry the server's minute, not a wrong local one. */
+export const TIME_HEADER = 'x-sbtltv-time';

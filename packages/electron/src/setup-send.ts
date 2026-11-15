@@ -8,6 +8,15 @@ import { validateSetupBody, type SetupBody, type SetupPart, type SetupSource } f
 /** A received setup may unpack to at most this (the sealed drop is at most 2 MB; this stops a zip bomb). */
 export const MAX_RECEIVED_BYTES = 64 * 1024 * 1024;
 
+/** The mailbox's drop limit (@sbtltv/mailbox MAX_DROP_BYTES, 2 MB sealed) minus what sealing adds (nonce 12 + tag 16). */
+const DROP_LIMIT_BYTES = 2 * 1024 * 1024;
+const SEAL_OVERHEAD = 28;
+
+/** Checked before ringing, so nobody reads out a code and matches words for a send that can't go. */
+export function fitsInDrop(packed: Buffer): boolean {
+  return packed.length + SEAL_OVERHEAD <= DROP_LIMIT_BYTES;
+}
+
 export function packSetup(body: SetupBody): Buffer {
   return gzipSync(Buffer.from(JSON.stringify(body)));
 }

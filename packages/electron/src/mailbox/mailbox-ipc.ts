@@ -7,7 +7,7 @@ import { app, ipcMain, net } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { Receiver, Sender, Transport, type ReceiveState, type SendState } from '@sbtltv/mailbox/client';
 import { buildBody } from '../setup-transfer.js';
-import { packSetup, sendBody, unpackSetup, type SendSelection } from '../setup-send.js';
+import { fitsInDrop, packSetup, sendBody, unpackSetup, type SendSelection } from '../setup-send.js';
 import { validateSetupBody, type SetupBody, type SetupPreview, type UserLists } from '../setup-body.js';
 import { EFF_WORDS } from '../eff-wordlist.js';
 
@@ -16,7 +16,8 @@ export const MAILBOX_BASE = 'https://mailbox.sbtltv.com';
 /** What the page may see of a state: never the received payload. */
 const view = (s: ReceiveState | SendState | null | undefined) => (s && s.step === 'received' ? { step: 'received' } : s ?? null);
 
-export function registerMailbox(deps: { stage(body: SetupBody): { token: string; preview: SetupPreview }; log: (m: string) => void }): void {
+/** Returns stop() (cancels a knock in progress: quit, window closed, page reloaded) and active(). */
+export function registerMailbox(deps: { stage(body: SetupBody): { token: string; preview: SetupPreview }; log: (m: string) => void }): { stop(): Promise<void>; active(): boolean } {
   const transport = () => new Transport({
     base: process.env.SBTLTV_MAILBOX || MAILBOX_BASE,
     version: app.getVersion(),
@@ -64,6 +65,10 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
       const base = buildBody(sel.parts, sel.lists ?? {}, sel.playlists ?? {});
       const body = validateSetupBody(sendBody(base, sel, randomUUID));
       pending = packSetup(body);
+      if (!fitsInDrop(pending)) {
+        pending = null; role = null;
+        return { error: 'Too big to send. Use Export to file instead.' };
+      }
       const s = new Sender(transport(), EFF_WORDS, (st: SendState) => {
         if (s !== sender) return;
         if (st.step === 'received') deps.log('Mailbox: send picked up');
@@ -99,4 +104,6 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
       : role === 'send' ? view(sender?.state) : null;
     return { success: true, data: { role, state, staged } };
   });
+
+  return { stop: stopAll, active: () => role !== null };
 }

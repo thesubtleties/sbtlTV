@@ -15,13 +15,17 @@ export function ReceiveSetupPanel({ onReceived, onClose }: {
   const [state, setState] = useState<KnockState>({ step: 'starting' });
   const [confirmed, setConfirmed] = useState(false);
   const handed = useRef<string | null>(null);
+  // Bumped on every action: a poll answered after it describes the old knock and is dropped
+  const gen = useRef(0);
 
-  const start = () => { setConfirmed(false); setState({ step: 'starting' }); void window.mailbox?.receive(); };
+  const start = () => { gen.current++; setConfirmed(false); setState({ step: 'starting' }); void window.mailbox?.receive(); };
 
   useEffect(() => {
     start();
     const id = window.setInterval(async () => {
+      const asked = gen.current;
       const r = await window.mailbox?.state();
+      if (asked !== gen.current) return;
       if (!r || r.data.role !== 'receive' || !r.data.state) return;
       setState(r.data.state);
       const staged = r.data.staged;
@@ -45,7 +49,7 @@ export function ReceiveSetupPanel({ onReceived, onClose }: {
         {state.step === 'words' && !confirmed && (
           <>
             <Button variant="primary" onClick={() => { setConfirmed(true); void window.mailbox?.sameWords(); }}>Same words</Button>
-            <Button onClick={() => { void window.mailbox?.cancel(); setState({ step: 'failed', reason: 'cancelled' }); }}>Not the same</Button>
+            <Button onClick={() => { gen.current++; void window.mailbox?.cancel(); setState({ step: 'failed', reason: 'cancelled' }); }}>Not the same</Button>
           </>
         )}
         {line.canRetry && <Button onClick={start}>Start again</Button>}

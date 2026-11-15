@@ -126,4 +126,68 @@ describe('knock clients', () => {
     expect(key).toBeGreaterThan(ring);
     expect(JSON.parse(seen[key].body)).toHaveProperty('giverKey');
   });
+
+  it('the giver cancelling shows up on the receiver as cancelled', async () => {
+    const { receiver, sender } = pair();
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    void sender.ring(codeOf(receiver.state));
+    await until(() => sender.state.step === 'words');
+    await sender.cancel();
+    await until(() => receiver.state.step === 'failed');
+    expect(receiver.state).toEqual({ step: 'failed', reason: 'cancelled' });
+  });
+
+  it('a giver that fails (too big) lets the receiver know instead of leaving it waiting', async () => {
+    const { receiver, sender } = pair();
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    void sender.ring(codeOf(receiver.state));
+    await until(() => sender.state.step === 'words');
+    await sender.confirm(Buffer.alloc(3 * 1024 * 1024));
+    expect(sender.state).toEqual({ step: 'failed', reason: 'too-big' });
+    await until(() => receiver.state.step === 'failed');
+    expect(receiver.state).toEqual({ step: 'failed', reason: 'cancelled' });
+  });
+
+  it('a giver cancelled while ringing does not keep the code', async () => {
+    const { app } = createApp({ powBits: 4, minVersion: '0.17.0' });
+    const f = (r: Request) => Promise.resolve(app.fetch(r));
+    const receiver = new Receiver(transport(f), WORDS, () => {}, { pollMs: 5 });
+    let sender!: Sender;
+    // Cancel arrives while the ring request is in flight
+    const slow = async (r: Request) => { const res = await f(r); if (new URL(r.url).pathname === '/v1/ring') await sender.cancel(); return res; };
+    sender = new Sender(transport(slow), WORDS, () => {}, { pollMs: 5 });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    await sender.ring(codeOf(receiver.state));
+    await until(() => receiver.state.step === 'failed');
+    expect(receiver.state).toEqual({ step: 'failed', reason: 'cancelled' });
+  });
+
+  it('a computer whose clock is off still gets through (the server tells the time)', async () => {
+    const { app } = createApp({ powBits: 4, minVersion: '0.17.0' });
+    const skewed = new Transport({ base: 'http://mailbox', version: '0.17.0', bits: 4, now: () => Date.now() - 15 * 60_000, fetch: (r) => Promise.resolve(app.fetch(r)) });
+    const receiver = new Receiver(skewed, WORDS, () => {}, { pollMs: 5 });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code' || receiver.state.step === 'failed');
+    expect(receiver.state.step).toBe('code');
+    await receiver.cancel();
+  });
+
+  it('a big drop is proven at the size-based difficulty first time (no wasted solve)', async () => {
+    const { app } = createApp({ powBits: 4, minVersion: '0.17.0' });
+    const statuses: number[] = [];
+    const watch = async (r: Request) => { const res = await app.fetch(r); if (r.method === 'PUT') statuses.push(res.status); return res; };
+    const receiver = new Receiver(transport((r) => Promise.resolve(app.fetch(r))), WORDS, () => {}, { pollMs: 5 });
+    const sender = new Sender(transport(watch), WORDS, () => {}, { pollMs: 5 });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    void sender.ring(codeOf(receiver.state));
+    await until(() => sender.state.step === 'words');
+    receiver.confirmWords();
+    void sender.confirm(Buffer.alloc(512 * 1024, 1));
+    await until(() => sender.state.step === 'received', 20_000);
+    expect(statuses).toEqual([204]);
+  }, 30_000);
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MailboxSendSource, SetupPart } from '../../types/electron';
 import { useUIStore } from '../../stores/uiStore';
 import { readLists } from '../../services/setup/lists';
@@ -26,10 +26,15 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState('');
   const [state, setState] = useState<KnockState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Bumped on every action: a poll answered after it describes the old knock and is dropped
+  const gen = useRef(0);
 
   useEffect(() => {
     const id = window.setInterval(async () => {
+      const asked = gen.current;
       const r = await window.mailbox?.state();
+      if (asked !== gen.current) return;
       if (r?.data.role === 'send' && r.data.state) setState(r.data.state);
     }, 500);
     return () => { window.clearInterval(id); void window.mailbox?.cancel(); };
@@ -38,7 +43,9 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
   const nothing = picked.length === 0 && extras.length === 0 && !settings && !myKeys && !Object.values(theirKeys).some(Boolean);
 
   async function knock() {
-    if (!window.mailbox) return;
+    if (!window.mailbox || busy) return;
+    gen.current++;
+    setBusy(true);
     setError(null);
     const parts: SetupPart[] = [
       ...(picked.length ? ['sources' as const] : []),
@@ -49,11 +56,15 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
     const lists = await readLists([], settings);
     const playlists = picked.length ? await rebuildFilePlaylists(sources.filter((s) => picked.includes(s.id))) : {};
     const apiKeys = Object.fromEntries(Object.entries(theirKeys).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()]));
-    const r = await window.mailbox.send({ parts, sourceIds: picked, extras: { sources: extras, apiKeys }, lists, playlists }, code);
-    if (r.error) setError(r.error); else setState({ step: 'ringing' });
+    try {
+      const r = await window.mailbox.send({ parts, sourceIds: picked, extras: { sources: extras, apiKeys }, lists, playlists }, code);
+      if (r.error) setError(r.error); else setState({ step: 'ringing' });
+    } finally {
+      setBusy(false);
+    }
   }
 
-  const again = () => { void window.mailbox?.cancel(); setState(null); setCode(''); };
+  const again = () => { gen.current++; void window.mailbox?.cancel(); setState(null); setCode(''); };
 
   if (state) {
     const line = knockLine('send', state);
@@ -124,7 +135,7 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
       </OptionRow>
       {error && <Hint tone="danger">{error}</Hint>}
       <div className="knock-panel__actions">
-        <Button variant="primary" disabled={nothing || code.replace(/[\s-]/g, '').length !== 8} onClick={() => void knock()}>Knock</Button>
+        <Button variant="primary" disabled={busy || nothing || code.replace(/[\s-]/g, '').length !== 8} onClick={() => void knock()}>{busy ? 'Knocking…' : 'Knock'}</Button>
         <Button onClick={onClose}>Close</Button>
       </div>
     </div>

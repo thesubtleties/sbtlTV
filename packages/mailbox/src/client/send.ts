@@ -26,6 +26,8 @@ export class Sender {
   private fail(e: unknown) {
     const code = e instanceof MailboxError ? e.code : 'broken';
     this.stopped = true;
+    // Let the receiver know rather than leaving it waiting for a drop that won't come
+    if (this.ticket) void this.t.post(`/v1/ring/${this.ticket}/cancel`, undefined, false).catch(() => {});
     this.set({ step: 'failed', reason: (KNOWN as readonly string[]).includes(code) ? (code as (typeof KNOWN)[number]) : 'broken' });
   }
   private wait = () => new Promise((r) => setTimeout(r, this.opts.pollMs ?? 2000));
@@ -41,6 +43,10 @@ export class Sender {
       // Commitment first, key after: the receiver's key is fixed before ours is seen
       const r = (await this.t.post<RingRes>('/v1/ring', { code }, true))!;
       this.ticket = r.ticket;
+      if (this.stopped) {   // cancelled while the ring was in flight: give the code back as cancelled
+        await this.t.post(`/v1/ring/${r.ticket}/cancel`, undefined, false).catch(() => {});
+        return;
+      }
       this.commitmentB64 = r.commitment;
       const commitment = fromB64(r.commitment);
       await this.t.post(`/v1/ring/${r.ticket}/key`, { giverKey: b64(mine.publicRaw) }, false);

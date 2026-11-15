@@ -524,7 +524,14 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
   mainWindow.on('closed', () => {
     mainWindow = null;
     if (!nativeRecoveryInProgress) killMpv();
+    void mailbox.stop();   // a knock with no window to show it would only confuse the other side
   });
+
+  // A reload or a crashed page loses the knock's screen: cancel it so the other side hears
+  mainWindow.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) void mailbox.stop();
+  });
+  mainWindow.webContents.on('render-process-gone', () => { void mailbox.stop(); });
 
   // Drive the renderer's "fullscreen" state (button icon + Esc-to-exit). macOS uses true OS
   // fullscreen events; Linux uses maximize state. Windows is driven directly from the
@@ -2624,7 +2631,7 @@ const setupTransfer = registerSetupTransfer({
   log: (m) => debugLog(m, 'setup'),
 });
 // Settings > Sync & transfer: send and receive through the mailbox (mailbox/mailbox-ipc.ts)
-registerMailbox({ stage: setupTransfer.stage, log: (m) => debugLog(m, 'mailbox') });
+const mailbox = registerMailbox({ stage: setupTransfer.stage, log: (m) => debugLog(m, 'mailbox') });
 
 // A failure is logged by its reason only, never with an address.
 ipcMain.handle('privacy-check-ip', async () => {
@@ -3159,9 +3166,16 @@ app.whenReady().then(async () => {
 
 ipcMain.on('data-request-port', (event) => dataHost?.giveRendererPort(event.sender));
 
-app.on('before-quit', () => {
+let mailboxStopped = false;
+app.on('before-quit', (event) => {
   dataHost?.shutdown();
   dataHost = null;
+  // A knock in progress: tell the mailbox it's cancelled (at most a second), then quit
+  if (mailbox.active() && !mailboxStopped) {
+    mailboxStopped = true;
+    event.preventDefault();
+    void Promise.race([mailbox.stop(), new Promise((r) => setTimeout(r, 1000))]).then(() => app.quit());
+  }
 });
 
 app.on('window-all-closed', () => {

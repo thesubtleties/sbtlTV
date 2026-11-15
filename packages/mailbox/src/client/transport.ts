@@ -1,5 +1,5 @@
 /** HTTP to the mailbox: version header, proof-of-work on writes, errors as MailboxError codes. */
-import { POW_HEADER, VERSION_HEADER, powInput, solvePow, type ErrorCode } from '../protocol/index.js';
+import { POW_HEADER, TIME_HEADER, VERSION_HEADER, powBitsFor, powInput, solvePowAsync, type ErrorCode } from '../protocol/index.js';
 
 export type Fetch = (req: Request) => Promise<Response>;
 export interface TransportOpts { base: string; version: string; fetch: Fetch; now?: () => number; bits?: number }
@@ -12,15 +12,22 @@ export class MailboxError extends Error {
 const MAX_BITS = 28;
 
 export class Transport {
+  /** Server clock minus ours, learned from every reply (a computer's clock can be minutes off). */
+  private offset = 0;
   constructor(private o: TransportOpts) {}
 
-  private async send(method: string, path: string, body: unknown, pow: boolean, bits = this.o.bits ?? 20): Promise<Response> {
+  private serverNow(): number { return (this.o.now ?? Date.now)() + this.offset; }
+
+  private async send(method: string, path: string, body: unknown, pow: boolean, bits?: number, retried = false): Promise<Response> {
     const text = body === undefined ? '' : JSON.stringify(body);
     const headers: Record<string, string> = { [VERSION_HEADER]: this.o.version };
     if (text) headers['content-type'] = 'application/json';
+    // Bigger bodies cost more (same rule as the server), so the first proof is already enough
+    const need = bits ?? powBitsFor(this.o.bits ?? 20, Buffer.byteLength(text));
+    const before = this.offset;
     if (pow) {
-      const minute = Math.floor((this.o.now ?? Date.now)() / 60_000);
-      headers[POW_HEADER] = `${minute}.${solvePow(powInput(path, text, minute, this.o.version), bits)}`;
+      const minute = Math.floor(this.serverNow() / 60_000);
+      headers[POW_HEADER] = `${minute}.${await solvePowAsync(powInput(path, text, minute, this.o.version), need)}`;
     }
     let res: Response;
     try {
@@ -28,10 +35,14 @@ export class Transport {
     } catch {
       throw new MailboxError('offline');
     }
-    // The server asks for more work than we did: redo once at its difficulty
-    if (res.status === 428 && pow) {
-      const need = Number(res.headers.get('x-sbtltv-pow-bits'));
-      if (Number.isInteger(need) && need > bits && need <= MAX_BITS) return this.send(method, path, body, true, need);
+    const serverTime = Number(res.headers.get(TIME_HEADER));
+    if (Number.isFinite(serverTime) && serverTime > 0) this.offset = serverTime - (this.o.now ?? Date.now)();
+    // Refused proof: redo once, at the server's difficulty if it wants more, with its clock if ours was off
+    if (res.status === 428 && pow && !retried) {
+      const want = Number(res.headers.get('x-sbtltv-pow-bits'));
+      const harder = Number.isInteger(want) && want > need && want <= MAX_BITS;
+      const clockFixed = Math.abs(this.offset - before) >= 30_000;
+      if (harder || clockFixed) return this.send(method, path, body, true, harder ? want : need, true);
     }
     if (!res.ok) {
       let code: ErrorCode = 'bad-request';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkPow, powInput, solvePow } from '../src/protocol/pow';
+import { checkPow, powInput, solvePow, solvePowAsync } from '../src/protocol/pow';
 import { versionAtLeast } from '../src/protocol/version';
 
 describe('proof-of-work', () => {
@@ -15,6 +15,14 @@ describe('proof-of-work', () => {
   it('two people solving the same input get different proofs (one is never a replay of the other)', () => {
     const input = powInput('/v1/ring', '{"code":"7KQ4M2XD"}', 29_000_000, '0.17.0');
     expect(solvePow(input, 4)).not.toBe(solvePow(input, 4));
+  });
+  it('the async solver lets other work run while it searches', async () => {
+    const input = powInput('/v1/knock', '{}', 1, '0.17.0');
+    let ticked = false;
+    setImmediate(() => { ticked = true; });
+    const nonce = await solvePowAsync(input, 16, 2_000);
+    expect(checkPow(input, nonce, 16)).toBe(true);
+    expect(ticked).toBe(true);
   });
   it('rejects junk nonces', () => {
     expect(checkPow('a', 'not a number', 1)).toBe(false);

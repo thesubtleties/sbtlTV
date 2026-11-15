@@ -39,8 +39,11 @@ export class Receiver {
     const commitment = b64(secret.commitment);
     try {
       const k = (await this.t.post<CreateKnockRes>('/v1/knock', { commitment }, true))!;
-      if (this.stopped) return;
       this.id = k.id;
+      if (this.stopped) {   // cancelled while the code was being made: don't leave it open
+        await this.t.post(`/v1/knock/${k.id}/cancel`, undefined, false).catch(() => {});
+        return;
+      }
       this.set({ step: 'code', code: k.code, expiresAt: k.expiresAt });
       let giverKey: Buffer | null = null;
       while (!this.stopped) {
