@@ -21,14 +21,14 @@
 }
 
 /* Moved up over the tab line: the row lets clicks through to the tabs, except its arrows and the
-   cards' scroll area (which starts below the tabs) */
+   cards' scroll area (which starts below the tabs). The edge fades stay click-through, as in every row. */
 .more-like-this--tab,
 .more-like-this--tab .carousel,
 .more-like-this--tab .carousel__header {
   pointer-events: none;
 }
 
-.more-like-this--tab .carousel > :not(.carousel__header),
+.more-like-this--tab .carousel > :not(.carousel__header):not(.carousel__fade),
 .more-like-this--tab .carousel__header button {
   pointer-events: auto;
 }

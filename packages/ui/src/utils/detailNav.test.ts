@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detailNav, isMouseBackEcho, MAX_TRAIL, MOUSE_BACK_ECHO_MS, type DetailNav, type DetailNavAction } from './detailNav';
+import { detailNav, isBackKey, MAX_TRAIL, seriesSeasonKey, type DetailNav, type DetailNavAction } from './detailNav';
 
 const run = (actions: DetailNavAction<string>[], from: DetailNav<string> = { current: null, trail: [] }) => actions.reduce(detailNav<string>, from);
 
@@ -53,11 +53,27 @@ describe('detail navigation: long chains and state', () => {
   });
 });
 
-describe('mouse back followed by browser back', () => {
-  it('a popstate within the window after the mouse back is the same step; later ones are their own', () => {
-    expect(isMouseBackEcho(500, -Infinity)).toBe(false); // no mouse back yet
-    expect(isMouseBackEcho(1_000, 1_000)).toBe(true);
-    expect(isMouseBackEcho(1_000 + MOUSE_BACK_ECHO_MS - 1, 1_000)).toBe(true);
-    expect(isMouseBackEcho(1_000 + MOUSE_BACK_ECHO_MS, 1_000)).toBe(false);
+describe('back keys', () => {
+  const k = (key: string, mods: Partial<Record<'altKey' | 'metaKey' | 'ctrlKey' | 'shiftKey', boolean>> = {}) =>
+    ({ key, altKey: false, metaKey: false, ctrlKey: false, shiftKey: false, ...mods });
+  it('Alt+Left, Cmd+[ and the Back key; nothing else', () => {
+    expect(isBackKey(k('ArrowLeft', { altKey: true }), false)).toBe(true);
+    expect(isBackKey(k('[', { metaKey: true }), false)).toBe(true);
+    expect(isBackKey(k('BrowserBack'), false)).toBe(true);
+    expect(isBackKey(k('ArrowLeft'), false)).toBe(false); // plain arrows move in rows
+    expect(isBackKey(k('ArrowLeft', { altKey: true, shiftKey: true }), false)).toBe(false);
+    expect(isBackKey(k('[', { ctrlKey: true }), false)).toBe(false);
+  });
+  it('not while typing, except the dedicated Back key', () => {
+    expect(isBackKey(k('ArrowLeft', { altKey: true }), true)).toBe(false);
+    expect(isBackKey(k('[', { metaKey: true }), true)).toBe(false);
+    expect(isBackKey(k('BrowserBack'), true)).toBe(true);
+  });
+});
+
+describe('seriesSeasonKey', () => {
+  it('tmdb id when known, else the series id', () => {
+    expect(seriesSeasonKey({ tmdb_id: 42, series_id: 's1' })).toBe('42');
+    expect(seriesSeasonKey({ series_id: 's1' })).toBe('s1');
   });
 });

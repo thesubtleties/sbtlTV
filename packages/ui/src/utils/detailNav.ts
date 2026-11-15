@@ -19,13 +19,20 @@ export type DetailNavAction<T> =
   | { type: 'home' };
 
 /**
- * Chromium may follow the mouse back button with a history popstate; a popstate this soon after the
- * mouse back is that same step, not a second one.
+ * Keys that mean "one title back": Alt+Left, Cmd+[ (macOS), and a keyboard's Back key. Not while
+ * typing: Alt+Left moves by word in a text field on macOS.
  */
-export const MOUSE_BACK_ECHO_MS = 1000;
+export function isBackKey(e: Pick<KeyboardEvent, 'key' | 'altKey' | 'metaKey' | 'ctrlKey' | 'shiftKey'>, typing: boolean): boolean {
+  if (e.key === 'BrowserBack') return true;
+  if (typing) return false;
+  if (e.key === 'ArrowLeft') return e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey;
+  if (e.key === '[') return e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey;
+  return false;
+}
 
-export function isMouseBackEcho(now: number, mouseBackAt: number, windowMs = MOUSE_BACK_ECHO_MS): boolean {
-  return now - mouseBackAt < windowMs;
+/** The key a series' remembered season is kept under (uiStore seriesSeasonMap). */
+export function seriesSeasonKey(series: { tmdb_id?: number; series_id: string }): string {
+  return series.tmdb_id?.toString() ?? series.series_id;
 }
 
 /** Keeps the trail from growing without bound on long More like this chains. */

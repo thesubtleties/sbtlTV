@@ -13,6 +13,7 @@ function setup() {
   const deps = {
     details: vi.fn(async (_k: string, kind: string, id: number) => { calls.push(`details ${kind} ${id}`); return { backdrop_path: '/fetched.jpg' }; }),
     credits: vi.fn(async (_k: string, kind: string, id: number) => { calls.push(`credits ${kind} ${id}`); return {}; }),
+    related: vi.fn(async () => [] as number[]),
     episodes: vi.fn(async (sid: string) => { calls.push(`episodes ${sid}`); return {}; }),
     preload: vi.fn((url: string) => { calls.push(`preload ${url}`); }),
     now: () => Date.now(),

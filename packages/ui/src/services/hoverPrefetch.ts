@@ -38,8 +38,8 @@ export interface PrefetchTarget {
 export interface PrefetchDeps {
   details(apiKey: string, kind: 'movie' | 'series', tmdbId: number): Promise<{ backdrop_path?: string | null }>;
   credits(apiKey: string, kind: 'movie' | 'series', tmdbId: number): Promise<unknown>;
-  /** TMDB recommendations for the More like this row (optional). */
-  related?(apiKey: string, kind: 'movie' | 'series', tmdbId: number): Promise<unknown>;
+  /** TMDB recommendations for the More like this row. */
+  related(apiKey: string, kind: 'movie' | 'series', tmdbId: number): Promise<unknown>;
   episodes(seriesId: string): Promise<unknown>;
   preload(url: string): void;
   now(): number;
@@ -83,7 +83,7 @@ export function createHoverPrefetch(deps: PrefetchDeps): HoverPrefetch {
         preload(t.backdropUrl(null));
       }
       if (t.needsCredits) deps.credits(apiKey, kind, tmdbId).catch(() => {});
-      deps.related?.(apiKey, kind, tmdbId).catch(() => {});
+      deps.related(apiKey, kind, tmdbId).catch(() => {});
     } else {
       preload(t.backdropUrl(null));
     }

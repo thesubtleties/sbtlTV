@@ -1,6 +1,6 @@
 /**
- * One TMDB request per title for details and credits, shared by the detail hooks
- * (useLazyBackdrop, useLazyPlot, useLazyCredits) and the hover prefetch. Calls in
+ * One TMDB request per title for details, credits and related titles (More like this), shared by
+ * the detail hooks (useLazyBackdrop, useLazyPlot, useLazyCredits, useMoreLikeThis) and the hover prefetch. Calls in
  * flight share one promise; a finished answer is kept for the session (up to
  * MAX_ENTRIES); a failure is dropped so the next ask tries again.
  */
