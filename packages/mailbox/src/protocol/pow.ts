@@ -43,8 +43,8 @@ export function powBitsFor(baseBits: number, bodyBytes: number): number {
  * The same search in slices, giving way between them, so the app stays responsive while it works
  * (a big setup can take a minute at its difficulty).
  */
-export async function solvePowAsync(input: string, bits: number, slice = 20_000): Promise<string> {
-  let i = randomInt(0, 2 ** 47);
+export async function solvePowAsync(input: string, bits: number, slice = 20_000, start = randomInt(0, 2 ** 47)): Promise<string> {
+  let i = start;
   for (;;) {
     for (const end = i + slice; i < end; i++) {
       const nonce = String(i);

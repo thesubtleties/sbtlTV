@@ -18,11 +18,14 @@ describe('proof-of-work', () => {
   });
   it('the async solver lets other work run while it searches', async () => {
     const input = powInput('/v1/knock', '{}', 1, '0.17.0');
+    // From 0, find where the first answer is, then search in slices half that long: at least one break
+    let first = 0;
+    while (!checkPow(input, String(first), 12)) first++;
     let ticked = false;
     setImmediate(() => { ticked = true; });
-    const nonce = await solvePowAsync(input, 16, 2_000);
-    expect(checkPow(input, nonce, 16)).toBe(true);
-    expect(ticked).toBe(true);
+    const nonce = await solvePowAsync(input, 12, Math.max(1, Math.floor(first / 2)), 0);
+    expect(nonce).toBe(String(first));
+    expect(ticked).toBe(first > 1);
   });
   it('rejects junk nonces', () => {
     expect(checkPow('a', 'not a number', 1)).toBe(false);
