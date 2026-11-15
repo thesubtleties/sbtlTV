@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detailNav, MAX_TRAIL, type DetailNav, type DetailNavAction } from './detailNav';
+import { detailNav, isMouseBackEcho, MAX_TRAIL, MOUSE_BACK_ECHO_MS, type DetailNav, type DetailNavAction } from './detailNav';
 
 const run = (actions: DetailNavAction<string>[], from: DetailNav<string> = { current: null, trail: [] }) => actions.reduce(detailNav<string>, from);
 
@@ -32,5 +32,32 @@ describe('detail navigation', () => {
     expect(run([{ type: 'open', item: 'start' }, ...many]).trail).toHaveLength(MAX_TRAIL);
     const empty: DetailNav<string> = { current: null, trail: [] };
     expect(detailNav(empty, { type: 'home' })).toBe(empty);
+  });
+});
+
+describe('detail navigation: long chains and state', () => {
+  it('the cap drops the oldest titles: Back still returns to the one just left', () => {
+    const many = Array.from({ length: MAX_TRAIL + 10 }, (_, i) => ({ type: 'openRelated' as const, item: `t${i}` }));
+    const s = run([{ type: 'open', item: 'start' }, ...many]);
+    expect(s.current).toBe(`t${MAX_TRAIL + 9}`);
+    expect(s.trail[s.trail.length - 1]).toBe(`t${MAX_TRAIL + 8}`);
+    expect(s.trail).not.toContain('start');
+    expect(run([{ type: 'back' }], s).current).toBe(`t${MAX_TRAIL + 8}`);
+  });
+
+  it('never changes the state it was given (React keeps the old one for the store sync)', () => {
+    const frozen: DetailNav<string> = Object.freeze({ current: 'B', trail: Object.freeze(['A']) as string[] });
+    expect(() => run([{ type: 'openRelated', item: 'C' }, { type: 'back' }, { type: 'back' }, { type: 'back' }], frozen)).not.toThrow();
+    expect(() => detailNav(frozen, { type: 'back' })).not.toThrow();
+    expect(frozen).toEqual({ current: 'B', trail: ['A'] });
+  });
+});
+
+describe('mouse back followed by browser back', () => {
+  it('a popstate within the window after the mouse back is the same step; later ones are their own', () => {
+    expect(isMouseBackEcho(500, -Infinity)).toBe(false); // no mouse back yet
+    expect(isMouseBackEcho(1_000, 1_000)).toBe(true);
+    expect(isMouseBackEcho(1_000 + MOUSE_BACK_ECHO_MS - 1, 1_000)).toBe(true);
+    expect(isMouseBackEcho(1_000 + MOUSE_BACK_ECHO_MS, 1_000)).toBe(false);
   });
 });

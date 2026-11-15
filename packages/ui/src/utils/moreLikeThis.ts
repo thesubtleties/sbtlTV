@@ -39,6 +39,15 @@ export function pickMoreLikeThis<T extends { tmdb_id?: number; category_ids: str
 }
 
 /**
+ * Whether the library answer is the one for the ids on hand: no ids = nothing to look up (ready, empty);
+ * otherwise a reply has arrived and it is not still the reply for the previous ids.
+ */
+export function relatedLibraryReady(idCount: number, reply: unknown, stale: boolean): boolean {
+  if (idCount === 0) return true;
+  return reply !== undefined && !stale;
+}
+
+/**
  * Whether to also ask TMDB for similar titles. Only once the recommendations for this title are in
  * (and didn't fail), the library answer is for those ids, and the categories are known; then only
  * when the row would have fewer than `enough` titles by the row's own rules.

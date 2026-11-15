@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef, useReducer } from 'react';
-import { detailNav } from '../utils/detailNav';
+import { detailNav, isMouseBackEcho } from '../utils/detailNav';
 import { Virtuoso } from 'react-virtuoso';
 import { HeroSection } from './vod/HeroSection';
 import { HorizontalCarousel } from './vod/HorizontalCarousel';
@@ -415,7 +415,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     };
 
     const handlePopState = () => {
-      if (performance.now() - mouseBackAt.current < 1000) return;
+      if (isMouseBackEcho(performance.now(), mouseBackAt.current)) return;
       if (selectedItem) goBack();
     };
 

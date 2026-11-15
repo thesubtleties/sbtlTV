@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickMoreLikeThis, shouldAskSimilar } from './moreLikeThis';
+import { pickMoreLikeThis, relatedLibraryReady, shouldAskSimilar } from './moreLikeThis';
 
 const t = (tmdb_id: number, category_ids: string[] = ['c1'], name = `t${tmdb_id}`) => ({ tmdb_id, category_ids, name });
 
@@ -59,5 +59,52 @@ describe('asking TMDB for similar titles too', () => {
     expect(shouldAskSimilar({ ...base, recs, adultCategoryIds: null })).toBe(false);
     expect(shouldAskSimilar({ ...base, recs, similarAsked: true })).toBe(false);
     expect(shouldAskSimilar({ ...base, recs: { ids: [], failed: true } })).toBe(false); // bad key or rate limit: one failing call, not two
+  });
+});
+
+describe('More like this: rules the cases above do not reach', () => {
+  it('a title TMDB lists twice (in recommendations and similar) is one card and one toward the minimum', () => {
+    const lib = [t(1), t(2), t(3), t(4)];
+    expect(pickMoreLikeThis([1, 2, 1, 2, 3], lib, new Set(), undefined)).toEqual([]); // 3 titles, not 5
+    expect(pickMoreLikeThis([1, 2, 3, 1, 4, 2], lib, new Set(), undefined).map((x) => x.tmdb_id)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('an adult copy listed after a clean copy still keeps the title out', () => {
+    const lib = [t(1, ['c1']), t(1, ['xxx']), t(2), t(3), t(4), t(5)];
+    expect(pickMoreLikeThis([1, 2, 3, 4, 5], lib, new Set(['xxx']), undefined).map((x) => x.tmdb_id)).toEqual([2, 3, 4, 5]);
+  });
+
+  it('the cap counts cards, not ids TMDB listed', () => {
+    const lib = [t(2), t(4), t(6), t(8)];
+    const ids = [1, 2, 3, 4, 5, 6, 7, 8];
+    expect(pickMoreLikeThis(ids, lib, new Set(), undefined, { min: 1, max: 3 }).map((x) => x.tmdb_id)).toEqual([2, 4, 6]);
+  });
+});
+
+describe('asking TMDB for similar titles too: counting', () => {
+  const lib = Array.from({ length: 10 }, (_, i) => t(i + 1));
+  const base = { similarAsked: false, library: lib, adultCategoryIds: new Set<string>() };
+
+  it('the title itself, when the library has it, does not count toward enough', () => {
+    const recs = { ids: [1, 2, 3, 4, 5, 6], failed: false };
+    expect(shouldAskSimilar({ ...base, recs, selfTmdbId: 99 })).toBe(false);
+    expect(shouldAskSimilar({ ...base, recs, selfTmdbId: 1 })).toBe(true); // 5 others
+  });
+
+  it('a title TMDB repeats counts once', () => {
+    expect(shouldAskSimilar({ ...base, selfTmdbId: 99, recs: { ids: [1, 1, 2, 2, 3, 3], failed: false } })).toBe(true);
+  });
+});
+
+describe('the library answer for the More like this ids', () => {
+  it('no ids: ready with nothing to look up, whatever the last reply was', () => {
+    expect(relatedLibraryReady(0, undefined, false)).toBe(true);
+    expect(relatedLibraryReady(0, [{}], true)).toBe(true);
+  });
+
+  it('ids: waits for a reply, and for the reply to these ids rather than the previous ones', () => {
+    expect(relatedLibraryReady(3, undefined, false)).toBe(false); // first reply not in yet
+    expect(relatedLibraryReady(3, [{}], true)).toBe(false);       // recommendations-only reply while recommendations + similar are asked
+    expect(relatedLibraryReady(3, [], false)).toBe(true);         // library has none of them: still an answer
   });
 });

@@ -51,5 +51,23 @@ describe('shared TMDB details', () => {
     await expect(tmdbRelated('k', 'series', 9, 'recommendations')).rejects.toThrow('429');
     await expect(tmdbRelated('k', 'series', 9, 'recommendations')).resolves.toEqual([1, 2]);
   });
+
+  it('related ids: a movie and a series with the same TMDB id are separate entries, each asked as its own kind', async () => {
+    getRelatedIds.mockImplementation(async (_k: string, kind: string) => (kind === 'movie' ? [10] : [20]));
+    await expect(tmdbRelated('k', 'movie', 5, 'similar')).resolves.toEqual([10]);
+    await expect(tmdbRelated('k', 'series', 5, 'similar')).resolves.toEqual([20]);
+    expect(getRelatedIds).toHaveBeenCalledWith('k', 'movie', 5, 'similar');
+    expect(getRelatedIds).toHaveBeenCalledWith('k', 'series', 5, 'similar');
+  });
+
+  it('the cache is bounded: after many titles the first is asked again, the latest is not', async () => {
+    getRelatedIds.mockResolvedValue([]);
+    for (let i = 0; i < 1000; i++) await tmdbRelated('k', 'movie', i, 'recommendations');
+    getRelatedIds.mockClear();
+    await tmdbRelated('k', 'movie', 999, 'recommendations');
+    expect(getRelatedIds).not.toHaveBeenCalled();
+    await tmdbRelated('k', 'movie', 0, 'recommendations');
+    expect(getRelatedIds).toHaveBeenCalledTimes(1);
+  });
 });
 

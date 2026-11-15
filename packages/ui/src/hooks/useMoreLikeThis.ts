@@ -10,7 +10,7 @@ import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
 import { useDedupedMovies, useDedupedSeries } from './useVodDedup';
 import { useGroupedVodCategories } from './useVodCategories';
-import { pickMoreLikeThis, shouldAskSimilar } from '../utils/moreLikeThis';
+import { pickMoreLikeThis, relatedLibraryReady, shouldAskSimilar } from '../utils/moreLikeThis';
 import type { StoredMovie, StoredSeries } from '../db';
 
 interface Related { key: string; ids: number[]; failed: boolean }
@@ -56,7 +56,7 @@ export function useMoreLikeThis(type: 'movie' | 'series', tmdbId: number | undef
     () => (type === 'movie' ? dedupedMovies : dedupedSeries).map((d) => d.item),
     [type, dedupedMovies, dedupedSeries],
   );
-  const libraryReady = rows !== undefined && !(allIds.length && stale);
+  const libraryReady = relatedLibraryReady(allIds.length, data, stale);
 
   useEffect(() => {
     if (shouldAskSimilar({ recs, similarAsked: askSimilar === key, library: libraryReady ? library : null, adultCategoryIds, selfTmdbId: tmdbId })) {

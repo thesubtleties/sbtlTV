@@ -184,4 +184,30 @@ describe('hover prefetch warms More like this', () => {
     await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
     expect(related).toHaveBeenCalledTimes(1);
   });
+
+  it('a failed recommendations request is swallowed and the rest of the warm-up still runs', async () => {
+    const { deps, calls } = setup();
+    // A plain function, not vi.fn: a spy attaches its own handler to the promise, which would hide an
+    // unhandled rejection (vitest fails the run on one).
+    const asked: unknown[][] = [];
+    const related = async (...args: unknown[]) => { asked.push(args); throw new Error('429'); };
+    const prefetch = createHoverPrefetch({ ...deps, related });
+    prefetch.enter(series());
+    await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
+    expect(asked).toEqual([['key', 'series', 1399]]);
+    expect(calls).toContain('credits series 1399');
+    expect(calls).toContain('preload img/fetched.jpg');
+  });
+
+  it('a title without a TMDB id is never asked for, even with a key; movies are asked as movies', async () => {
+    const { deps } = setup();
+    const related = vi.fn(async () => []);
+    const prefetch = createHoverPrefetch({ ...deps, related });
+    prefetch.enter(series({ tmdbId: null }));
+    await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
+    expect(related).not.toHaveBeenCalled();
+    prefetch.enter(series({ kind: 'movie', tmdbId: 603, seriesId: null }));
+    await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
+    expect(related).toHaveBeenCalledWith('key', 'movie', 603);
+  });
 });

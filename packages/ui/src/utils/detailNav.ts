@@ -18,6 +18,16 @@ export type DetailNavAction<T> =
   | { type: 'back' }
   | { type: 'home' };
 
+/**
+ * Chromium may follow the mouse back button with a history popstate; a popstate this soon after the
+ * mouse back is that same step, not a second one.
+ */
+export const MOUSE_BACK_ECHO_MS = 1000;
+
+export function isMouseBackEcho(now: number, mouseBackAt: number, windowMs = MOUSE_BACK_ECHO_MS): boolean {
+  return now - mouseBackAt < windowMs;
+}
+
 /** Keeps the trail from growing without bound on long More like this chains. */
 export const MAX_TRAIL = 50;
 
