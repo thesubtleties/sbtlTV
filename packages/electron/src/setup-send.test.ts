@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sendBody } from './setup-send.js';
+import { gzipSync } from 'node:zlib';
+import { MAX_RECEIVED_BYTES, packSetup, unpackSetup, sendBody } from './setup-send.js';
 import { validateSetupBody, type SetupBody } from './setup-body.js';
 
 const base: SetupBody = {
@@ -39,4 +40,13 @@ test('a just-for-this-send login travels even without the logins part', () => {
   const out = sendBody({ ...base, includes: [], sources: undefined }, { parts: [], sourceIds: null, extras: { sources: [{ name: 'G', type: 'xtream', url: 'http://g.example', username: 'g', password: 'pw' }], apiKeys: {} } }, newId);
   assert.ok(out.includes.includes('logins'));
   assert.equal(out.sources?.[0].password, 'pw');
+});
+
+test('a received setup unpacks only within its size limit (no zip bomb)', () => {
+  const body = sendBody(base, { parts: ['sources'], sourceIds: null, extras: { sources: [], apiKeys: {} } }, newId);
+  assert.deepEqual(unpackSetup(packSetup(body)), validateSetupBody(body));
+  const bomb = gzipSync(Buffer.alloc(MAX_RECEIVED_BYTES + 1, 32));
+  assert.ok(bomb.length < 1024 * 1024);
+  assert.throws(() => unpackSetup(bomb));
+  assert.throws(() => unpackSetup(Buffer.from('not gzip')));
 });

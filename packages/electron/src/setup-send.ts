@@ -2,7 +2,20 @@
  * The body for Send to a device: the picked parts of this computer's setup (only the picked
  * sources), plus providers and keys typed in just for this send (never saved here). Pure.
  */
-import type { SetupBody, SetupPart, SetupSource } from './setup-body.js';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { validateSetupBody, type SetupBody, type SetupPart, type SetupSource } from './setup-body.js';
+
+/** A received setup may unpack to at most this (the sealed drop is at most 2 MB; this stops a zip bomb). */
+export const MAX_RECEIVED_BYTES = 64 * 1024 * 1024;
+
+export function packSetup(body: SetupBody): Buffer {
+  return gzipSync(Buffer.from(JSON.stringify(body)));
+}
+
+/** Throws on anything that isn't a valid setup within the size limit. */
+export function unpackSetup(payload: Buffer): SetupBody {
+  return validateSetupBody(JSON.parse(gunzipSync(payload, { maxOutputLength: MAX_RECEIVED_BYTES }).toString('utf8')));
+}
 
 export interface SendExtras {
   sources: Omit<SetupSource, 'id' | 'enabled'>[];

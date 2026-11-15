@@ -4,11 +4,10 @@
  * Bundled by esbuild (scripts/bundle-data.mjs) because it imports @sbtltv/mailbox (TypeScript).
  */
 import { app, ipcMain, net } from 'electron';
-import { gunzipSync, gzipSync } from 'node:zlib';
 import { randomUUID } from 'node:crypto';
 import { Receiver, Sender, Transport, type ReceiveState, type SendState } from '@sbtltv/mailbox/client';
 import { buildBody } from '../setup-transfer.js';
-import { sendBody, type SendSelection } from '../setup-send.js';
+import { packSetup, sendBody, unpackSetup, type SendSelection } from '../setup-send.js';
 import { validateSetupBody, type SetupBody, type SetupPreview, type UserLists } from '../setup-body.js';
 import { EFF_WORDS } from '../eff-wordlist.js';
 
@@ -43,7 +42,7 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
       if (r !== receiver) return;   // an older knock finishing after a restart
       if (s.step === 'received') {
         try {
-          staged = deps.stage(validateSetupBody(JSON.parse(gunzipSync(s.payload).toString('utf8'))));
+          staged = deps.stage(unpackSetup(s.payload));
           deps.log('Mailbox: setup received');
         } catch {
           receiveFailed = true;
@@ -64,7 +63,7 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
       role = 'send';
       const base = buildBody(sel.parts, sel.lists ?? {}, sel.playlists ?? {});
       const body = validateSetupBody(sendBody(base, sel, randomUUID));
-      pending = gzipSync(Buffer.from(JSON.stringify(body)));
+      pending = packSetup(body);
       const s = new Sender(transport(), EFF_WORDS, (st: SendState) => {
         if (s !== sender) return;
         if (st.step === 'received') deps.log('Mailbox: send picked up');
