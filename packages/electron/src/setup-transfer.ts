@@ -9,7 +9,7 @@ import path from 'node:path';
 import * as storage from './storage.js';
 import { newPassphrase, normalisePassphrase } from './setup-passphrase.js';
 import { SetupFileError, openWithKeyring, openWithPassphrase, readHeader, sealWithKeyring, sealWithPassphrase } from './setup-file.js';
-import { buildSetupBody, describeSetup, explainExportProblem, validateSetupBody, type SetupBody, type SetupPart, type UserLists } from './setup-body.js';
+import { buildSetupBody, describeSetup, explainExportProblem, validateSetupBody, type SetupBody, type SetupPart, type SetupPreview, type UserLists } from './setup-body.js';
 import { CACHE_RESET_MARKER, PENDING_PLAYLISTS, backupLabel, backupName, backupsToPrune } from './setup-backups.js';
 
 const MAX_FILE = 512 * 1024 * 1024;
@@ -31,7 +31,7 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function buildBody(parts: SetupPart[], lists: UserLists, playlists: Record<string, string>): SetupBody {
+export function buildBody(parts: SetupPart[], lists: UserLists, playlists: Record<string, string>): SetupBody {
   const pending = Object.fromEntries(readPending().map((p) => [p.sourceId, p.content]));
   const body = buildSetupBody(parts, storage.readSetupForExport(), lists, playlists,
     { app: app.getVersion(), exportedAt: new Date().toISOString(), platform: process.platform }, pending);
@@ -59,7 +59,7 @@ function readPending(): { sourceId: string; content: string }[] {
   }
 }
 
-export function registerSetupTransfer(deps: { window: () => BrowserWindow | null; relaunch: () => void; log: (m: string) => void }): void {
+export function registerSetupTransfer(deps: { window: () => BrowserWindow | null; relaunch: () => void; log: (m: string) => void }): { stage(body: SetupBody): { token: string; preview: SetupPreview } } {
   const picked = new Map<string, { file: Buffer; body?: SetupBody }>();
   let lastExport: string | null = null;
 
@@ -190,4 +190,13 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
     else fs.rmSync(file, { force: true });
   });
 
+  return {
+    // A setup received through the mailbox: staged like an opened file, applied by setup:apply
+    stage(body: SetupBody) {
+      const token = randomUUID();
+      picked.clear();
+      picked.set(token, { file: Buffer.alloc(0), body });
+      return { token, preview: describeSetup(body) };
+    },
+  };
 }

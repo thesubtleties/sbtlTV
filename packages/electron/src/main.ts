@@ -33,6 +33,7 @@ import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
 import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
 import { registerSetupTransfer } from './setup-transfer.js';
+import { registerMailbox } from './mailbox/mailbox-ipc.js';
 import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { makeZip } from './zip-writer.js';
 const { autoUpdater } = electronUpdater;
@@ -2617,11 +2618,13 @@ ipcMain.handle('privacy-switch-keyring', (_event, keyring: unknown) => {
 });
 
 // Settings > Backup & transfer (setup-transfer.ts)
-registerSetupTransfer({
+const setupTransfer = registerSetupTransfer({
   window: () => mainWindow,
   relaunch: () => restartApp(),
   log: (m) => debugLog(m, 'setup'),
 });
+// Settings > Sync & transfer: send and receive through the mailbox (mailbox/mailbox-ipc.ts)
+registerMailbox({ stage: setupTransfer.stage, log: (m) => debugLog(m, 'mailbox') });
 
 // A failure is logged by its reason only, never with an address.
 ipcMain.handle('privacy-check-ip', async () => {

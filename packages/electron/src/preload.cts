@@ -305,6 +305,16 @@ contextBridge.exposeInMainWorld('setup', {
   settlePlaylists: (sourceIds: string[]) => ipcRenderer.invoke('setup:settlePlaylists', sourceIds),
 });
 
+// Settings > Sync & transfer: Send to a device / Show my code
+contextBridge.exposeInMainWorld('mailbox', {
+  receive: () => ipcRenderer.invoke('mailbox:receive'),
+  send: (sel: unknown, code: string) => ipcRenderer.invoke('mailbox:send', sel, code),
+  confirm: () => ipcRenderer.invoke('mailbox:confirm'),
+  sameWords: () => ipcRenderer.invoke('mailbox:sameWords'),
+  cancel: () => ipcRenderer.invoke('mailbox:cancel'),
+  state: () => ipcRenderer.invoke('mailbox:state'),
+});
+
 // Colors the desktop provides, for Settings > Appearance
 interface DesktopColors {
   accent: string | null;
