@@ -28,9 +28,10 @@ export interface MovieDetailProps {
   onPlay?: (movie: StoredMovie, plot?: string | null) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
   onSelectRelated?: (movie: StoredMovie) => void; // a title picked in More like this
+  onBack?: () => void; // one title back; only when opened from More like this
 }
 
-export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, apiKey, onSelectRelated }: MovieDetailProps) {
+export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, apiKey, onSelectRelated, onBack }: MovieDetailProps) {
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -101,7 +102,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
       </div>
 
       {/* Header with back button and collapse */}
-      <DetailHeader className="movie-detail" onBack={onClose} onCollapse={onCollapse} />
+      <DetailHeader className="movie-detail" onHome={onClose} onBack={onBack} onCollapse={onCollapse} />
 
       {/* Content */}
       <div className="movie-detail__content">

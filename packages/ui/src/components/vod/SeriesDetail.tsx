@@ -5,7 +5,7 @@
  * and episode list. Slides in as a full page, not a modal.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
 import { DetailHeader } from './DetailHeader';
@@ -32,9 +32,10 @@ export interface SeriesDetailProps {
   onPlayEpisode?: (info: VodPlayInfo) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
   onSelectRelated?: (series: StoredSeries) => void; // a title picked in More like this
+  onBack?: () => void; // one title back; only when opened from More like this
 }
 
-export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey, onSelectRelated }: SeriesDetailProps) {
+export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey, onSelectRelated, onBack }: SeriesDetailProps) {
   const seriesKey = series.tmdb_id?.toString() ?? series.series_id;
   const rememberedSeason = useUIStore((s) => s.seriesSeasonMap[seriesKey]);
   const setSeriesSeason = useUIStore((s) => s.setSeriesSeason);
@@ -75,11 +76,12 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
     }
   }, [seasonNumbers, selectedSeason, setSelectedSeason]);
 
-  // Clear remembered season and close (back button / escape)
+  // Leaving this series (Home, Esc, or Back to the title before) forgets its remembered season
   const handleBack = useCallback(() => {
     clearSeriesSeason(seriesKey);
     onClose();
   }, [clearSeriesSeason, seriesKey, onClose]);
+  const handleBackOne = useMemo(() => (onBack ? () => { clearSeriesSeason(seriesKey); onBack(); } : undefined), [onBack, clearSeriesSeason, seriesKey]);
 
   // Handle escape key
   useEffect(() => {
@@ -162,7 +164,7 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
       </div>
 
       {/* Header with back button and collapse */}
-      <DetailHeader className="series-detail" onBack={handleBack} onCollapse={onCollapse} />
+      <DetailHeader className="series-detail" onHome={handleBack} onBack={handleBackOne} onCollapse={onCollapse} />
 
       {/* Content */}
       <div className="series-detail__content">

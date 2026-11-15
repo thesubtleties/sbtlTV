@@ -16,7 +16,7 @@ import {
 } from './tmdb';
 
 type Kind = 'movie' | 'series';
-const MAX_ENTRIES = 200;   // credits answers are large; 200 titles is plenty for a session
+const MAX_ENTRIES = 400;   // up to 3 per title (details, credits, related): about 130 titles
 const entries = new Map<string, Promise<unknown>>();
 
 function shared<T>(key: string, load: () => Promise<T>): Promise<T> {

@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, useReducer } from 'react';
+import { detailNav } from '../utils/detailNav';
 import { Virtuoso } from 'react-virtuoso';
 import { HeroSection } from './vod/HeroSection';
 import { HorizontalCarousel } from './vod/HorizontalCarousel';
@@ -108,7 +109,7 @@ const homeVirtuosoComponents = {
 // Animation state machine for VodPage enter/exit/collapse transitions
 function useVodPageAnimation(
   selectedItem: MediaItem | null,
-  setSelectedItem: (item: MediaItem | null) => void,
+  closeDetail: () => void,
   setPageCollapsed: (collapsed: boolean) => void,
   onClose?: () => void,
 ) {
@@ -155,14 +156,14 @@ function useVodPageAnimation(
   // Back handler - close detail if open, otherwise slide page down
   const handlePageBack = useCallback(() => {
     if (selectedItem) {
-      setSelectedItem(null);
+      closeDetail();
     } else {
       setPageCollapsed(true);
       setTimeout(() => {
         onClose?.();
       }, SLIDE_DURATION_MS);
     }
-  }, [selectedItem, setSelectedItem, setPageCollapsed, onClose]);
+  }, [selectedItem, closeDetail, setPageCollapsed, onClose]);
 
   return { isEntering, pageContentVisible, handleCollapsePage, handlePageBack };
 }
@@ -180,21 +181,27 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     searchQuery, setSearchQuery,
     scrollPosition, setScrollPosition,
     detailItem, setDetailItem: setDetailItemStore,
+    detailTrail, setDetailTrail,
     isPageCollapsed, setPageCollapsed,
   } = useVodNavigation(type);
 
-  // Local selected item state, initialized from store
-  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(detailItem);
+  // The open title and the trail behind it (More like this), initialized from the store
+  const [nav, dispatchNav] = useReducer(detailNav<MediaItem>, { current: detailItem, trail: detailTrail });
+  const selectedItem = nav.current;
+  const goHome = useCallback(() => dispatchNav({ type: 'home' }), []);
+  const goBack = useCallback(() => dispatchNav({ type: 'back' }), []);
+  const openDetail = useCallback((item: MediaItem) => dispatchNav({ type: 'open', item }), []);
   const [scrollTopNonce, setScrollTopNonce] = useState(0);
 
   // Sync selected item back to store
   useEffect(() => {
-    setDetailItemStore(selectedItem);
-  }, [selectedItem, setDetailItemStore]);
+    setDetailItemStore(nav.current);
+    setDetailTrail(nav.trail);
+  }, [nav, setDetailItemStore, setDetailTrail]);
 
   // Animation state machine (enter/exit/collapse transitions)
   const { isEntering, pageContentVisible, handleCollapsePage, handlePageBack } =
-    useVodPageAnimation(selectedItem, setSelectedItem, setPageCollapsed, onClose);
+    useVodPageAnimation(selectedItem, goHome, setPageCollapsed, onClose);
 
   // All home view data (TMDB lists, watchlist, categories, genres)
   const {
@@ -308,17 +315,10 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     type,
   ]);
 
-  // Titles opened from More like this stack up: Back (and Esc, mouse back, browser back) returns
-  // to the one before. Opening anything from the home page starts a fresh stack.
-  const detailStack = useRef<MediaItem[]>([]);
-  const handleItemClick = useCallback((item: MediaItem) => {
-    detailStack.current = [];
-    setSelectedItem(item);
-  }, []);
-  const handleSelectRelated = useCallback((item: MediaItem) => {
-    if (selectedItem) detailStack.current.push(selectedItem);
-    setSelectedItem(item);
-  }, [selectedItem]);
+  // Titles opened from More like this go on a trail: Back (and the mouse and browser back) returns
+  // to the one before, Home leaves the detail. Anything opened elsewhere starts a fresh trail.
+  const handleItemClick = openDetail;
+  const handleSelectRelated = useCallback((item: MediaItem) => dispatchNav({ type: 'openRelated', item }), []);
 
   const handlePlay = useCallback((info: VodPlayInfo) => {
     if (onPlay) {
@@ -331,9 +331,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     }
   }, [onPlay, setPageCollapsed]);
 
-  const handleCloseDetail = useCallback(() => {
-    setSelectedItem(detailStack.current.pop() ?? null);
-  }, []);
+
 
   // Handle hero play button - movies play directly, series open detail
   const handleHeroPlay = useCallback((item: MediaItem) => {
@@ -350,9 +348,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         sourceId: movie.source_id,
       });
     } else {
-      setSelectedItem(item);
+      openDetail(item);
     }
-  }, [type, handlePlay]);
+  }, [type, handlePlay, openDetail]);
 
   const handleContinuePlay = useCallback((it: ContinueItem) => {
     if (it.kind === 'movie') {
@@ -366,9 +364,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       handlePlay(it.playInfo);
     } else {
       // fallback: open detail if we couldn't resolve the resume episode
-      setSelectedItem(it.media);
+      openDetail(it.media);
     }
-  }, [handlePlay]);
+  }, [handlePlay, openDetail]);
 
   const handleContinueRemove = useCallback((it: ContinueItem) => {
     if (it.kind === 'movie') clearOne(it.key);
@@ -396,26 +394,29 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {
-    detailStack.current = [];
-    setSelectedItem(null);
+    goHome();
     if (id === selectedCategoryId) {
       setScrollTopNonce((n) => n + 1);   // re-click active category → scroll grid to top
     } else {
       setSelectedCategoryId(id);
     }
-  }, [selectedCategoryId, setSelectedCategoryId, setSelectedItem]);
+  }, [selectedCategoryId, setSelectedCategoryId, goHome]);
 
-  // Handle mouse back button and browser back - close detail view
+  const mouseBackAt = useRef(-Infinity);
+  // Mouse back button and browser back: one title back (or out of the detail)
   useEffect(() => {
     const handleMouseBack = (e: MouseEvent) => {
       if (e.button === 3 && selectedItem) {
         e.preventDefault();
-        handleCloseDetail();
+        // Chromium may also go back in history for this button; that popstate is the same step.
+        mouseBackAt.current = performance.now();
+        goBack();
       }
     };
 
     const handlePopState = () => {
-      if (selectedItem) handleCloseDetail();
+      if (performance.now() - mouseBackAt.current < 1000) return;
+      if (selectedItem) goBack();
     };
 
     window.addEventListener('mousedown', handleMouseBack);
@@ -430,7 +431,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       window.removeEventListener('mousedown', handleMouseBack);
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [selectedItem, handleCloseDetail]);
+  }, [selectedItem, goBack]);
 
   // Labels
   const typeLabel = type === 'movie' ? 'Movies' : 'Series';
@@ -515,7 +516,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
           key={(selectedItem as StoredMovie).stream_id}
           movie={selectedItem as StoredMovie}
           onSelectRelated={handleSelectRelated}
-          onClose={handleCloseDetail}
+          onClose={goHome}
+          onBack={nav.trail.length ? goBack : undefined}
           onCollapse={handleCollapsePage}
           isCollapsed={isEntering || isPageCollapsed}
           onPlay={(movie, plot) => handlePlay({
@@ -536,7 +538,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
           key={(selectedItem as StoredSeries).series_id}
           series={selectedItem as StoredSeries}
           onSelectRelated={handleSelectRelated}
-          onClose={handleCloseDetail}
+          onClose={goHome}
+          onBack={nav.trail.length ? goBack : undefined}
           onCollapse={handleCollapsePage}
           isCollapsed={isEntering || isPageCollapsed}
           onPlayEpisode={handlePlay}

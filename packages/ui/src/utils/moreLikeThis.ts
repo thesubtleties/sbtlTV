@@ -38,8 +38,20 @@ export function pickMoreLikeThis<T extends { tmdb_id?: number; category_ids: str
   return picked.length >= min ? picked : [];
 }
 
-/** How many of these ids the library has (to decide whether to ask for similar titles too). */
-export function countInLibrary(ids: number[], library: { tmdb_id?: number }[], selfTmdbId: number | undefined): number {
-  const have = new Set(library.map((it) => it.tmdb_id));
-  return new Set(ids.filter((id) => id !== selfTmdbId && have.has(id))).size;
+/**
+ * Whether to also ask TMDB for similar titles. Only once the recommendations for this title are in
+ * (and didn't fail), the library answer is for those ids, and the categories are known; then only
+ * when the row would have fewer than `enough` titles by the row's own rules.
+ */
+export function shouldAskSimilar<T extends { tmdb_id?: number; category_ids: string[] }>(p: {
+  recs: { ids: number[]; failed: boolean } | null;
+  similarAsked: boolean;
+  library: T[] | null; // null = not loaded for these ids yet
+  adultCategoryIds: Set<string> | null;
+  selfTmdbId: number | undefined;
+  enough?: number;
+}): boolean {
+  const { recs, similarAsked, library, adultCategoryIds, selfTmdbId, enough = MORE_LIKE_THIS_ENOUGH } = p;
+  if (!recs || recs.failed || similarAsked || !library || !adultCategoryIds) return false;
+  return pickMoreLikeThis(recs.ids, library, adultCategoryIds, selfTmdbId, { min: 0, max: enough }).length < enough;
 }

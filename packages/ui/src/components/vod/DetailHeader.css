@@ -1,0 +1,5 @@
+/* Home, then Back (when there is a title to go back to), side by side */
+.detail-header__nav {
+  display: flex;
+  gap: 8px;
+}
