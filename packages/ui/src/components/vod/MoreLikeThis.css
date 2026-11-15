@@ -19,3 +19,16 @@
 .more-like-this--tab .carousel__title {
   visibility: hidden;
 }
+
+/* Moved up over the tab line: the row lets clicks through to the tabs, except its arrows and the
+   cards' scroll area (which starts below the tabs) */
+.more-like-this--tab,
+.more-like-this--tab .carousel,
+.more-like-this--tab .carousel__header {
+  pointer-events: none;
+}
+
+.more-like-this--tab .carousel > :not(.carousel__header),
+.more-like-this--tab .carousel__header button {
+  pointer-events: auto;
+}
