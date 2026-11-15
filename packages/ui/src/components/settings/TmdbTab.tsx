@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { validateAccessToken } from '../../services/tmdb';
+import { useTmdbKeyHealth } from '../../services/tmdbKeyHealth';
 import { useUpdateSettings } from '../../stores/uiStore';
 import { KeyField, OptionRow, Section, SettingsTab } from './ui';
 import tmdbLogo from '../../assets/tmdb-logo.svg';
@@ -20,6 +21,7 @@ export function TmdbTab({
 }: TmdbTabProps) {
   const [tmdbValidating, setTmdbValidating] = useState(false);
   const updateSettings = useUpdateSettings();
+  const keyStopped = useTmdbKeyHealth((s) => s.stopped);
 
   async function saveTmdbApiKey() {
     if (!window.storage) return;
@@ -65,6 +67,7 @@ export function TmdbTab({
             onSave={() => void saveTmdbApiKey()}
           />
         </OptionRow>
+        {keyStopped && <p className="st-hint st-hint--danger">TMDB rejected this token, so TMDB requests are paused. Save a new one or restart the app to try again.</p>}
         {/* TMDB's attribution terms: their logo plus this notice */}
         <div className="tmdb-attribution">
           <img src={tmdbLogo} alt="TMDB" className="tmdb-attribution__logo" />

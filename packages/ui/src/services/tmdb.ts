@@ -9,6 +9,7 @@
  */
 
 import { TMDB } from 'tmdb-ts';
+import { noteTmdbResult, resetTmdbKeyHealth, tmdbKeyStopped, TmdbKeyStoppedError } from './tmdbKeyHealth';
 
 // TMDB image base URLs
 export const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
@@ -43,10 +44,37 @@ let currentAccessToken: string | null = null;
  */
 export function getTmdb(accessToken: string): TMDB {
   if (!tmdbInstance || currentAccessToken !== accessToken) {
-    tmdbInstance = new TMDB(accessToken);
+    if (currentAccessToken !== null && currentAccessToken !== accessToken) resetTmdbKeyHealth();
+    tmdbInstance = watchKeyHealth(new TMDB(accessToken));
     currentAccessToken = accessToken;
   }
   return tmdbInstance;
+}
+
+/**
+ * Every endpoint call reports to tmdbKeyHealth, and fails at once without a request once the key
+ * has been set aside (tmdb.movies.details(...) → the same call, watched).
+ */
+function watchKeyHealth(tmdb: TMDB): TMDB {
+  return new Proxy(tmdb, {
+    get(target, prop, receiver) {
+      const endpoint: unknown = Reflect.get(target, prop, receiver);
+      if (typeof endpoint !== 'object' || endpoint === null) return endpoint;
+      return new Proxy(endpoint, {
+        get(ep, name, epReceiver) {
+          const fn: unknown = Reflect.get(ep, name, epReceiver);
+          if (typeof fn !== 'function') return fn;
+          return (...args: unknown[]) => {
+            if (tmdbKeyStopped()) return Promise.reject(new TmdbKeyStoppedError());
+            return (fn.apply(ep, args) as Promise<unknown>).then(
+              (out) => { noteTmdbResult(undefined); return out; },
+              (err: unknown) => { noteTmdbResult(err); throw err; },
+            );
+          };
+        },
+      });
+    },
+  });
 }
 
 /**
@@ -60,6 +88,7 @@ export function isTmdbConfigured(): boolean {
  * Clear TMDB instance (for logout/key change)
  */
 export function clearTmdb(): void {
+  resetTmdbKeyHealth();
   tmdbInstance = null;
   currentAccessToken = null;
 }
@@ -355,6 +384,7 @@ export async function validateAccessToken(accessToken: string): Promise<boolean>
   try {
     const tmdb = new TMDB(accessToken);
     await tmdb.configuration.getApiConfiguration();
+    resetTmdbKeyHealth(); // a key that just passed gets a fresh start
     return true;
   } catch {
     return false;
@@ -679,6 +709,18 @@ export async function getRelatedIds(
 ): Promise<number[]> {
   const tmdb = getTmdb(accessToken);
   const endpoint = kind === 'movie' ? tmdb.movies : tmdb.tvShows;
-  const page = which === 'recommendations' ? await endpoint.recommendations(tmdbId) : await endpoint.similar(tmdbId);
-  return (page.results ?? []).map((r: { id: number }) => r.id);
+  const page: { results?: unknown } = which === 'recommendations' ? await endpoint.recommendations(tmdbId) : await endpoint.similar(tmdbId);
+  return relatedIdsFrom(page.results);
+}
+
+/** Positive integer ids only (a bad entry would make the library query refuse the whole list), at most 40. */
+export function relatedIdsFrom(results: unknown): number[] {
+  if (!Array.isArray(results)) return [];
+  const ids: number[] = [];
+  for (const r of results) {
+    const id = (r as { id?: unknown } | null)?.id;
+    if (typeof id === 'number' && Number.isInteger(id) && id > 0) ids.push(id);
+    if (ids.length >= 40) break;
+  }
+  return ids;
 }
