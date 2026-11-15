@@ -1,0 +1,94 @@
+import { describe, expect, it } from 'vitest';
+import { createApp } from '../src/server/app';
+import { Receiver, Sender, Transport, type ReceiveState, type SendState } from '../src/client';
+
+const WORDS = Array.from({ length: 7776 }, (_, i) => `w${i}`);
+const until = async (pred: () => boolean, ms = 5000) => {
+  const t0 = Date.now();
+  while (!pred()) { if (Date.now() - t0 > ms) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 5)); }
+};
+const transport = (fetch: (r: Request) => Promise<Response>, version = '0.17.0') => new Transport({ base: 'http://mailbox', version, bits: 4, fetch });
+
+function pair() {
+  const { app } = createApp({ powBits: 4, minVersion: '0.17.0' });
+  const f = (r: Request) => Promise.resolve(app.fetch(r));
+  const rx: ReceiveState[] = []; const tx: SendState[] = [];
+  const receiver = new Receiver(transport(f), WORDS, (s) => rx.push(s), { pollMs: 5 });
+  const sender = new Sender(transport(f), WORDS, (s) => tx.push(s), { pollMs: 5 });
+  return { app, f, receiver, sender, rx, tx };
+}
+const codeOf = (s: ReceiveState) => (s as { code: string }).code;
+
+describe('knock clients', () => {
+  it('send a payload end to end; both see the same words first', async () => {
+    const { receiver, sender, rx, tx } = pair();
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    void sender.ring(codeOf(receiver.state).toLowerCase());
+    await until(() => sender.state.step === 'words' && receiver.state.step === 'words');
+    expect((sender.state as { words: string[] }).words).toEqual((receiver.state as { words: string[] }).words);
+    void sender.confirm(Buffer.from('the setup'));
+    await until(() => receiver.state.step === 'received' && sender.state.step === 'received');
+    expect((receiver.state as { payload: Buffer }).payload.toString()).toBe('the setup');
+    expect(rx.map((s) => s.step)).toEqual(['starting', 'code', 'words', 'received']);
+    expect(tx.map((s) => s.step)).toEqual(['ringing', 'words', 'sending', 'sent', 'received']);
+  });
+
+  it('receiver cancelling shows up on the giver', async () => {
+    const { receiver, sender } = pair();
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    void sender.ring(codeOf(receiver.state));
+    await until(() => sender.state.step === 'words');
+    await receiver.cancel();
+    expect(receiver.state).toEqual({ step: 'failed', reason: 'cancelled' });
+    await until(() => sender.state.step === 'failed');
+    expect(sender.state).toEqual({ step: 'failed', reason: 'cancelled' });
+  });
+
+  it('an unknown, malformed or already used code fails cleanly', async () => {
+    const { receiver, sender, f } = pair();
+    await sender.ring('ZZZZ-ZZZZ');
+    expect(sender.state).toEqual({ step: 'failed', reason: 'not-found' });
+    await sender.ring('nope');
+    expect(sender.state).toEqual({ step: 'failed', reason: 'not-found' });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    const code = codeOf(receiver.state);
+    const second = new Sender(transport(f), WORDS, () => {}, { pollMs: 5 });
+    void sender.ring(code);
+    await until(() => sender.state.step === 'words');
+    await second.ring(code);
+    expect(second.state).toEqual({ step: 'failed', reason: 'not-found' });
+  });
+
+  it('a too-old app gets update; no network gets offline', async () => {
+    const { app } = createApp({ powBits: 4, minVersion: '9.0.0' });
+    const old = new Receiver(transport((r) => Promise.resolve(app.fetch(r))), WORDS, () => {});
+    await old.start();
+    expect(old.state).toEqual({ step: 'failed', reason: 'update' });
+    const offline = new Receiver(transport(() => Promise.reject(new TypeError('fetch failed'))), WORDS, () => {});
+    await offline.start();
+    expect(offline.state).toEqual({ step: 'failed', reason: 'offline' });
+  });
+
+  it('a server that swaps the receiver key is caught by the commitment', async () => {
+    const { app } = createApp({ powBits: 4, minVersion: '0.17.0' });
+    // Rewrites receiverKey in the giver's poll, like a hijacked server would
+    const evil = async (r: Request) => {
+      const res = await app.fetch(r);
+      if (r.method === 'GET' && r.url.includes('/v1/ring/')) {
+        const j = await res.clone().json();
+        if (j.receiverKey) j.receiverKey = Buffer.alloc(32, 7).toString('base64');
+        return new Response(JSON.stringify(j), { status: res.status, headers: { 'content-type': 'application/json' } });
+      }
+      return res;
+    };
+    const receiver = new Receiver(transport((r) => Promise.resolve(app.fetch(r))), WORDS, () => {}, { pollMs: 5 });
+    const sender = new Sender(transport(evil), WORDS, () => {}, { pollMs: 5 });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    await sender.ring(codeOf(receiver.state));
+    expect(sender.state).toEqual({ step: 'failed', reason: 'mismatch' });
+  });
+});
