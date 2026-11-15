@@ -236,6 +236,17 @@ export interface SetupApi {
   settlePlaylists: (sourceIds: string[]) => Promise<void>;
 }
 
+/** Settings > Sync & transfer: send or receive a setup through the sbtlTV mailbox. */
+export interface MailboxSendSource { name: string; type: 'xtream' | 'm3u'; url: string; username?: string; password?: string }
+export interface MailboxApi {
+  receive: () => Promise<{ success?: boolean; error?: string }>;
+  send: (sel: { parts: SetupPart[]; sourceIds: string[] | null; extras: { sources: MailboxSendSource[]; apiKeys: { tmdb?: string; posterDb?: string; subdl?: string } }; lists: SetupListsWire; playlists: Record<string, string> }, code: string) => Promise<{ success?: boolean; error?: string }>;
+  confirm: () => Promise<{ success?: boolean; error?: string }>;
+  sameWords: () => Promise<{ success?: boolean }>;
+  cancel: () => Promise<{ success?: boolean }>;
+  state: () => Promise<{ success: boolean; data: { role: 'send' | 'receive' | null; state: import('../utils/knockView').KnockState | null; staged?: { token: string; preview: SetupPreview } } }>;
+}
+
 export interface PrivacyApi {
   checkIp: () => Promise<{ success?: boolean; data?: IpCheckResult; error?: string }>;
   storageProtection: () => Promise<StorageProtection>;
@@ -424,6 +435,7 @@ declare global {
     appearance?: AppearanceApi;
     privacy?: PrivacyApi;
     setup?: SetupApi;
+    mailbox?: MailboxApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
     debug?: DebugApi;

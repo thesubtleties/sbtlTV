@@ -1,0 +1,34 @@
+.knock-code {
+  font-family: var(--font-mono, 'Fira Mono', monospace);
+  font-size: 28px;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  padding: 8px 0;
+  user-select: all;
+}
+
+.knock-words {
+  font-family: var(--font-mono, 'Fira Mono', monospace);
+  font-size: 20px;
+  color: var(--accent);
+  padding: 8px 0;
+}
+
+.knock-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.knock-panel__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.knock-draft {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px 0;
+}
