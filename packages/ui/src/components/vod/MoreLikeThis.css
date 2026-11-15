@@ -9,3 +9,13 @@
     margin: 32px -24px 0;
   }
 }
+
+/* Under the series page's tab: the tab names it, so the row's own title goes, and the row moves
+   up so its arrows sit level with the tabs and the cards start where the season picker would */
+.more-like-this--tab {
+  margin-top: -50px;
+}
+
+.more-like-this--tab .carousel__title {
+  visibility: hidden;
+}

@@ -1,21 +1,19 @@
 import { HorizontalCarousel } from './HorizontalCarousel';
-import { useMoreLikeThis } from '../../hooks/useMoreLikeThis';
 import type { StoredMovie, StoredSeries } from '../../db';
 import './MoreLikeThis.css';
 
 interface MoreLikeThisProps {
   type: 'movie' | 'series';
-  tmdbId: number | undefined;
-  apiKey: string | null | undefined;
+  items: (StoredMovie | StoredSeries)[]; // from useMoreLikeThis; empty = nothing rendered
   onSelect?: (item: StoredMovie | StoredSeries) => void;
+  inTab?: boolean; // under a "More like this" tab: the tab is the heading
 }
 
-/** TMDB's recommendations for this title that the user's library has; nothing without a TMDB key or with too few. */
-export function MoreLikeThis({ type, tmdbId, apiKey, onSelect }: MoreLikeThisProps) {
-  const items = useMoreLikeThis(type, tmdbId, apiKey);
+/** TMDB's recommendations for a title that the user's library has (see hooks/useMoreLikeThis). */
+export function MoreLikeThis({ type, items, onSelect, inTab }: MoreLikeThisProps) {
   if (items.length === 0) return null;
   return (
-    <section className="more-like-this" aria-label="More like this">
+    <section className={`more-like-this${inTab ? ' more-like-this--tab' : ''}`} aria-label="More like this">
       <HorizontalCarousel title="More like this" items={items} type={type} onItemClick={onSelect} />
     </section>
   );

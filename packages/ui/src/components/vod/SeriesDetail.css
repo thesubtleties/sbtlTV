@@ -614,3 +614,33 @@
 @media (prefers-reduced-motion: reduce) {
   .series-detail__refresh-button--spinning svg { animation: none; opacity: 0.5; }
 }
+
+/* Episodes | More like this */
+.series-detail__tabs {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.series-detail__tab {
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 0 0 10px;
+  cursor: pointer;
+}
+
+.series-detail__tab:hover {
+  color: var(--text);
+}
+
+.series-detail__tab--active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}

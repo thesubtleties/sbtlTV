@@ -18,6 +18,7 @@ import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
 import { EpisodeRow } from './EpisodeRow';
 import { MoreLikeThis } from './MoreLikeThis';
+import { useMoreLikeThis } from '../../hooks/useMoreLikeThis';
 import { useEpisodeProgressMap } from '../../hooks/useWatchProgress';
 import { useUIStore } from '../../stores/uiStore';
 import type { StoredMovie, StoredSeries, StoredEpisode } from '../../db';
@@ -49,6 +50,10 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
 
   // Fetch episodes (cross-source merge when tmdb_id matches multiple sources)
   const { seasons, loading, error, issues, hasEpisodes, refreshing, refetch } = useMergedEpisodes(series.series_id, series.tmdb_id);
+  // Episodes | More like this tabs; the tab only exists when there's a row to show
+  const related = useMoreLikeThis('series', series.tmdb_id, apiKey);
+  const [tab, setTab] = useState<'episodes' | 'more'>('episodes');
+  const activeTab = related.length > 0 ? tab : 'episodes';
   // A retry that fails at once (offline, blocked) still shows it tried.
   const [retryShown, setRetryShown] = useState(false);
   const retry = useCallback(() => {
@@ -238,6 +243,14 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
 
         {/* Episodes section */}
         <div className="series-detail__episodes-section">
+          {related.length > 0 && (
+            <div className="series-detail__tabs" role="tablist" aria-label="Series sections">
+              <button role="tab" aria-selected={activeTab === 'episodes'} className={`series-detail__tab${activeTab === 'episodes' ? ' series-detail__tab--active' : ''}`} onClick={() => setTab('episodes')}>Episodes</button>
+              <button role="tab" aria-selected={activeTab === 'more'} className={`series-detail__tab${activeTab === 'more' ? ' series-detail__tab--active' : ''}`} onClick={() => setTab('more')}>More like this</button>
+            </div>
+          )}
+          {activeTab === 'episodes' && (
+          <>
           {/* Season selector */}
           <div className="series-detail__season-selector">
             <label htmlFor="season-select">Season</label>
@@ -304,8 +317,12 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
-        <MoreLikeThis type="series" tmdbId={series.tmdb_id} apiKey={apiKey} onSelect={onSelectRelated as ((item: StoredMovie | StoredSeries) => void) | undefined} />
+        {activeTab === 'more' && (
+          <MoreLikeThis type="series" items={related} inTab onSelect={onSelectRelated as ((item: StoredMovie | StoredSeries) => void) | undefined} />
+        )}
       </div>
     </div>
   );

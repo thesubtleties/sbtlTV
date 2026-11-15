@@ -15,6 +15,7 @@ import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
 import { MoreLikeThis } from './MoreLikeThis';
+import { useMoreLikeThis } from '../../hooks/useMoreLikeThis';
 import { useMoviePlaySources } from '../../hooks/usePlayResolver';
 import { useMovieProgressByTmdb, useMovieProgress } from '../../hooks/useWatchProgress';
 import type { StoredMovie, StoredSeries } from '../../db';
@@ -49,6 +50,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
   const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(movie, apiKey);
   const lazyCredits = useLazyCredits(movie, apiKey);
 
+  const related = useMoreLikeThis('movie', movie.tmdb_id, apiKey);
   const playSources = useMoviePlaySources(movie.tmdb_id, movie.stream_id);
   const progressByTmdb = useMovieProgressByTmdb(movie.tmdb_id);
   const progressByStream = useMovieProgress(movie.stream_id);
@@ -218,7 +220,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
             )}
           </div>
         </div>
-        <MoreLikeThis type="movie" tmdbId={movie.tmdb_id} apiKey={apiKey} onSelect={onSelectRelated as ((item: StoredMovie | StoredSeries) => void) | undefined} />
+        <MoreLikeThis type="movie" items={related} onSelect={onSelectRelated as ((item: StoredMovie | StoredSeries) => void) | undefined} />
       </div>
     </div>
   );
