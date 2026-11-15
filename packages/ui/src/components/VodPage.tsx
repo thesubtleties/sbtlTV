@@ -446,6 +446,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     shouldPageBeCollapsed ? 'vod-page--collapsed' : '',
     // Hide page content when detail is animating out
     !pageContentVisible ? 'vod-page--content-hidden' : '',
+    // A detail covers the page: stop drawing what's under it
+    hasDetail ? 'vod-page--detail-open' : '',
   ].filter(Boolean).join(' ');
 
   return (
