@@ -644,3 +644,56 @@
   color: var(--text);
   border-bottom-color: var(--accent);
 }
+
+/* Tall windows: the poster, info, tabs and Season picker stay put and only the episode list
+   scrolls, in the space left below them. Short windows keep scrolling the whole page (a pinned
+   header would leave the list a sliver). */
+@media (min-height: 760px) {
+  .series-detail {
+    display: flex;
+    flex-direction: column;
+    overflow-y: hidden;
+  }
+
+  .series-detail__content {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+  }
+
+  .series-detail__main {
+    flex: none;
+  }
+
+  .series-detail__episodes-section {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* More like this tab: just the tab bar here, the row follows */
+  .series-detail__episodes-section--tabs-only {
+    flex: none;
+  }
+
+  .series-detail__tabs,
+  .series-detail__season-selector {
+    flex: none;
+  }
+
+  .series-detail__episodes {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 6px 32px 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--fill-3) transparent;
+    /* rows fade out under the Season picker instead of being cut */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
+    padding-top: 6px;
+  }
+}

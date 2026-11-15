@@ -242,7 +242,7 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
         </div>
 
         {/* Episodes section */}
-        <div className="series-detail__episodes-section">
+        <div className={`series-detail__episodes-section${activeTab === 'more' ? ' series-detail__episodes-section--tabs-only' : ''}`}>
           {related.length > 0 && (
             <div className="series-detail__tabs" role="tablist" aria-label="Series sections">
               <button role="tab" aria-selected={activeTab === 'episodes'} className={`series-detail__tab${activeTab === 'episodes' ? ' series-detail__tab--active' : ''}`} onClick={() => setTab('episodes')}>Episodes</button>
