@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { HeroSection } from './vod/HeroSection';
 import { HorizontalCarousel } from './vod/HorizontalCarousel';
@@ -308,9 +308,17 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     type,
   ]);
 
+  // Titles opened from More like this stack up: Back (and Esc, mouse back, browser back) returns
+  // to the one before. Opening anything from the home page starts a fresh stack.
+  const detailStack = useRef<MediaItem[]>([]);
   const handleItemClick = useCallback((item: MediaItem) => {
+    detailStack.current = [];
     setSelectedItem(item);
   }, []);
+  const handleSelectRelated = useCallback((item: MediaItem) => {
+    if (selectedItem) detailStack.current.push(selectedItem);
+    setSelectedItem(item);
+  }, [selectedItem]);
 
   const handlePlay = useCallback((info: VodPlayInfo) => {
     if (onPlay) {
@@ -324,7 +332,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   }, [onPlay, setPageCollapsed]);
 
   const handleCloseDetail = useCallback(() => {
-    setSelectedItem(null);
+    setSelectedItem(detailStack.current.pop() ?? null);
   }, []);
 
   // Handle hero play button - movies play directly, series open detail
@@ -388,6 +396,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {
+    detailStack.current = [];
     setSelectedItem(null);
     if (id === selectedCategoryId) {
       setScrollTopNonce((n) => n + 1);   // re-click active category → scroll grid to top
@@ -401,14 +410,12 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     const handleMouseBack = (e: MouseEvent) => {
       if (e.button === 3 && selectedItem) {
         e.preventDefault();
-        setSelectedItem(null);
+        handleCloseDetail();
       }
     };
 
     const handlePopState = () => {
-      if (selectedItem) {
-        setSelectedItem(null);
-      }
+      if (selectedItem) handleCloseDetail();
     };
 
     window.addEventListener('mousedown', handleMouseBack);
@@ -423,7 +430,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       window.removeEventListener('mousedown', handleMouseBack);
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [selectedItem]);
+  }, [selectedItem, handleCloseDetail]);
 
   // Labels
   const typeLabel = type === 'movie' ? 'Movies' : 'Series';
@@ -505,7 +512,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       {/* Detail modal */}
       {selectedItem && type === 'movie' && (
         <MovieDetail
+          key={(selectedItem as StoredMovie).stream_id}
           movie={selectedItem as StoredMovie}
+          onSelectRelated={handleSelectRelated}
           onClose={handleCloseDetail}
           onCollapse={handleCollapsePage}
           isCollapsed={isEntering || isPageCollapsed}
@@ -524,7 +533,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       )}
       {selectedItem && type === 'series' && (
         <SeriesDetail
+          key={(selectedItem as StoredSeries).series_id}
           series={selectedItem as StoredSeries}
+          onSelectRelated={handleSelectRelated}
           onClose={handleCloseDetail}
           onCollapse={handleCollapsePage}
           isCollapsed={isEntering || isPageCollapsed}

@@ -14,9 +14,10 @@ import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
+import { MoreLikeThis } from './MoreLikeThis';
 import { useMoviePlaySources } from '../../hooks/usePlayResolver';
 import { useMovieProgressByTmdb, useMovieProgress } from '../../hooks/useWatchProgress';
-import type { StoredMovie } from '../../db';
+import type { StoredMovie, StoredSeries } from '../../db';
 import './MovieDetail.css';
 
 export interface MovieDetailProps {
@@ -26,9 +27,10 @@ export interface MovieDetailProps {
   isCollapsed?: boolean;
   onPlay?: (movie: StoredMovie, plot?: string | null) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
+  onSelectRelated?: (movie: StoredMovie) => void; // a title picked in More like this
 }
 
-export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, apiKey }: MovieDetailProps) {
+export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, apiKey, onSelectRelated }: MovieDetailProps) {
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -215,6 +217,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
             )}
           </div>
         </div>
+        <MoreLikeThis type="movie" tmdbId={movie.tmdb_id} apiKey={apiKey} onSelect={onSelectRelated as ((item: StoredMovie | StoredSeries) => void) | undefined} />
       </div>
     </div>
   );

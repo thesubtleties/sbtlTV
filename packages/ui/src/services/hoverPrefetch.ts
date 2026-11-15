@@ -4,7 +4,8 @@
  *
  * - after DETAILS_DWELL_MS: TMDB details and credits the stored row lacks (only
  *   with a TMDB key; shared with the detail hooks, so nothing is fetched twice),
- *   then the backdrop image is preloaded (from stored data without a key).
+ *   then the backdrop image is preloaded (from stored data without a key), and TMDB's
+ *   recommendations for the More like this row.
  * - after EPISODES_DWELL_MS, series only: the episode list from the provider. The
  *   data process skips it when the stored list is under a day old, so a fresh
  *   series costs no provider request. The same series is not asked again for
@@ -37,6 +38,8 @@ export interface PrefetchTarget {
 export interface PrefetchDeps {
   details(apiKey: string, kind: 'movie' | 'series', tmdbId: number): Promise<{ backdrop_path?: string | null }>;
   credits(apiKey: string, kind: 'movie' | 'series', tmdbId: number): Promise<unknown>;
+  /** TMDB recommendations for the More like this row (optional). */
+  related?(apiKey: string, kind: 'movie' | 'series', tmdbId: number): Promise<unknown>;
   episodes(seriesId: string): Promise<unknown>;
   preload(url: string): void;
   now(): number;
@@ -80,6 +83,7 @@ export function createHoverPrefetch(deps: PrefetchDeps): HoverPrefetch {
         preload(t.backdropUrl(null));
       }
       if (t.needsCredits) deps.credits(apiKey, kind, tmdbId).catch(() => {});
+      deps.related?.(apiKey, kind, tmdbId).catch(() => {});
     } else {
       preload(t.backdropUrl(null));
     }

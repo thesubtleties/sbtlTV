@@ -1,0 +1,11 @@
+/* Under a detail page's info. The row brings its own 48px edge (like the home rows), so it
+   steps out of the detail content's side padding to line up with the page. */
+.more-like-this {
+  margin: 40px -48px 0;
+}
+
+@media (max-width: 768px) {
+  .more-like-this {
+    margin: 32px -24px 0;
+  }
+}

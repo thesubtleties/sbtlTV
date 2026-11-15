@@ -665,3 +665,20 @@ export async function getCachedTvGenreCounts(): Promise<Map<number, number>> {
 
   return counts;
 }
+
+// ===========================================================================
+// Related titles (direct API, with the user's key)
+// ===========================================================================
+
+/** TMDB ids of the first page of recommendations or similar titles, in TMDB's order. */
+export async function getRelatedIds(
+  accessToken: string,
+  kind: 'movie' | 'series',
+  tmdbId: number,
+  which: 'recommendations' | 'similar',
+): Promise<number[]> {
+  const tmdb = getTmdb(accessToken);
+  const endpoint = kind === 'movie' ? tmdb.movies : tmdb.tvShows;
+  const page = which === 'recommendations' ? await endpoint.recommendations(tmdbId) : await endpoint.similar(tmdbId);
+  return (page.results ?? []).map((r: { id: number }) => r.id);
+}

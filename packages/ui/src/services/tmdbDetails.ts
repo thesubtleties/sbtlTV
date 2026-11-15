@@ -9,6 +9,7 @@ import {
   getTvShowDetails,
   getMovieCredits,
   getTvShowCredits,
+  getRelatedIds,
   type TmdbMovieDetails,
   type TmdbTvDetails,
   type TmdbCredits,
@@ -42,6 +43,11 @@ export function tmdbDetails(apiKey: string, kind: Kind, tmdbId: number): Promise
 
 export function tmdbCredits(apiKey: string, kind: Kind, tmdbId: number): Promise<TmdbCredits> {
   return shared(`${kind}:${tmdbId}:credits`, () => (kind === 'movie' ? getMovieCredits(apiKey, tmdbId) : getTvShowCredits(apiKey, tmdbId)));
+}
+
+/** Ids of titles TMDB relates to this one ("More like this"), in TMDB's order. */
+export function tmdbRelated(apiKey: string, kind: Kind, tmdbId: number, which: 'recommendations' | 'similar'): Promise<number[]> {
+  return shared(`${kind}:${tmdbId}:${which}`, () => getRelatedIds(apiKey, kind, tmdbId, which));
 }
 
 /** Tests only. */

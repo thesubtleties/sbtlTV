@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useRef } from 'react';
 import { data } from '../data/client';
-import { tmdbDetails, tmdbCredits } from '../services/tmdbDetails';
+import { tmdbDetails, tmdbCredits, tmdbRelated } from '../services/tmdbDetails';
 import { createHoverPrefetch, prefetchTargetFor, EPISODES_MAX_AGE_MS } from '../services/hoverPrefetch';
 import { useTmdbApiKey } from '../stores/uiStore';
 import { useRpdbSettings } from './useRpdbSettings';
@@ -16,6 +16,7 @@ const recentImages: HTMLImageElement[] = [];
 const hoverPrefetch = createHoverPrefetch({
   details: (apiKey, kind, tmdbId) => tmdbDetails(apiKey, kind, tmdbId),
   credits: (apiKey, kind, tmdbId) => tmdbCredits(apiKey, kind, tmdbId),
+  related: (apiKey, kind, tmdbId) => tmdbRelated(apiKey, kind, tmdbId, 'recommendations'),
   episodes: (seriesId) => data.query({ type: 'syncEpisodes', seriesId, maxAgeMs: EPISODES_MAX_AGE_MS, prefetch: true }),
   preload: (url) => {
     const img = new Image();

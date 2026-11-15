@@ -17,9 +17,10 @@ import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
 import { EpisodeRow } from './EpisodeRow';
+import { MoreLikeThis } from './MoreLikeThis';
 import { useEpisodeProgressMap } from '../../hooks/useWatchProgress';
 import { useUIStore } from '../../stores/uiStore';
-import type { StoredSeries, StoredEpisode } from '../../db';
+import type { StoredMovie, StoredSeries, StoredEpisode } from '../../db';
 import type { VodPlayInfo } from '../../types/media';
 import './SeriesDetail.css';
 
@@ -30,9 +31,10 @@ export interface SeriesDetailProps {
   isCollapsed?: boolean;
   onPlayEpisode?: (info: VodPlayInfo) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
+  onSelectRelated?: (series: StoredSeries) => void; // a title picked in More like this
 }
 
-export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey }: SeriesDetailProps) {
+export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayEpisode, apiKey, onSelectRelated }: SeriesDetailProps) {
   const seriesKey = series.tmdb_id?.toString() ?? series.series_id;
   const rememberedSeason = useUIStore((s) => s.seriesSeasonMap[seriesKey]);
   const setSeriesSeason = useUIStore((s) => s.setSeriesSeason);
@@ -301,6 +303,7 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
             )}
           </div>
         </div>
+        <MoreLikeThis type="series" tmdbId={series.tmdb_id} apiKey={apiKey} onSelect={onSelectRelated as ((item: StoredMovie | StoredSeries) => void) | undefined} />
       </div>
     </div>
   );

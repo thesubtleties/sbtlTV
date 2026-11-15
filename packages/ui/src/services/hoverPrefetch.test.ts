@@ -168,3 +168,20 @@ describe('hover prefetch failures', () => {
     expect(deps.episodes).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('hover prefetch warms More like this', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('asks for recommendations with a key, once per dwell, never without one', async () => {
+    const { deps } = setup();
+    const related = vi.fn(async () => [1, 2, 3]);
+    const prefetch = createHoverPrefetch({ ...deps, related });
+    prefetch.enter(series({ needsDetails: false, needsCredits: false, backdropUrl: () => null }));
+    await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
+    expect(related).toHaveBeenCalledWith('key', 'series', 1399);
+    prefetch.enter(series({ apiKey: null }));
+    await vi.advanceTimersByTimeAsync(DETAILS_DWELL_MS);
+    expect(related).toHaveBeenCalledTimes(1);
+  });
+});
