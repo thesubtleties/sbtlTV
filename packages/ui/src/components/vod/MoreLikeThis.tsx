@@ -1,11 +1,11 @@
 import { HorizontalCarousel } from './HorizontalCarousel';
-import type { StoredMovie, StoredSeries } from '../../db';
+import type { MediaItem } from '../../types/media';
 import './MoreLikeThis.css';
 
 interface MoreLikeThisProps {
   type: 'movie' | 'series';
-  items: (StoredMovie | StoredSeries)[]; // from useMoreLikeThis; empty = nothing rendered
-  onSelect?: (item: StoredMovie | StoredSeries) => void;
+  items: MediaItem[]; // from useMoreLikeThis; empty = nothing rendered
+  onSelect?: (item: MediaItem) => void;
   inTab?: boolean; // under a "More like this" tab: the tab is the heading
 }
 

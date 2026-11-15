@@ -1,9 +1,12 @@
 /**
  * "More like this" on a detail page: TMDB's recommendations for the title, then its similar titles,
- * kept to what the user's own library has. Same rules as the Selected lists rows: one copy per title
- * (the preferred source's, as the caller passes them in), a title in any adult category left out,
- * TMDB's order kept, the title itself never listed. Fewer than `min` = no row.
+ * kept to what the user's own library has. Same rules as the Selected lists rows (utils/tmdbLibrary):
+ * one copy per title, a title with any copy in an adult category left out. `library` is every copy,
+ * the preferred one first (that one is shown). TMDB's order kept, the title itself never listed.
+ * Fewer than `min` = no row.
  */
+import { cleanByTmdbId } from './tmdbLibrary';
+
 export const MORE_LIKE_THIS_MIN = 4;
 export const MORE_LIKE_THIS_MAX = 20;
 /** Ask TMDB for similar titles too when recommendations alone match fewer than this. */
@@ -17,15 +20,7 @@ export function pickMoreLikeThis<T extends { tmdb_id?: number; category_ids: str
   { min = MORE_LIKE_THIS_MIN, max = MORE_LIKE_THIS_MAX } = {},
 ): T[] {
   if (!adultCategoryIds) return []; // categories not known yet: no row rather than one that skips the adult check
-  const adult = new Set<number>();
-  for (const it of library) {
-    if (it.tmdb_id !== undefined && it.category_ids.some((c) => adultCategoryIds.has(c))) adult.add(it.tmdb_id);
-  }
-  const byId = new Map<number, T>();
-  for (const it of library) {
-    if (it.tmdb_id === undefined || adult.has(it.tmdb_id) || byId.has(it.tmdb_id)) continue;
-    byId.set(it.tmdb_id, it);
-  }
+  const byId = cleanByTmdbId(library, adultCategoryIds);
   const seen = new Set<number>();
   const picked: T[] = [];
   for (const id of orderedIds) {

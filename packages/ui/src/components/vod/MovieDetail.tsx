@@ -19,6 +19,7 @@ import { useMoreLikeThis } from '../../hooks/useMoreLikeThis';
 import { useMoviePlaySources } from '../../hooks/usePlayResolver';
 import { useMovieProgressByTmdb, useMovieProgress } from '../../hooks/useWatchProgress';
 import type { StoredMovie, StoredSeries } from '../../db';
+import type { MediaItem } from '../../types/media';
 import './MovieDetail.css';
 
 export interface MovieDetailProps {
@@ -28,7 +29,7 @@ export interface MovieDetailProps {
   isCollapsed?: boolean;
   onPlay?: (movie: StoredMovie, plot?: string | null) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
-  onSelectRelated?: (movie: StoredMovie) => void; // a title picked in More like this
+  onSelectRelated?: (item: MediaItem) => void; // a title picked in More like this
   onBack?: () => void; // one title back; only when opened from More like this
 }
 
@@ -50,7 +51,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
   const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(movie, apiKey);
   const lazyCredits = useLazyCredits(movie, apiKey);
 
-  const related = useMoreLikeThis('movie', movie.tmdb_id, apiKey);
+  const { items: related } = useMoreLikeThis('movie', movie.tmdb_id, apiKey);
   const playSources = useMoviePlaySources(movie.tmdb_id, movie.stream_id);
   const progressByTmdb = useMovieProgressByTmdb(movie.tmdb_id);
   const progressByStream = useMovieProgress(movie.stream_id);
@@ -220,7 +221,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
             )}
           </div>
         </div>
-        <MoreLikeThis type="movie" items={related} onSelect={onSelectRelated as ((item: StoredMovie | StoredSeries) => void) | undefined} />
+        <MoreLikeThis type="movie" items={related} onSelect={onSelectRelated} />
       </div>
     </div>
   );
