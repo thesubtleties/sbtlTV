@@ -307,14 +307,14 @@ export class SyncEngine {
         if (l && !l.moved && p.removed.length > 0) {
           const keys = new Map<string, Buffer>();
           for (const b of l.boxes) {
-            if (b.id === f.deviceId || p.removed.includes(b.id)) continue;
+            if (b.id === f.deviceId || p.removed.includes(b.id) || f.removedIds.includes(b.id)) continue;
             let box: ReturnType<typeof parseBox>;
             try { box = parseBox(openBox(g.encKey, g.groupId, b.id, b.sealed)); } catch { box = null; }
             if (box) keys.set(b.id, sealRekey(decodeB64(box.pub, 32), g.encKey, k.K, g.groupId, b.id));
           }
           // And the computers that stayed but are still away (no box here yet): they'd otherwise look removed
           for (const [id, pub] of Object.entries(p.members ?? {})) {
-            if (id === f.deviceId || p.removed.includes(id) || keys.has(id)) continue;
+            if (id === f.deviceId || p.removed.includes(id) || f.removedIds.includes(id) || keys.has(id)) continue;
             try { keys.set(id, sealRekey(decodeB64(pub, 32), g.encKey, k.K, g.groupId, id)); } catch { /* a bad key: skip */ }
           }
           try {
@@ -405,7 +405,7 @@ export class SyncEngine {
       counter: 0, parts: { ...DEFAULT_PARTS }, own: [], others: {}, since: 0, lastSync: null,
       // A pending group the other computer never joins is forgotten (giverSent restarts the clock)
       pendingUntil: status === 'pending' ? this.now() + PENDING_MS : null, applied: {},
-      epoch: null, previous: [], interrupted: [],
+      epoch: null, previous: [], interrupted: [], removedIds: [],
     };
     this.setKey(K, device);
     this.problem = null;
@@ -433,7 +433,7 @@ export class SyncEngine {
       const g = deriveGroup(old.K);
       const keys = new Map<string, Buffer>();
       for (const [id, pub] of Object.entries(p.members ?? {})) {
-        if (id === f.deviceId || p.removed.includes(id)) continue;
+        if (id === f.deviceId || p.removed.includes(id) || f.removedIds.includes(id)) continue;
         try { keys.set(id, sealRekey(decodeB64(pub, 32), g.encKey, k.K, g.groupId, id)); } catch { /* a bad key: skip */ }
       }
       try {
@@ -509,6 +509,7 @@ export class SyncEngine {
       const members = Object.fromEntries(stayed.map(([id, o]) => [id, o.pub]));
       const names = Object.fromEntries(stayed.map(([id, o]) => [id, o.name]));
       delete f.others[deviceId];
+      f.removedIds = [...new Set([...f.removedIds, deviceId])];
       f.previous.push({ key: f.key, removed: [deviceId], at: this.now(), members, names, markedIn: f.epoch });
       this.switchKey(newK);
       await this.pushNow();

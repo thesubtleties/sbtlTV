@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -219,6 +219,27 @@ describe('SyncEngine', () => {
     expect(b.e.view().status).toBe('active');
     expect(b.e.view().computers.map((x) => x.name).sort()).toEqual(['Linux PC', 'Linux PC 2']);
     expect(a.e.view().interrupted).toEqual([]);
+  });
+
+  it('restoring an older retired group never hands the current key to a computer removed later (security)', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const c = w.make('Mac'), d = w.make('Den');
+    await c.e.activateJoin(await a.e.joinPayload(), 'Mac');
+    await d.e.activateJoin(await a.e.joinPayload(), 'Den');
+    await a.e.pull(); await b.e.pull(); await c.e.pull(); await d.e.pull();
+    const dOldState = readFileSync(join(d.dirPath, 'sync-state.json'), 'utf8');
+    await a.e.remove(thisId(c.e));   // first removal: b is away (so a keeps watching that old group), d stayed
+    await d.e.pull(); await a.e.pull();
+    await a.e.remove(thisId(d.e));   // second removal: d is out now
+    w.wipe();
+    await a.e.pull();                // restores the retired markers, sealing the current key to the computers that stayed
+    // d, holding the FIRST old key (a copy of its state from before), must find nothing for it
+    writeFileSync(join(d.dirPath, 'sync-state.json'), dOldState);
+    const d2 = w.make('Den', true, d.dirPath);
+    d2.e.start(); await d2.e.pull();
+    expect(d2.e.view().status).toBe('removed');
+    await b.e.pull();                // b, still entitled, follows
+    expect(b.e.view().status).toBe('active');
   });
 
   it('an old group retired by someone else after a wipe: the remover says which computers to add again', async () => {

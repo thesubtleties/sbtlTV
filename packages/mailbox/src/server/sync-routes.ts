@@ -85,6 +85,8 @@ export function registerSyncRoutes(app: Hono, d: {
     const gid = c.req.param('gid')!;
     const exists = await d.groups.group(gid);
     if (exists && !sameHash(exists.tokenHash, th)) return d.err(c, 403, 'denied');
+    // Creating one is a new group: the same switch as a first box
+    if (!exists && d.cfg().newGroupsPaused) return d.err(c, 429, 'busy');
     const text = await d.guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
     const keys = body?.keys;

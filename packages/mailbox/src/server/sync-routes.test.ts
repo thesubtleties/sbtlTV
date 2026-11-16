@@ -92,6 +92,13 @@ describe('sync routes', () => {
     expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: group().accessToken, body: { keys: {} }, pow: true })).status).toBe(403);
   });
 
+  it('"no new groups" also refuses a retired group the relay does not have (same gate as a first box)', async () => {
+    const { call } = setup({ newGroupsPaused: true }); const g = group();
+    const r = await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: {} }, pow: true });
+    expect(r.status).toBe(429);
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(404);
+  });
+
   it('the database id is the same on every ask, and needs no token', async () => {
     const { call } = setup();
     const a = await (await call('GET', '/v1/sync/epoch')).json();

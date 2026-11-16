@@ -45,6 +45,8 @@ export interface SyncFile {
   previous: PreviousGroup[];
   /** Computers to add again: an old group was retired by someone else after the relay lost its data */
   interrupted: string[];
+  /** Every computer this one has removed: never sealed a key again, whatever old group lists it */
+  removedIds: string[];
 }
 
 const STATUSES = new Set(['pending', 'active', 'removed', 'ended']);
@@ -61,7 +63,7 @@ export class SyncStore {
     if (!existsSync(this.file)) return null;
     try {
       const f = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<SyncFile> | null;
-      if (looksRight(f)) return { ...f, epoch: typeof f.epoch === 'string' ? f.epoch : null, previous: Array.isArray(f.previous) ? f.previous : [], interrupted: Array.isArray(f.interrupted) ? f.interrupted : [] };
+      if (looksRight(f)) return { ...f, epoch: typeof f.epoch === 'string' ? f.epoch : null, previous: Array.isArray(f.previous) ? f.previous : [], interrupted: Array.isArray(f.interrupted) ? f.interrupted : [], removedIds: Array.isArray(f.removedIds) ? f.removedIds : [] };
     } catch { /* below */ }
     renameSync(this.file, `${this.file}.bad`);
     return null;

@@ -12,7 +12,7 @@ const dir = () => mkdtempSync(join(tmpdir(), 'sync-store-'));
 
 function file(store: SyncStore): SyncFile {
   const sealed = store.seal(randomBytes(32), newKeyPair());
-  return { v: 1, status: 'active', ...sealed, deviceId: 'a'.repeat(32), pub: 'p', name: 'Mac', counter: 0, parts: { ...DEFAULT_PARTS }, own: [], others: {}, since: 0, lastSync: null, pendingUntil: null, applied: {}, epoch: null, previous: [], interrupted: [] };
+  return { v: 1, status: 'active', ...sealed, deviceId: 'a'.repeat(32), pub: 'p', name: 'Mac', counter: 0, parts: { ...DEFAULT_PARTS }, own: [], others: {}, since: 0, lastSync: null, pendingUntil: null, applied: {}, epoch: null, previous: [], interrupted: [], removedIds: [] };
 }
 
 describe('SyncStore', () => {
