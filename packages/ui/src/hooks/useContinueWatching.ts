@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type StoredMovie, type StoredSeries, type StoredEpisode, type StoredWatchProgress } from '../db';
 import { data } from '../data/client';
 import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
+import { EPISODES_MAX_AGE_MS } from '../services/hoverPrefetch';
 import type { VodPlayInfo } from '../types/media';
 import { groupBySeriesKey } from '../services/continue-watching/grouping';
 import { selectActiveEpisode, computeResumeTarget } from '../services/continue-watching/next-episode';
@@ -114,6 +115,21 @@ function useMovieItems(active: boolean): ContinueItem[] {
   }, [recs, movies, byTmdbList]);
 }
 
+/**
+ * Series whose last-played episode is finished but whose episode list this computer doesn't have
+ * yet (typically progress synced from another computer): without the list there's no "up next".
+ */
+export function seriesNeedingEpisodes(
+  heads: { active: { completed: boolean }; series: { series_id: string }; relatedIds: string[] }[],
+  episodes: { series_id: string }[],
+): string[] {
+  const have = new Set(episodes.map((e) => e.series_id));
+  return heads.filter((h) => h.active.completed && !h.relatedIds.some((id) => have.has(id))).map((h) => h.series.series_id);
+}
+
+/** Series whose list was already asked for this session (the series page asks again when opened). */
+const askedForEpisodes = new Set<string>();
+
 function useSeriesItems(active: boolean): ContinueItem[] {
   // Include ALL episode records (a completed active episode still yields an "up next").
   // Pick each series' last-played head in-memory, then resolve only the most-recent N.
@@ -158,6 +174,17 @@ function useSeriesItems(active: boolean): ContinueItem[] {
     allSeriesIds.length > 0 ? { type: 'episodes', seriesIds: allSeriesIds } : null,
     ['vod_episodes'], [allSeriesIds.join(',')],
   );
+
+  // A finished episode with no list here: ask for the list (as opening the series does); the row
+  // redraws when it arrives (vod_episodes)
+  useEffect(() => {
+    if (!episodes) return;
+    for (const seriesId of seriesNeedingEpisodes(resolvedHeads, episodes)) {
+      if (askedForEpisodes.has(seriesId)) continue;
+      askedForEpisodes.add(seriesId);
+      void data.query({ type: 'syncEpisodes', seriesId, maxAgeMs: EPISODES_MAX_AGE_MS }).catch(() => {});
+    }
+  }, [resolvedHeads, episodes]);
 
   return useMemo(() => {
     if (resolvedHeads.length === 0 || !episodes) return EMPTY;

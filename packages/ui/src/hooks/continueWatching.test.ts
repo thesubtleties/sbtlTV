@@ -31,3 +31,12 @@ describe('newestPerTitle', () => {
     expect((out as { id: string }[]).map((x) => x.id)).toEqual(['movie_b', 'movie_x', 'movie_y']);
   });
 });
+
+describe('seriesNeedingEpisodes', () => {
+  it('a finished last episode with no episode list on this computer asks for the list (synced from another computer)', async () => {
+    const { seriesNeedingEpisodes } = await import('./useContinueWatching');
+    const head = (series_id: string, completed: boolean) => ({ active: { completed }, series: { series_id }, relatedIds: [series_id] }) as never;
+    const eps = [{ series_id: 'b', season_num: 1, episode_num: 1 }] as never;
+    expect(seriesNeedingEpisodes([head('a', true), head('b', true), head('c', false)], eps)).toEqual(['a']);
+  });
+});
