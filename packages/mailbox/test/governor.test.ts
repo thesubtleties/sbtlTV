@@ -11,6 +11,14 @@ describe('proof-of-work level under load', () => {
     expect(g.bits()).toBe(20);
   });
 
+  it('the 101st proven write in a minute raises it at once', () => {
+    const { g } = make();
+    for (let i = 0; i < 100; i++) g.proven();
+    expect(g.bits()).toBe(20);
+    g.proven();
+    expect(g.bits()).toBe(21);
+  });
+
   it('a busy minute (over 100 proven writes) raises it one level, at most three', () => {
     const { g, clock } = make();
     for (let m = 0; m < 5; m++) {
@@ -31,7 +39,7 @@ describe('proof-of-work level under load', () => {
     const { g, clock } = make();
     for (let i = 0; i < 101; i++) g.proven();
     clock.go(minute);
-    expect(g.bits()).toBe(21);
+    expect(g.bits()).toBe(21);   // raised in minute 0, counted as busy (not raised twice)
     clock.go(9 * minute);
     expect(g.bits()).toBe(21);
     clock.go(minute);
@@ -41,12 +49,12 @@ describe('proof-of-work level under load', () => {
   it('for a minute after a rise, proofs at the old level still count', () => {
     const { g, clock } = make();
     for (let i = 0; i < 101; i++) g.proven();
-    clock.go(minute);
     expect(g.bits()).toBe(21);
     expect(g.accepted()).toBe(20);
     clock.go(minute);
     expect(g.accepted()).toBe(21);
   });
+
 
   it('a minute between quiet and busy starts the quiet count again', () => {
     const { g, clock } = make();
@@ -94,7 +102,7 @@ describe('size pricing', () => {
     expect(powBitsFor(20, 2 * 1024)).toBe(20);          // a real send (~1 KB)
     expect(powBitsFor(20, 64 * 1024)).toBe(20);
     expect(powBitsFor(20, 300 * 1024)).toBe(23);        // a big file playlist: ~8x
-    expect(powBitsFor(20, 1024 * 1024)).toBe(25);       // 4 + 1 above 512 KB
-    expect(powBitsFor(20, 2 * 1024 * 1024)).toBe(27);   // 5 + 2: minutes, not seconds
+    expect(powBitsFor(20, 1024 * 1024)).toBe(24);       // 16x
+    expect(powBitsFor(20, 2 * 1024 * 1024)).toBe(25);   // the largest send: 32x, about half a minute
   });
 });

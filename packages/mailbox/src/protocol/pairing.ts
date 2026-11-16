@@ -66,5 +66,16 @@ export function open(key: Buffer, sealed: Buffer, aad: Buffer): Buffer {
   return Buffer.concat([d.update(sealed.subarray(12, sealed.length - 16)), d.final()]);
 }
 
-/** Additional data for a drop: the knock's commitment (base64), which both sides know. */
-export const dropAad = (commitmentB64: string) => Buffer.from(`sbtl-drop|${commitmentB64}`);
+/** Additional data for a drop: the knock's commitment (its bytes), which both sides know. */
+export const dropAad = (commitment: Buffer) => Buffer.concat([Buffer.from('sbtl-drop|'), commitment]);
+
+/**
+ * Base64 from the relay, strictly: canonical (re-encodes to the same text) and, when given, exactly
+ * `bytes` long. Anything else throws, so a relay can't vary encodings to break a knock late.
+ */
+export function decodeB64(text: unknown, bytes?: number): Buffer {
+  if (typeof text !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(text)) throw new Error('bad base64');
+  const b = Buffer.from(text, 'base64');
+  if (b.toString('base64') !== text || (bytes !== undefined && b.length !== bytes)) throw new Error('bad base64');
+  return b;
+}

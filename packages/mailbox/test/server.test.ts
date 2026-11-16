@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/server/app';
 import { DEFAULTS } from '../src/server/settings';
+import { proof } from './support';
 import { POW_HEADER, VERSION_HEADER, checkPow, powBitsFor, powInput, solvePow, KNOCK_TTL_MS, DROP_TTL_MS } from '../src/protocol';
 
 const BITS = 4;
@@ -13,8 +14,7 @@ function setup() {
     const version = opts.version ?? '0.17.0';
     const headers: Record<string, string> = { 'content-type': 'application/json', [VERSION_HEADER]: version };
     if (opts.pow) {
-      const minute = Math.floor(clock.now() / 60_000);
-      headers[POW_HEADER] = `${minute}.${solvePow(powInput(path, text, minute, version), BITS)}`;
+      headers[POW_HEADER] = await proof(app, path, text, BITS, version);
     }
     const res = await app.fetch(new Request(`http://mailbox${path}`, { method, headers, body: text || undefined }));
     const json = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
@@ -55,6 +55,8 @@ describe('mailbox server', () => {
     const pick = await call('GET', `/v1/knock/${k.json.id}/drop`);
     expect(pick.json).toEqual({ sealed: b64(100, 5), giverKey: b64(32, 2) });
     expect((await call('GET', `/v1/knock/${k.json.id}/drop`)).status).toBe(404);   // gone after pickup
+    expect((await call('GET', `/v1/ring/${ring.json.ticket}`)).json.status).toBe('picked');
+    await call('POST', `/v1/knock/${k.json.id}/receipt`, { ok: true });
     expect((await call('GET', `/v1/ring/${ring.json.ticket}`)).json.status).toBe('gone');
   });
 
@@ -97,8 +99,7 @@ describe('mailbox server', () => {
   it('a proof is used once', async () => {
     const { app } = createApp({ now: () => 1_800_000_000_000, powBits: BITS, minVersion: '0.17.0' });
     const text = JSON.stringify({ commitment: b64(32, 9) });
-    const minute = Math.floor(1_800_000_000_000 / 60_000);
-    const headers = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${minute}.${solvePow(powInput('/v1/knock', text, minute, '0.17.0'), BITS)}` };
+    const headers = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: await proof(app, '/v1/knock', text, BITS) };
     const send = () => app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers, body: text }));
     expect((await send()).status).toBe(201);
     expect((await send()).status).toBe(428);   // the very same request again
@@ -137,7 +138,7 @@ describe('mailbox server', () => {
     const call = async (method: string, path: string, body?: unknown, pow = false) => {
       const text = body === undefined ? '' : JSON.stringify(body);
       const headers: Record<string, string> = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0' };
-      if (pow) { const m = Math.floor(t / 60_000); headers[POW_HEADER] = `${m}.${solvePow(powInput(path, text, m, '0.17.0'), BITS)}`; }
+      if (pow) { headers[POW_HEADER] = await proof(app, path, text, BITS); }
       const res = await app.fetch(new Request(`http://mailbox${path}`, { method, headers, body: text || undefined }));
       return { status: res.status, json: res.headers.get('content-type')?.includes('json') ? await res.json() : null };
     };
@@ -155,21 +156,6 @@ describe('mailbox server', () => {
     expect((await call('PUT', `/v1/ring/${b.r.json.ticket}/drop`, { sealed: b64(100, 3) }, true)).status).toBe(204);
   });
 
-  it('rate limits by the address the proxy saw, not one the client wrote', async () => {
-    let t = 1_800_000_000_000;
-    const { app } = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', writesPerHour: 2 });
-    const knock = async (xff: string, fill: number) => {
-      const text = JSON.stringify({ commitment: b64(32, fill) });
-      const m = Math.floor(t / 60_000);
-      const headers = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${m}.${solvePow(powInput('/v1/knock', text, m, '0.17.0'), BITS)}`, 'x-forwarded-for': xff };
-      return (await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers, body: text }))).status;
-    };
-    // The client prepends a fake address each time; the proxy appends the real one (last)
-    expect(await knock('1.1.1.1, 9.9.9.9', 1)).toBe(201);
-    expect(await knock('2.2.2.2, 9.9.9.9', 2)).toBe(201);
-    expect(await knock('3.3.3.3, 9.9.9.9', 3)).toBe(429);
-  });
-
   it('the commitment comes before the giver sends its key; a ticket takes one key', async () => {
     const { call } = setup();
     const k = await call('POST', '/v1/knock', { commitment: b64(32, 6) }, { pow: true });
@@ -183,7 +169,7 @@ describe('mailbox server', () => {
   });
 
   it('a big drop needs more proof-of-work', async () => {
-    const { call, clock, app } = setup();
+    const { call, app } = setup();
     const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
     const ring = await ringWithKey(call, k.json.code, b64(32));
     await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
@@ -191,11 +177,7 @@ describe('mailbox server', () => {
     // zero bits: a random BITS-bit proof meets the 11 bits a 1 MB drop needs 1 time in 128
     const path = `/v1/ring/${ring.json.ticket}/drop`;
     const text = JSON.stringify({ sealed: b64(1024 * 1024) });
-    const minute = Math.floor(clock.now() / 60_000);
-    const input = powInput(path, text, minute, '0.17.0');
-    let nonce = solvePow(input, BITS);
-    while (checkPow(input, nonce, BITS + 1)) nonce = solvePow(input, BITS);
-    const res = await app.fetch(new Request(`http://mailbox${path}`, { method: 'PUT', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${minute}.${nonce}` }, body: text }));
+    const res = await app.fetch(new Request(`http://mailbox${path}`, { method: 'PUT', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: await proof(app, path, text, BITS, '0.17.0', true) }, body: text }));
     expect(res.status).toBe(428);
   });
 
@@ -208,27 +190,14 @@ describe('mailbox server', () => {
       call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10, 1) }, { pow: true }),
       call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10, 2) }, { pow: true }),
     ]);
-    expect([a.status, b.status].sort()).toEqual([204, 404]);
+    expect([a.status, b.status].sort()).toEqual([204, 429]);   // one upload at a time per knock
   });
 
-  it('requests without a valid proof do not use up the write limit', async () => {
-    const t = 1_800_000_000_000;
-    const { app } = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', writesPerHour: 2 });
-    for (let i = 0; i < 5; i++) {
-      await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { [VERSION_HEADER]: '0.17.0', 'content-type': 'application/json' }, body: '{"commitment":"junk"}' }));
-    }
-    const text = JSON.stringify({ commitment: b64(32) });
-    const m = Math.floor(t / 60_000);
-    const res = await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${m}.${solvePow(powInput('/v1/knock', text, m, '0.17.0'), BITS)}` }, body: text }));
-    expect(res.status).toBe(201);
-  });
-
-  it('tells the client its clock, so a computer with a wrong clock can still prove work', async () => {
+  it('every reply carries a fresh challenge; hello gives one too, with the level', async () => {
     const { app } = createApp({ now: () => 1_800_000_000_000, powBits: BITS, minVersion: '0.17.0' });
     const res = await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { [VERSION_HEADER]: '0.17.0' }, body: '{}' }));
-    expect(res.headers.get('x-sbtltv-time')).toBe('1800000000000');
+    expect(res.headers.get('x-sbtltv-challenge')).toMatch(/^[0-9a-z]+-[A-Za-z0-9_-]{22}$/);
   });
-
   it('the giver cancelling shows up on the receiver', async () => {
     const { call } = setup();
     const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
@@ -240,7 +209,7 @@ describe('mailbox server', () => {
   it('hello tells the app the current level and the time, without any work', async () => {
     const { app } = createApp({ now: () => 1_800_000_000_000, powBits: 20, minVersion: '0.17.0' });
     const res = await app.fetch(new Request('http://mailbox/v1/hello', { headers: { [VERSION_HEADER]: '0.17.0' } }));
-    expect(await res.json()).toEqual({ bits: 20, time: 1_800_000_000_000 });
+    expect(await res.json()).toEqual({ bits: 20, time: 1_800_000_000_000, challenge: expect.stringMatching(/^[0-9a-z]+-[A-Za-z0-9_-]{22}$/) });
     expect(res.headers.get('x-sbtltv-pow-level')).toBe('20');
   });
 
@@ -250,7 +219,7 @@ describe('mailbox server', () => {
     const call = async (method: string, path: string, body?: unknown, pow = false) => {
       const text = body === undefined ? '' : JSON.stringify(body);
       const headers: Record<string, string> = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0' };
-      if (pow) { const m = Math.floor(t / 60_000); headers[POW_HEADER] = `${m}.${solvePow(powInput(path, text, m, '0.17.0'), powBitsFor(BITS, Buffer.byteLength(text)))}`; }
+      if (pow) { headers[POW_HEADER] = await proof(app, path, text, powBitsFor(BITS, Buffer.byteLength(text))); }
       const res = await app.fetch(new Request(`http://mailbox${path}`, { method, headers, body: text || undefined }));
       return { status: res.status, json: res.headers.get('content-type')?.includes('json') ? await res.json() : null };
     };
@@ -271,15 +240,14 @@ describe('mailbox server', () => {
     const t = 1_800_000_000_000;
     const paused = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', paused: true }).app;
     const text = JSON.stringify({ commitment: b64(32) });
-    const m = Math.floor(t / 60_000);
-    const res = await paused.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${m}.${solvePow(powInput('/v1/knock', text, m, '0.17.0'), BITS)}` }, body: text }));
+    const res = await paused.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: await proof(paused, '/v1/knock', text, BITS) }, body: text }));
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({ error: 'busy' });
     const { app } = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', largeDropsPaused: true });
     const call = async (method: string, path: string, body?: unknown, pow = false) => {
       const tx = body === undefined ? '' : JSON.stringify(body);
       const headers: Record<string, string> = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0' };
-      if (pow) headers[POW_HEADER] = `${m}.${solvePow(powInput(path, tx, m, '0.17.0'), powBitsFor(BITS, Buffer.byteLength(tx)))}`;
+      if (pow) headers[POW_HEADER] = await proof(app, path, tx, powBitsFor(BITS, Buffer.byteLength(tx)));
       const r = await app.fetch(new Request(`http://mailbox${path}`, { method, headers, body: tx || undefined }));
       return { status: r.status, json: r.headers.get('content-type')?.includes('json') ? await r.json() : null };
     };
@@ -293,11 +261,10 @@ describe('mailbox server', () => {
   it('large drops sent at the same moment cannot overrun the hourly budget together', async () => {
     const t = 1_800_000_000_000;
     const { app } = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', largeDropBytesPerHour: 400 * 1024 });
-    const m = Math.floor(t / 60_000);
     const call = async (method: string, path: string, body?: unknown, pow = false) => {
       const text = body === undefined ? '' : JSON.stringify(body);
       const headers: Record<string, string> = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0' };
-      if (pow) headers[POW_HEADER] = `${m}.${solvePow(powInput(path, text, m, '0.17.0'), powBitsFor(BITS, Buffer.byteLength(text)))}`;
+      if (pow) headers[POW_HEADER] = await proof(app, path, text, powBitsFor(BITS, Buffer.byteLength(text)));
       const res = await app.fetch(new Request(`http://mailbox${path}`, { method, headers, body: text || undefined }));
       return { status: res.status, json: res.headers.get('content-type')?.includes('json') ? await res.json() : null };
     };
@@ -316,10 +283,9 @@ describe('mailbox server', () => {
     const t = 1_800_000_000_000;
     let paused = false;
     const { app } = createApp({ now: () => t, minVersion: '0.17.0', settings: () => ({ ...DEFAULTS, powBits: BITS, minVersion: '0.17.0', paused }) });
-    const m = Math.floor(t / 60_000);
     const knock = async (fill: number) => {
       const text = JSON.stringify({ commitment: b64(32, fill) });
-      return (await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${m}.${solvePow(powInput('/v1/knock', text, m, '0.17.0'), BITS)}` }, body: text }))).status;
+      return (await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: await proof(app, '/v1/knock', text, BITS) }, body: text }))).status;
     };
     expect(await knock(1)).toBe(201);
     paused = true;

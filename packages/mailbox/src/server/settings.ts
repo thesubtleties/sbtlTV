@@ -5,14 +5,13 @@
  * variables are the fallback when there's no file. The file wins.
  */
 import { readFileSync } from 'node:fs';
+import { MAX_SIZE_BITS } from '../protocol/index.js';
 
 export interface Settings {
   /** Proof-of-work level when it's quiet (bits; 20 ≈ 1 s on an average computer) */
   powBits: number;
   /** Oldest app version allowed to send or receive */
   minVersion: string;
-  /** Proven writes per hour per address (behind the cluster: everyone together); a backstop */
-  writesPerHour: number;
   /** Memory for drops nobody has picked up yet */
   dropMemoryMb: number;
   /** Drops at least this big are "large" */
@@ -34,9 +33,8 @@ export interface Settings {
 export const DEFAULTS: Settings = {
   powBits: 20,
   minVersion: '0.17.0',
-  writesPerHour: 100_000,
   dropMemoryMb: 2048,
-  largeDropKb: 256,
+  largeDropKb: 16,
   largeDropMbPerHour: 200,
   paused: false,
   largeDropsPaused: false,
@@ -52,9 +50,8 @@ const bool: Rule = (v) => typeof v === 'boolean';
 const version: Rule = (v) => typeof v === 'string' && /^\d+\.\d+\.\d+$/.test(v);
 
 const RULES: Record<keyof Settings, Rule> = {
-  powBits: int(1, 28),
+  powBits: int(1, 23),
   minVersion: version,
-  writesPerHour: int(1, 100_000_000),
   dropMemoryMb: int(1, 100_000),
   largeDropKb: int(1, 2048),
   largeDropMbPerHour: int(0, 100_000),
@@ -78,7 +75,7 @@ export function parseSettings(raw: unknown): Partial<Settings> {
 }
 
 const ENV: Record<string, keyof Settings> = {
-  POW_BITS: 'powBits', MIN_APP_VERSION: 'minVersion', WRITES_PER_HOUR: 'writesPerHour', DROP_MEMORY_MB: 'dropMemoryMb',
+  POW_BITS: 'powBits', MIN_APP_VERSION: 'minVersion', DROP_MEMORY_MB: 'dropMemoryMb',
   LARGE_DROP_KB: 'largeDropKb', LARGE_DROP_MB_PER_HOUR: 'largeDropMbPerHour', MAILBOX_PAUSED: 'paused',
   LARGE_DROPS_PAUSED: 'largeDropsPaused', BUSY_PER_MINUTE: 'busyPerMinute', MAX_EXTRA_BITS: 'maxExtraBits',
   QUIET_PER_MINUTE: 'quietPerMinute', QUIET_MINUTES: 'quietMinutes',
@@ -92,6 +89,16 @@ export function settingsFromEnv(env: Record<string, string | undefined>): Partia
     raw[key] = RULES[key] === bool ? v === '1' || v === 'true' : RULES[key] === version ? v : Number(v);
   }
   return parseSettings(raw);
+}
+
+/**
+ * The most work the app will do for one request is 28 bits; the largest send adds MAX_SIZE_BITS.
+ * So base + extra steps may not pass 28 - 5 = 23, or nobody could send anything big.
+ */
+const MAX_LEVEL_BITS = 28 - MAX_SIZE_BITS;
+
+function withinLimits(s: Settings): Settings {
+  return s.powBits + s.maxExtraBits > MAX_LEVEL_BITS ? { ...s, maxExtraBits: Math.max(0, MAX_LEVEL_BITS - s.powBits) } : s;
 }
 
 /** Defaults ← environment ← file, the file re-read at most every `everyMs`. */
@@ -109,12 +116,26 @@ export class LiveSettings {
     if (this.now() - this.lastRead >= this.everyMs) {
       this.lastRead = this.now();
       const text = this.readFile();
-      if (text === null) this.fileSettings = {};
-      else {
-        try { this.fileSettings = parseSettings(JSON.parse(text)); } catch { /* keep the last good file */ }
+      // No file (not mounted yet, or briefly gone during an update) or a broken one: keep the last
+      // good settings, so a pause can't switch itself off
+      if (text !== null) {
+        try {
+          const raw: unknown = JSON.parse(text);
+          this.fileSettings = parseSettings(raw);
+          this.warnIgnored(raw);
+        } catch { /* keep the last good file */ }
       }
     }
-    return { ...DEFAULTS, ...this.env, ...this.fileSettings };
+    return withinLimits({ ...DEFAULTS, ...this.env, ...this.fileSettings });
+  }
+
+  private warned = '';
+  /** Names (never values) of settings the file has that were ignored, once per change. */
+  private warnIgnored(raw: unknown): void {
+    if (typeof raw !== 'object' || raw === null) return;
+    const ignored = Object.keys(raw).filter((k) => !(k in this.fileSettings)).sort().join(', ');
+    if (ignored && ignored !== this.warned) console.warn(`relay settings ignored (unknown or out of range): ${ignored}`);
+    this.warned = ignored;
   }
 }
 

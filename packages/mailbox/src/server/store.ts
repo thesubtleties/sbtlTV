@@ -6,10 +6,14 @@ export interface Knock {
   id: string; ticket: string | null; code: string; commitment: string;
   giverKey?: string; receiverKey?: string; r?: string; sealed?: string;
   status: KnockStatus; expiresAt: number;
+  /** A drop upload is being read for this knock (one at a time per ticket) */
+  dropping?: boolean;
 }
 
-/** How long a finished knock (picked up / cancelled) stays visible to the giver's poll. */
-const TOMBSTONE_MS = 60_000;
+/** How long a finished knock (received / cancelled / unreadable) stays visible to the polls, for a giver that was briefly offline. */
+const TOMBSTONE_MS = 5 * 60_000;
+/** How long the receiver has to say whether a fetched drop opened. */
+const RECEIPT_MS = 2 * 60_000;
 
 export class KnockStore {
   private byId = new Map<string, Knock>();
@@ -17,13 +21,14 @@ export class KnockStore {
   private byTicket = new Map<string, Knock>();
   /** Bytes of sealed drops held right now (base64 length), kept under maxStoredBytes. */
   private storedBytes = 0;
-  constructor(private now: () => number, private maxActive = 50_000, maxStoredBytes: number | (() => number) = 256 * 1024 * 1024) {
+  constructor(private now: () => number, private maxActive = 200_000, maxStoredBytes: number | (() => number) = 256 * 1024 * 1024) {
     this.maxStoredBytes = typeof maxStoredBytes === 'function' ? maxStoredBytes : () => maxStoredBytes;
   }
   private maxStoredBytes: () => number;
 
   create(commitment: string): Knock | null {
     this.sweep();
+    if (this.byId.size >= this.maxActive) this.sweep(true);
     if (this.byId.size >= this.maxActive) return null;
     let code = newCode();
     while (this.byCode.has(code)) code = newCode();
@@ -46,6 +51,8 @@ export class KnockStore {
   claim(k: Knock): string {
     k.ticket = randomBytes(16).toString('hex');
     k.status = 'claimed';
+    // The words, the person checking them and the giver's work all come after this: ten more minutes
+    k.expiresAt = Math.max(k.expiresAt, this.now() + KNOCK_TTL_MS);
     this.byTicket.set(k.ticket, k);
     this.byCode.delete(k.code);            // a code rings once
     return k.ticket;
@@ -59,7 +66,7 @@ export class KnockStore {
 
   /** 'busy' = no room right now (memory budget); 'gone' = not waiting for a drop any more. */
   drop(k: Knock, sealed: string): 'ok' | 'busy' | 'gone' {
-    this.sweep();
+    this.sweep(true);
     if (k.status !== 'revealed') return 'gone';   // checked again here: two drops may race
     if (this.storedBytes + sealed.length > this.maxStoredBytes()) return 'busy';
     this.storedBytes += sealed.length;
@@ -72,10 +79,16 @@ export class KnockStore {
     k.sealed = undefined;
   }
 
-  /** Picked up or cancelled: everything is forgotten except the outcome, kept briefly. */
-  finish(k: Knock, status: 'gone' | 'cancelled'): void {
-    // Picked up: the receiver's id is gone, so the drop can't be fetched twice. Cancelled: both
-    // sides keep a brief tombstone so each can show "cancelled".
+  /** The receiver fetched the drop: the sealed bytes are forgotten now; it says next whether they opened. */
+  pick(k: Knock): void {
+    this.forgetDrop(k);
+    k.status = 'picked'; k.expiresAt = this.now() + RECEIPT_MS;
+  }
+
+  /** Received, cancelled or unreadable: everything is forgotten except the outcome, kept briefly. */
+  finish(k: Knock, status: 'gone' | 'cancelled' | 'unreadable'): void {
+    // Received: the receiver's id is gone. Otherwise both sides keep a brief tombstone so each can
+    // show what happened.
     if (status === 'gone') this.byId.delete(k.id);
     this.byCode.delete(k.code);
     this.forgetDrop(k);
@@ -89,8 +102,13 @@ export class KnockStore {
     if (k.ticket) this.byTicket.delete(k.ticket);
   }
 
-  sweep(): void {
+  private lastSweep = -Infinity;
+
+  /** Removes what has run out. At most once a second unless forced (main runs a forced one every minute). */
+  sweep(force = false): void {
     const t = this.now();
+    if (!force && t - this.lastSweep < 1000) return;
+    this.lastSweep = t;
     for (const k of [...this.byId.values(), ...this.byTicket.values()]) if (k.expiresAt <= t) this.remove(k);
   }
 }

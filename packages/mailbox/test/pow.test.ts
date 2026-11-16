@@ -5,20 +5,20 @@ import { versionAtLeast } from '../src/protocol/version';
 
 describe('proof-of-work', () => {
   it('a solved nonce checks; it is bound to version, route, body and minute', () => {
-    const input = powInput('/v1/knock', '{"commitment":"x"}', 29_000_000, '0.17.0');
+    const input = powInput('/v1/knock', '{"commitment":"x"}', 'c1', '0.17.0');
     const nonce = solvePow(input, 12);
     expect(checkPow(input, nonce, 12)).toBe(true);
-    expect(checkPow(powInput('/v1/ring', '{"commitment":"x"}', 29_000_000, '0.17.0'), nonce, 12)).toBe(false);
-    expect(checkPow(powInput('/v1/knock', '{"commitment":"y"}', 29_000_000, '0.17.0'), nonce, 12)).toBe(false);
-    expect(checkPow(powInput('/v1/knock', '{"commitment":"x"}', 29_000_001, '0.17.0'), nonce, 12)).toBe(false);
-    expect(checkPow(powInput('/v1/knock', '{"commitment":"x"}', 29_000_000, '0.18.0'), nonce, 12)).toBe(false); // another version
+    expect(checkPow(powInput('/v1/ring', '{"commitment":"x"}', 'c1', '0.17.0'), nonce, 12)).toBe(false);
+    expect(checkPow(powInput('/v1/knock', '{"commitment":"y"}', 'c1', '0.17.0'), nonce, 12)).toBe(false);
+    expect(checkPow(powInput('/v1/knock', '{"commitment":"x"}', 'c2', '0.17.0'), nonce, 12)).toBe(false);
+    expect(checkPow(powInput('/v1/knock', '{"commitment":"x"}', 'c1', '0.18.0'), nonce, 12)).toBe(false); // another version
   });
   it('two people solving the same input get different proofs (one is never a replay of the other)', () => {
-    const input = powInput('/v1/ring', '{"code":"7KQ4M2XD"}', 29_000_000, '0.17.0');
+    const input = powInput('/v1/ring', '{"code":"7KQ4M2XD"}', 'c1', '0.17.0');
     expect(solvePow(input, 4)).not.toBe(solvePow(input, 4));
   });
   it('the async solver lets other work run while it searches', async () => {
-    const input = powInput('/v1/knock', '{}', 1, '0.17.0');
+    const input = powInput('/v1/knock', '{}', 'c1', '0.17.0');
     // From 0, find where the first answer is, then search in slices half that long: at least one break
     let first = 0;
     while (!checkPow(input, String(first), 12)) first++;
@@ -33,7 +33,7 @@ describe('proof-of-work', () => {
       const bin = [...createHash('sha256').update(input + nonce).digest()].map((b) => b.toString(2).padStart(8, '0')).join('');
       return bin.indexOf('1');
     };
-    const input = powInput('/v1/knock', '{}', 1, '0.17.0');
+    const input = powInput('/v1/knock', '{}', 'c1', '0.17.0');
     for (let n = 0, seen = new Set<number>(); seen.size < 6 && n < 100_000; n++) {
       const z = zeros(input, String(n));
       if (z < 1 || z > 10 || seen.has(z)) continue;

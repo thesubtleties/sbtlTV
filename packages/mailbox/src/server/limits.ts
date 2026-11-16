@@ -1,40 +1,24 @@
 /**
- * Abuse limits that never store an address: counters are keyed by HMAC(salt, ip) with a salt that
- * changes every hour and lives only in memory. Behind the cluster's ServiceLB every client may
- * share one address, so the per-sender limit is generous and proof-of-work is the real cost.
+ * Proofs seen recently, so one can't be used twice. Kept in buckets by the minute their challenge
+ * was issued and dropped whole once that challenge has run out: no scan per request.
  */
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { CHALLENGE_TTL_MS } from '../protocol/index.js';
 
-export class SenderLimiter {
-  private salt = randomBytes(32);
-  private hour = -1;
-  private counts = new Map<string, number>();
-  private perHour: () => number;
-  constructor(private now: () => number, perHour: number | (() => number)) {
-    this.perHour = typeof perHour === 'function' ? perHour : () => perHour;
-  }
-
-  /** true = allowed. */
-  hit(ip: string): boolean {
-    const h = Math.floor(this.now() / 3_600_000);
-    if (h !== this.hour) { this.hour = h; this.salt = randomBytes(32); this.counts.clear(); }
-    const key = createHmac('sha256', this.salt).update(ip).digest('base64');
-    const n = (this.counts.get(key) ?? 0) + 1;
-    this.counts.set(key, n);
-    return n <= this.perHour();
-  }
-}
-
-/** Proofs seen in the last few minutes, so one can't be replayed. */
 export class SeenProofs {
-  private seen = new Map<string, number>();
+  private buckets = new Map<number, Set<string>>();
   constructor(private now: () => number) {}
-  /** true = first use. */
-  use(key: string): boolean {
+
+  /** true = first use. `issuedAt` = when the proof's challenge was issued. */
+  use(key: string, issuedAt: number): boolean {
     const t = this.now();
-    for (const [k, exp] of this.seen) if (exp <= t) this.seen.delete(k);
-    if (this.seen.has(key)) return false;
-    this.seen.set(key, t + 5 * 60_000);
+    for (const minute of this.buckets.keys()) if (minute * 60_000 + CHALLENGE_TTL_MS + 60_000 <= t) this.buckets.delete(minute);
+    const minute = Math.floor(issuedAt / 60_000);
+    let set = this.buckets.get(minute);
+    if (!set) { set = new Set(); this.buckets.set(minute, set); }
+    const h = createHash('sha256').update(key).digest('base64');
+    if (set.has(h)) return false;
+    set.add(h);
     return true;
   }
 }

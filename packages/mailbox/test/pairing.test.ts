@@ -30,11 +30,11 @@ describe('pairing', () => {
     const kGiver = dropKey(giver, rx.keys.publicRaw, rx.commitment);
     const kRx = dropKey(rx.keys, giver.publicRaw, rx.commitment);
     expect(kGiver.equals(kRx)).toBe(true);
-    const sealed = seal(kGiver, Buffer.from('hello'), dropAad('k1'));
-    expect(open(kRx, sealed, dropAad('k1')).toString()).toBe('hello');
-    expect(() => open(kRx, sealed, dropAad('k2'))).toThrow();       // moved to another knock
+    const sealed = seal(kGiver, Buffer.from('hello'), dropAad(Buffer.from('k1')));
+    expect(open(kRx, sealed, dropAad(Buffer.from('k1'))).toString()).toBe('hello');
+    expect(() => open(kRx, sealed, dropAad(Buffer.from('k2')))).toThrow();       // moved to another knock
     const tampered = Buffer.from(sealed); tampered[20] ^= 1;
-    expect(() => open(kRx, tampered, dropAad('k1'))).toThrow();     // edited on the server
+    expect(() => open(kRx, tampered, dropAad(Buffer.from('k1')))).toThrow();     // edited on the server
     const stranger = newKeyPair();
     expect(dropKey(stranger, giver.publicRaw, rx.commitment).equals(kRx)).toBe(false);
   });
@@ -42,5 +42,15 @@ describe('pairing', () => {
   it('every seal uses a fresh nonce', () => {
     const k = Buffer.alloc(32, 1);
     expect(seal(k, Buffer.from('x'), Buffer.alloc(0)).subarray(0, 12)).not.toEqual(seal(k, Buffer.from('x'), Buffer.alloc(0)).subarray(0, 12));
+  });
+
+  it('relay base64 is read strictly: canonical text and the expected length only', async () => {
+    const { decodeB64 } = await import('../src/protocol/pairing');
+    const good = Buffer.alloc(32, 7).toString('base64');
+    expect(decodeB64(good, 32).length).toBe(32);
+    expect(() => decodeB64(good, 16)).toThrow();
+    expect(() => decodeB64(good.replace(/=$/, ''), 32)).toThrow();      // unpadded variant of the same bytes
+    expect(() => decodeB64('AB=C')).toThrow();
+    expect(() => decodeB64(42)).toThrow();
   });
 });

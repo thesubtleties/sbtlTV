@@ -48,7 +48,7 @@ describe('transport: a refused proof is redone once', () => {
 
   it('a level above what the app will do is not believed from a header', async () => {
     const seen: number[] = [];
-    const t = transport(async () => new Response('{}', { status: 201, headers: { 'x-sbtltv-pow-level': '40', 'content-type': 'application/json' } }), { onWork: (b) => seen.push(b) });
+    const t = transport(async () => new Response('{}', { status: 201, headers: { 'x-sbtltv-pow-level': '40', 'x-sbtltv-challenge': `1-${'A'.repeat(22)}`, 'content-type': 'application/json' } }), { onWork: (b) => seen.push(b) });
     await t.post('/v1/knock', {}, true);   // hello says 40: ignored, the app keeps its own level
     await t.post('/v1/knock', {}, true);
     expect(seen).toEqual([4, 4]);

@@ -16,6 +16,7 @@ export class PowGovernor {
   private quietRun = 0;
   private previousBits: number;
   private changedAt = -Infinity;
+  private raisedThisMinute = false;
   private opts: () => GovernorOptions;
 
   /** Options can be a getter: the knobs may change while running (settings.ts). */
@@ -35,11 +36,13 @@ export class PowGovernor {
     let steps = 0;
     while (this.minute < current && steps++ < 60) {
       const n = this.count;
+      const raised = this.raisedThisMinute;
       this.count = 0;
+      this.raisedThisMinute = false;
       this.minute++;
       const before = this.extra;
       if (n > this.o.busyPerMinute) {
-        this.extra = Math.min(this.o.maxExtra, this.extra + 1);
+        if (!raised) this.extra = Math.min(this.o.maxExtra, this.extra + 1);   // raised already, mid-minute
         this.quietRun = 0;
       } else if (n < this.o.quietPerMinute) {
         if (++this.quietRun >= this.o.quietMinutes && this.extra > 0) { this.extra--; this.quietRun = 0; }
@@ -61,5 +64,14 @@ export class PowGovernor {
     return this.now() - this.changedAt < MINUTE ? Math.min(now, this.previousBits) : now;
   }
 
-  proven(): void { this.roll(); this.count++; }
+  /** Counts a proven write; the one that makes the minute busy raises the level right away. */
+  proven(): void {
+    this.roll();
+    if (++this.count > this.o.busyPerMinute && !this.raisedThisMinute && this.extra < this.o.maxExtra) {
+      this.raisedThisMinute = true;
+      this.previousBits = this.o.base + this.extra;
+      this.changedAt = this.now();
+      this.extra++;
+    }
+  }
 }

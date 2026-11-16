@@ -31,7 +31,7 @@ describe('mailbox settings', () => {
     expect(live.get()).toMatchObject({ powBits: 23, paused: true });
   });
 
-  it('a broken file keeps the last good settings; a missing file falls back to the environment', () => {
+  it('a broken file keeps the last good settings', () => {
     let t = 0;
     let file: string | null = JSON.stringify({ powBits: 22 });
     const live = new LiveSettings({ powBits: 21 }, () => file, () => t, 1);
@@ -39,8 +39,22 @@ describe('mailbox settings', () => {
     file = '{ broken';
     t += 1;
     expect(live.get().powBits).toBe(22);
+    expect(live.get().powBits).toBe(22);
+  });
+
+  it('level settings are kept within what the app will ever do (base + extra + size <= 28)', () => {
+    const live = new LiveSettings({}, () => JSON.stringify({ powBits: 22, maxExtraBits: 8 }), () => 0, 1);
+    expect(live.get().maxExtraBits).toBe(1);
+    expect(parseSettings({ powBits: 24 })).toEqual({});
+  });
+
+  it('a config file that disappears keeps its last settings (a pause stays on)', () => {
+    let t = 0;
+    let file: string | null = JSON.stringify({ paused: true });
+    const live = new LiveSettings({}, () => file, () => t, 1);
+    expect(live.get().paused).toBe(true);
     file = null;
     t += 1;
-    expect(live.get().powBits).toBe(21);
+    expect(live.get().paused).toBe(true);
   });
 });
