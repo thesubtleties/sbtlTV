@@ -34,6 +34,7 @@ import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store
 import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
 import { registerSetupTransfer } from './setup-transfer.js';
 import { registerMailbox } from './mailbox/mailbox-ipc.js';
+import { registerSync } from './mailbox/sync-ipc.js';
 import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { makeZip } from './zip-writer.js';
 const { autoUpdater } = electronUpdater;
@@ -2277,6 +2278,8 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
   if (settings.selectedListsEnabled === false) followUp('removing the Selected lists copy', dropListsCache);
   if (settings.selectedListsEnabled === true) followUp('checking for Selected lists', () => { listsFailedAt = 0; void refreshSelectedLists(); });
   followUp('sending settings to the data process', () => dataHost?.pushSettings());
+  // A synced setting changed here becomes this computer's sync record (ignored while sync is off)
+  followUp('telling sync', () => sync.settingsChanged(settings as Record<string, unknown>));
   return { success: true };
 });
 
@@ -2631,7 +2634,20 @@ const setupTransfer = registerSetupTransfer({
   log: (m) => debugLog(m, 'setup'),
 });
 // Settings > Sync & transfer: send and receive through the mailbox (mailbox/mailbox-ipc.ts)
-const mailbox = registerMailbox({ stage: setupTransfer.stage, log: (m) => debugLog(m, 'mailbox') });
+// Sync: the engine starts when the page says it's listening (sync:ready), so nothing it hands over is lost
+const sync = registerSync({
+  renderer: () => mainWindow?.webContents ?? null,
+  log: (m) => debugLog(m, 'sync'),
+  // Settings from the user's other computers: stored, then the same follow-ups a change here gets
+  applySettings: (values) => {
+    storage.updateSettings(values as Parameters<typeof storage.updateSettings>[0]);
+    if ('subtitles' in values || 'appearance' in values) {
+      try { applySubtitleStyle('settings synced'); } catch { debugLog('Sync: applying the subtitle style failed', 'sync'); }
+    }
+    dataHost?.pushSettings();
+  },
+});
+const mailbox = registerMailbox({ stage: setupTransfer.stage, log: (m) => debugLog(m, 'mailbox'), sync: sync.engine });
 
 // A failure is logged by its reason only, never with an address.
 ipcMain.handle('privacy-check-ip', async () => {
@@ -3167,13 +3183,28 @@ app.whenReady().then(async () => {
 ipcMain.on('data-request-port', (event) => dataHost?.giveRendererPort(event.sender));
 
 let mailboxStopped = false;
+/** The page saves playback progress before quitting (at most 1.5 s), so sync can push it. */
+const askRendererToSave = () => new Promise<void>((resolve) => {
+  const w = mainWindow?.webContents;
+  if (!w || w.isDestroyed()) return resolve();
+  const done = () => { ipcMain.removeListener('app-quit-ready', done); resolve(); };
+  ipcMain.once('app-quit-ready', done);
+  w.send('app-before-quit');
+  setTimeout(done, 1500);
+});
+
 app.on('before-quit', (event) => {
-  // A knock in progress (or its cancel, started by closing the window): let the relay hear it's
-  // cancelled, at most a second, then quit for real; the data process stops on that second pass
-  if (mailbox.active() && !mailboxStopped) {
+  // First pass: a knock in progress (or its cancel, started by closing the window) lets the relay
+  // hear it's cancelled, the page saves progress and sync pushes it: all within 3 seconds. Then quit
+  // for real; the data process stops on that second pass.
+  if (!mailboxStopped) {
     mailboxStopped = true;
     event.preventDefault();
-    void Promise.race([mailbox.stop(), new Promise((r) => setTimeout(r, 1000))]).then(() => app.quit());
+    const knock = mailbox.active() ? Promise.race([mailbox.stop(), new Promise((r) => setTimeout(r, 1000))]) : Promise.resolve();
+    void Promise.race([
+      Promise.all([knock, askRendererToSave().then(() => sync.engine.flush())]),
+      new Promise((r) => setTimeout(r, 3000)),
+    ]).finally(() => { sync.engine.stop(); app.quit(); });
     return;
   }
   dataHost?.shutdown();

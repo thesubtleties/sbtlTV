@@ -6,17 +6,16 @@
  * TypeScript): `pnpm build` / `pnpm test` replace it with the bundle; a bare `tsc` run needs
  * `node scripts/bundle-data.mjs` after it.
  */
-import { app, ipcMain, net } from 'electron';
+import { ipcMain } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { Receiver, Sender, Transport, type ReceiveState, type SendState } from '@sbtltv/mailbox/client';
-import { measurePowRate, powSecondsUpTo } from '@sbtltv/mailbox/protocol';
+import { KeyringUnavailable, Receiver, Sender, type ReceiveState, type SendState } from '@sbtltv/mailbox/client';
+import { relayTransport } from './relay-transport.js';
 import { ExportProblem, buildBody } from '../setup-transfer.js';
-import { fitsInDrop, packSetup, sendBody, unpackSetup, type SendSelection } from '../setup-send.js';
+import { fitsInDrop, packJoin, packSetup, sendBody, unpackDrop, type JoinPayload, type SendSelection } from '../setup-send.js';
 import { validateSetupBody, type SetupBody, type SetupPreview, type UserLists } from '../setup-body.js';
 import { EFF_WORDS } from '../eff-wordlist.js';
 
-/** The relay (packages/mailbox server): passes the knock and one sealed drop, keeps nothing. */
-export const MAILBOX_BASE = 'https://relay.sbtltv.com';
+export { MAILBOX_BASE } from './relay-transport.js';
 
 /** What the page may see of a state: never the received payload; plus how long the current proof may take. */
 function view(s: ReceiveState | SendState | null | undefined, workUpTo: number) {
@@ -26,39 +25,29 @@ function view(s: ReceiveState | SendState | null | undefined, workUpTo: number) 
   return s;
 }
 
-/** This computer's proof speed, measured once (~30 ms) the first time it's needed. */
-let powRate = 0;
-
 /** Returns stop() (cancels a knock in progress: quit, window closed, page reloaded) and active(). */
-export function registerMailbox(deps: { stage(body: SetupBody): { token: string; preview: SetupPreview }; log: (m: string) => void }): { stop(): Promise<void>; active(): boolean } {
+export function registerMailbox(deps: {
+  stage(body: SetupBody): { token: string; preview: SetupPreview };
+  log: (m: string) => void;
+  /** Sync: "Add a computer" sends a join instead of a setup; a received join waits for Join */
+  sync: { joinPayload(): Promise<JoinPayload>; giverSent(): void; activateJoin(j: JoinPayload, name: string): Promise<void> };
+}): { stop(): Promise<void>; active(): boolean } {
   let workUpTo = 0;
-  // SBTLTV_MAILBOX points a development build at a local relay; a released app always uses the real one
-  const base = !app.isPackaged && process.env.SBTLTV_MAILBOX ? process.env.SBTLTV_MAILBOX : MAILBOX_BASE;
-  const transport = () => new Transport({
-    base,
-    version: app.getVersion(),
-    // As little about this computer as possible: a plain User-Agent, no language, no cookies, and
-    // no redirects (a hijacked relay can't send the request on to a local address)
-    fetch: (req) => {
-      const headers = new Headers(req.headers);
-      headers.set('user-agent', 'sbtlTV');
-      headers.set('accept-language', '*');
-      return net.fetch(new Request(req, { headers, credentials: 'omit', redirect: 'error' }), { cache: 'no-store', bypassCustomProtocolHandlers: true });
-    },
-    onWork: (bits) => { powRate ||= measurePowRate(); workUpTo = powSecondsUpTo(bits, powRate); },
-  });
+  const transport = () => relayTransport({ onWorkSeconds: (sec) => { workUpTo = sec; } });
   let role: 'receive' | 'send' | null = null;
   let receiver: Receiver | null = null;
   let sender: Sender | null = null;
   let pending: Buffer | null = null;
   let staged: { token: string; preview: SetupPreview } | undefined;
+  /** A received join to someone's sync, waiting for this person to tap Join (nothing applied before) */
+  let stagedJoin: JoinPayload | undefined;
 
   // Every start and cancel takes a new number: a start that finishes after a later cancel stands down
   let generation = 0;
 
   const stopAll = async () => {
     const r = receiver, s = sender;
-    receiver = null; sender = null; pending = null; staged = undefined; role = null; workUpTo = 0;
+    receiver = null; sender = null; pending = null; staged = undefined; stagedJoin = undefined; role = null; workUpTo = 0;
     await r?.cancel(); await s?.cancel();
   };
 
@@ -68,9 +57,14 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
     if (mine !== generation) return { success: false };
     role = 'receive';
     let body: SetupBody | null = null;
+    let joinIn: JoinPayload | null = null;
     const r = new Receiver(transport(), EFF_WORDS, (s: ReceiveState) => {
       if (r !== receiver) return;   // an older knock finishing after a restart
-      if (s.step === 'received' && body) {
+      if (s.step === 'received' && joinIn) {
+        stagedJoin = joinIn;
+        joinIn = null;
+        deps.log('Relay: join received');
+      } else if (s.step === 'received' && body) {
         staged = deps.stage(body);
         body = null;
         deps.log('Relay: setup received');
@@ -80,7 +74,11 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
     }, {
       // Usable = a valid setup within the size limit; the giver hears "received" only then
       accept: (payload) => {
-        try { body = unpackSetup(payload); return true; } catch { deps.log('Relay: received setup was not valid'); return false; }
+        try {
+          const d = unpackDrop(payload);
+          if (d.kind === 'join') joinIn = d.join; else body = d.body;
+          return true;
+        } catch { deps.log('Relay: received setup was not valid'); return false; }
       },
     });
     receiver = r;
@@ -126,6 +124,37 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
     }
   });
 
+ipcMain.handle('mailbox:sendJoin', async (_e, code: string) => {
+  const mine = ++generation;
+  try {
+    await stopAll();
+    if (mine !== generation) return { success: false };
+    role = 'send';
+    pending = packJoin(await deps.sync.joinPayload());
+    const s = new Sender(transport(), EFF_WORDS, (st: SendState) => {
+      if (s !== sender) return;
+      if (st.step === 'received') { deps.log('Relay: join picked up'); deps.sync.giverSent(); }
+      else if (st.step === 'failed') deps.log(`Relay: join ended (${st.reason})`);
+    });
+    sender = s;
+    void s.ring(String(code));
+    return { success: true };
+  } catch (e) {
+    role = null;
+    if (e instanceof KeyringUnavailable) return { error: 'Sync needs a working keyring on this computer.' };
+    deps.log('Relay: join not started');
+    return { error: "Couldn't start. Restart sbtlTV and try again." };
+  }
+});
+
+ipcMain.handle('mailbox:join', async (_e, name: unknown) => {
+  const j = stagedJoin;
+  if (!j) return { error: 'Start again.' };
+  stagedJoin = undefined;
+  try { await deps.sync.activateJoin(j, typeof name === 'string' ? name : ''); return { success: true }; }
+  catch (e) { return { error: e instanceof KeyringUnavailable ? 'Sync needs a working keyring on this computer.' : "Couldn't reach the sbtlTV relay. Try again." }; }
+});
+
   ipcMain.handle('mailbox:confirm', async () => {
     if (!sender || !pending) return { error: 'Start again.' };
     const payload = pending;
@@ -141,7 +170,7 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
 
   ipcMain.handle('mailbox:state', () => {
     const state = role === 'receive' ? view(receiver?.state, workUpTo) : role === 'send' ? view(sender?.state, workUpTo) : null;
-    return { success: true, data: { role, state, staged } };
+    return { success: true, data: { role, state, staged, join: stagedJoin ? { computers: stagedJoin.computers.map((c) => c.name) } : undefined } };
   });
 
   // Quitting waits for a stop already under way (closing the window starts one), so the other side hears "cancelled"

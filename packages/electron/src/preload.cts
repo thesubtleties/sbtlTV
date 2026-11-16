@@ -313,6 +313,34 @@ contextBridge.exposeInMainWorld('mailbox', {
   sameWords: () => ipcRenderer.invoke('mailbox:sameWords'),
   cancel: () => ipcRenderer.invoke('mailbox:cancel'),
   state: () => ipcRenderer.invoke('mailbox:state'),
+  // Sync: "Add a computer" (giver) and Join (receiver of a join)
+  sendJoin: (code: string) => ipcRenderer.invoke('mailbox:sendJoin', code),
+  join: (name: string) => ipcRenderer.invoke('mailbox:join', name),
+});
+
+// Settings > Sync & transfer > Sync: watchlist, progress and chosen settings across the user's computers
+const listen = (channel: string, cb: (data: unknown) => void) => {
+  const h = (_: unknown, data: unknown) => cb(data);
+  ipcRenderer.on(channel, h);
+  return () => { ipcRenderer.removeListener(channel, h); };
+};
+contextBridge.exposeInMainWorld('sync', {
+  ready: () => ipcRenderer.invoke('sync:ready'),
+  view: () => ipcRenderer.invoke('sync:view'),
+  record: (records: unknown[]) => ipcRenderer.invoke('sync:record', records),
+  pull: () => ipcRenderer.invoke('sync:pull'),
+  setParts: (p: unknown) => ipcRenderer.invoke('sync:setParts', p),
+  rename: (name: string) => ipcRenderer.invoke('sync:rename', name),
+  remove: (id: string) => ipcRenderer.invoke('sync:remove', id),
+  leave: () => ipcRenderer.invoke('sync:leave'),
+  onView: (cb: (v: unknown) => void) => listen('sync-view', cb),
+  onApply: (cb: (records: unknown) => void) => listen('sync-apply', cb),
+  onSnapshot: (cb: () => void) => listen('sync-snapshot', () => cb()),
+  onSettingsReplaced: (cb: () => void) => listen('settings-replaced', () => cb()),
+  // Quitting: the page saves playback progress, then says so (main waits at most 1.5 s)
+  onBeforeQuit: (cb: () => Promise<void> | void) => listen('app-before-quit', () => {
+    void Promise.resolve().then(cb).catch(() => {}).finally(() => ipcRenderer.send('app-quit-ready'));
+  }),
 });
 
 // Colors the desktop provides, for Settings > Appearance

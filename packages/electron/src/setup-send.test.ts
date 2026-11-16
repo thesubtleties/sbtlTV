@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gzipSync } from 'node:zlib';
-import { MAX_RECEIVED_BYTES, fitsInDrop, packSetup, receivedChanges, unpackSetup, sendBody } from './setup-send.js';
+import { MAX_RECEIVED_BYTES, fitsInDrop, packJoin, packSetup, receivedChanges, unpackDrop, unpackSetup, sendBody } from './setup-send.js';
 import { validateSetupBody, type SetupBody } from './setup-body.js';
 
 const base: SetupBody = {
@@ -88,4 +88,19 @@ test('providers added just for this send are tidied: trimmed, M3U without login 
 test('a received setup changes only what it carries', () => {
   assert.deepEqual(receivedChanges({ ...base, includes: ['apiKeys'], sources: undefined, apiKeys: { tmdb: 'k' } }), { sources: false, settings: false, apiKeys: ['tmdb'] });
   assert.deepEqual(receivedChanges({ ...base, includes: ['sources', 'logins', 'settings'], settings: {} }), { sources: true, settings: true, apiKeys: [] });
+});
+
+test('a join travels as its own kind and is checked', () => {
+  const join = { key: Buffer.alloc(32, 7).toString('base64'), computers: [{ id: 'a'.repeat(32), name: 'Mac' }] };
+  assert.deepEqual(unpackDrop(packJoin(join)), { kind: 'join', join });
+  assert.throws(() => unpackSetup(packJoin(join)));
+  const bad = (j: unknown) => gzipSync(Buffer.from(JSON.stringify({ sbtlSync: 1, ...(j as object) })));
+  assert.throws(() => unpackDrop(bad({ key: 'short', computers: [] })));
+  assert.throws(() => unpackDrop(bad({ key: join.key, computers: Array.from({ length: 11 }, () => join.computers[0]) })));
+  assert.throws(() => unpackDrop(bad({ key: join.key, computers: [{ id: 'nothex', name: 'x' }] })));
+  assert.throws(() => unpackDrop(bad({ key: join.key, computers: [{ id: 'a'.repeat(32), name: 'x'.repeat(61) }] })));
+});
+
+test('a setup still unpacks as a setup', () => {
+  assert.equal(unpackDrop(packSetup(base)).kind, 'setup');
 });
