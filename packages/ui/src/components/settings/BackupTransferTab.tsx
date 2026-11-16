@@ -201,7 +201,7 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
         {imp.step === 'preview' && imp.received && sources.length === 0 && (
           // A fresh install: nothing to replace, so no warning and no backup, just yes or no
           <div className="setup-preview">
-            <Hint>Ready to set up: {setupSummary(imp.preview)}.</Hint>
+            <div className="setup-preview__summary"><Hint>Ready to set up: {setupSummary(imp.preview)}.</Hint></div>
             <div className="setup-preview__actions">
               <Button variant="primary" onClick={() => void apply(imp.token, false)}>Set up sbtlTV</Button>
               <Button onClick={() => setImp({ step: 'idle' })}>Decline</Button>
@@ -210,11 +210,13 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
         )}
         {imp.step === 'preview' && !(imp.received && sources.length === 0) && (
           <div className="setup-preview">
-            <Hint>
-              From sbtlTV {imp.preview.app} on {platformName(imp.preview.platform)}{exportedOn(imp.preview.exportedAt)}: {setupSummary(imp.preview)}.
-            </Hint>
-            <Hint tone="warn">{imp.received ? receivedNote(imp.preview) : 'Replaces your sources, settings, API keys, favorites, watchlist and watch progress. Anything not in the file is cleared.'}</Hint>
-            <OptionRow title="Back up my setup first"><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
+            <div className="setup-preview__summary">
+              <Hint>
+                From sbtlTV {imp.preview.app} on {platformName(imp.preview.platform)}{exportedOn(imp.preview.exportedAt)}: {setupSummary(imp.preview)}.
+              </Hint>
+              <Hint tone="warn">{imp.received ? receivedNote(imp.preview) : 'Replaces your sources, settings, API keys, favorites, watchlist and watch progress. Anything not in the file is cleared.'}</Hint>
+            </div>
+            <OptionRow title="Back up my setup first" help="Kept on this computer. Restore it here if needed."><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
             <div className="setup-preview__actions">
               <Button variant="danger" onClick={() => void apply(imp.token)}>{imp.restoring ? 'Replace and restore' : imp.received ? 'Replace' : 'Replace and import'}</Button>
               <Button onClick={() => setImp({ step: 'idle' })}>{imp.received ? 'Decline' : 'Cancel'}</Button>

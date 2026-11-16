@@ -76,8 +76,10 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
     const line = knockLine('send', state);
     return (
       <div className="knock-panel">
-        {state.step === 'words' && <KnockWords words={state.words} />}
-        <div aria-live="polite"><Hint tone={line.tone === 'error' ? 'danger' : line.tone === 'ok' ? 'ok' : undefined}>{line.text}</Hint></div>
+        <div className="knock-panel__show">
+          {state.step === 'words' && <KnockWords words={state.words} />}
+          <div aria-live="polite"><Hint tone={line.tone === 'error' ? 'danger' : line.tone === 'ok' ? 'ok' : undefined}>{line.text}</Hint></div>
+        </div>
         <div className="knock-panel__actions">
           {state.step === 'words' && <Button variant="primary" onClick={() => void window.mailbox?.confirm()}>Words match, send</Button>}
           {(state.step === 'ringing' || state.step === 'words' || state.step === 'sending' || state.step === 'sent') && <Button onClick={again}>Cancel</Button>}
@@ -106,6 +108,7 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
         </OptionRow>
       ))}
       {draft ? (
+        <OptionRow title="Provider for them" help="Just for this send. Not saved here.">
         <form className="knock-draft" onSubmit={(e) => { e.preventDefault(); setExtras([...extras, draft]); setDraft(null); }}>
           <TextField autoFocus aria-label="Name" placeholder="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
           <select className="st-select" aria-label="Type" value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value as 'xtream' | 'm3u' })}>
@@ -124,6 +127,7 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
             <Button onClick={() => setDraft(null)}>Cancel</Button>
           </div>
         </form>
+        </OptionRow>
       ) : (
         <div><Button onClick={() => setDraft(NO_DRAFT)}>Add a provider just for this send</Button></div>
       )}

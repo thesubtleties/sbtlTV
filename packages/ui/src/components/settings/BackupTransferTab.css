@@ -46,6 +46,27 @@
   cursor: pointer;
 }
 
+/* A received or imported setup, before it's applied: what it is, then the choice */
+.setup-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setup-preview__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 620px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.setup-preview__summary .st-hint {
+  max-width: none;
+}
+
 .setup-preview__actions {
   display: flex;
   gap: 8px;
