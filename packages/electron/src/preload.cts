@@ -330,6 +330,7 @@ contextBridge.exposeInMainWorld('sync', {
   record: (records: unknown[]) => ipcRenderer.invoke('sync:record', records),
   applied: (records: unknown[]) => ipcRenderer.invoke('sync:applied', records),
   pull: () => ipcRenderer.invoke('sync:pull'),
+  dismissInterrupted: () => ipcRenderer.invoke('sync:dismissInterrupted'),
   setParts: (p: unknown) => ipcRenderer.invoke('sync:setParts', p),
   rename: (name: string) => ipcRenderer.invoke('sync:rename', name),
   remove: (id: string) => ipcRenderer.invoke('sync:remove', id),

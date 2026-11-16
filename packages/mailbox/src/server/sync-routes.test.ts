@@ -83,6 +83,15 @@ describe('sync routes', () => {
     expect(await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).toEqual({ moved: true, waiting: 0 });
   });
 
+  it('retiring a group the relay lost creates it already retired; it then needs its own token', async () => {
+    const { call } = setup(); const g = group(); const other = newDeviceId();
+    const key = randomBytes(140).toString('base64');
+    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: key } }, pow: true })).status).toBe(204);
+    expect(await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).toEqual({ moved: true, waiting: 1 });
+    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(409);
+    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: group().accessToken, body: { keys: {} }, pow: true })).status).toBe(403);
+  });
+
   it('the database id is the same on every ask, and needs no token', async () => {
     const { call } = setup();
     const a = await (await call('GET', '/v1/sync/epoch')).json();

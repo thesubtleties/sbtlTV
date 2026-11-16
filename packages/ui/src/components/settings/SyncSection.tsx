@@ -7,6 +7,9 @@ import { AddComputerPanel } from './AddComputerPanel';
 import { Button, Hint, OnOff, OptionRow, Section, Segmented, TextField } from './ui';
 import './SyncSection.css';
 
+/** "Mac", "Mac and Linux PC", "Mac, Linux PC and Windows PC" */
+const names = (list: string[]) => (list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}` : list[0] ?? '');
+
 const PROBLEM: Partial<Record<SyncView['status'], string>> = {
   removed: 'This computer was removed from sync.',
   ended: 'Sync ended (unused for 90 days). Add a computer to start again.',
@@ -51,6 +54,12 @@ export function SyncSection({ adding, onAdding }: { adding: boolean; onAdding: (
     >
       {adding && <AddComputerPanel onClose={() => onAdding(false)} />}
       {problem && <Hint tone="warn">{problem}</Hint>}
+      {view.interrupted.length > 0 && (
+        <div className="knock-panel__actions">
+          <Hint tone="warn">Sync was interrupted. Add {names(view.interrupted)} again.</Hint>
+          <Button onClick={() => void sync.dismissInterrupted()}>Dismiss</Button>
+        </div>
+      )}
       {view.status === 'off' && !adding && <Hint>On the other computer: Sync & transfer › Show my code.</Hint>}
       {view.status === 'pending' && <Hint>Waiting for the other computer to join…</Hint>}
       {on && (

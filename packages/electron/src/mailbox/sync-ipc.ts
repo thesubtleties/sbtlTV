@@ -58,6 +58,7 @@ export function registerSync(deps: {
     engine.record(records.map(validateRecord).filter((r): r is SyncRecord => r !== null && r.k !== 'set'));
   });
   ipcMain.handle('sync:pull', () => { engine.nudge(); });
+  ipcMain.handle('sync:dismissInterrupted', () => { engine.dismissInterrupted(); });
   // The page wrote these into its lists (only then are they "applied": a closed window or a failed
   // write gets them again on the next pull)
   ipcMain.handle('sync:applied', (_e, records: unknown) => {

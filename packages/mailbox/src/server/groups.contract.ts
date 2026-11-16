@@ -104,6 +104,16 @@ export function groupStoreContract(name: string, make: () => Promise<GroupStore>
       expect(await s.sweep('2026-04-05')).toBe(1);
     });
 
+    it('a group can be created already retired (the remover restoring its marker after the relay lost its data)', async () => {
+      const gid = hex(), b = hex(), th = h();
+      expect(await s.createRetired(gid, th, new Map([[b, Buffer.from('for-b')]]), '2026-11-16')).toBe('ok');
+      expect((await s.group(gid))?.tokenHash.equals(th)).toBe(true);
+      expect(await s.list(gid, 0, '2026-11-16')).toEqual({ moved: true, waiting: 1 });
+      expect(await s.putBox(gid, th, hex(), Buffer.from('rebuild'), '2026-11-16')).toBe('moved');   // can't be rebuilt
+      expect((await s.getRekey(gid, b, '2026-11-16'))?.toString()).toBe('for-b');
+      expect(await s.createRetired(gid, th, new Map(), '2026-11-16')).toBe('exists');
+    });
+
     it('the epoch stays the same for one database', async () => {
       expect(await s.epoch()).toMatch(/^[0-9a-f]{32}$/);
       expect(await s.epoch()).toBe(await s.epoch());

@@ -7,6 +7,7 @@ import type { SyncRecord } from '@sbtltv/core';
 import { deriveGroup, tokenHash } from '../protocol/index.js';
 import { createApp } from '../server/app.js';
 import { Transport } from './transport.js';
+import { SyncClient } from './sync.js';
 import { SyncStore } from './sync-store.js';
 import { SyncEngine, uniqueName, type SyncView } from './sync-engine.js';
 import { fakeSealer } from './sync-test-helpers.js';
@@ -199,6 +200,44 @@ describe('SyncEngine', () => {
     expect(d.e.view().status).toBe('active');
     await c.e.pull();
     expect(c.e.view().status).not.toBe('active');
+  });
+
+  it('after a relay wipe the remover restores its old group already retired: the away computer follows, the removed one gets nothing and cannot rebuild it', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const c = w.make('Mac');
+    await c.e.activateJoin(await a.e.joinPayload(), 'Mac');
+    await a.e.pull(); await b.e.pull(); await c.e.pull();
+    const cState = JSON.parse(readFileSync(join(c.dirPath, 'sync-state.json'), 'utf8'));
+    const oldGid = deriveGroup(Buffer.from(fakeSealer().open(cState.key), 'base64')).groupId;
+    await a.e.remove(thisId(c.e));   // b and c are away
+    w.wipe();
+    await a.e.pull();                // a sees the new database and restores the retired marker first
+    expect(await w.relay().groups.group(oldGid)).toMatchObject({ moved: true });
+    await c.e.pull();                // the removed computer comes back first
+    expect(c.e.view().status).toBe('removed');
+    await b.e.pull();
+    expect(b.e.view().status).toBe('active');
+    expect(b.e.view().computers.map((x) => x.name).sort()).toEqual(['Linux PC', 'Linux PC 2']);
+    expect(a.e.view().interrupted).toEqual([]);
+  });
+
+  it('an old group retired by someone else after a wipe: the remover says which computers to add again', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const c = w.make('Mac');
+    await c.e.activateJoin(await a.e.joinPayload(), 'Mac');
+    await a.e.pull(); await b.e.pull(); await c.e.pull();
+    const cState = JSON.parse(readFileSync(join(c.dirPath, 'sync-state.json'), 'utf8'));
+    const oldK = Buffer.from(fakeSealer().open(cState.key), 'base64');
+    await a.e.remove(thisId(c.e));
+    w.wipe();
+    // A modified client on the removed computer retires the old group first, with a key it controls
+    const old = deriveGroup(oldK);
+    const t = new Transport({ base: 'http://x', version: '0.17.0', bits: 4, auth: old.accessToken, fetch: async (r) => w.relay().app.fetch(r) });
+    await new SyncClient(t, old.groupId).rekey(new Map());
+    await a.e.pull();
+    expect(a.e.view().interrupted).toEqual(['Linux PC 2']);
+    a.e.dismissInterrupted();
+    expect(a.e.view().interrupted).toEqual([]);
   });
 
   it('a keyring that stopped working: status keyring, no crash, nothing sent (Review Focus 3)', async () => {

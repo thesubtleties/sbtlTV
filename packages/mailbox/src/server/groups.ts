@@ -22,6 +22,12 @@ export interface GroupStore {
   /** The group goes with its last box. */
   deleteBox(gid: string, did: string): Promise<void>;
   rekey(gid: string, keys: Map<string, Buffer>, today: string): Promise<'ok' | 'moved' | null>;
+  /**
+   * A group that doesn't exist, created already retired (moved, with each computer's sealed new
+   * key): the remover restoring its marker after the relay lost its data, before anyone rebuilds it.
+   * 'exists' = the group is there (use rekey, with its token checked).
+   */
+  createRetired(gid: string, tokenHash: Buffer, keys: Map<string, Buffer>, today: string): Promise<'ok' | 'exists'>;
   /** This computer's new key after a move; marks it fetched and refreshes last_seen. */
   getRekey(gid: string, did: string, today: string): Promise<Buffer | null>;
   /**
@@ -87,6 +93,15 @@ export class MemoryGroupStore implements GroupStore {
     if (g.movedOn) return 'moved' as const;
     g.movedOn = today; g.lastSeen = today; g.boxes.clear();
     g.rekeys = new Map([...keys].map(([did, sealed]) => [did, { sealed: Buffer.from(sealed), fetched: false }]));
+    return 'ok' as const;
+  }
+
+  async createRetired(gid: string, tokenHash: Buffer, keys: Map<string, Buffer>, today: string) {
+    if (this.groups.has(gid)) return 'exists' as const;
+    this.groups.set(gid, {
+      tokenHash, movedOn: today, lastSeen: today, seq: 0, boxes: new Map(),
+      rekeys: new Map([...keys].map(([did, sealed]) => [did, { sealed: Buffer.from(sealed), fetched: false }])),
+    });
     return 'ok' as const;
   }
 

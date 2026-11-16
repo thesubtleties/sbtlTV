@@ -26,6 +26,10 @@ export interface PreviousGroup {
   at: number;           // when this computer moved away
   /** The remover only: the computers that stayed (id -> public key), for moving a rebuilt old group again */
   members?: Record<string, string>;
+  /** The remover only: their names, to say which to add again if someone else took the old group */
+  names?: Record<string, string>;
+  /** The remover only: the relay database (epoch) in which this computer last put the retired marker */
+  markedIn?: string | null;
 }
 export interface SyncFile {
   v: 1; status: SyncStatus;
@@ -39,6 +43,8 @@ export interface SyncFile {
   /** The relay database's id when this computer last reached its group (null = not known yet) */
   epoch: string | null;
   previous: PreviousGroup[];
+  /** Computers to add again: an old group was retired by someone else after the relay lost its data */
+  interrupted: string[];
 }
 
 const STATUSES = new Set(['pending', 'active', 'removed', 'ended']);
@@ -55,7 +61,7 @@ export class SyncStore {
     if (!existsSync(this.file)) return null;
     try {
       const f = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<SyncFile> | null;
-      if (looksRight(f)) return { ...f, epoch: typeof f.epoch === 'string' ? f.epoch : null, previous: Array.isArray(f.previous) ? f.previous : [] };
+      if (looksRight(f)) return { ...f, epoch: typeof f.epoch === 'string' ? f.epoch : null, previous: Array.isArray(f.previous) ? f.previous : [], interrupted: Array.isArray(f.interrupted) ? f.interrupted : [] };
     } catch { /* below */ }
     renameSync(this.file, `${this.file}.bad`);
     return null;

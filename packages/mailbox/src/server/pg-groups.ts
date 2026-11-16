@@ -119,6 +119,15 @@ export class PgGroupStore implements GroupStore {
     });
   }
 
+  createRetired(gid: string, tokenHash: Buffer, keys: Map<string, Buffer>, today: string) {
+    return tx(this.pool, async (c) => {
+      const made = await c.query('insert into sync_groups (id, token_hash, moved_on, last_seen) values ($1, $2, $3, $3) on conflict (id) do nothing', [gid, tokenHash, today]);
+      if (made.rowCount === 0) return 'exists' as const;
+      for (const [did, sealed] of keys) await c.query('insert into sync_rekeys (group_id, device_id, sealed) values ($1, $2, $3)', [gid, did, sealed]);
+      return 'ok' as const;
+    });
+  }
+
   async getRekey(gid: string, did: string, today: string) {
     const r = await this.pool.query<{ sealed: Buffer }>('update sync_rekeys set fetched = true where group_id = $1 and device_id = $2 returning sealed', [gid, did]);
     if (!r.rows[0]) return null;

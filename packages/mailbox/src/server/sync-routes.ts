@@ -78,7 +78,13 @@ export function registerSyncRoutes(app: Hono, d: {
   app.post('/v1/groups/:gid/rekey', async (c) => {
     if (!ids(c, 'gid')) return d.err(c, 400, 'bad-request');
     if (d.cfg().syncPaused) return d.err(c, 429, 'busy');
-    const auth = await authorise(c); if (auth !== 'ok') return auth;
+    const th = token(c);
+    if (!th) return d.err(c, 403, 'denied');
+    // A group the relay doesn't have (it lost its data) is created already retired; one it has
+    // needs its own token, checked before any work
+    const gid = c.req.param('gid')!;
+    const exists = await d.groups.group(gid);
+    if (exists && !sameHash(exists.tokenHash, th)) return d.err(c, 403, 'denied');
     const text = await d.guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
     const keys = body?.keys;
@@ -90,7 +96,11 @@ export function registerSyncRoutes(app: Hono, d: {
       if (!HEX32.test(did) || typeof v !== 'string' || !B64.test(v) || v.length > 512) return d.err(c, 400, 'bad-request');
       map.set(did, Buffer.from(v, 'base64'));
     }
-    const out = await d.groups.rekey(c.req.param('gid')!, map, today());
+    if (!exists && (await d.groups.createRetired(gid, th, map, today())) === 'ok') return c.body(null, 204);
+    // Created meanwhile by someone else: only its own token may move it
+    const now = await d.groups.group(gid);
+    if (!now || !sameHash(now.tokenHash, th)) return d.err(c, now ? 403 : 404, now ? 'denied' : 'not-found');
+    const out = await d.groups.rekey(gid, map, today());
     if (!out) return d.err(c, 404, 'not-found');
     if (out === 'moved') return d.err(c, 409, 'moved');
     return c.body(null, 204);

@@ -16,6 +16,8 @@ export type SyncViewStatus = 'off' | 'pending' | 'active' | 'removed' | 'ended' 
 export interface SyncView {
   status: SyncViewStatus; lastSync: number | null; parts: Parts; name: string | null;
   defaultName: string;   // this computer's platform name, for "Name this computer" before sync is on
+  /** Computers to add again (an old group was retired by someone else after the relay lost its data) */
+  interrupted: string[];
   computers: { id: string; name: string; thisOne: boolean; lastSeen: number | null }[];
 }
 export interface EngineDeps {
@@ -111,9 +113,10 @@ export class SyncEngine {
 
   view(): SyncView {
     const f = this.f;
-    if (!f) return { status: 'off', lastSync: null, parts: { ...DEFAULT_PARTS }, name: null, defaultName: this.d.defaultName, computers: [] };
+    if (!f) return { status: 'off', lastSync: null, parts: { ...DEFAULT_PARTS }, name: null, defaultName: this.d.defaultName, interrupted: [], computers: [] };
     return {
       status: this.problem ?? f.status, lastSync: f.lastSync, parts: f.parts, name: f.name, defaultName: this.d.defaultName,
+      interrupted: f.interrupted,
       computers: [
         { id: f.deviceId, name: f.name, thisOne: true, lastSeen: null },
         ...Object.entries(f.others).map(([id, o]) => ({ id, name: o.name, thisOne: false, lastSeen: o.seenAt })),
@@ -243,6 +246,7 @@ export class SyncEngine {
       try { epoch = await k.client.epoch(); } catch (e) { await this.failed(e); return; }
       if (f.epoch !== null && epoch === f.epoch) { f.status = 'ended'; this.save(); this.emit(); return; }
       f.epoch = epoch;
+      await this.retirePrevious();   // before anyone who was away can rebuild an old group
       f.since = 0;
       await this.pushNow();
       f.lastSync = now;
@@ -253,15 +257,19 @@ export class SyncEngine {
     if (l.moved) { await this.followMove(); return; }
     // A new database id: the relay lost its data and the group was rebuilt, so its numbering
     // started again. Read everything again.
-    if (f.epoch !== null && l.epoch !== f.epoch && f.since > 0) {
+    const wiped = f.epoch !== null && l.epoch !== f.epoch;
+    if (wiped && f.since > 0) {
       f.since = 0;
       try { l = await k.client.list(0); } catch (e) { await this.failed(e); return; }
       if (l === null || l.moved) return;
     }
     f.epoch = l.epoch;
+    if (wiped) await this.retirePrevious();
     for (const b of l.boxes) if (b.id !== f.deviceId) this.takeBox(b.id, b.seq, b.sealed, now);
     const present = new Set(l.computers.map((c) => c.id));
     for (const id of Object.keys(f.others)) if (!present.has(id)) delete f.others[id];
+    // A computer that was to be added again is back
+    if (f.interrupted.length) f.interrupted = f.interrupted.filter((n) => !Object.values(f.others).some((o) => o.name === n));
     f.since = l.seq;
     if (f.status === 'pending' && Object.keys(f.others).length > 0) {
       f.status = 'active'; f.pendingUntil = null;
@@ -290,6 +298,8 @@ export class SyncEngine {
       const client = new SyncClient(this.d.transport(g.accessToken), g.groupId);
       try {
         const l = await client.list(0);
+        // Retired in this database, but not by this computer: someone else took the old group
+        if (l && l.moved && p.removed.length > 0 && p.markedIn !== f.epoch) { this.interrupt(p); continue; }
         if (l && l.moved && l.waiting === 0) continue;   // everyone has caught up
         // Gone from the relay and not back for 90 days: nobody will rebuild it now. While it's there
         // and someone still waits for a key, it's kept alive however long that takes.
@@ -307,8 +317,14 @@ export class SyncEngine {
             if (id === f.deviceId || p.removed.includes(id) || keys.has(id)) continue;
             try { keys.set(id, sealRekey(decodeB64(pub, 32), g.encKey, k.K, g.groupId, id)); } catch { /* a bad key: skip */ }
           }
-          await client.rekey(keys);
-          this.d.log('Sync: an old group came back; moved it again');
+          try {
+            await client.rekey(keys);
+            p.markedIn = f.epoch;
+            this.d.log('Sync: an old group came back; moved it again');
+          } catch (e) {
+            if (e instanceof MailboxError && (e.code === 'moved' || e.code === 'denied')) { this.interrupt(p); continue; }
+            throw e;
+          }
         }
       } catch { /* keep it for next time */ }
       keep.push(p);
@@ -389,7 +405,7 @@ export class SyncEngine {
       counter: 0, parts: { ...DEFAULT_PARTS }, own: [], others: {}, since: 0, lastSync: null,
       // A pending group the other computer never joins is forgotten (giverSent restarts the clock)
       pendingUntil: status === 'pending' ? this.now() + PENDING_MS : null, applied: {},
-      epoch: null, previous: [],
+      epoch: null, previous: [], interrupted: [],
     };
     this.setKey(K, device);
     this.problem = null;
@@ -405,6 +421,44 @@ export class SyncEngine {
       key: this.keys!.K.toString('base64'),
       computers: [{ id: f.deviceId, name: f.name }, ...Object.entries(f.others).map(([id, o]) => ({ id, name: o.name }))],
     };
+  }
+
+  /** The relay lost its data: put this computer's retired markers back (old groups it removed someone from), sealing the current key to the computers that stayed. */
+  private async retirePrevious(): Promise<void> {
+    const f = this.f!, k = this.keys!;
+    for (const p of f.previous) {
+      if (p.removed.length === 0 || p.markedIn === f.epoch) continue;
+      let old: { K: Buffer };
+      try { old = this.d.store.open({ ...f, key: p.key }); } catch { continue; }
+      const g = deriveGroup(old.K);
+      const keys = new Map<string, Buffer>();
+      for (const [id, pub] of Object.entries(p.members ?? {})) {
+        if (id === f.deviceId || p.removed.includes(id)) continue;
+        try { keys.set(id, sealRekey(decodeB64(pub, 32), g.encKey, k.K, g.groupId, id)); } catch { /* a bad key: skip */ }
+      }
+      try {
+        await new SyncClient(this.d.transport(g.accessToken), g.groupId).rekey(keys);
+        p.markedIn = f.epoch;
+        this.d.log('Sync: the relay lost its data; put an old group back as retired');
+      } catch (e) {
+        if (e instanceof MailboxError && (e.code === 'moved' || e.code === 'denied')) this.interrupt(p);
+      }
+    }
+  }
+
+  /** Someone else took an old group after the relay lost its data: say which computers to add again. */
+  private interrupt(p: SyncFile['previous'][number]): void {
+    const f = this.f!;
+    const names = Object.entries(p.names ?? {}).filter(([id]) => !p.removed.includes(id) && id !== f.deviceId).map(([, n]) => n);
+    f.interrupted = [...new Set([...f.interrupted, ...names])];
+    p.markedIn = f.epoch;   // said once
+    this.d.log('Sync: an old group was retired by someone else');
+  }
+
+  dismissInterrupted(): void {
+    if (!this.f) return;
+    this.f.interrupted = [];
+    this.save(); this.emit();
   }
 
   /** "Add a computer" failed or was cancelled before anyone joined: forget the pending group. */
@@ -451,9 +505,11 @@ export class SyncEngine {
         if (id !== deviceId) keys.set(id, sealRekey(decodeB64(o.pub, 32), k.encKey, newK, k.groupId, id));
       }
       await k.client.rekey(keys);   // a relay error reaches the caller: nothing changed here yet
-      const members = Object.fromEntries(Object.entries(f.others).filter(([id]) => id !== deviceId).map(([id, o]) => [id, o.pub]));
+      const stayed = Object.entries(f.others).filter(([id]) => id !== deviceId);
+      const members = Object.fromEntries(stayed.map(([id, o]) => [id, o.pub]));
+      const names = Object.fromEntries(stayed.map(([id, o]) => [id, o.name]));
       delete f.others[deviceId];
-      f.previous.push({ key: f.key, removed: [deviceId], at: this.now(), members });
+      f.previous.push({ key: f.key, removed: [deviceId], at: this.now(), members, names, markedIn: f.epoch });
       this.switchKey(newK);
       await this.pushNow();
       this.emit();

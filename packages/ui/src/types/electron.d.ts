@@ -262,6 +262,8 @@ export interface SyncView {
   parts: SyncParts;
   name: string | null;
   defaultName: string;
+  /** Computers to add again: an old group was retired by someone else after the relay lost its data */
+  interrupted: string[];
   computers: { id: string; name: string; thisOne: boolean; lastSeen: number | null }[];
 }
 export interface SyncApi {
@@ -271,6 +273,7 @@ export interface SyncApi {
   /** These were written into the lists (after applyRecords): don't hand them over again */
   applied: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;
   pull: () => Promise<void>;
+  dismissInterrupted: () => Promise<void>;
   setParts: (parts: SyncParts) => Promise<void>;
   rename: (name: string) => Promise<void>;
   remove: (deviceId: string) => Promise<{ error?: string }>;
