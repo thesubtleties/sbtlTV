@@ -25,7 +25,10 @@
   background: var(--accent-faint);
 }
 
-.privacy__note {
+/* Where the switch for a service lives, under its name */
+.privacy__where {
+  margin-top: 2px;
+  font-size: 12px;
   color: var(--text-3);
 }
 

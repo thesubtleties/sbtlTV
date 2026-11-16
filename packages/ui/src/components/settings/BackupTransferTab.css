@@ -72,3 +72,29 @@
   gap: 8px;
   margin-top: 8px;
 }
+
+/* How sending works: receive and send side by side, stacked when narrow */
+.setup-how {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px 32px;
+  max-width: 720px;
+}
+
+.setup-how__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.setup-how__steps {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.setup-how__steps li + li {
+  margin-top: 4px;
+}
