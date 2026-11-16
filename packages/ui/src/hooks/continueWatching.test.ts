@@ -9,3 +9,16 @@ describe('mergeEpisodes', () => {
     expect(merged.map((e) => e.id).sort()).toEqual(['a2', 'b1']);
   });
 });
+
+describe('movieForRecord', () => {
+  const m = (stream_id: string, tmdb_id?: number) => ({ stream_id, tmdb_id, name: stream_id }) as never;
+  it('finds a movie by its stream id first, then by TMDB id (synced from a computer with other providers)', async () => {
+    const { movieForRecord } = await import('./useContinueWatching');
+    const byStream = new Map([['s1', m('s1', 1)]]);
+    const byTmdb = new Map([[2, m('other_9', 2)]]);
+    expect(movieForRecord({ stream_id: 's1', tmdb_id: 1 }, byStream, byTmdb)).toMatchObject({ stream_id: 's1' });
+    expect(movieForRecord({ stream_id: 'gone', tmdb_id: 2 }, byStream, byTmdb)).toMatchObject({ stream_id: 'other_9' });
+    expect(movieForRecord({ tmdb_id: 2 }, byStream, byTmdb)).toMatchObject({ stream_id: 'other_9' });
+    expect(movieForRecord({ stream_id: 'gone', tmdb_id: 3 }, byStream, byTmdb)).toBeUndefined();
+  });
+});

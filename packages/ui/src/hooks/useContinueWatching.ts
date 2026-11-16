@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type StoredMovie, type StoredSeries, type StoredEpisode, type StoredWatchProgress } from '../db';
 import { data } from '../data/client';
 import { useDataQuery } from '../data/useDataQuery';
+import { useEnabledSourceIds } from './useSourceFiltering';
 import type { VodPlayInfo } from '../types/media';
 import { groupBySeriesKey } from '../services/continue-watching/grouping';
 import { selectActiveEpisode, computeResumeTarget } from '../services/continue-watching/next-episode';
@@ -24,6 +25,7 @@ export interface ContinueItem {
 
 const EMPTY: ContinueItem[] = [];
 const NO_RECORDS: StoredWatchProgress[] = [];
+const NO_MOVIES: StoredMovie[] = [];
 
 /** Merged, deduped episode list for a series: one episode per season+episode, preferring the
  *  primary series' copy, then the others in `relatedIds` order. Pure; callers fetch the rows. */
@@ -52,6 +54,15 @@ export async function mergedEpisodesForSeries(series: { series_id: string; tmdb_
   return mergeEpisodes(series.series_id, relatedIds, allEps);
 }
 
+/** The movie a progress record plays: its own copy by stream id, else this computer's copy by TMDB id (progress synced from another computer). */
+export function movieForRecord(
+  r: { stream_id?: string; tmdb_id?: number },
+  byStream: Map<string, StoredMovie>,
+  byTmdb: Map<number, StoredMovie>,
+): StoredMovie | undefined {
+  return (r.stream_id ? byStream.get(r.stream_id) : undefined) ?? (r.tmdb_id ? byTmdb.get(r.tmdb_id) : undefined);
+}
+
 function useMovieItems(active: boolean): ContinueItem[] {
   const recs = useLiveQuery(async () => {
     if (!active) return NO_RECORDS;
@@ -61,21 +72,36 @@ function useMovieItems(active: boolean): ContinueItem[] {
   }, [active]) ?? NO_RECORDS;
   const streamIds = useMemo(() => recs.map((r) => r.stream_id ?? '').filter(Boolean), [recs]);
   // A movie progress record's stream_id IS the movie's id.
-  const { data: movies } = useDataQuery(
+  const { data: moviesFound } = useDataQuery(
     streamIds.length > 0 ? { type: 'movies', by: { kind: 'ids', streamIds }, sourceIds: [] } : null,
     ['vod_movies'], [streamIds.join(',')],
+  );
+  // No stream ids at all (only progress synced by TMDB id): nothing to look up that way
+  const movies = streamIds.length > 0 ? moviesFound : NO_MOVIES;
+  // Records whose stream id isn't in the library (another computer's provider, or gone): by TMDB id
+  const unresolvedTmdb = useMemo(() => {
+    if (!movies) return [] as number[];
+    const have = new Set(movies.map((m) => m.stream_id));
+    return [...new Set(recs.filter((r) => !(r.stream_id && have.has(r.stream_id)) && r.tmdb_id).map((r) => r.tmdb_id!))];
+  }, [recs, movies]);
+  const enabledSourceIds = useEnabledSourceIds();
+  const { data: byTmdbList } = useDataQuery(
+    unresolvedTmdb.length > 0 ? { type: 'movies', by: { kind: 'tmdbIds', tmdbIds: unresolvedTmdb }, sourceIds: enabledSourceIds } : null,
+    ['vod_movies'], [unresolvedTmdb.join(','), enabledSourceIds.join(',')],
   );
   return useMemo(() => {
     if (recs.length === 0 || !movies) return EMPTY;
     const byId = new Map(movies.map((m) => [m.stream_id, m]));
+    const byTmdb = new Map<number, StoredMovie>();
+    for (const m of byTmdbList ?? []) if (m.tmdb_id != null && !byTmdb.has(m.tmdb_id)) byTmdb.set(m.tmdb_id, m);
     const out: ContinueItem[] = [];
     for (const r of recs) {
-      const media = r.stream_id ? byId.get(r.stream_id) : undefined;
-      if (!media) continue; // orphan (movie no longer synced)
+      const media = movieForRecord(r, byId, byTmdb);
+      if (!media) continue; // not in this library: a missing title (useMissingTitles) or an orphan
       out.push({ kind: 'movie', key: r.id, media, resumePct: r.progress, updatedAt: r.updated_at });
     }
     return out;
-  }, [recs, movies]);
+  }, [recs, movies, byTmdbList]);
 }
 
 function useSeriesItems(active: boolean): ContinueItem[] {

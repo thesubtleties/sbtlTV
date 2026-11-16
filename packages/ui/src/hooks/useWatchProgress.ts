@@ -108,6 +108,8 @@ export async function updateWatchProgress(opts: {
       ...delayFields,
     };
     await db.watchProgress.put(row);
+    // A stand-in from sync (this title's progress from another computer, before this one had a copy) gives way to this copy
+    if (opts.type === 'movie' && opts.tmdbId && id !== `movie_tmdb_${opts.tmdbId}`) await db.watchProgress.delete(`movie_tmdb_${opts.tmdbId}`);
   });
   if (row) syncOut([progressRecord(row)]);
 }
