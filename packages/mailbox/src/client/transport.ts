@@ -4,6 +4,8 @@ import { CHALLENGE_HEADER, CHALLENGE_TTL_MS, LEVEL_HEADER, MAX_DROP_BYTES, POW_B
 export type Fetch = (req: Request) => Promise<Response>;
 export interface TransportOpts {
   base: string; version: string; fetch: Fetch; now?: () => number;
+  /** A sync group's access token, sent as Authorization: Bearer on every request */
+  auth?: string;
   /** The level to assume before the server has said (it says on every reply and in /v1/hello) */
   bits?: number;
   /** Called before each proof with its difficulty, so the app can say how long it may take */
@@ -43,6 +45,7 @@ export class Transport {
   private async send(method: string, path: string, body: unknown, pow: boolean, bits?: number, retried = false): Promise<Response> {
     const text = body === undefined ? '' : JSON.stringify(body);
     const headers: Record<string, string> = { [VERSION_HEADER]: this.o.version };
+    if (this.o.auth) headers.authorization = `Bearer ${this.o.auth}`;
     if (text) headers['content-type'] = 'application/json';
     if (pow && (this.level === null || !this.challenge || this.clock() - this.challenge.at > CHALLENGE_REFRESH_MS) && bits === undefined) await this.hello();
     // Bigger bodies cost more (same rule as the relay), so the first proof is already enough
@@ -88,18 +91,19 @@ export class Transport {
   }
 
   /** A reply's JSON, refusing anything larger than a drop could be (a broken or hostile relay). */
-  private async json<T>(res: Response): Promise<T> {
+  private async json<T>(res: Response, maxChars = MAX_REPLY_CHARS): Promise<T> {
     const text = await res.text();
-    if (text.length > MAX_REPLY_CHARS) throw new MailboxError('bad-request');
+    if (text.length > maxChars) throw new MailboxError('bad-request');
     return JSON.parse(text) as T;
   }
 
-  async get<T>(path: string): Promise<T> { return this.json<T>(await this.send('GET', path, undefined, false)); }
-  async post<T>(path: string, body: unknown, pow: boolean): Promise<T | null> {
-    const res = await this.send('POST', path, body, pow);
+  async get<T>(path: string, maxChars?: number): Promise<T> { return this.json<T>(await this.send('GET', path, undefined, false), maxChars); }
+  async post<T>(path: string, body: unknown, pow: boolean, method: 'POST' | 'PUT' = 'POST'): Promise<T | null> {
+    const res = await this.send(method, path, body, pow);
     return res.status === 204 ? null : this.json<T>(res);
   }
   async put(path: string, body: unknown): Promise<void> { await this.send('PUT', path, body, true); }
+  async del(path: string): Promise<void> { await this.send('DELETE', path, undefined, false); }
 }
 
 /** Polls ride out a brief network hiccup: only this many failed polls in a row end a knock. */
