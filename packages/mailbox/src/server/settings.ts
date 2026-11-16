@@ -21,6 +21,10 @@ export interface Settings {
   /** Refuse every write / only large drops, as "busy" */
   paused: boolean;
   largeDropsPaused: boolean;
+  /** Refuse sync writes as busy */
+  syncPaused: boolean;
+  /** Refuse only sync writes that would start a new group */
+  newGroupsPaused: boolean;
   /** A minute with more proven writes than this raises the level one step */
   busyPerMinute: number;
   /** The most steps above powBits */
@@ -38,6 +42,8 @@ export const DEFAULTS: Settings = {
   largeDropMbPerHour: 200,
   paused: false,
   largeDropsPaused: false,
+  syncPaused: false,
+  newGroupsPaused: false,
   busyPerMinute: 100,
   maxExtraBits: 3,
   quietPerMinute: 50,
@@ -57,6 +63,8 @@ const RULES: Record<keyof Settings, Rule> = {
   largeDropMbPerHour: int(0, 100_000),
   paused: bool,
   largeDropsPaused: bool,
+  syncPaused: bool,
+  newGroupsPaused: bool,
   busyPerMinute: int(1, 1_000_000),
   maxExtraBits: int(0, 8),
   quietPerMinute: int(0, 1_000_000),
