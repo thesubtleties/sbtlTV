@@ -9,7 +9,10 @@ export class SenderLimiter {
   private salt = randomBytes(32);
   private hour = -1;
   private counts = new Map<string, number>();
-  constructor(private now: () => number, private perHour: number) {}
+  private perHour: () => number;
+  constructor(private now: () => number, perHour: number | (() => number)) {
+    this.perHour = typeof perHour === 'function' ? perHour : () => perHour;
+  }
 
   /** true = allowed. */
   hit(ip: string): boolean {
@@ -18,7 +21,7 @@ export class SenderLimiter {
     const key = createHmac('sha256', this.salt).update(ip).digest('base64');
     const n = (this.counts.get(key) ?? 0) + 1;
     this.counts.set(key, n);
-    return n <= this.perHour;
+    return n <= this.perHour();
   }
 }
 

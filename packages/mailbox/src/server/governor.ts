@@ -16,12 +16,17 @@ export class PowGovernor {
   private quietRun = 0;
   private previousBits: number;
   private changedAt = -Infinity;
-  private o: Required<GovernorOptions>;
+  private opts: () => GovernorOptions;
 
-  constructor(private now: () => number, opts: GovernorOptions) {
-    this.o = { maxExtra: 3, busyPerMinute: 100, quietPerMinute: 50, quietMinutes: 10, ...opts };
+  /** Options can be a getter: the knobs may change while running (settings.ts). */
+  constructor(private now: () => number, opts: GovernorOptions | (() => GovernorOptions)) {
+    this.opts = typeof opts === 'function' ? opts : () => opts;
     this.minute = Math.floor(now() / MINUTE);
     this.previousBits = this.o.base;
+  }
+
+  private get o(): Required<GovernorOptions> {
+    return { maxExtra: 3, busyPerMinute: 100, quietPerMinute: 50, quietMinutes: 10, ...this.opts() };
   }
 
   /** Close the minutes that have passed (at most an hour's worth: after that it's all quiet anyway). */
@@ -42,6 +47,7 @@ export class PowGovernor {
         this.quietRun = 0;
       }
       if (this.extra !== before) { this.previousBits = this.o.base + before; this.changedAt = this.minute * MINUTE; }
+      if (this.extra > this.o.maxExtra) this.extra = this.o.maxExtra;   // the cap was lowered
     }
     if (this.minute < current) this.minute = current;
   }

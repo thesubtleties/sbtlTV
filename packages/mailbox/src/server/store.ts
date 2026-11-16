@@ -17,7 +17,10 @@ export class KnockStore {
   private byTicket = new Map<string, Knock>();
   /** Bytes of sealed drops held right now (base64 length), kept under maxStoredBytes. */
   private storedBytes = 0;
-  constructor(private now: () => number, private maxActive = 50_000, private maxStoredBytes = 256 * 1024 * 1024) {}
+  constructor(private now: () => number, private maxActive = 50_000, maxStoredBytes: number | (() => number) = 256 * 1024 * 1024) {
+    this.maxStoredBytes = typeof maxStoredBytes === 'function' ? maxStoredBytes : () => maxStoredBytes;
+  }
+  private maxStoredBytes: () => number;
 
   create(commitment: string): Knock | null {
     this.sweep();
@@ -58,7 +61,7 @@ export class KnockStore {
   drop(k: Knock, sealed: string): 'ok' | 'busy' | 'gone' {
     this.sweep();
     if (k.status !== 'revealed') return 'gone';   // checked again here: two drops may race
-    if (this.storedBytes + sealed.length > this.maxStoredBytes) return 'busy';
+    if (this.storedBytes + sealed.length > this.maxStoredBytes()) return 'busy';
     this.storedBytes += sealed.length;
     k.sealed = sealed; k.status = 'dropped'; k.expiresAt = this.now() + DROP_TTL_MS;
     return 'ok';

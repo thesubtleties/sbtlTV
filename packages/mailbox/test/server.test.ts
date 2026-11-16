@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/server/app';
+import { DEFAULTS } from '../src/server/settings';
 import { POW_HEADER, VERSION_HEADER, powBitsFor, powInput, solvePow, KNOCK_TTL_MS, DROP_TTL_MS } from '../src/protocol';
 
 const BITS = 4;
@@ -303,4 +304,18 @@ describe('mailbox server', () => {
     const results = await Promise.all(tickets.map((tk, i) => call('PUT', `/v1/ring/${tk}/drop`, { sealed: b64(300 * 1024, i + 1) }, true)));
     expect(results.filter((r) => r.status === 204)).toHaveLength(1);
   }, 60_000);
+
+  it('settings changed while running take effect on the next request', async () => {
+    const t = 1_800_000_000_000;
+    let paused = false;
+    const { app } = createApp({ now: () => t, minVersion: '0.17.0', settings: () => ({ ...DEFAULTS, powBits: BITS, minVersion: '0.17.0', paused }) });
+    const m = Math.floor(t / 60_000);
+    const knock = async (fill: number) => {
+      const text = JSON.stringify({ commitment: b64(32, fill) });
+      return (await app.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${m}.${solvePow(powInput('/v1/knock', text, m, '0.17.0'), BITS)}` }, body: text }))).status;
+    };
+    expect(await knock(1)).toBe(201);
+    paused = true;
+    expect(await knock(2)).toBe(429);
+  });
 });

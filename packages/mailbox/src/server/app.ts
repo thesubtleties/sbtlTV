@@ -8,38 +8,49 @@ import { LEVEL_HEADER, MAX_DROP_BYTES, POW_HEADER, TIME_HEADER, VERSION_HEADER, 
 import { KnockStore } from './store.js';
 import { SeenProofs, SenderLimiter } from './limits.js';
 import { PowGovernor } from './governor.js';
+import { DEFAULTS, type Settings } from './settings.js';
 
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const isB64 = (v: unknown, bytes: number): v is string => typeof v === 'string' && B64.test(v) && Buffer.from(v, 'base64').length === bytes;
 const HEX32 = /^[0-9a-f]{32}$/;
 
 export interface MailboxOptions {
-  now?: () => number; powBits?: number; minVersion?: string; maxActive?: number; maxStoredBytes?: number; writesPerHour?: number;
-  /** Bytes of large drops (over LARGE_DROP_BYTES) accepted per hour, all senders together */
-  largeDropBytesPerHour?: number;
-  /** Switches: refuse all writes / refuse large drops ("busy"), without a release */
-  paused?: boolean; largeDropsPaused?: boolean;
+  now?: () => number; maxActive?: number;
+  /** The live knobs (settings.ts LiveSettings in production), read on every request */
+  settings?: () => Settings;
+  // Fixed overrides (tests), used when no `settings` is given
+  powBits?: number; minVersion?: string; maxStoredBytes?: number; writesPerHour?: number;
+  largeDropBytesPerHour?: number; paused?: boolean; largeDropsPaused?: boolean;
 }
-
-/** Drops above this are "large": a real setup is ~1 KB; only file playlists get this big. */
-export const LARGE_DROP_BYTES = 256 * 1024;
 
 export function createApp(opts: MailboxOptions = {}) {
   const now = opts.now ?? Date.now;
-  const bits = opts.powBits ?? 20;
-  const minVersion = opts.minVersion ?? '0.0.0';
-  const store = new KnockStore(now, opts.maxActive, opts.maxStoredBytes);
-  const limiter = new SenderLimiter(now, opts.writesPerHour ?? 5_000);
+  const fixed: Settings = {
+    ...DEFAULTS,
+    minVersion: opts.minVersion ?? '0.0.0',
+    writesPerHour: opts.writesPerHour ?? 5_000,
+    ...(opts.powBits !== undefined && { powBits: opts.powBits }),
+    ...(opts.maxStoredBytes !== undefined && { dropMemoryMb: opts.maxStoredBytes / (1024 * 1024) }),
+    ...(opts.largeDropBytesPerHour !== undefined && { largeDropMbPerHour: opts.largeDropBytesPerHour / (1024 * 1024) }),
+    ...(opts.paused !== undefined && { paused: opts.paused }),
+    ...(opts.largeDropsPaused !== undefined && { largeDropsPaused: opts.largeDropsPaused }),
+  };
+  const cfg = opts.settings ?? (() => fixed);
+  const store = new KnockStore(now, opts.maxActive, () => cfg().dropMemoryMb * 1024 * 1024);
+  const limiter = new SenderLimiter(now, () => cfg().writesPerHour);
   const proofs = new SeenProofs(now);
-  const governor = new PowGovernor(now, { base: bits });
-  const largeBudget = opts.largeDropBytesPerHour ?? 200 * 1024 * 1024;
+  const governor = new PowGovernor(now, () => {
+    const s = cfg();
+    return { base: s.powBits, maxExtra: s.maxExtraBits, busyPerMinute: s.busyPerMinute, quietPerMinute: s.quietPerMinute, quietMinutes: s.quietMinutes };
+  });
+  const largeBudget = () => cfg().largeDropMbPerHour * 1024 * 1024;
   let largeHour = -1;
   let largeUsed = 0;
   /** Takes room in this hour's large-drop budget up front (drops in flight together can't overrun it). */
   const reserveLarge = (bytes: number) => {
     const h = Math.floor(now() / 3_600_000);
     if (h !== largeHour) { largeHour = h; largeUsed = 0; }
-    if (largeUsed + bytes > largeBudget) return false;
+    if (largeUsed + bytes > largeBudget()) return false;
     largeUsed += bytes;
     return true;
   };
@@ -64,13 +75,13 @@ export function createApp(opts: MailboxOptions = {}) {
   app.use('/v1/*', (c, next) => (DROP_ROUTE.test(c.req.path) ? large : small)(c, next));
 
   app.use('/v1/*', async (c, next) => {
-    if (!versionAtLeast(c.req.header(VERSION_HEADER) ?? '', minVersion)) return err(c, 426, 'update');
+    if (!versionAtLeast(c.req.header(VERSION_HEADER) ?? '', cfg().minVersion)) return err(c, 426, 'update');
     await next();
   });
 
   /** Proof-of-work (more for bigger bodies) and the per-sender cap for writes. Returns the body text or a Response. */
   async function guardWrite(c: Context): Promise<string | Response> {
-    if (opts.paused) return err(c, 429, 'busy');
+    if (cfg().paused) return err(c, 429, 'busy');
     // The proxy appends the address it saw; anything before it is whatever the client wrote
     const ip = (c.req.header('x-forwarded-for') ?? '').split(',').pop()?.trim() || 'unknown';
     const text = await c.req.text();
@@ -176,8 +187,8 @@ export function createApp(opts: MailboxOptions = {}) {
     const size = raw && typeof raw.sealed === 'string' ? Buffer.byteLength(raw.sealed, 'base64') : 0;
     if (size > MAX_DROP_BYTES) return err(c, 413, 'too-big');
     // Large drops: switchable, and an hourly budget for everyone together (said before any work)
-    const large = size > LARGE_DROP_BYTES;
-    if (large && (opts.largeDropsPaused || !reserveLarge(size))) return err(c, 429, 'busy');
+    const large = size > cfg().largeDropKb * 1024;
+    if (large && (cfg().largeDropsPaused || !reserveLarge(size))) return err(c, 429, 'busy');
     const hour = largeHour;
     const giveBack = () => { if (large) releaseLarge(size, hour); };
     const text = await guardWrite(c); if (typeof text !== 'string') { giveBack(); return text; }
