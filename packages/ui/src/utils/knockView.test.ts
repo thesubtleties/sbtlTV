@@ -35,7 +35,7 @@ describe('knockLine', () => {
   });
 
   it('join: the giver hears the computer was added, not that a setup arrived', () => {
-    expect(knockLine('join', { step: 'received' }).text).toBe('Added. It shows under Computers once it has synced.');
+    expect(knockLine('join', { step: 'received' }).text).toBe('Sent. It shows under Computers once they tap Join.');
     expect(knockLine('join', { step: 'words', words: ['a', 'b', 'c'] }).text).toBe("Same words on their screen? Then it's really them.");
     expect(knockLine('join', { step: 'failed', reason: 'cancelled' }).text).toBe('They cancelled.');
   });

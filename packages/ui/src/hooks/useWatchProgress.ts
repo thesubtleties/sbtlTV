@@ -123,6 +123,14 @@ export async function clearProgressIds(ids: string[]): Promise<void> {
   syncOut(rows.map((r) => progressRecord(r, true, at)));
 }
 
+/** A movie's Continue Watching card: every copy of it (the row shows one card per TMDB title). */
+export async function clearMovieTitle(tmdbId: number | undefined, id: string): Promise<void> {
+  const ids = tmdbId != null
+    ? (await db.watchProgress.where('tmdb_id').equals(tmdbId).toArray()).filter((r) => r.type === 'movie' && !r.completed).map((r) => r.id)
+    : [];
+  await clearProgressIds([...new Set([id, ...ids])]);
+}
+
 /** A whole series group by identity; uses the INDEXED field (series_tmdb_id or the v13 series_stream_id) — no full scan. */
 export async function clearProgressSeries(id: { tmdbId?: number; seriesStreamId?: string }): Promise<void> {
   let keys: string[];

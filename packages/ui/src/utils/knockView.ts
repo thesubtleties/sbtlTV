@@ -38,7 +38,7 @@ export function knockLine(role: 'send' | 'receive' | 'join', s: KnockState): Kno
     case 'sending': return info(`Sending…${upTo(s.workUpTo)}`);
     case 'sent': return info('Sent. Waiting for it to arrive.');
     case 'received':
-      if (role === 'join') return { text: 'Added. It shows under Computers once it has synced.', tone: 'ok', canRetry: false };
+      if (role === 'join') return { text: 'Sent. It shows under Computers once they tap Join.', tone: 'ok', canRetry: false };
       return role === 'send' ? { text: 'They have it. Nothing is left on the sbtlTV relay.', tone: 'ok', canRetry: false } : info('Ready to set up.');
     case 'failed':
       if (s.reason === 'cancelled') return { text: giving ? 'They cancelled.' : 'Cancelled.', tone: 'error', canRetry: true };

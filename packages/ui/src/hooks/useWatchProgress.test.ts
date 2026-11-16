@@ -151,3 +151,13 @@ describe('progress synced by TMDB id only', () => {
     expect(await db.watchProgress.get('movie_src_7')).toMatchObject({ position: 60 });
   });
 });
+
+describe('removing a movie from Continue Watching', () => {
+  it('clears every copy of it (two providers), so the card does not come back with the older one (review D3)', async () => {
+    const { clearMovieTitle } = await import('./useWatchProgress');
+    const base = { type: 'movie' as const, tmdb_id: 603, position: 10, duration: 100, progress: 10, completed: false };
+    await db.watchProgress.bulkPut([{ id: 'movie_a', stream_id: 'a', updated_at: new Date(2), ...base }, { id: 'movie_b', stream_id: 'b', updated_at: new Date(1), ...base }]);
+    await clearMovieTitle(603, 'movie_a');
+    expect(await db.watchProgress.count()).toBe(0);
+  });
+});

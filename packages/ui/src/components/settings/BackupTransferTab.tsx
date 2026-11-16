@@ -9,6 +9,7 @@ import { receivedNote } from '../../utils/receivedNote';
 import { Button, Hint, OnOff, OptionRow, Section, SettingsTab, TextField } from './ui';
 import { SendSetupPanel } from './SendSetupPanel';
 import { SyncSection } from './SyncSection';
+import { nameIfBlank } from '../../utils/computerName';
 import { ReceiveSetupPanel } from './ReceiveSetupPanel';
 
 const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: boolean }[] = [
@@ -252,9 +253,9 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
               <Hint>Join sync with {names(imp.computers)}? Your watchlist and progress will be shared with them.</Hint>
               {syncing && <Hint tone="warn">This computer leaves its current sync.</Hint>}
             </div>
-            <OptionRow title="Name this computer" help="Blank uses the placeholder.">
+            <OptionRow title="Name this computer" help={`Leave blank for “${nameIfBlank(defaultName, imp.computers)}”.`}>
               <form onSubmit={(e) => { e.preventDefault(); if (!joining) void join(); }}>
-                <TextField autoFocus aria-label="Name this computer" placeholder={defaultName} maxLength={40} value={joinName} onChange={(e) => setJoinName(e.target.value)} />
+                <TextField autoFocus aria-label="Name this computer" placeholder={nameIfBlank(defaultName, imp.computers)} maxLength={40} value={joinName} onChange={(e) => setJoinName(e.target.value)} />
               </form>
             </OptionRow>
             {joinError && <Hint tone="danger">{joinError}</Hint>}

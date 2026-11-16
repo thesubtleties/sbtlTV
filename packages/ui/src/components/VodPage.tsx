@@ -16,6 +16,7 @@ import type { StoredMovie, StoredSeries } from '../db';
 import { type MediaItem, type VodType, type VodPlayInfo } from '../types/media';
 import { useMissingTitles } from '../hooks/useMissingTitles';
 import { toggleWatchlist } from '../hooks/useWatchlist';
+import { clearMovieTitle } from '../hooks/useWatchProgress';
 import type { MissingTitle } from '../services/sync/missing';
 import { MissingRow } from './vod/MissingCard';
 import './VodPage.css';
@@ -397,7 +398,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   }, [handlePlay, openDetail]);
 
   const handleContinueRemove = useCallback((it: ContinueItem) => {
-    if (it.kind === 'movie') clearOne(it.key);
+    if (it.kind === 'movie') void clearMovieTitle(it.media.tmdb_id ?? undefined, it.key);
     else clearSeries({ tmdbId: it.seriesTmdbId, seriesStreamId: it.seriesStreamId });
   }, [clearOne, clearSeries]);
 

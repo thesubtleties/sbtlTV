@@ -11,7 +11,7 @@ import './MissingCard.css';
 export function MissingCard({ item, onRemove }: { item: MissingTitle; onRemove: (item: MissingTitle) => void }) {
   const poster = useTmdbPoster(item.type, item.tmdbId);
   return (
-    <div className="media-card media-card--medium missing-card" role="group" aria-label={`${item.name}, not in your library`} tabIndex={0}>
+    <div className="media-card media-card--medium missing-card" role="group" aria-label={`${item.name}, not on this computer`} tabIndex={0}>
       <div className="media-card__poster missing-card__poster">
         {poster
           ? <img className="loaded" src={poster} alt="" loading="lazy" />
@@ -31,7 +31,7 @@ export function MissingCard({ item, onRemove }: { item: MissingTitle; onRemove: 
       </div>
       <div className="missing-card__info">
         <div className="missing-card__name">{item.name}</div>
-        <div className="missing-card__note">Not in your library</div>
+        <div className="missing-card__note">Not on this computer</div>
       </div>
     </div>
   );

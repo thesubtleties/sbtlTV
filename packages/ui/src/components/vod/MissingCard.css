@@ -9,7 +9,11 @@
   box-shadow: none;
 }
 
-.missing-card__poster img {
+/* Stronger than MediaCard's image rules (loaded fade-in, hover brightness): grayed in every state */
+.media-card.missing-card .media-card__poster img,
+.media-card.missing-card .media-card__poster img.loaded,
+.media-card.missing-card:hover .media-card__poster img,
+.media-card.missing-card:focus-visible .media-card__poster img {
   filter: grayscale(1);
   opacity: 0.5;
 }

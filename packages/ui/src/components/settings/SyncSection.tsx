@@ -11,9 +11,9 @@ import './SyncSection.css';
 const names = (list: string[]) => (list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}` : list[0] ?? '');
 
 const PROBLEM: Partial<Record<SyncView['status'], string>> = {
-  removed: 'This computer was removed from sync.',
+  removed: 'This computer was removed from sync. To come back, add it again from another computer.',
   ended: 'Sync ended (unused for 90 days). Add a computer to start again.',
-  keyring: 'Sync needs your keyring. Rejoin from another computer.',
+  keyring: 'Sync needs your keyring on this computer. Leave sync, then add it again from another computer.',
   update: 'Update sbtlTV to keep syncing.',
 };
 
@@ -67,7 +67,7 @@ export function SyncSection({ adding, onAdding }: { adding: boolean; onAdding: (
           <Hint>{view.lastSync ? `Last synced ${ago(view.lastSync)}.` : 'Not synced yet.'}</Hint>
           <OptionRow title="Watchlist"><OnOff value={view.parts.watchlist} onChange={(v) => setPart('watchlist', v)} /></OptionRow>
           <OptionRow title="Watch progress" help="Resume points and finished marks"><OnOff value={view.parts.progress} onChange={(v) => setPart('progress', v)} /></OptionRow>
-          <OptionRow title="Settings" help="Look, subtitles and players. Sources and this computer's choices stay. Turning it on takes the others' settings.">
+          <OptionRow title="Settings" help="Look, subtitles and players. Turning it on takes your other computers' settings.">
             <OnOff value={view.parts.settings} onChange={(v) => setPart('settings', v)} />
           </OptionRow>
           <OptionRow title="Titles this computer doesn't have" help="In Continue Watching and your watchlist.">
