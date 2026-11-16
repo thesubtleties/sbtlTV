@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/server/app';
 import { DEFAULTS } from '../src/server/settings';
-import { POW_HEADER, VERSION_HEADER, powBitsFor, powInput, solvePow, KNOCK_TTL_MS, DROP_TTL_MS } from '../src/protocol';
+import { POW_HEADER, VERSION_HEADER, checkPow, powBitsFor, powInput, solvePow, KNOCK_TTL_MS, DROP_TTL_MS } from '../src/protocol';
 
 const BITS = 4;
 function setup() {
@@ -20,7 +20,7 @@ function setup() {
     const json = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
     return { status: res.status, json };
   };
-  return { clock, call };
+  return { clock, call, app };
 }
 const b64 = (n: number, fill = 1) => Buffer.alloc(n, fill).toString('base64');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -183,12 +183,19 @@ describe('mailbox server', () => {
   });
 
   it('a big drop needs more proof-of-work', async () => {
-    const { call } = setup();
+    const { call, clock, app } = setup();
     const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
     const ring = await ringWithKey(call, k.json.code, b64(32));
     await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
-    // 1 MB at the base difficulty is refused with the bits it needs
-    const res = await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(1024 * 1024) }, { pow: true });
+    // 1 MB at the base difficulty is refused with the bits it needs. The proof has exactly BITS
+    // zero bits: a random BITS-bit proof meets the 11 bits a 1 MB drop needs 1 time in 128
+    const path = `/v1/ring/${ring.json.ticket}/drop`;
+    const text = JSON.stringify({ sealed: b64(1024 * 1024) });
+    const minute = Math.floor(clock.now() / 60_000);
+    const input = powInput(path, text, minute, '0.17.0');
+    let nonce = solvePow(input, BITS);
+    while (checkPow(input, nonce, BITS + 1)) nonce = solvePow(input, BITS);
+    const res = await app.fetch(new Request(`http://mailbox${path}`, { method: 'PUT', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${minute}.${nonce}` }, body: text }));
     expect(res.status).toBe(428);
   });
 

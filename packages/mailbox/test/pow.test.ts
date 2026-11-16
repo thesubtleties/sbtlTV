@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { checkPow, powInput, solvePow, solvePowAsync } from '../src/protocol/pow';
 import { versionAtLeast } from '../src/protocol/version';
 
@@ -26,6 +27,20 @@ describe('proof-of-work', () => {
     const nonce = await solvePowAsync(input, 12, Math.max(1, Math.floor(first / 2)), 0);
     expect(nonce).toBe(String(first));
     expect(ticked).toBe(first > 1);
+  });
+  it('counts leading zero bits exactly: one bit short is refused', () => {
+    const zeros = (input: string, nonce: string) => {
+      const bin = [...createHash('sha256').update(input + nonce).digest()].map((b) => b.toString(2).padStart(8, '0')).join('');
+      return bin.indexOf('1');
+    };
+    const input = powInput('/v1/knock', '{}', 1, '0.17.0');
+    for (let n = 0, seen = new Set<number>(); seen.size < 6 && n < 100_000; n++) {
+      const z = zeros(input, String(n));
+      if (z < 1 || z > 10 || seen.has(z)) continue;
+      seen.add(z);
+      expect(checkPow(input, String(n), z)).toBe(true);
+      expect(checkPow(input, String(n), z + 1)).toBe(false);
+    }
   });
   it('rejects junk nonces', () => {
     expect(checkPow('a', 'not a number', 1)).toBe(false);

@@ -47,6 +47,46 @@ describe('proof-of-work level under load', () => {
     clock.go(minute);
     expect(g.accepted()).toBe(21);
   });
+
+  it('a minute between quiet and busy starts the quiet count again', () => {
+    const { g, clock } = make();
+    for (let i = 0; i < 101; i++) g.proven();
+    clock.go(minute);
+    clock.go(8 * minute);                        // 9 quiet minutes so far (the busy one rolled at the first go)
+    for (let i = 0; i < 60; i++) g.proven();     // neither busy nor quiet
+    clock.go(minute);
+    clock.go(2 * minute);                        // 2 quiet minutes: 11 counted without the reset
+    expect(g.bits()).toBe(21);
+    clock.go(8 * minute);
+    expect(g.bits()).toBe(20);
+  });
+
+  it('a long idle spell brings it all the way down', () => {
+    const { g, clock } = make();
+    for (let m = 0; m < 3; m++) { for (let i = 0; i < 101; i++) g.proven(); clock.go(minute); }
+    expect(g.bits()).toBe(23);
+    clock.go(24 * 60 * minute);
+    expect(g.bits()).toBe(20);
+  });
+
+  it('lowering the cap while running takes the level down to it', () => {
+    let t = 0;
+    let maxExtra = 3;
+    const g = new PowGovernor(() => t, () => ({ base: 20, maxExtra }));
+    for (let m = 0; m < 3; m++) { for (let i = 0; i < 101; i++) g.proven(); t += minute; }
+    expect(g.bits()).toBe(23);
+    maxExtra = 1;
+    t += minute;
+    expect(g.bits()).toBe(21);
+  });
+
+  it('a new base from the settings applies at once', () => {
+    let base = 20;
+    const g = new PowGovernor(() => 0, () => ({ base }));
+    base = 24;
+    expect(g.bits()).toBe(24);
+    expect(g.accepted()).toBe(24);
+  });
 });
 
 describe('size pricing', () => {

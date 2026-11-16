@@ -13,6 +13,12 @@ describe('mailbox settings', () => {
       .toEqual({ powBits: 21, paused: true, largeDropMbPerHour: 50, minVersion: '0.17.0' });
   });
 
+  it('environment switches take 1 or true; empty or invalid values are ignored', () => {
+    expect(settingsFromEnv({ MAILBOX_PAUSED: 'true', LARGE_DROPS_PAUSED: '', POW_BITS: '', DROP_MEMORY_MB: 'lots' }))
+      .toEqual({ paused: true });
+    expect(settingsFromEnv({ LARGE_DROPS_PAUSED: '0' })).toEqual({ largeDropsPaused: false });
+  });
+
   it('the file wins over the environment, and changes are picked up without a restart', () => {
     let t = 0;
     let file: string | null = JSON.stringify({ powBits: 22 });

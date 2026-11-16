@@ -56,3 +56,21 @@ test('too big to send is known before anyone rings', () => {
   assert.equal(fitsInDrop(Buffer.alloc(2 * 1024 * 1024 - 28)), true);    // sealing adds 28 bytes
   assert.equal(fitsInDrop(Buffer.alloc(2 * 1024 * 1024 - 27)), false);
 });
+
+test('no source picked and none added: no sources part, so the preview does not promise any', () => {
+  const out = sendBody(base, { parts: ['sources', 'logins'], sourceIds: [], extras: { sources: [], apiKeys: {} } }, newId);
+  assert.equal(out.sources, undefined);
+  assert.ok(!out.includes.includes('sources'));
+  validateSetupBody(out);
+});
+
+test('a key field left empty for them does not blank the sender\'s chosen key', () => {
+  const withKeys: SetupBody = { ...base, includes: ['apiKeys'], apiKeys: { tmdb: 'mine' } };
+  const out = sendBody(withKeys, { parts: ['apiKeys'], sourceIds: null, extras: { sources: [], apiKeys: { tmdb: '', subdl: '' } } }, newId);
+  assert.deepEqual(out.apiKeys, { tmdb: 'mine' });
+});
+
+test('a just-for-this-send source without a password does not add the logins part', () => {
+  const out = sendBody({ ...base, includes: [], sources: undefined }, { parts: [], sourceIds: null, extras: { sources: [{ name: 'G', type: 'm3u', url: 'http://g.example/x.m3u' }], apiKeys: {} } }, newId);
+  assert.ok(!out.includes.includes('logins'));
+});
