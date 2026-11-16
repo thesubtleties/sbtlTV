@@ -29,8 +29,6 @@ const MAX_DROP_BODY = Math.ceil(MAX_DROP_BYTES * 4 / 3) + 1024;
 /** A sync box upload at most: the sealed box as base64 inside a little JSON. */
 const BOX_ROUTE = /^\/v1\/groups\/[^/]+\/boxes\/[^/]+$/;
 const MAX_BOX_BODY = Math.ceil(MAX_BOX_BYTES * 4 / 3) + 1024;
-/** Small list replies (the usual "anything new?") being sent at once, all groups together */
-const SMALL_LIST_BUDGET = 64 * 1024 * 1024;
 /** Drop bodies being read at once, all knocks together (memory while uploads are in flight). */
 const MAX_INFLIGHT_DROP_BYTES = 64 * 1024 * 1024;
 
@@ -42,7 +40,7 @@ export interface MailboxOptions {
   powBits?: number; minVersion?: string; maxStoredBytes?: number;
   largeDropBytesPerHour?: number; paused?: boolean; largeDropsPaused?: boolean;
   syncPaused?: boolean; newGroupsPaused?: boolean; busyPerMinute?: number; listInflightBytes?: number;
-  smallListInflightBytes?: number; listHoldMs?: number;
+  smallListInflightBytes?: number; listHoldMs?: number; smallListHoldMs?: number;
   /** Tests: the in-flight budget for sync uploads, and the database size cap, in bytes */
   syncInflightBytes?: number; syncMaxDbBytes?: number;
   /** Sync groups (Postgres in production); in memory when not given */
@@ -305,8 +303,9 @@ export function createApp(opts: MailboxOptions = {}) {
     ready: opts.groupsReady ?? (() => true),
     maxDbBytes: () => opts.syncMaxDbBytes ?? cfg().syncMaxDbMb * 1024 * 1024,
     listBudgetBytes: () => opts.listInflightBytes ?? cfg().listMbInFlight * 1024 * 1024,
-    smallListBudgetBytes: () => opts.smallListInflightBytes ?? SMALL_LIST_BUDGET,
+    smallListBudgetBytes: () => opts.smallListInflightBytes ?? cfg().smallListMbInFlight * 1024 * 1024,
     listHoldMs: opts.listHoldMs ?? 120_000,
+    smallListHoldMs: opts.smallListHoldMs ?? 15_000,
   });
 
   app.get('/healthz', (c) => c.text('ok'));

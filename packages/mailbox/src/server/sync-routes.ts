@@ -24,8 +24,9 @@ export function registerSyncRoutes(app: Hono, d: {
   maxDbBytes: () => number;
   listBudgetBytes: () => number;
   smallListBudgetBytes: () => number;
-  /** A reply not fully read by then is aborted (and its memory goes with it) */
+  /** A reply not fully read by then is aborted (and its memory goes with it): large / small replies */
   listHoldMs: number;
+  smallListHoldMs: number;
 }) {
   // Not ready yet, or paused (reads too: a list reply can be large): everything sync is busy
   const gate = async (c: Context, next: () => Promise<void>) => {
@@ -127,7 +128,7 @@ export function registerSyncRoutes(app: Hono, d: {
     const stream = new ReadableStream<Uint8Array>({
       start(ctl) {
         // Not read in time: abort it, so the budget is given back only with the memory
-        timer = setTimeout(() => { try { ctl.error(new Error('not read in time')); } catch { /* closed */ } release(); }, d.listHoldMs);
+        timer = setTimeout(() => { try { ctl.error(new Error('not read in time')); } catch { /* closed */ } release(); }, kind === 'small' ? d.smallListHoldMs : d.listHoldMs);
         timer.unref?.();
       },
       pull(ctl) {

@@ -233,6 +233,15 @@ describe('sync routes: guards (lens 7)', () => {
     expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(200);
   });
 
+  it('a small reply not read within 15 seconds is aborted (slow readers cannot hold the small budget for long) (security)', async () => {
+    const { call } = setup({ smallListInflightBytes: 400, smallListHoldMs: 30 }); const g = group(), g2 = group();
+    await put(call, g); await put(call, g2);
+    const slow = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
+    await new Promise((r) => setTimeout(r, 60));
+    await expect(slow.text()).rejects.toThrow();
+    expect((await call('GET', `/v1/groups/${g2.groupId}/boxes?since=0`, { token: g2.accessToken })).status).toBe(200);
+  });
+
   it('box uploads in flight are limited before any proof is checked (review C2)', async () => {
     const { call } = setup({ syncInflightBytes: 100 }); const g = group();
     const r = await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(200) } });
