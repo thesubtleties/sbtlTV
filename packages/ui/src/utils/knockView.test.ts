@@ -18,7 +18,7 @@ describe('knockLine', () => {
   });
   it('shared failures', () => {
     for (const role of ['send', 'receive'] as const) {
-      expect(knockLine(role, { step: 'failed', reason: 'offline' }).text).toBe("Couldn't reach the sbtlTV mailbox.");
+      expect(knockLine(role, { step: 'failed', reason: 'offline' }).text).toBe("Couldn't reach the sbtlTV relay.");
       expect(knockLine(role, { step: 'failed', reason: 'update' }).text).toBe('Update sbtlTV to send or receive.');
       expect(knockLine(role, { step: 'failed', reason: 'cancelled' }).text).toBe(role === 'send' ? 'They cancelled.' : 'Cancelled.');
       expect(knockLine(role, { step: 'failed', reason: 'something new' }).text).toBe('Something went wrong. Start again.');

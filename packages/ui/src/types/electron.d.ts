@@ -236,7 +236,7 @@ export interface SetupApi {
   settlePlaylists: (sourceIds: string[]) => Promise<void>;
 }
 
-/** Settings > Sync & transfer: send or receive a setup through the sbtlTV mailbox. */
+/** Settings > Sync & transfer: send or receive a setup through the sbtlTV relay. */
 export interface MailboxSendSource { name: string; type: 'xtream' | 'm3u'; url: string; username?: string; password?: string }
 export interface MailboxApi {
   receive: () => Promise<{ success?: boolean; error?: string }>;

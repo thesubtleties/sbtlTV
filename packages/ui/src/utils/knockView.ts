@@ -10,7 +10,7 @@ export type KnockState =
 export interface KnockLine { text: string; tone: 'info' | 'error' | 'ok'; canRetry: boolean }
 
 const FAIL: Record<string, string> = {
-  offline: "Couldn't reach the sbtlTV mailbox.",
+  offline: "Couldn't reach the sbtlTV relay.",
   update: 'Update sbtlTV to send or receive.',
   busy: 'The mailbox is busy. Try again in a minute.',
   broken: 'Something went wrong. Start again.',

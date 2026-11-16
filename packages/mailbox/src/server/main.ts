@@ -9,4 +9,4 @@ const settings = new LiveSettings(settingsFromEnv(process.env), fileReader(proce
 const { app } = createApp({ settings: () => settings.get() });
 // No request logging, by design. One startup line, no addresses.
 serve({ fetch: app.fetch, port, hostname: '0.0.0.0' });  // every interface: the pod is reached through its Service
-console.log(`mailbox listening on ${port}`);
+console.log(`relay listening on ${port}`);

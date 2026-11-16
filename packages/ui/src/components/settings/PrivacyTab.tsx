@@ -211,7 +211,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         <Who title="sbtltv.com" status={selectedListsEnabled ? 'on' : 'off'}
           sees="With Selected lists on: your IP address, about once a day, when sbtlTV checks for new lists. Nothing about you or what you watch is sent, and requests aren't logged."
           note="Settings > Movies & Series > Selected lists." />
-        <Who title="sbtlTV mailbox" status="when-used"
+        <Who title="sbtlTV relay" status="when-used"
           sees="Only while you send or receive a setup: the setup, end-to-end encrypted so even we can't read it, and your IP address. Requests aren't logged. Deleted when picked up, or after 10 minutes."
           note="Settings > System > Sync & transfer." />
         <Who title="TMDB" status={tmdbKeySet ? 'on' : 'not-set-up'}

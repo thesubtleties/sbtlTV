@@ -15,7 +15,8 @@ import { fitsInDrop, packSetup, sendBody, unpackSetup, type SendSelection } from
 import { validateSetupBody, type SetupBody, type SetupPreview, type UserLists } from '../setup-body.js';
 import { EFF_WORDS } from '../eff-wordlist.js';
 
-export const MAILBOX_BASE = 'https://mailbox.sbtltv.com';
+/** The relay (packages/mailbox server): passes the knock and one sealed drop, keeps nothing. */
+export const MAILBOX_BASE = 'https://relay.sbtltv.com';
 
 /** What the page may see of a state: never the received payload; plus how long the current proof may take. */
 function view(s: ReceiveState | SendState | null | undefined, workUpTo: number) {
@@ -63,13 +64,13 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
       if (s.step === 'received') {
         try {
           staged = deps.stage(unpackSetup(s.payload));
-          deps.log('Mailbox: setup received');
+          deps.log('Relay: setup received');
         } catch {
           receiveFailed = true;
-          deps.log('Mailbox: received setup was not valid');
+          deps.log('Relay: received setup was not valid');
         }
       } else if (s.step === 'failed') {
-        deps.log(`Mailbox: receive ended (${s.reason})`);
+        deps.log(`Relay: receive ended (${s.reason})`);
       }
     });
     receiver = r;
@@ -92,8 +93,8 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
       }
       const s = new Sender(transport(), EFF_WORDS, (st: SendState) => {
         if (s !== sender) return;
-        if (st.step === 'received') deps.log('Mailbox: send picked up');
-        else if (st.step === 'failed') deps.log(`Mailbox: send ended (${st.reason})`);
+        if (st.step === 'received') deps.log('Relay: send picked up');
+        else if (st.step === 'failed') deps.log(`Relay: send ended (${st.reason})`);
       });
       sender = s;
       void s.ring(String(code));
@@ -101,7 +102,7 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
     } catch (error) {
       role = null;
       // Field names only, never values (same rule as Export)
-      deps.log(`Mailbox: send not started (${error instanceof Error ? error.message.slice(0, 120) : 'unknown'})`);
+      deps.log(`Relay: send not started (${error instanceof Error ? error.message.slice(0, 120) : 'unknown'})`);
       return { error: error instanceof Error && error.message.startsWith('invalid') ? "This setup can't be sent. Details are in the debug log." : "Couldn't prepare the setup. Restart sbtlTV and try again." };
     }
   });
