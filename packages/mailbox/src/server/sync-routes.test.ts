@@ -204,6 +204,35 @@ describe('sync routes: guards (lens 7)', () => {
     expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(200);
   });
 
+  it('one group can hold only a few replies at once (so a few groups cannot hold everyone else\'s) (security)', async () => {
+    const { call } = setup(); const g = group();
+    await put(call, g);
+    const held = [];
+    for (let i = 0; i < 4; i++) held.push(await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken }));
+    expect(held.every((r) => r.status === 200)).toBe(true);
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(429);
+    await held[0].text();
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(200);
+  });
+
+  it('small replies have their own budget, held until sent (security)', async () => {
+    const { call } = setup({ smallListInflightBytes: 400 }); const g = group(), g2 = group();
+    await put(call, g); await put(call, g2);
+    const first = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
+    expect((await call('GET', `/v1/groups/${g2.groupId}/boxes?since=0`, { token: g2.accessToken })).status).toBe(429);
+    await first.text();
+    expect((await call('GET', `/v1/groups/${g2.groupId}/boxes?since=0`, { token: g2.accessToken })).status).toBe(200);
+  });
+
+  it('a reply not read in time is aborted, and only then is its budget given back (security)', async () => {
+    const { call } = setup({ listInflightBytes: 100_000, listHoldMs: 30 }); const g = group();
+    await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(70_000) }, pow: true });
+    const slow = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
+    await new Promise((r) => setTimeout(r, 60));
+    await expect(slow.text()).rejects.toThrow();   // the memory went with it
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(200);
+  });
+
   it('box uploads in flight are limited before any proof is checked (review C2)', async () => {
     const { call } = setup({ syncInflightBytes: 100 }); const g = group();
     const r = await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(200) } });

@@ -23,6 +23,9 @@ export function registerSyncRoutes(app: Hono, d: {
   ready: () => boolean;
   maxDbBytes: () => number;
   listBudgetBytes: () => number;
+  smallListBudgetBytes: () => number;
+  /** A reply not fully read by then is aborted (and its memory goes with it) */
+  listHoldMs: number;
 }) {
   // Not ready yet, or paused (reads too: a list reply can be large): everything sync is busy
   const gate = async (c: Context, next: () => Promise<void>) => {
@@ -31,11 +34,14 @@ export function registerSyncRoutes(app: Hono, d: {
   };
   app.use('/v1/groups/*', gate);
   app.use('/v1/sync/*', gate);
-  // Large list replies (a full re-read) share a byte budget, held until each reply is fully sent:
-  // a slow reader keeps its share. Small replies (the usual "anything new?") are always served, so one
-  // client looping full re-reads can't lock everyone else out.
-  let listBytesInFlight = 0;
+  // Every list reply holds memory until it's fully read, so each counts until then: against a budget
+  // for large replies (a full re-read) or a separate one for small ones (the usual "anything new?"),
+  // so full re-reads can't starve the small ones; and against its group (at most 4 at once), so a few
+  // groups can't hold everyone else's. A reply not read in time is aborted, freeing its memory.
+  const inFlight = { large: 0, small: 0 };
+  const perGroup = new Map<string, number>();
   const SMALL_REPLY = 64 * 1024;
+  const PER_GROUP = 4;
   const today = () => utcDay(d.now());
   const ids = (c: Context, ...names: string[]) => names.every((n) => HEX32.test(c.req.param(n) ?? ''));
   const token = (c: Context): Buffer | null => {
@@ -99,25 +105,39 @@ export function registerSyncRoutes(app: Hono, d: {
     const l = await d.groups.list(c.req.param('gid')!, since, today());
     if (!l) return d.err(c, 404, 'not-found');
     if ('moved' in l) return c.json(l);
-    const body = Buffer.from(JSON.stringify({ seq: l.seq, epoch: await d.groups.epoch(), computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) }));
-    if (body.length <= SMALL_REPLY) return c.body(body, 200, { 'content-type': 'application/json' });
-    if (listBytesInFlight + body.length > d.listBudgetBytes()) return d.err(c, 429, 'busy');
-    listBytesInFlight += body.length;
+    const gid = c.req.param('gid')!;
+    let body: Buffer | null = Buffer.from(JSON.stringify({ seq: l.seq, epoch: await d.groups.epoch(), computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) }));
+    const size = body.length;
+    const kind = size <= SMALL_REPLY ? 'small' : 'large';
+    const budget = kind === 'small' ? d.smallListBudgetBytes() : d.listBudgetBytes();
+    if ((perGroup.get(gid) ?? 0) >= PER_GROUP || inFlight[kind] + size > budget) return d.err(c, 429, 'busy');
+    inFlight[kind] += size;
+    perGroup.set(gid, (perGroup.get(gid) ?? 0) + 1);
     let released = false;
-    const release = () => { if (!released) { released = true; listBytesInFlight -= body.length; } };
-    const safety = setTimeout(release, 120_000);   // a reader that never finishes gives it back eventually
-    safety.unref?.();
-    const CHUNK = 64 * 1024;
+    const release = () => {
+      if (released) return;
+      released = true;
+      body = null;   // the memory goes with the share
+      inFlight[kind] -= size;
+      const n = (perGroup.get(gid) ?? 1) - 1;
+      if (n <= 0) perGroup.delete(gid); else perGroup.set(gid, n);
+    };
     let at = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const stream = new ReadableStream<Uint8Array>({
-      pull(ctl) {
-        if (at >= body.length) { ctl.close(); clearTimeout(safety); release(); return; }
-        ctl.enqueue(new Uint8Array(body.subarray(at, at + CHUNK)));
-        at += CHUNK;
+      start(ctl) {
+        // Not read in time: abort it, so the budget is given back only with the memory
+        timer = setTimeout(() => { try { ctl.error(new Error('not read in time')); } catch { /* closed */ } release(); }, d.listHoldMs);
+        timer.unref?.();
       },
-      cancel() { clearTimeout(safety); release(); },
+      pull(ctl) {
+        if (!body || at >= body.length) { clearTimeout(timer); ctl.close(); release(); return; }
+        ctl.enqueue(new Uint8Array(body.subarray(at, at + SMALL_REPLY)));
+        at += SMALL_REPLY;
+      },
+      cancel() { clearTimeout(timer); release(); },
     }, { highWaterMark: 0 });
-    return new Response(stream, { status: 200, headers: { 'content-type': 'application/json', 'content-length': String(body.length) } });
+    return new Response(stream, { status: 200, headers: { 'content-type': 'application/json', 'content-length': String(size) } });
   }
 
   app.delete('/v1/groups/:gid/boxes/:did', async (c) => {
