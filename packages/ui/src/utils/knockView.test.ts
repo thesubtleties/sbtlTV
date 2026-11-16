@@ -33,4 +33,10 @@ describe('knockLine', () => {
     expect(knockLine('receive', { step: 'starting', workUpTo: 75 }).text).toBe('Getting a code… This can take up to 2 minutes.');
     expect(knockLine('send', { step: 'sending', workUpTo: 2 }).text).toBe('Sending…');
   });
+
+  it('join: the giver hears the computer was added, not that a setup arrived', () => {
+    expect(knockLine('join', { step: 'received' }).text).toBe('Added. It shows under Computers once it has synced.');
+    expect(knockLine('join', { step: 'words', words: ['a', 'b', 'c'] }).text).toBe("Same words on their screen? Then it's really them.");
+    expect(knockLine('join', { step: 'failed', reason: 'cancelled' }).text).toBe('They cancelled.');
+  });
 });

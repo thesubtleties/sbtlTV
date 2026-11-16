@@ -26,18 +26,22 @@ function upTo(seconds: number | undefined): string {
   return seconds < 60 ? ` This can take up to ${seconds} seconds.` : ` This can take up to ${Math.ceil(seconds / 60)} minutes.`;
 }
 
-export function knockLine(role: 'send' | 'receive', s: KnockState): KnockLine {
+/** join = the giving side of "Add a computer" (Sync): like send, but what arrives is a computer joining */
+export function knockLine(role: 'send' | 'receive' | 'join', s: KnockState): KnockLine {
+  const giving = role !== 'receive';
   const info = (text: string): KnockLine => ({ text, tone: 'info', canRetry: false });
   switch (s.step) {
     case 'starting': return info(`Getting a code…${upTo(s.workUpTo)}`);
     case 'ringing': return info(`Connecting…${upTo(s.workUpTo)}`);
     case 'code': return info('Tell this to the person setting you up. Works for 10 minutes.');
-    case 'words': return info(role === 'send' ? "Same words on their screen? Then it's really them." : 'Same words on their screen? Only then tap Same words.');
+    case 'words': return info(giving ? "Same words on their screen? Then it's really them." : 'Same words on their screen? Only then tap Same words.');
     case 'sending': return info(`Sending…${upTo(s.workUpTo)}`);
     case 'sent': return info('Sent. Waiting for it to arrive.');
-    case 'received': return role === 'send' ? { text: 'They have it. Nothing is left on the sbtlTV relay.', tone: 'ok', canRetry: false } : info('Ready to set up.');
+    case 'received':
+      if (role === 'join') return { text: 'Added. It shows under Computers once it has synced.', tone: 'ok', canRetry: false };
+      return role === 'send' ? { text: 'They have it. Nothing is left on the sbtlTV relay.', tone: 'ok', canRetry: false } : info('Ready to set up.');
     case 'failed':
-      if (s.reason === 'cancelled') return { text: role === 'send' ? 'They cancelled.' : 'Cancelled.', tone: 'error', canRetry: true };
+      if (s.reason === 'cancelled') return { text: giving ? 'They cancelled.' : 'Cancelled.', tone: 'error', canRetry: true };
       return { text: FAIL[s.reason] ?? FAIL.broken, tone: 'error', canRetry: true };
   }
 }
