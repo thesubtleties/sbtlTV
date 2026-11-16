@@ -65,7 +65,7 @@ export function registerSyncRoutes(app: Hono, d: {
     const l = await d.groups.list(c.req.param('gid')!, since, today());
     if (!l) return d.err(c, 404, 'not-found');
     if ('moved' in l) return c.json(l);
-    return c.json({ seq: l.seq, computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) });
+    return c.json({ seq: l.seq, epoch: await d.groups.epoch(), computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) });
   });
 
   app.delete('/v1/groups/:gid/boxes/:did', async (c) => {

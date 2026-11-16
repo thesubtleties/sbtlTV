@@ -31,7 +31,7 @@ export interface PutBoxRes { seq: number }
 /** moved = the group was re-keyed after a removal; waiting = computers that haven't fetched their new key yet */
 export type ListRes =
   | { moved: true; waiting: number }
-  | { moved?: false; seq: number; computers: { id: string; seq: number }[]; boxes: { id: string; seq: number; sealed: string }[] };
+  | { moved?: false; seq: number; epoch: string; computers: { id: string; seq: number }[]; boxes: { id: string; seq: number; sealed: string }[] };
 export interface RekeyReq { keys: Record<string, string> }
 export interface RekeyRes { sealed: string }
 /** The relay database's id: changes only if the database was lost and rebuilt */

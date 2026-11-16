@@ -20,7 +20,11 @@ export interface OtherComputer { name: string; pub: string; counter: number; seq
  * computer has its new key. The remover also knows who it removed and the new key, so it can move a
  * rebuilt old group again without them.
  */
-export interface PreviousGroup { key: string; removed: string[]; newKey: string }
+export interface PreviousGroup {
+  key: string;          // sealed old group key
+  removed: string[];    // computers removed at that move (empty when this computer only followed it)
+  at: number;           // when this computer moved away; watched for at most 90 days
+}
 export interface SyncFile {
   v: 1; status: SyncStatus;
   key: string; device: string;

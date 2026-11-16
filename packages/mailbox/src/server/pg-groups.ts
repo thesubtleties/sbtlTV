@@ -125,8 +125,11 @@ export class PgGroupStore implements GroupStore {
     return r.rowCount ?? 0;
   }
 
+  private epochValue: string | null = null;
+  /** Set once at migration and never changed, so read once */
   async epoch() {
-    return (await this.pool.query<{ v: string }>(`select v from sync_meta where k = 'epoch'`)).rows[0].v;
+    this.epochValue ??= (await this.pool.query<{ v: string }>(`select v from sync_meta where k = 'epoch'`)).rows[0].v;
+    return this.epochValue;
   }
 
   async close() { await this.pool.end(); }

@@ -23,7 +23,7 @@ export class SyncClient {
     if ('moved' in res && res.moved) return { moved: true as const, waiting: Number(res.waiting) || 0 };
     const l = res as Extract<ListRes, { seq: number }>;
     return {
-      moved: false as const, seq: l.seq,
+      moved: false as const, seq: l.seq, epoch: String(l.epoch),
       computers: l.computers.map((c) => ({ id: String(c.id), seq: Number(c.seq) })),
       boxes: l.boxes.map((b) => ({ id: String(b.id), seq: Number(b.seq), sealed: decodeB64(b.sealed) })),
     };
