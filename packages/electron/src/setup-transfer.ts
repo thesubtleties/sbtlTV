@@ -190,11 +190,15 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
     else fs.rmSync(file, { force: true });
   });
 
+  const received = new Set<string>();
   return {
-    // A setup received through the mailbox: staged like an opened file, applied by setup:apply
+    // A setup received through the mailbox: staged like an opened file, applied by setup:apply.
+    // Replaces an earlier received one only, so a file import waiting for its passphrase stays.
     stage(body: SetupBody) {
       const token = randomUUID();
-      picked.clear();
+      for (const old of received) picked.delete(old);
+      received.clear();
+      received.add(token);
       picked.set(token, { file: Buffer.alloc(0), body });
       return { token, preview: describeSetup(body) };
     },

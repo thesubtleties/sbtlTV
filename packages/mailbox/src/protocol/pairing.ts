@@ -34,7 +34,11 @@ export function checkReveal(commitment: Buffer, receiverPub: Buffer, r: Buffer):
   return timingSafeEqual(commitment, sha256(receiverPub, r));
 }
 
-/** Three words from 16-bit chunks mod list length (EFF: 7776; bias under 0.02 %). */
+/**
+ * Three words from 16-bit chunks mod list length. With the EFF list (7772 words) some words are
+ * about 12 % likelier than others; a man in the middle's chance of matching all three stays
+ * around 1 in 400 billion, and the commitment means it gets one try.
+ */
 export function knockWords(commitment: Buffer, giverPub: Buffer, receiverPub: Buffer, wordlist: readonly string[]): [string, string, string] {
   const bytes = Buffer.from(hkdfSync('sha256', sha256(commitment, giverPub, receiverPub), Buffer.alloc(0), 'sbtl-sas', 6));
   const pick = (i: number) => wordlist[bytes.readUInt16BE(i * 2) % wordlist.length];

@@ -26,7 +26,6 @@
   "dependencies": {
     "@sbtltv/core": "workspace:*",
     "@sbtltv/local-adapter": "workspace:*",
-    "@sbtltv/mailbox": "workspace:*",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3"
   },
@@ -34,6 +33,7 @@
     "@sbtltv/mpv-texture": "workspace:*"
   },
   "devDependencies": {
+    "@sbtltv/mailbox": "workspace:*",
     "electron": "^44.3.0",
     "electron-builder": "^26.4.0",
     "esbuild": "^0.27.2",

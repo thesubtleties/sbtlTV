@@ -190,4 +190,31 @@ describe('knock clients', () => {
     await until(() => sender.state.step === 'received', 20_000);
     expect(statuses).toEqual([204]);
   }, 30_000);
+
+  it('a couple of failed polls in a row do not end the knock', async () => {
+    const { app } = createApp({ powBits: 4, minVersion: '0.17.0' });
+    let dropNext = 0;
+    const flaky = async (r: Request) => {
+      if (r.method === 'GET' && dropNext > 0) { dropNext--; throw new TypeError('fetch failed'); }
+      return app.fetch(r);
+    };
+    const receiver = new Receiver(transport(flaky), WORDS, () => {}, { pollMs: 5 });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    dropNext = 2;
+    await new Promise((r) => setTimeout(r, 60));
+    expect(receiver.state.step).toBe('code');
+    dropNext = 10;   // a real outage still ends it
+    await until(() => receiver.state.step === 'failed');
+    expect(receiver.state).toEqual({ step: 'failed', reason: 'offline' });
+  });
+
+  it('when the server asks for more work than the app sent, the app redoes it once', async () => {
+    const { app } = createApp({ powBits: 7, minVersion: '0.17.0' });
+    const receiver = new Receiver(transport((r) => Promise.resolve(app.fetch(r))), WORDS, () => {}, { pollMs: 5 });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code' || receiver.state.step === 'failed');
+    expect(receiver.state.step).toBe('code');
+    await receiver.cancel();
+  });
 });

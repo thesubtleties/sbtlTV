@@ -59,3 +59,21 @@ export class Transport {
   }
   async put(path: string, body: unknown): Promise<void> { await this.send('PUT', path, body, true); }
 }
+
+/** Polls ride out a brief network hiccup: only this many failed polls in a row end a knock. */
+export const POLL_MISSES_ALLOWED = 3;
+
+/** A poll that returns null on a passing network error and throws once they've piled up. */
+export function tolerantPoll(t: Transport): <T>(path: string) => Promise<T | null> {
+  let misses = 0;
+  return async <T>(path: string) => {
+    try {
+      const out = await t.get<T>(path);
+      misses = 0;
+      return out;
+    } catch (e) {
+      if (e instanceof MailboxError && e.code === 'offline' && ++misses < POLL_MISSES_ALLOWED) return null;
+      throw e;
+    }
+  };
+}

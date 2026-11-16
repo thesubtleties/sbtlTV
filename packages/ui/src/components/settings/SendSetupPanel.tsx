@@ -29,6 +29,7 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   // Bumped on every action: a poll answered after it describes the old knock and is dropped
   const gen = useRef(0);
+  const started = useRef(false);
 
   useEffect(() => {
     const id = window.setInterval(async () => {
@@ -37,7 +38,8 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
       if (asked !== gen.current) return;
       if (r?.data.role === 'send' && r.data.state) setState(r.data.state);
     }, 500);
-    return () => { window.clearInterval(id); void window.mailbox?.cancel(); };
+    // Cancels only a send this panel started (the Receive panel may own the mailbox)
+    return () => { window.clearInterval(id); if (started.current) void window.mailbox?.cancel(); };
   }, []);
 
   const nothing = picked.length === 0 && extras.length === 0 && !settings && !myKeys && !Object.values(theirKeys).some(Boolean);
@@ -45,6 +47,7 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
   async function knock() {
     if (!window.mailbox || busy) return;
     gen.current++;
+    started.current = true;
     setBusy(true);
     setError(null);
     const parts: SetupPart[] = [

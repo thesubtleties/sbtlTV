@@ -34,6 +34,9 @@ interface SettingsProps {
 export function Settings({ onClose, initialTab, initialReceive }: SettingsProps) {
   // The last setup export's passphrase: kept while Settings is open, gone when it closes.
   const [lastExport, setLastExport] = useState<LastExport | null>(null);
+  // Receive a setup (empty Live TV screen): the code opens once, not on every return to the tab
+  const [receivePending, setReceivePending] = useState(!!initialReceive && initialTab === 'backup');
+  const receiveUsed = useCallback(() => setReceivePending(false), []);
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'sources');
   const [sources, setSources] = useState<Source[]>([]);
   const [isEncryptionAvailable, setIsEncryptionAvailable] = useState(true);
@@ -298,7 +301,7 @@ export function Settings({ onClose, initialTab, initialReceive }: SettingsProps)
           />
         );
       case 'backup':
-        return <BackupTransferTab lastExport={lastExport} onExported={setLastExport} autoReceive={initialReceive && initialTab === 'backup'} />;
+        return <BackupTransferTab lastExport={lastExport} onExported={setLastExport} autoReceive={receivePending} onAutoReceiveUsed={receiveUsed} />;
       case 'privacy':
         return (
           <PrivacyTab

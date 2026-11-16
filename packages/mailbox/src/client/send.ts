@@ -1,6 +1,6 @@
 /** The giving side of a knock: rings a code, checks the commitment, seals and drops the payload. */
 import { checkReveal, dropAad, dropKey, knockWords, newKeyPair, normaliseCode, seal, MAX_DROP_BYTES, type GiverPoll, type RingRes } from '../protocol/index.js';
-import { MailboxError, type Transport } from './transport.js';
+import { MailboxError, tolerantPoll, type Transport } from './transport.js';
 
 export type SendState =
   | { step: 'ringing' }
@@ -51,10 +51,12 @@ export class Sender {
       const commitment = fromB64(r.commitment);
       await this.t.post(`/v1/ring/${r.ticket}/key`, { giverKey: b64(mine.publicRaw) }, false);
       // Polls until the words show, then on while they're shown so a cancel on their side shows here
+      const poll = tolerantPoll(this.t);
       while (!this.stopped && (this.state.step === 'ringing' || this.state.step === 'words')) {
         await this.wait();
         if (this.stopped || this.state.step !== 'ringing' && this.state.step !== 'words') return;
-        const p = await this.t.get<GiverPoll>(`/v1/ring/${r.ticket}`);
+        const p = await poll<GiverPoll>(`/v1/ring/${r.ticket}`);
+        if (!p) continue;
         if (p.status === 'cancelled') { this.stopped = true; return this.set({ step: 'failed', reason: 'cancelled' }); }
         if (this.state.step === 'ringing' && p.status === 'revealed' && p.receiverKey && p.r) {
           const receiverPub = fromB64(p.receiverKey);
@@ -79,10 +81,12 @@ export class Sender {
       if (sealed.length > MAX_DROP_BYTES) throw new MailboxError('too-big');
       await this.t.put(`/v1/ring/${this.ticket}/drop`, { sealed: b64(sealed) });
       this.set({ step: 'sent' });
+      const poll = tolerantPoll(this.t);
       while (!this.stopped) {
         await this.wait();
         if (this.stopped) return;
-        const p = await this.t.get<GiverPoll>(`/v1/ring/${this.ticket}`);
+        const p = await poll<GiverPoll>(`/v1/ring/${this.ticket}`);
+        if (!p) continue;
         if (p.status === 'gone') { this.stopped = true; return this.set({ step: 'received' }); }
         if (p.status === 'cancelled') { this.stopped = true; return this.set({ step: 'failed', reason: 'cancelled' }); }
       }

@@ -1,6 +1,6 @@
 /** The receiving side of a knock: shows a code, reveals its key once rung, opens the drop. */
 import { dropAad, dropKey, knockWords, newReceiverSecret, open, type CreateKnockRes, type DropRes, type ReceiverPoll } from '../protocol/index.js';
-import { MailboxError, type Transport } from './transport.js';
+import { MailboxError, tolerantPoll, type Transport } from './transport.js';
 
 export type ReceiveState =
   | { step: 'starting' }
@@ -46,10 +46,12 @@ export class Receiver {
       }
       this.set({ step: 'code', code: k.code, expiresAt: k.expiresAt });
       let giverKey: Buffer | null = null;
+      const poll = tolerantPoll(this.t);
       while (!this.stopped) {
         await new Promise((r) => setTimeout(r, this.opts.pollMs ?? 2000));
         if (this.stopped) return;
-        const p = await this.t.get<ReceiverPoll>(`/v1/knock/${k.id}`);
+        const p = await poll<ReceiverPoll>(`/v1/knock/${k.id}`);
+        if (!p) continue;
         if (p.status === 'cancelled') { this.stopped = true; return this.set({ step: 'failed', reason: 'cancelled' }); }
         if (p.status === 'rung' && p.giverKey && !giverKey) {
           giverKey = fromB64(p.giverKey);

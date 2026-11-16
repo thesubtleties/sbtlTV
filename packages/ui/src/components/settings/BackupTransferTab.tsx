@@ -36,7 +36,7 @@ type ImportState =
 /** The last export, kept by Settings while it is open (switching tabs keeps it; closing Settings clears it). */
 export interface LastExport { passphrase: string; filePath: string }
 
-export function BackupTransferTab({ lastExport, onExported, autoReceive }: { lastExport: LastExport | null; onExported: (e: LastExport) => void; autoReceive?: boolean }) {
+export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoReceiveUsed }: { lastExport: LastExport | null; onExported: (e: LastExport) => void; autoReceive?: boolean; onAutoReceiveUsed?: () => void }) {
   const sources = useUIStore((s) => s.sources);
   const [parts, setParts] = useState(() => new Set(EXPORT_PARTS.filter((p) => p.defaultOn).map((p) => p.id)));
   const [exporting, setExporting] = useState(false);
@@ -51,6 +51,11 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive }: { las
   // Transfer: one of export or send open at a time (an export just made stays open). Receive: the code panel.
   const [transfer, setTransfer] = useState<'none' | 'export' | 'send'>(lastExport ? 'export' : 'none');
   const [receiving, setReceiving] = useState(!!autoReceive);
+  // "Receive a setup" opens the code once; coming back to this tab later doesn't start another
+  useEffect(() => { if (autoReceive) onAutoReceiveUsed?.(); }, [autoReceive, onAutoReceiveUsed]);
+  // One knock at a time: opening Send closes Receive and the other way round
+  const openSend = () => { setReceiving(false); setTransfer(transfer === 'send' ? 'none' : 'send'); };
+  const openReceive = () => { if (!receiving && transfer === 'send') setTransfer('none'); setReceiving(!receiving); };
 
   useEffect(() => { void window.setup?.backups().then((r) => setBackups(r.data)); }, []);
 
@@ -140,7 +145,7 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive }: { las
     <SettingsTab>
       <Section title="Transfer setup" description="To another computer, or someone else's."
         actions={<>
-          <Button onClick={() => setTransfer(transfer === 'send' ? 'none' : 'send')} disabled={imp.step === 'applying'}>Send to a device…</Button>
+          <Button onClick={openSend} disabled={imp.step === 'applying'}>Send to a device…</Button>
           <Button onClick={() => setTransfer(transfer === 'export' ? 'none' : 'export')} disabled={imp.step === 'applying'}>Export to file…</Button>
         </>}>
         {transfer === 'send' && <SendSetupPanel onClose={() => setTransfer('none')} />}
@@ -174,7 +179,7 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive }: { las
 
       <Section title="Receive" description="A setup from another computer."
         actions={<>
-          <Button onClick={() => setReceiving(!receiving)} disabled={imp.step === 'applying'}>Show my code</Button>
+          <Button onClick={openReceive} disabled={imp.step === 'applying'}>Show my code</Button>
           <Button onClick={() => void pick()} disabled={imp.step === 'applying'}>Import file…</Button>
         </>}>
         {receiving && imp.step !== 'preview' && (

@@ -2,6 +2,9 @@
  * Settings > Sync & transfer: Send to a device / Show my code. The decrypted setup never goes to
  * the page; the page sees states, words and the preview. Logs event names only.
  * Bundled by esbuild (scripts/bundle-data.mjs) because it imports @sbtltv/mailbox (TypeScript).
+ * Plain `tsc` also writes dist/mailbox/mailbox-ipc.js, which won't run (it imports the package's
+ * TypeScript): `pnpm build` / `pnpm test` replace it with the bundle; a bare `tsc` run needs
+ * `node scripts/bundle-data.mjs` after it.
  */
 import { app, ipcMain, net } from 'electron';
 import { randomUUID } from 'node:crypto';
@@ -30,6 +33,9 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
   let staged: { token: string; preview: SetupPreview } | undefined;
   let receiveFailed = false;   // the payload arrived but wasn't a valid setup
 
+  // Every start and cancel takes a new number: a start that finishes after a later cancel stands down
+  let generation = 0;
+
   const stopAll = async () => {
     const r = receiver, s = sender;
     receiver = null; sender = null; pending = null; staged = undefined; role = null; receiveFailed = false;
@@ -37,7 +43,9 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
   };
 
   ipcMain.handle('mailbox:receive', async () => {
+    const mine = ++generation;
     await stopAll();
+    if (mine !== generation) return { success: false };
     role = 'receive';
     const r = new Receiver(transport(), EFF_WORDS, (s: ReceiveState) => {
       if (r !== receiver) return;   // an older knock finishing after a restart
@@ -59,8 +67,10 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
   });
 
   ipcMain.handle('mailbox:send', async (_e, sel: SendSelection & { lists?: UserLists; playlists?: Record<string, string> }, code: string) => {
+    const mine = ++generation;
     try {
       await stopAll();
+      if (mine !== generation) return { success: false };
       role = 'send';
       const base = buildBody(sel.parts, sel.lists ?? {}, sel.playlists ?? {});
       const body = validateSetupBody(sendBody(base, sel, randomUUID));
@@ -96,7 +106,7 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
   // The receiver's person saw the same words: only now is the drop fetched and opened
   ipcMain.handle('mailbox:sameWords', () => { receiver?.confirmWords(); return { success: true }; });
 
-  ipcMain.handle('mailbox:cancel', async () => { await stopAll(); return { success: true }; });
+  ipcMain.handle('mailbox:cancel', async () => { generation++; await stopAll(); return { success: true }; });
 
   ipcMain.handle('mailbox:state', () => {
     const state = role === 'receive'
@@ -105,5 +115,5 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
     return { success: true, data: { role, state, staged } };
   });
 
-  return { stop: stopAll, active: () => role !== null };
+  return { stop: async () => { generation++; await stopAll(); }, active: () => role !== null };
 }
