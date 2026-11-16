@@ -34,9 +34,6 @@ importers:
       '@sbtltv/local-adapter':
         specifier: workspace:*
         version: link:../local-adapter
-      '@sbtltv/mailbox':
-        specifier: workspace:*
-        version: link:../mailbox
       electron-store:
         specifier: ^11.0.2
         version: 11.0.2
@@ -44,6 +41,9 @@ importers:
         specifier: ^6.7.3
         version: 6.7.3
     devDependencies:
+      '@sbtltv/mailbox':
+        specifier: workspace:*
+        version: link:../mailbox
       electron:
         specifier: ^44.3.0
         version: 44.3.0
