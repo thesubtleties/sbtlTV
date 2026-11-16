@@ -30,6 +30,8 @@ export interface PreviousGroup {
   names?: Record<string, string>;
   /** The remover only: the relay database (epoch) in which this computer last put the retired marker */
   markedIn?: string | null;
+  /** A follower only: its pick-up proof for that move (base64), until the relay has accepted it */
+  ack?: string;
 }
 export interface SyncFile {
   v: 1; status: SyncStatus;

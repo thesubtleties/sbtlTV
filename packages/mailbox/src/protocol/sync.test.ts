@@ -96,3 +96,18 @@ describe('box limits (lens 7)', () => {
     expect(() => openBox(encKey, groupId, did, sealed)).toThrow('bad box');
   });
 });
+
+describe('rekey pick-up proof and key separation (review A)', () => {
+  it('only the new key gives the pick-up proof; the relay keeps just its hash', async () => {
+    const { ackProof, ackHash } = await import('./sync.js');
+    const newK = randomBytes(32), did = newDeviceId();
+    expect(ackHash(ackProof(newK, did)).equals(ackHash(ackProof(newK, did)))).toBe(true);
+    expect(ackProof(newK, did).equals(ackProof(randomBytes(32), did))).toBe(false);
+    expect(ackProof(newK, did).equals(ackProof(newK, newDeviceId()))).toBe(false);
+  });
+  it('the rekey proof key is separate from the box key', () => {
+    const g = deriveGroup(randomBytes(32));
+    expect(g.macKey.length).toBe(32);
+    expect(g.macKey.equals(g.encKey)).toBe(false);
+  });
+});

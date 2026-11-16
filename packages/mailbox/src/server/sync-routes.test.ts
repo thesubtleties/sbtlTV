@@ -1,5 +1,5 @@
 // packages/mailbox/src/server/sync-routes.test.ts
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { CHALLENGE_HEADER, POW_HEADER, VERSION_HEADER, deriveGroup, newDeviceId, powBitsFor, powInput, solvePow } from '../protocol/index.js';
 import { createApp } from './app.js';
@@ -26,6 +26,8 @@ function setup(over: Parameters<typeof createApp>[0] = {}) {
 }
 
 const group = () => { const g = deriveGroup(randomBytes(32)); return { ...g, did: newDeviceId() }; };
+/** A rekey entry: the sealed key and the hash of a pick-up proof */
+const withAck = (sealedKey: string) => ({ sealed: sealedKey, ack: randomBytes(32).toString('base64') });
 const sealed = (n = 64) => randomBytes(n).toString('base64');
 
 describe('sync routes', () => {
@@ -74,20 +76,26 @@ describe('sync routes', () => {
     const { call } = setup(); const g = group(); const other = newDeviceId(), removed = newDeviceId();
     for (const d of [g.did, other, removed]) await call('PUT', `/v1/groups/${g.groupId}/boxes/${d}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true });
     const key = randomBytes(140).toString('base64');
-    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: key } }, pow: true })).status).toBe(204);
+    const proof = randomBytes(32);
+    const ack = createHash('sha256').update(proof).digest().toString('base64');
+    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: { sealed: key, ack } } }, pow: true })).status).toBe(204);
     expect(await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).toEqual({ moved: true, waiting: 1 });
     const late = await call('PUT', `/v1/groups/${g.groupId}/boxes/${removed}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true });
     expect(late.status).toBe(409);
     expect(await late.json()).toEqual({ error: 'moved' });
     expect(await (await call('GET', `/v1/groups/${g.groupId}/rekey/${other}`, { token: g.accessToken })).json()).toEqual({ sealed: key });
     expect((await call('GET', `/v1/groups/${g.groupId}/rekey/${removed}`, { token: g.accessToken })).status).toBe(404);
+    // Fetching isn't picking up; only the proof of the new key is (a holder of the old token can't fake it)
+    expect(await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).toEqual({ moved: true, waiting: 1 });
+    expect((await call('POST', `/v1/groups/${g.groupId}/rekey/${other}/ack`, { token: g.accessToken, body: { proof: randomBytes(32).toString('base64') } })).status).toBe(403);
+    expect((await call('POST', `/v1/groups/${g.groupId}/rekey/${other}/ack`, { token: g.accessToken, body: { proof: proof.toString('base64') } })).status).toBe(204);
     expect(await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).toEqual({ moved: true, waiting: 0 });
   });
 
   it('retiring a group the relay lost creates it already retired; it then needs its own token', async () => {
     const { call } = setup(); const g = group(); const other = newDeviceId();
     const key = randomBytes(140).toString('base64');
-    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: key } }, pow: true })).status).toBe(204);
+    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: { sealed: key, ack: randomBytes(32).toString('base64') } } }, pow: true })).status).toBe(204);
     expect(await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).toEqual({ moved: true, waiting: 1 });
     expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(409);
     expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: group().accessToken, body: { keys: {} }, pow: true })).status).toBe(403);
@@ -150,16 +158,22 @@ describe('sync routes: guards (lens 7)', () => {
   it('a new key needs the group token, and a refused fetch does not count as picked up', async () => {
     const { call } = setup(); const g = group(); const other = newDeviceId();
     await put(call, g); await put(call, g, other);
-    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: sealed(140) } }, pow: true })).status).toBe(204);
+    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: withAck(sealed(140)) } }, pow: true })).status).toBe(204);
     expect((await call('GET', `/v1/groups/${g.groupId}/rekey/${other}`, { token: group().accessToken })).status).toBe(403);
     expect((await call('GET', `/v1/groups/${g.groupId}/rekey/${other}`)).status).toBe(403);
     expect(await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).toEqual({ moved: true, waiting: 1 });
   });
 
+  it('rekey refuses a key without its pick-up hash', async () => {
+    const { call } = setup(); const g = group();
+    await put(call, g);
+    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [newDeviceId()]: sealed(140) } }, pow: true })).status).toBe(400);
+  });
+
   it('rekey refuses too many keys, bad computer ids and oversized keys; sync paused refuses it', async () => {
     const { call } = setup(); const g = group();
     await put(call, g);
-    const rekey = (keys: Record<string, string>, c = call) => c('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys }, pow: true });
+    const rekey = (keys: Record<string, string>, c = call) => c('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: Object.fromEntries(Object.entries(keys).map(([k, v]) => [k, withAck(v)])) }, pow: true });
     expect((await rekey(Object.fromEntries(Array.from({ length: 11 }, () => [newDeviceId(), sealed(140)])))).status).toBe(400);
     expect((await rekey({ 'not-a-device': sealed(140) })).status).toBe(400);
     expect((await rekey({ [newDeviceId()]: sealed(600) })).status).toBe(400);

@@ -4,10 +4,13 @@
  * when the relay runs without a database (local development). Dates are whole days on purpose:
  * the relay learns at most which day a group checked in.
  */
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { GROUP_IDLE_DAYS, MAX_COMPUTERS } from '../protocol/index.js';
 
 export interface BoxRow { id: string; seq: number; sealed: Buffer }
+/** A remaining computer's new key after a move: sealed for it, with the hash of its pick-up proof (null: no proof possible) */
+export type RekeyEntry = Buffer | { sealed: Buffer; ackHash: Buffer | null };
+const entry = (e: RekeyEntry) => (Buffer.isBuffer(e) ? { sealed: e, ackHash: null } : e);
 export type ListResult = { seq: number; computers: { id: string; seq: number }[]; boxes: BoxRow[] };
 /** A group re-keyed after a removal: how many remaining computers haven't fetched their new key */
 export type Moved = { moved: true; waiting: number };
@@ -21,15 +24,17 @@ export interface GroupStore {
   list(gid: string, since: number, today: string): Promise<ListResult | Moved | null>;
   /** The group goes with its last box. */
   deleteBox(gid: string, did: string): Promise<void>;
-  rekey(gid: string, keys: Map<string, Buffer>, today: string): Promise<'ok' | 'moved' | null>;
+  rekey(gid: string, keys: Map<string, RekeyEntry>, today: string): Promise<'ok' | 'moved' | null>;
   /**
    * A group that doesn't exist, created already retired (moved, with each computer's sealed new
    * key): the remover restoring its marker after the relay lost its data, before anyone rebuilds it.
    * 'exists' = the group is there (use rekey, with its token checked).
    */
-  createRetired(gid: string, tokenHash: Buffer, keys: Map<string, Buffer>, today: string): Promise<'ok' | 'exists'>;
-  /** This computer's new key after a move; marks it fetched and refreshes last_seen. */
+  createRetired(gid: string, tokenHash: Buffer, keys: Map<string, RekeyEntry>, today: string): Promise<'ok' | 'exists'>;
+  /** This computer's new key after a move (read-only; refreshes last_seen). */
   getRekey(gid: string, did: string, today: string): Promise<Buffer | null>;
+  /** The computer proves it opened its new key: only then does it count as picked up. null = no such key. */
+  ackRekey(gid: string, did: string, proof: Buffer, today: string): Promise<'ok' | 'bad' | null>;
   /**
    * Deletes groups nobody checked in with for GROUP_IDLE_DAYS, and moved groups once every key
    * was fetched and a day has passed since the last check-in (for a lost reply). Returns how many.
@@ -48,7 +53,7 @@ export const sameHash = (a: Buffer, b: Buffer) => a.length === b.length && timin
 
 interface Group {
   tokenHash: Buffer; movedOn: string | null; lastSeen: string; seq: number;
-  boxes: Map<string, BoxRow>; rekeys: Map<string, { sealed: Buffer; fetched: boolean }>;
+  boxes: Map<string, BoxRow>; rekeys: Map<string, { sealed: Buffer; ackHash: Buffer | null; fetched: boolean }>;
 }
 
 export class MemoryGroupStore implements GroupStore {
@@ -87,20 +92,20 @@ export class MemoryGroupStore implements GroupStore {
     if (g.boxes.size === 0 && !g.movedOn) this.groups.delete(gid);
   }
 
-  async rekey(gid: string, keys: Map<string, Buffer>, today: string) {
+  async rekey(gid: string, keys: Map<string, RekeyEntry>, today: string) {
     const g = this.groups.get(gid);
     if (!g) return null;
     if (g.movedOn) return 'moved' as const;
     g.movedOn = today; g.lastSeen = today; g.boxes.clear();
-    g.rekeys = new Map([...keys].map(([did, sealed]) => [did, { sealed: Buffer.from(sealed), fetched: false }]));
+    g.rekeys = new Map([...keys].map(([did, e]) => { const x = entry(e); return [did, { sealed: Buffer.from(x.sealed), ackHash: x.ackHash, fetched: false }]; }));
     return 'ok' as const;
   }
 
-  async createRetired(gid: string, tokenHash: Buffer, keys: Map<string, Buffer>, today: string) {
+  async createRetired(gid: string, tokenHash: Buffer, keys: Map<string, RekeyEntry>, today: string) {
     if (this.groups.has(gid)) return 'exists' as const;
     this.groups.set(gid, {
       tokenHash, movedOn: today, lastSeen: today, seq: 0, boxes: new Map(),
-      rekeys: new Map([...keys].map(([did, sealed]) => [did, { sealed: Buffer.from(sealed), fetched: false }])),
+      rekeys: new Map([...keys].map(([did, e]) => { const x = entry(e); return [did, { sealed: Buffer.from(x.sealed), ackHash: x.ackHash, fetched: false }]; })),
     });
     return 'ok' as const;
   }
@@ -109,8 +114,17 @@ export class MemoryGroupStore implements GroupStore {
     const g = this.groups.get(gid);
     const r = g?.rekeys.get(did);
     if (!g || !r) return null;
-    r.fetched = true; g.lastSeen = today;
+    g.lastSeen = today;
     return r.sealed;
+  }
+
+  async ackRekey(gid: string, did: string, proof: Buffer, today: string) {
+    const g = this.groups.get(gid);
+    const r = g?.rekeys.get(did);
+    if (!g || !r) return null;
+    if (!r.ackHash || !sameHash(r.ackHash, createHash('sha256').update(proof).digest())) return 'bad' as const;
+    r.fetched = true; g.lastSeen = today;
+    return 'ok' as const;
   }
 
   async sweep(today: string) {

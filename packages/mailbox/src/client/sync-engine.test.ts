@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { SyncRecord } from '@sbtltv/core';
-import { deriveGroup, newDeviceId, tokenHash } from '../protocol/index.js';
+import { deriveGroup, newDeviceId, newKeyPair, openRekey, sealBox, tokenHash } from '../protocol/index.js';
 import { createApp } from '../server/app.js';
 import { Transport } from './transport.js';
 import { SyncClient } from './sync.js';
@@ -264,6 +264,53 @@ describe('SyncEngine', () => {
     expect(a.e.view().interrupted).toEqual(['Linux PC 2']);
     a.e.dismissInterrupted();
     expect(a.e.view().interrupted).toEqual([]);
+  });
+
+  it('a removed computer with a modified client: marking keys picked up does nothing, and a forged box never gets the current key (review A)', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const c = w.make('Mac');
+    await c.e.activateJoin(await a.e.joinPayload(), 'Mac');
+    await a.e.pull(); await b.e.pull(); await c.e.pull();
+    const cState = JSON.parse(readFileSync(join(c.dirPath, 'sync-state.json'), 'utf8'));
+    const old = deriveGroup(Buffer.from(fakeSealer().open(cState.key), 'base64'));
+    const bId = thisId(b.e);
+    await a.e.remove(thisId(c.e));   // b is away
+    const t = new Transport({ base: 'http://x', version: '0.17.0', bits: 4, auth: old.accessToken, fetch: async (r) => w.relay().app.fetch(r) });
+    const attacker = new SyncClient(t, old.groupId);
+    await attacker.fetchRekey(bId);                                   // "picks up" b's key without being able to open it
+    expect(await attacker.list(0)).toEqual({ moved: true, waiting: 1 });   // still waiting: the group isn't swept early
+    // The relay loses its data; the attacker rebuilds the old group first, with a forged box under b's id
+    w.wipe();
+    const forged = newKeyPair();
+    const box = sealBox(old.encKey, old.groupId, bId, Buffer.from(JSON.stringify({ v: 1, counter: 99, name: 'Linux PC 2', pub: forged.publicRaw.toString('base64'), records: [] })));
+    await attacker.push(bId, box);
+    await a.e.pull();                                                 // the remover moves the rebuilt group again
+    const sealedForB = await attacker.fetchRekey(bId);
+    expect(sealedForB).not.toBeNull();
+    // Sealed to b's REAL key (recorded at removal), so the forged key can't open it
+    expect(() => openRekey(forged, old.macKey, sealedForB!, old.groupId, bId)).toThrow();
+    await b.e.pull();
+    expect(b.e.view().status).toBe('active');
+  });
+
+  it('restoring a retired old group after a wipe is retried until it works (review A3)', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const c = w.make('Mac');
+    await c.e.activateJoin(await a.e.joinPayload(), 'Mac');
+    await a.e.pull(); await b.e.pull(); await c.e.pull();
+    await a.e.remove(thisId(c.e));   // b and c are away
+    w.wipe();
+    let failOnce = true;
+    w.fault((r) => {
+      if (failOnce && r.method === 'POST' && /\/rekey$/.test(new URL(r.url).pathname)) { failOnce = false; return new Response(JSON.stringify({ error: 'busy' }), { status: 429 }); }
+      return undefined;
+    });
+    await a.e.pull();                // the restore fails once
+    await a.e.pull();                // and is tried again
+    await c.e.pull();                // the removed computer can't rebuild the old group
+    expect(c.e.view().status).toBe('removed');
+    await b.e.pull();
+    expect(b.e.view().status).toBe('active');
   });
 
   it('a keyring that stopped working: status keyring, no crash, nothing sent (Review Focus 3)', async () => {

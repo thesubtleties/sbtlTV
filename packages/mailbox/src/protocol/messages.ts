@@ -32,7 +32,9 @@ export interface PutBoxRes { seq: number }
 export type ListRes =
   | { moved: true; waiting: number }
   | { moved?: false; seq: number; epoch: string; computers: { id: string; seq: number }[]; boxes: { id: string; seq: number; sealed: string }[] };
-export interface RekeyReq { keys: Record<string, string> }
+/** Per remaining computer: its sealed new key, and the hash of the proof it gives once it opened it */
+export interface RekeyReq { keys: Record<string, { sealed: string; ack: string }> }
+export interface AckReq { proof: string }
 export interface RekeyRes { sealed: string }
 /** The relay database's id: changes only if the database was lost and rebuilt */
 export interface EpochRes { epoch: string }

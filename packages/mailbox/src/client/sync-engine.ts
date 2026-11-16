@@ -6,7 +6,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { isNewer, mergeRecords, pruneTombstones, recordKey, recordPart, validateRecord, type SyncRecord, type SyncedSettingKey } from '@sbtltv/core';
-import { GROUP_IDLE_DAYS, MAX_BOX_BYTES, decodeB64, deriveGroup, newDeviceId, newKeyPair, openBox, openRekey, sealBox, sealRekey, type KeyPair } from '../protocol/index.js';
+import { GROUP_IDLE_DAYS, MAX_BOX_BYTES, ackHash, ackProof, decodeB64, deriveGroup, newDeviceId, newKeyPair, openBox, openRekey, sealBox, sealRekey, type KeyPair } from '../protocol/index.js';
 import { MailboxError, type Transport } from './transport.js';
 import { SyncClient } from './sync.js';
 import { DEFAULT_PARTS, KeyringUnavailable, type Parts, type SyncFile, type SyncStore } from './sync-store.js';
@@ -59,7 +59,7 @@ function parseBox(plain: Buffer): { counter: number; name: string; pub: string; 
 
 export class SyncEngine {
   private f: SyncFile | null;
-  private keys: { K: Buffer; device: KeyPair; encKey: Buffer; groupId: string; client: SyncClient } | null = null;
+  private keys: { K: Buffer; device: KeyPair; encKey: Buffer; macKey: Buffer; groupId: string; client: SyncClient } | null = null;
   private problem: 'keyring' | 'update' | null = null;
   private chain: Promise<unknown> = Promise.resolve();
   private pushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -105,7 +105,7 @@ export class SyncEngine {
 
   private setKey(K: Buffer, device: KeyPair) {
     const g = deriveGroup(K);
-    this.keys = { K, device, encKey: g.encKey, groupId: g.groupId, client: new SyncClient(this.d.transport(g.accessToken), g.groupId) };
+    this.keys = { K, device, encKey: g.encKey, macKey: g.macKey, groupId: g.groupId, client: new SyncClient(this.d.transport(g.accessToken), g.groupId) };
   }
 
   private save() { if (this.f) this.d.store.save(this.f); }
@@ -264,7 +264,7 @@ export class SyncEngine {
       if (l === null || l.moved) return;
     }
     f.epoch = l.epoch;
-    if (wiped) await this.retirePrevious();
+    if (wiped) await this.retirePrevious();   // first, before anything else (and again at the end of every pull)
     for (const b of l.boxes) if (b.id !== f.deviceId) this.takeBox(b.id, b.seq, b.sealed, now);
     const present = new Set(l.computers.map((c) => c.id));
     for (const id of Object.keys(f.others)) if (!present.has(id)) delete f.others[id];
@@ -278,6 +278,8 @@ export class SyncEngine {
     if (f.status === 'active' && !present.has(f.deviceId)) await this.pushNow();
     f.lastSync = now;
     this.applyWinners();
+    // A restore that failed (busy, offline) is tried again on every pull until it works
+    await this.retirePrevious();
     await this.touchPrevious();
     this.save(); this.emit();
   }
@@ -297,6 +299,8 @@ export class SyncEngine {
       const g = deriveGroup(old.K);
       const client = new SyncClient(this.d.transport(g.accessToken), g.groupId);
       try {
+        // A follower whose pick-up proof didn't reach the relay yet: send it again
+        if (p.ack) { try { await client.ackRekey(f.deviceId, Buffer.from(p.ack, 'base64')); delete p.ack; } catch { /* next time */ } }
         const l = await client.list(0);
         // Retired in this database, but not by this computer: someone else took the old group
         if (l && l.moved && p.removed.length > 0 && p.markedIn !== f.epoch) { this.interrupt(p); continue; }
@@ -305,18 +309,9 @@ export class SyncEngine {
         // and someone still waits for a key, it's kept alive however long that takes.
         if (l === null && this.now() - p.at > GROUP_IDLE_DAYS * DAY) continue;
         if (l && !l.moved && p.removed.length > 0) {
-          const keys = new Map<string, Buffer>();
-          for (const b of l.boxes) {
-            if (b.id === f.deviceId || p.removed.includes(b.id) || f.removedIds.includes(b.id)) continue;
-            let box: ReturnType<typeof parseBox>;
-            try { box = parseBox(openBox(g.encKey, g.groupId, b.id, b.sealed)); } catch { box = null; }
-            if (box) keys.set(b.id, sealRekey(decodeB64(box.pub, 32), g.encKey, k.K, g.groupId, b.id));
-          }
-          // And the computers that stayed but are still away (no box here yet): they'd otherwise look removed
-          for (const [id, pub] of Object.entries(p.members ?? {})) {
-            if (id === f.deviceId || p.removed.includes(id) || f.removedIds.includes(id) || keys.has(id)) continue;
-            try { keys.set(id, sealRekey(decodeB64(pub, 32), g.encKey, k.K, g.groupId, id)); } catch { /* a bad key: skip */ }
-          }
+          // Only to the computers recorded when this one removed someone: never to a key found in a box,
+          // which anyone holding the old key (the removed computer, too) could have put there
+          const keys = this.sealFor(p.members ?? {}, p.removed, k.K, g);
           try {
             await client.rekey(keys);
             p.markedIn = f.epoch;
@@ -380,10 +375,14 @@ export class SyncEngine {
     try { sealed = await k.client.fetchRekey(f.deviceId); } catch (e) { if (!(e instanceof MailboxError && e.code === 'moved')) await this.failed(e); return; }
     let newK: Buffer | null = null;
     if (sealed) {
-      try { newK = openRekey(k.device, k.encKey, sealed, k.groupId, f.deviceId); } catch { this.d.log('Sync: the new key could not be opened'); }
+      try { newK = openRekey(k.device, k.macKey, sealed, k.groupId, f.deviceId); } catch { this.d.log('Sync: the new key could not be opened'); }
     }
     if (!newK) { f.status = 'removed'; this.save(); this.emit(); return; }
-    f.previous.push({ key: f.key, removed: [], at: this.now() });
+    // The proof that this computer opened its new key: only this counts it as picked up (retried by touchPrevious)
+    const proof = ackProof(newK, f.deviceId);
+    let acked = false;
+    try { await k.client.ackRekey(f.deviceId, proof); acked = true; } catch { /* next pull */ }
+    f.previous.push({ key: f.key, removed: [], at: this.now(), ...(!acked && { ack: proof.toString('base64') }) });
     this.switchKey(newK);
     await this.pushNow();
     await this.pullNow();
@@ -423,6 +422,20 @@ export class SyncEngine {
     };
   }
 
+  /**
+   * The new key sealed (with its pick-up hash) for each recorded computer, skipping this one, the ones
+   * removed at that move and every computer this one has ever removed.
+   */
+  private sealFor(members: Record<string, string>, removed: string[], newK: Buffer, old: { macKey: Buffer; groupId: string }): Map<string, { sealed: Buffer; ackHash: Buffer }> {
+    const f = this.f!;
+    const keys = new Map<string, { sealed: Buffer; ackHash: Buffer }>();
+    for (const [id, pub] of Object.entries(members)) {
+      if (id === f.deviceId || removed.includes(id) || f.removedIds.includes(id)) continue;
+      try { keys.set(id, { sealed: sealRekey(decodeB64(pub, 32), old.macKey, newK, old.groupId, id), ackHash: ackHash(ackProof(newK, id)) }); } catch { /* a bad key: skip */ }
+    }
+    return keys;
+  }
+
   /** The relay lost its data: put this computer's retired markers back (old groups it removed someone from), sealing the current key to the computers that stayed. */
   private async retirePrevious(): Promise<void> {
     const f = this.f!, k = this.keys!;
@@ -431,11 +444,7 @@ export class SyncEngine {
       let old: { K: Buffer };
       try { old = this.d.store.open({ ...f, key: p.key }); } catch { continue; }
       const g = deriveGroup(old.K);
-      const keys = new Map<string, Buffer>();
-      for (const [id, pub] of Object.entries(p.members ?? {})) {
-        if (id === f.deviceId || p.removed.includes(id) || f.removedIds.includes(id)) continue;
-        try { keys.set(id, sealRekey(decodeB64(pub, 32), g.encKey, k.K, g.groupId, id)); } catch { /* a bad key: skip */ }
-      }
+      const keys = this.sealFor(p.members ?? {}, p.removed, k.K, g);
       try {
         await new SyncClient(this.d.transport(g.accessToken), g.groupId).rekey(keys);
         p.markedIn = f.epoch;
@@ -500,10 +509,7 @@ export class SyncEngine {
       const f = this.f, k = this.keys;
       if (!f || !k || f.status !== 'active' || !f.others[deviceId]) return;
       const newK = randomBytes(32);
-      const keys = new Map<string, Buffer>();
-      for (const [id, o] of Object.entries(f.others)) {
-        if (id !== deviceId) keys.set(id, sealRekey(decodeB64(o.pub, 32), k.encKey, newK, k.groupId, id));
-      }
+      const keys = this.sealFor(Object.fromEntries(Object.entries(f.others).map(([id, o]) => [id, o.pub])), [deviceId], newK, k);
       await k.client.rekey(keys);   // a relay error reaches the caller: nothing changed here yet
       const stayed = Object.entries(f.others).filter(([id]) => id !== deviceId);
       const members = Object.fromEntries(stayed.map(([id, o]) => [id, o.pub]));

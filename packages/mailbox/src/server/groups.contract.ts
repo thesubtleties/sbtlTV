@@ -1,8 +1,9 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MAX_COMPUTERS } from '../protocol/index.js';
 import type { GroupStore } from './groups.js';
 
+const sha = (b: Buffer) => createHash('sha256').update(b).digest();
 const hex = () => randomBytes(16).toString('hex');
 const h = () => randomBytes(32);
 
@@ -67,14 +68,20 @@ export function groupStoreContract(name: string, make: () => Promise<GroupStore>
       expect(await s.rekey(hex(), new Map(), '2026-11-16')).toBeNull();
     });
 
-    it('moved: waiting counts keys not yet fetched; a fetch marks it and can be repeated', async () => {
+    it('moved: waiting counts keys not picked up; fetching alone does not count, only the proof does (review A)', async () => {
       const gid = hex(), a = hex(), b = hex(), th = h();
+      const pa = randomBytes(32), pb = randomBytes(32);
       for (const d of [a, b]) await s.putBox(gid, th, d, Buffer.from(d), '2026-11-16');
-      await s.rekey(gid, new Map([[a, Buffer.from('A')], [b, Buffer.from('B')]]), '2026-11-16');
+      await s.rekey(gid, new Map([[a, { sealed: Buffer.from('A'), ackHash: sha(pa) }], [b, { sealed: Buffer.from('B'), ackHash: sha(pb) }]]), '2026-11-16');
       expect(await s.list(gid, 0, '2026-11-16')).toEqual({ moved: true, waiting: 2 });
       expect((await s.getRekey(gid, a, '2026-11-17'))?.toString()).toBe('A');
       expect((await s.getRekey(gid, a, '2026-11-17'))?.toString()).toBe('A');
+      expect(await s.list(gid, 0, '2026-11-17')).toEqual({ moved: true, waiting: 2 });
+      expect(await s.ackRekey(gid, a, randomBytes(32), '2026-11-17')).toBe('bad');
+      expect(await s.list(gid, 0, '2026-11-17')).toEqual({ moved: true, waiting: 2 });
+      expect(await s.ackRekey(gid, a, pa, '2026-11-17')).toBe('ok');
       expect(await s.list(gid, 0, '2026-11-17')).toEqual({ moved: true, waiting: 1 });
+      expect(await s.ackRekey(gid, hex(), pa, '2026-11-17')).toBeNull();
     });
 
     it('sweep deletes groups nobody checked in with for 90 days, and keeps the rest', async () => {
@@ -90,9 +97,10 @@ export function groupStoreContract(name: string, make: () => Promise<GroupStore>
     it('a moved group lives while someone is waiting and keeps checking in, then goes a day after the last pickup', async () => {
       const gid = hex(), a = hex(), th = h();
       await s.putBox(gid, th, a, Buffer.from('a'), '2026-01-01');
-      await s.rekey(gid, new Map([[a, Buffer.from('A')]]), '2026-01-01');
+      const pa = randomBytes(32);
+      await s.rekey(gid, new Map([[a, { sealed: Buffer.from('A'), ackHash: sha(pa) }]]), '2026-01-01');
       for (const day of ['2026-03-01', '2026-05-01']) { await s.list(gid, 0, day); expect(await s.sweep(day)).toBe(0); }
-      await s.getRekey(gid, a, '2026-05-02');
+      await s.ackRekey(gid, a, pa, '2026-05-02');
       expect(await s.sweep('2026-05-02')).toBe(0);    // fetched today: kept a day for a lost reply
       expect(await s.sweep('2026-05-03')).toBe(1);
     });

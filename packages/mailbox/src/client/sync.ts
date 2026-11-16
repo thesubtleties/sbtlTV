@@ -33,8 +33,14 @@ export class SyncClient {
     try { await this.t.del(this.path(`/boxes/${deviceId}`)); } catch (e) { if (!notFound(e)) throw e; }
   }
 
-  async rekey(keys: Map<string, Buffer>): Promise<void> {
-    await this.t.post(this.path('/rekey'), { keys: Object.fromEntries([...keys].map(([d, s]) => [d, s.toString('base64')])) }, true);
+  /** Each remaining computer's sealed new key, with the hash of the proof it gives once it opened it. */
+  async rekey(keys: Map<string, { sealed: Buffer; ackHash: Buffer }>): Promise<void> {
+    await this.t.post(this.path('/rekey'), { keys: Object.fromEntries([...keys].map(([d, k]) => [d, { sealed: k.sealed.toString('base64'), ack: k.ackHash.toString('base64') }])) }, true);
+  }
+
+  /** This computer opened its new key: the proof counts it as picked up (fetching alone doesn't). */
+  async ackRekey(deviceId: string, proof: Buffer): Promise<void> {
+    await this.t.post(this.path(`/rekey/${deviceId}/ack`), { proof: proof.toString('base64') }, false);
   }
 
   /** The relay database's id (see the sync engine: "deleted" vs "the relay lost its data"). */

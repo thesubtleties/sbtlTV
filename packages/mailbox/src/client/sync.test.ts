@@ -1,5 +1,5 @@
 // packages/mailbox/src/client/sync.test.ts
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { deriveGroup, newDeviceId } from '../protocol/index.js';
 import { createApp } from '../server/app.js';
@@ -30,9 +30,13 @@ describe('SyncClient', () => {
     const { sync } = client(app, randomBytes(32));
     const a = newDeviceId(), b = newDeviceId();
     await sync.push(a, Buffer.from('a')); await sync.push(b, Buffer.from('b'));
-    await sync.rekey(new Map([[a, randomBytes(140)]]));
+    const proof = randomBytes(32);
+    await sync.rekey(new Map([[a, { sealed: randomBytes(140), ackHash: createHash('sha256').update(proof).digest() }]]));
     expect(await sync.list(0)).toEqual({ moved: true, waiting: 1 });
     expect(await sync.fetchRekey(a)).not.toBeNull();
+    expect(await sync.list(0)).toEqual({ moved: true, waiting: 1 });   // fetching isn't picking up
+    await sync.ackRekey(a, proof);
+    expect(await sync.list(0)).toEqual({ moved: true, waiting: 0 });
     expect(await sync.fetchRekey(b)).toBeNull();
     await expect(sync.push(b, Buffer.from('late'))).rejects.toMatchObject({ code: 'moved' });
   });

@@ -6,7 +6,7 @@
  */
 import type { Context, Hono } from 'hono';
 import { MAX_BOX_BYTES, MAX_COMPUTERS, tokenHash, type ErrorCode } from '../protocol/index.js';
-import { sameHash, utcDay, type GroupStore } from './groups.js';
+import { sameHash, utcDay, type GroupStore, type RekeyEntry } from './groups.js';
 import type { Settings } from './settings.js';
 
 type Err = (c: Context, status: 400 | 403 | 404 | 409 | 413 | 426 | 428 | 429, error: ErrorCode) => Response;
@@ -93,10 +93,12 @@ export function registerSyncRoutes(app: Hono, d: {
     if (!keys || typeof keys !== 'object' || Array.isArray(keys)) return d.err(c, 400, 'bad-request');
     const entries = Object.entries(keys as Record<string, unknown>);
     if (entries.length > MAX_COMPUTERS) return d.err(c, 400, 'bad-request');
-    const map = new Map<string, Buffer>();
+    const map = new Map<string, RekeyEntry>();
     for (const [did, v] of entries) {
-      if (!HEX32.test(did) || typeof v !== 'string' || !B64.test(v) || v.length > 512) return d.err(c, 400, 'bad-request');
-      map.set(did, Buffer.from(v, 'base64'));
+      const e = v as { sealed?: unknown; ack?: unknown } | null;
+      if (!HEX32.test(did) || !e || typeof e.sealed !== 'string' || !B64.test(e.sealed) || e.sealed.length > 512) return d.err(c, 400, 'bad-request');
+      if (typeof e.ack !== 'string' || !B64.test(e.ack) || Buffer.from(e.ack, 'base64').length !== 32) return d.err(c, 400, 'bad-request');
+      map.set(did, { sealed: Buffer.from(e.sealed, 'base64'), ackHash: Buffer.from(e.ack, 'base64') });
     }
     if (!exists && (await d.groups.createRetired(gid, th, map, today())) === 'ok') return c.body(null, 204);
     // Created meanwhile by someone else: only its own token may move it
@@ -113,5 +115,17 @@ export function registerSyncRoutes(app: Hono, d: {
     const auth = await authorise(c); if (auth !== 'ok') return auth;
     const sealed = await d.groups.getRekey(c.req.param('gid')!, c.req.param('did')!, today());
     return sealed ? c.json({ sealed: sealed.toString('base64') }) : d.err(c, 404, 'not-found');
+  });
+
+  // A computer proves it opened its new key: only this counts it as picked up (fetching doesn't)
+  app.post('/v1/groups/:gid/rekey/:did/ack', async (c) => {
+    if (!ids(c, 'gid', 'did')) return d.err(c, 400, 'bad-request');
+    const auth = await authorise(c); if (auth !== 'ok') return auth;
+    const body = parse(await c.req.text());
+    const proof = typeof body?.proof === 'string' && B64.test(body.proof) ? Buffer.from(body.proof, 'base64') : null;
+    if (!proof || proof.length !== 32) return d.err(c, 400, 'bad-request');
+    const out = await d.groups.ackRekey(c.req.param('gid')!, c.req.param('did')!, proof, today());
+    if (!out) return d.err(c, 404, 'not-found');
+    return out === 'ok' ? c.body(null, 204) : d.err(c, 403, 'denied');
   });
 }
