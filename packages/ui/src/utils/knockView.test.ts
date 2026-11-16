@@ -10,8 +10,11 @@ describe('knockLine', () => {
   });
   it('send steps', () => {
     expect(knockLine('send', { step: 'words', words: ['a', 'b', 'c'] }).text).toBe("Same words on their screen? Then it's really them.");
-    expect(knockLine('send', { step: 'sent' }).text).toBe('Sent. Waiting for them to accept.');
-    expect(knockLine('send', { step: 'received' })).toEqual({ text: 'They have it. Nothing is left on our server.', tone: 'ok', canRetry: false });
+    expect(knockLine('send', { step: 'sent' }).text).toBe('Sent. Waiting for it to arrive.');
+    expect(knockLine('send', { step: 'ringing' }).text).toBe('Connecting…');
+    expect(knockLine('send', { step: 'failed', reason: 'unreadable' }).text).toBe("It didn't arrive in one piece. Start again.");
+    expect(knockLine('send', { step: 'failed', reason: 'busy' }).text).toBe('The sbtlTV relay is busy. Try again in a few minutes.');
+    expect(knockLine('send', { step: 'received' })).toEqual({ text: 'They have it. Nothing is left on the sbtlTV relay.', tone: 'ok', canRetry: false });
     expect(knockLine('send', { step: 'failed', reason: 'not-found' }).text).toBe("That code isn't valid or ran out. Check it, or ask for a new one.");
     expect(knockLine('send', { step: 'failed', reason: 'mismatch' }).text).toBe('Something got in between. Nothing was sent. Start again.');
     expect(knockLine('send', { step: 'failed', reason: 'too-big' }).text).toBe('Too big to send. Use Export to file instead.');
@@ -26,7 +29,7 @@ describe('knockLine', () => {
   });
 
   it('says how long the work may take when it is more than a moment', () => {
-    expect(knockLine('send', { step: 'ringing', workUpTo: 12 }).text).toBe('Knocking… This can take up to 12 seconds.');
+    expect(knockLine('send', { step: 'ringing', workUpTo: 12 }).text).toBe('Connecting… This can take up to 12 seconds.');
     expect(knockLine('receive', { step: 'starting', workUpTo: 75 }).text).toBe('Getting a code… This can take up to 2 minutes.');
     expect(knockLine('send', { step: 'sending', workUpTo: 2 }).text).toBe('Sending…');
   });

@@ -229,7 +229,7 @@ export interface SetupApi {
   unlock: (token: string, passphrase: string) => Promise<SetupResult<SetupPreview>>;
   backups: () => Promise<{ success: true; data: { name: string; label: string }[] }>;
   openBackup: (name: string) => Promise<SetupResult<{ token: string; preview: SetupPreview }>>;
-  apply: (token: string, opts: { backupFirst: boolean; currentLists: SetupListsWire; currentPlaylists: Record<string, string> }) => Promise<SetupResult<{ lists: SetupListsWire; backupName: string | null }> | { error: string; backupName: string | null }>;
+  apply: (token: string, opts: { backupFirst: boolean; currentLists: SetupListsWire; currentPlaylists: Record<string, string> }) => Promise<SetupResult<{ lists: SetupListsWire | null; backupName: string | null }> | { error: string; backupName: string | null }>;
   relaunch: () => Promise<void>;
   showFile: () => Promise<void>;
   pendingPlaylists: () => Promise<{ sourceId: string; content: string }[]>;

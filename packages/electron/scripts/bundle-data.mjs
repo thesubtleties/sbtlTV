@@ -40,8 +40,20 @@ if (existsSync('src/mailbox/mailbox-ipc.ts')) {
     external: ['electron'],
     plugins: [{
       name: 'own-modules-external',
-      setup(b) { b.onResolve({ filter: /^\.\.\// }, (args) => (args.importer.includes('/src/mailbox/') ? { path: args.path, external: true } : undefined)); },
+      // Either slash: esbuild gives Windows paths with backslashes
+      setup(b) { b.onResolve({ filter: /^\.\.\// }, (args) => (/[\\/]src[\\/]mailbox[\\/]/.test(args.importer) ? { path: args.path, external: true } : undefined)); },
     }],
     logLevel: 'warning',
   });
+}
+
+// Guard: the bundle must import this package's own modules, never carry its own copy of them (a
+// second settings store on the same file). Fails the build if the plugin above stopped matching.
+if (existsSync('dist/mailbox/mailbox-ipc.js')) {
+  const { readFileSync } = await import('node:fs');
+  const out = readFileSync('dist/mailbox/mailbox-ipc.js', 'utf8');
+  if (out.includes('new Store(') || out.includes('electron-store')) {
+    console.error('bundle-data: dist/mailbox/mailbox-ipc.js contains its own settings store; the own-modules plugin did not apply');
+    process.exit(1);
+  }
 }

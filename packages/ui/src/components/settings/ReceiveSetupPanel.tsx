@@ -44,7 +44,9 @@ export function ReceiveSetupPanel({ onReceived, onClose }: {
     <div className="knock-panel">
       {state.step === 'code' && <KnockWords code={state.code} />}
       {state.step === 'words' && <KnockWords words={state.words} />}
-      {state.step !== 'received' && <Hint tone={line.tone === 'error' ? 'danger' : undefined}>{confirmed && state.step === 'words' ? 'Waiting for them to send…' : line.text}</Hint>}
+      <div aria-live="polite">
+        {state.step !== 'received' && <Hint tone={line.tone === 'error' ? 'danger' : undefined}>{confirmed && state.step === 'words' ? 'Waiting for them to send…' : line.text}</Hint>}
+      </div>
       <div className="knock-panel__actions">
         {state.step === 'words' && !confirmed && (
           <>

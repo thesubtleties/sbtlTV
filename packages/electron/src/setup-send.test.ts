@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gzipSync } from 'node:zlib';
-import { MAX_RECEIVED_BYTES, fitsInDrop, packSetup, unpackSetup, sendBody } from './setup-send.js';
+import { MAX_RECEIVED_BYTES, fitsInDrop, packSetup, receivedChanges, unpackSetup, sendBody } from './setup-send.js';
 import { validateSetupBody, type SetupBody } from './setup-body.js';
 
 const base: SetupBody = {
@@ -73,4 +73,19 @@ test('a key field left empty for them does not blank the sender\'s chosen key', 
 test('a just-for-this-send source without a password does not add the logins part', () => {
   const out = sendBody({ ...base, includes: [], sources: undefined }, { parts: [], sourceIds: null, extras: { sources: [{ name: 'G', type: 'm3u', url: 'http://g.example/x.m3u' }], apiKeys: {} } }, newId);
   assert.ok(!out.includes.includes('logins'));
+});
+
+test('providers added just for this send are tidied: trimmed, M3U without login fields, Xtream needs both', () => {
+  const out = sendBody({ ...base, includes: [], sources: undefined }, { parts: [], sourceIds: null, extras: { sources: [
+    { name: '  Gran  ', type: 'xtream', url: ' http://g.example ', username: ' gran ', password: 'pw ' },
+    { name: 'List', type: 'm3u', url: 'http://g.example/x.m3u', username: 'left over', password: 'from xtream' },
+  ], apiKeys: { tmdb: '  k  ' } } }, newId);
+  assert.deepEqual(out.sources?.map((s) => [s.name, s.url, s.username, s.password]), [['Gran', 'http://g.example', 'gran', 'pw'], ['List', 'http://g.example/x.m3u', undefined, undefined]]);
+  assert.equal(out.apiKeys?.tmdb, 'k');
+  assert.throws(() => sendBody({ ...base, includes: [], sources: undefined }, { parts: [], sourceIds: null, extras: { sources: [{ name: 'X', type: 'xtream', url: 'http://x.example', username: 'u' }], apiKeys: {} } }, newId), /login/);
+});
+
+test('a received setup changes only what it carries', () => {
+  assert.deepEqual(receivedChanges({ ...base, includes: ['apiKeys'], sources: undefined, apiKeys: { tmdb: 'k' } }), { sources: false, settings: false, apiKeys: ['tmdb'] });
+  assert.deepEqual(receivedChanges({ ...base, includes: ['sources', 'logins', 'settings'], settings: {} }), { sources: true, settings: true, apiKeys: [] });
 });

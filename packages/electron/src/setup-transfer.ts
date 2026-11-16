@@ -11,6 +11,7 @@ import { newPassphrase, normalisePassphrase } from './setup-passphrase.js';
 import { SetupFileError, openWithKeyring, openWithPassphrase, readHeader, sealWithKeyring, sealWithPassphrase } from './setup-file.js';
 import { buildSetupBody, describeSetup, explainExportProblem, validateSetupBody, type SetupBody, type SetupPart, type SetupPreview, type UserLists } from './setup-body.js';
 import { CACHE_RESET_MARKER, PENDING_PLAYLISTS, backupLabel, backupName, backupsToPrune } from './setup-backups.js';
+import { receivedChanges } from './setup-send.js';
 
 const MAX_FILE = 512 * 1024 * 1024;
 const MESSAGES: Record<string, string> = {
@@ -31,9 +32,12 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function buildBody(parts: SetupPart[], lists: UserLists, playlists: Record<string, string>): SetupBody {
+/** `sourceIds`: only these sources (Send a setup), so one that isn't picked can't stop the send. */
+export function buildBody(parts: SetupPart[], lists: UserLists, playlists: Record<string, string>, sourceIds: string[] | null = null): SetupBody {
   const pending = Object.fromEntries(readPending().map((p) => [p.sourceId, p.content]));
-  const body = buildSetupBody(parts, storage.readSetupForExport(), lists, playlists,
+  const stored = storage.readSetupForExport();
+  if (sourceIds) stored.sources = stored.sources.filter((s) => sourceIds.includes(s.id));
+  const body = buildSetupBody(parts, stored, lists, playlists,
     { app: app.getVersion(), exportedAt: new Date().toISOString(), platform: process.platform }, pending);
   try {
     return validateSetupBody(body);  // what we write must be what we would accept
@@ -43,8 +47,8 @@ export function buildBody(parts: SetupPart[], lists: UserLists, playlists: Recor
   }
 }
 
-/** This computer's own setup breaks a rule a setup file must follow (message says which). */
-class ExportProblem extends Error {
+/** This computer's own setup breaks a rule a setup file must follow (message says which; detail = field names only, for the log). */
+export class ExportProblem extends Error {
   constructor(message: string, readonly detail: string) { super(message); }
 }
 
@@ -60,7 +64,7 @@ function readPending(): { sourceId: string; content: string }[] {
 }
 
 export function registerSetupTransfer(deps: { window: () => BrowserWindow | null; relaunch: () => void; log: (m: string) => void }): { stage(body: SetupBody): { token: string; preview: SetupPreview } } {
-  const picked = new Map<string, { file: Buffer; body?: SetupBody }>();
+  const picked = new Map<string, { file: Buffer; body?: SetupBody; received?: boolean }>();
   let lastExport: string | null = null;
 
   ipcMain.handle('setup:export', async (_e, req: { parts: SetupPart[]; lists: UserLists; playlists: Record<string, string> }) => {
@@ -155,14 +159,27 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
       return { error: `Your current setup couldn't be backed up, so nothing changed. ${message(error)}` };
     }
     try {
-      storage.replaceSetup({ sources: body.sources ?? [], settings: body.settings ?? {}, apiKeys: body.apiKeys ?? {} });
-      const pending = (body.sources ?? []).flatMap((s) => (s.playlist ? [{ sourceId: s.id, content: s.playlist }] : []));
       const userData = app.getPath('userData');
-      fs.writeFileSync(path.join(userData, PENDING_PLAYLISTS), JSON.stringify(pending));
-      fs.writeFileSync(path.join(userData, CACHE_RESET_MARKER), '');
+      const changes = entry.received ? receivedChanges(body) : null;
+      if (changes) {
+        // Sent with Send a setup: only what it carries changes (lists, and anything not sent, stay)
+        storage.applyReceivedSetup({
+          ...(changes.sources && { sources: body.sources }),
+          ...(changes.settings && { settings: body.settings }),
+          apiKeys: body.apiKeys ?? {},
+        });
+      } else {
+        storage.replaceSetup({ sources: body.sources ?? [], settings: body.settings ?? {}, apiKeys: body.apiKeys ?? {} });
+      }
+      if (!changes || changes.sources) {
+        const pending = (body.sources ?? []).flatMap((s) => (s.playlist ? [{ sourceId: s.id, content: s.playlist }] : []));
+        fs.writeFileSync(path.join(userData, PENDING_PLAYLISTS), JSON.stringify(pending));
+        fs.writeFileSync(path.join(userData, CACHE_RESET_MARKER), '');
+      }
       picked.delete(token);
-      deps.log(`Setup imported (${body.includes.join(', ')}), backup ${written ? 'written' : 'skipped'}`);
-      return { success: true, data: { lists: body.lists ?? {}, backupName: written } };
+      deps.log(`Setup ${changes ? 'received' : 'imported'} (${body.includes.join(', ')}), backup ${written ? 'written' : 'skipped'}`);
+      // null lists = leave this computer's favorites, watchlist and progress alone
+      return { success: true, data: { lists: changes ? null : body.lists ?? {}, backupName: written } };
     } catch (error) {
       return { error: message(error), backupName: written };
     }
@@ -199,7 +216,7 @@ export function registerSetupTransfer(deps: { window: () => BrowserWindow | null
       for (const old of received) picked.delete(old);
       received.clear();
       received.add(token);
-      picked.set(token, { file: Buffer.alloc(0), body });
+      picked.set(token, { file: Buffer.alloc(0), body, received: true });
       return { token, preview: describeSetup(body) };
     },
   };

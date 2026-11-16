@@ -5,6 +5,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { readLists, replaceLists, type ListPart } from '../../services/setup/lists';
 import { rebuildFilePlaylists } from '../../services/setup/filePlaylists';
 import { setupSummary } from '../../services/setup/summary';
+import { receivedNote } from '../../utils/receivedNote';
 import { Button, Hint, OnOff, OptionRow, Section, SettingsTab, TextField } from './ui';
 import { SendSetupPanel } from './SendSetupPanel';
 import { ReceiveSetupPanel } from './ReceiveSetupPanel';
@@ -29,7 +30,7 @@ function exportedOn(iso: string): string {
 type ImportState =
   | { step: 'idle' }
   | { step: 'passphrase'; token: string; error?: string }
-  | { step: 'preview'; token: string; preview: SetupPreview; restoring?: boolean }
+  | { step: 'preview'; token: string; preview: SetupPreview; restoring?: boolean; received?: boolean }
   | { step: 'applying' }
   | { step: 'failed'; error: string; backupName: string | null };
 
@@ -117,7 +118,7 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
       if ('error' in r) return setImp({ step: 'failed', error: r.error, backupName: 'backupName' in r ? r.backupName : null });
       if (!r.success) return setImp({ step: 'idle' });
       backupName = r.data.backupName;
-      await replaceLists(r.data.lists);
+      if (r.data.lists) await replaceLists(r.data.lists);   // null: a received setup leaves the lists alone
       await window.setup!.relaunch();
     } catch (error) {
       setImp({ step: 'failed', error: error instanceof Error ? error.message : String(error), backupName });
@@ -184,7 +185,7 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
         </>}>
         {receiving && imp.step !== 'preview' && (
           <ReceiveSetupPanel
-            onReceived={(token, preview) => { setReceiving(false); setImp({ step: 'preview', token, preview }); }}
+            onReceived={(token, preview) => { setReceiving(false); setImp({ step: 'preview', token, preview, received: true }); }}
             onClose={() => setReceiving(false)}
           />
         )}
@@ -197,16 +198,26 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
             <Button type="submit" variant="primary" disabled={unlocking}>{unlocking ? 'Opening…' : 'Open'}</Button>
           </form>
         )}
-        {imp.step === 'preview' && (
+        {imp.step === 'preview' && imp.received && sources.length === 0 && (
+          // A fresh install: nothing to replace, so no warning and no backup, just yes or no
+          <div className="setup-preview">
+            <Hint>Ready to set up: {setupSummary(imp.preview)}.</Hint>
+            <div className="setup-preview__actions">
+              <Button variant="primary" onClick={() => void apply(imp.token, false)}>Set up sbtlTV</Button>
+              <Button onClick={() => setImp({ step: 'idle' })}>Decline</Button>
+            </div>
+          </div>
+        )}
+        {imp.step === 'preview' && !(imp.received && sources.length === 0) && (
           <div className="setup-preview">
             <Hint>
               From sbtlTV {imp.preview.app} on {platformName(imp.preview.platform)}{exportedOn(imp.preview.exportedAt)}: {setupSummary(imp.preview)}.
             </Hint>
-            <Hint tone="warn">Replaces your sources, settings, API keys, favorites, watchlist and watch progress. Anything not in the setup is cleared.</Hint>
+            <Hint tone="warn">{imp.received ? receivedNote(imp.preview) : 'Replaces your sources, settings, API keys, favorites, watchlist and watch progress. Anything not in the file is cleared.'}</Hint>
             <OptionRow title="Back up my setup first"><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
             <div className="setup-preview__actions">
-              <Button variant="danger" onClick={() => void apply(imp.token)}>{imp.restoring ? 'Replace and restore' : 'Replace and import'}</Button>
-              <Button onClick={() => setImp({ step: 'idle' })}>Cancel</Button>
+              <Button variant="danger" onClick={() => void apply(imp.token)}>{imp.restoring ? 'Replace and restore' : imp.received ? 'Replace' : 'Replace and import'}</Button>
+              <Button onClick={() => setImp({ step: 'idle' })}>{imp.received ? 'Decline' : 'Cancel'}</Button>
             </div>
           </div>
         )}

@@ -151,7 +151,7 @@ Enable logging in Settings → Debug for troubleshooting. Logs are saved to your
 
 ## Privacy
 
-sbtlTV has no account and no server of its own, and sends no analytics, tracking or crash reports. Settings > Privacy shows how this applies on your computer.
+sbtlTV has no account and sends no analytics, tracking or crash reports. Its own servers (sbtltv.com and the sbtlTV relay) see only what is listed below. Settings > Privacy shows how this applies on your computer.
 
 **On your computer:** settings, watch history, favorites, watchlist, guide and library, and subtitles downloaded from SubDL (removed with your SubDL key). Saved passwords and API keys are encrypted by your system (the macOS Keychain, Windows, or a Linux keyring such as KWallet or GNOME Keyring); on Linux without a keyring they are stored without strong encryption, and Settings > Privacy says so. The debug log is off by default; when on, it stays on your computer and links in it are cleaned of login details.
 
@@ -164,7 +164,7 @@ sbtlTV has no account and no server of its own, and sends no analytics, tracking
 | Image hosts | Always | Your IP address and which images: channel logos and posters load from the addresses in your provider's data and from TMDB's image server |
 | GitHub | Always | Two public data files, no account (the movie/series match file for library syncs, and TMDB's browse lists when you have no TMDB key), and update checks when sbtlTV starts (can be turned off): your IP address and sbtlTV version |
 | sbtltv.com | With Selected lists on (default) | Your IP address, about once a day, when sbtlTV fetches the signed Selected lists file. Nothing about you or what you watch; requests aren't logged. Off in Settings > Movies & Series |
-| sbtlTV relay | Only while you send or receive a setup | The setup, end-to-end encrypted so even we can't read it, and your IP address; requests aren't logged. Deleted when picked up, or after 10 minutes |
+| sbtlTV relay | Only while you send or receive a setup | The setup, end-to-end encrypted so even we can't read it, your IP address and your sbtlTV version; requests aren't logged. Deleted when picked up, or after 10 minutes |
 | TMDB | With your TMDB key | Your key, your IP address, the lists you browse and the titles you open or point at. Without a key, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address |
 | RatingPosterDB | With your RPDB key | Your key, your IP address and which titles' posters you see; with RPDB backdrops on, also the titles you open or point at |
 | SubDL | With your SubDL key | Your key, your IP address, and which movies and episodes you get subtitles for, in which language (searched when subtitles are on and the file has none in your language, or when you open Find subtitles) |

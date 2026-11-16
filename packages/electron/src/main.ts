@@ -3168,14 +3168,16 @@ ipcMain.on('data-request-port', (event) => dataHost?.giveRendererPort(event.send
 
 let mailboxStopped = false;
 app.on('before-quit', (event) => {
-  dataHost?.shutdown();
-  dataHost = null;
-  // A knock in progress: tell the mailbox it's cancelled (at most a second), then quit
+  // A knock in progress (or its cancel, started by closing the window): let the relay hear it's
+  // cancelled, at most a second, then quit for real; the data process stops on that second pass
   if (mailbox.active() && !mailboxStopped) {
     mailboxStopped = true;
     event.preventDefault();
     void Promise.race([mailbox.stop(), new Promise((r) => setTimeout(r, 1000))]).then(() => app.quit());
+    return;
   }
+  dataHost?.shutdown();
+  dataHost = null;
 });
 
 app.on('window-all-closed', () => {

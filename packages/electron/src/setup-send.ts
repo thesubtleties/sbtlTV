@@ -36,7 +36,7 @@ export function sendBody(base: SetupBody, sel: SendSelection, newId: () => strin
   const includes = new Set<SetupPart>(base.includes);
   const out: SetupBody = { ...base };
   const picked = (base.sources ?? []).filter((s) => sel.sourceIds === null || sel.sourceIds.includes(s.id));
-  const extraSources: SetupSource[] = sel.extras.sources.map((s) => ({ ...s, id: newId(), enabled: true }));
+  const extraSources: SetupSource[] = sel.extras.sources.map((s) => tidyExtra(s, newId()));
   if (picked.length || extraSources.length) {
     out.sources = [...picked, ...extraSources];
     includes.add('sources');
@@ -45,9 +45,30 @@ export function sendBody(base: SetupBody, sel: SendSelection, newId: () => strin
     delete out.sources;
     includes.delete('sources');
   }
-  const typed = Object.fromEntries(Object.entries(sel.extras.apiKeys).filter(([, v]) => v));
+  const typed = Object.fromEntries(Object.entries(sel.extras.apiKeys).map(([k, v]) => [k, v?.trim()]).filter(([, v]) => v));
   const keys = { ...(base.apiKeys ?? {}), ...typed };
   if (Object.keys(keys).length) { out.apiKeys = keys; includes.add('apiKeys'); }
   out.includes = [...includes];
   return out;
+}
+
+/**
+ * A provider typed in just for this send, as it should arrive: trimmed (a pasted password with a
+ * trailing space would never log in), an M3U without leftover login fields, an Xtream with both.
+ */
+function tidyExtra(s: SendExtras['sources'][number], id: string): SetupSource {
+  const name = s.name.trim(), url = s.url.trim();
+  if (s.type !== 'xtream') return { ...(s.epg_url && { epg_url: s.epg_url.trim() }), id, name, type: s.type, url, enabled: true };
+  const username = s.username?.trim() ?? '', password = s.password?.trim() ?? '';
+  if (!username || !password) throw new Error(`invalid: extra source login (${name})`);
+  return { id, name, type: 'xtream', url, username, password, enabled: true };
+}
+
+/** What a received setup changes on the receiver; everything else (and favorites, watchlist, progress) stays. */
+export function receivedChanges(body: SetupBody): { sources: boolean; settings: boolean; apiKeys: ('tmdb' | 'posterDb' | 'subdl')[] } {
+  return {
+    sources: body.includes.includes('sources') && body.sources !== undefined,
+    settings: body.includes.includes('settings') && body.settings !== undefined,
+    apiKeys: (['tmdb', 'posterDb', 'subdl'] as const).filter((k) => !!body.apiKeys?.[k]),
+  };
 }

@@ -12,7 +12,8 @@ export interface KnockLine { text: string; tone: 'info' | 'error' | 'ok'; canRet
 const FAIL: Record<string, string> = {
   offline: "Couldn't reach the sbtlTV relay.",
   update: 'Update sbtlTV to send or receive.',
-  busy: 'The mailbox is busy. Try again in a minute.',
+  busy: 'The sbtlTV relay is busy. Try again in a few minutes.',
+  unreadable: "It didn't arrive in one piece. Start again.",
   broken: 'Something went wrong. Start again.',
   expired: 'The code ran out. Start again for a new one.',
   'not-found': "That code isn't valid or ran out. Check it, or ask for a new one.",
@@ -29,12 +30,12 @@ export function knockLine(role: 'send' | 'receive', s: KnockState): KnockLine {
   const info = (text: string): KnockLine => ({ text, tone: 'info', canRetry: false });
   switch (s.step) {
     case 'starting': return info(`Getting a code…${upTo(s.workUpTo)}`);
-    case 'ringing': return info(`Knocking…${upTo(s.workUpTo)}`);
+    case 'ringing': return info(`Connecting…${upTo(s.workUpTo)}`);
     case 'code': return info('Tell this to the person setting you up. Works for 10 minutes.');
     case 'words': return info(role === 'send' ? "Same words on their screen? Then it's really them." : 'Same words on their screen? Only then tap Same words.');
     case 'sending': return info(`Sending…${upTo(s.workUpTo)}`);
-    case 'sent': return info('Sent. Waiting for them to accept.');
-    case 'received': return role === 'send' ? { text: 'They have it. Nothing is left on our server.', tone: 'ok', canRetry: false } : info('Ready to set up.');
+    case 'sent': return info('Sent. Waiting for it to arrive.');
+    case 'received': return role === 'send' ? { text: 'They have it. Nothing is left on the sbtlTV relay.', tone: 'ok', canRetry: false } : info('Ready to set up.');
     case 'failed':
       if (s.reason === 'cancelled') return { text: role === 'send' ? 'They cancelled.' : 'Cancelled.', tone: 'error', canRetry: true };
       return { text: FAIL[s.reason] ?? FAIL.broken, tone: 'error', canRetry: true };

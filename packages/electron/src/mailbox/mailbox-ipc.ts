@@ -10,7 +10,7 @@ import { app, ipcMain, net } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { Receiver, Sender, Transport, type ReceiveState, type SendState } from '@sbtltv/mailbox/client';
 import { measurePowRate, powSecondsUpTo } from '@sbtltv/mailbox/protocol';
-import { buildBody } from '../setup-transfer.js';
+import { ExportProblem, buildBody } from '../setup-transfer.js';
 import { fitsInDrop, packSetup, sendBody, unpackSetup, type SendSelection } from '../setup-send.js';
 import { validateSetupBody, type SetupBody, type SetupPreview, type UserLists } from '../setup-body.js';
 import { EFF_WORDS } from '../eff-wordlist.js';
@@ -32,10 +32,19 @@ let powRate = 0;
 /** Returns stop() (cancels a knock in progress: quit, window closed, page reloaded) and active(). */
 export function registerMailbox(deps: { stage(body: SetupBody): { token: string; preview: SetupPreview }; log: (m: string) => void }): { stop(): Promise<void>; active(): boolean } {
   let workUpTo = 0;
+  // SBTLTV_MAILBOX points a development build at a local relay; a released app always uses the real one
+  const base = !app.isPackaged && process.env.SBTLTV_MAILBOX ? process.env.SBTLTV_MAILBOX : MAILBOX_BASE;
   const transport = () => new Transport({
-    base: process.env.SBTLTV_MAILBOX || MAILBOX_BASE,
+    base,
     version: app.getVersion(),
-    fetch: (req) => net.fetch(req, { cache: 'no-store' } as RequestInit),
+    // As little about this computer as possible: a plain User-Agent, no language, no cookies, and
+    // no redirects (a hijacked relay can't send the request on to a local address)
+    fetch: (req) => {
+      const headers = new Headers(req.headers);
+      headers.set('user-agent', 'sbtlTV');
+      headers.set('accept-language', '*');
+      return net.fetch(new Request(req, { headers, credentials: 'omit', redirect: 'error' }), { cache: 'no-store', bypassCustomProtocolHandlers: true });
+    },
     onWork: (bits) => { powRate ||= measurePowRate(); workUpTo = powSecondsUpTo(bits, powRate); },
   });
   let role: 'receive' | 'send' | null = null;
@@ -43,14 +52,13 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
   let sender: Sender | null = null;
   let pending: Buffer | null = null;
   let staged: { token: string; preview: SetupPreview } | undefined;
-  let receiveFailed = false;   // the payload arrived but wasn't a valid setup
 
   // Every start and cancel takes a new number: a start that finishes after a later cancel stands down
   let generation = 0;
 
   const stopAll = async () => {
     const r = receiver, s = sender;
-    receiver = null; sender = null; pending = null; staged = undefined; role = null; receiveFailed = false; workUpTo = 0;
+    receiver = null; sender = null; pending = null; staged = undefined; role = null; workUpTo = 0;
     await r?.cancel(); await s?.cancel();
   };
 
@@ -59,19 +67,21 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
     await stopAll();
     if (mine !== generation) return { success: false };
     role = 'receive';
+    let body: SetupBody | null = null;
     const r = new Receiver(transport(), EFF_WORDS, (s: ReceiveState) => {
       if (r !== receiver) return;   // an older knock finishing after a restart
-      if (s.step === 'received') {
-        try {
-          staged = deps.stage(unpackSetup(s.payload));
-          deps.log('Relay: setup received');
-        } catch {
-          receiveFailed = true;
-          deps.log('Relay: received setup was not valid');
-        }
+      if (s.step === 'received' && body) {
+        staged = deps.stage(body);
+        body = null;
+        deps.log('Relay: setup received');
       } else if (s.step === 'failed') {
         deps.log(`Relay: receive ended (${s.reason})`);
       }
+    }, {
+      // Usable = a valid setup within the size limit; the giver hears "received" only then
+      accept: (payload) => {
+        try { body = unpackSetup(payload); return true; } catch { deps.log('Relay: received setup was not valid'); return false; }
+      },
     });
     receiver = r;
     void r.start();
@@ -84,8 +94,8 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
       await stopAll();
       if (mine !== generation) return { success: false };
       role = 'send';
-      const base = buildBody(sel.parts, sel.lists ?? {}, sel.playlists ?? {});
-      const body = validateSetupBody(sendBody(base, sel, randomUUID));
+      const own = buildBody(sel.parts, sel.lists ?? {}, sel.playlists ?? {}, Array.isArray(sel.sourceIds) ? sel.sourceIds.map(String) : null);
+      const body = validateSetupBody(sendBody(own, sel, randomUUID));
       pending = packSetup(body);
       if (!fitsInDrop(pending)) {
         pending = null; role = null;
@@ -101,9 +111,18 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
       return { success: true };
     } catch (error) {
       role = null;
-      // Field names only, never values (same rule as Export)
-      deps.log(`Relay: send not started (${error instanceof Error ? error.message.slice(0, 120) : 'unknown'})`);
-      return { error: error instanceof Error && error.message.startsWith('invalid') ? "This setup can't be sent. Details are in the debug log." : "Couldn't prepare the setup. Restart sbtlTV and try again." };
+      // The log gets field names only, never values (same rule as Export); the person gets the reason
+      if (error instanceof ExportProblem) {
+        deps.log(`Relay: send not started (${error.detail})`);
+        return { error: error.message };
+      }
+      const msg = error instanceof Error ? error.message : '';
+      if (msg.startsWith('invalid: extra source login')) {
+        deps.log('Relay: send not started (extra source login)');
+        return { error: 'An Xtream provider needs its username and password.' };
+      }
+      deps.log(`Relay: send not started (${msg.startsWith('invalid') ? msg.replace(/\(.*\)/, '').slice(0, 80) : error instanceof Error ? error.name : 'unknown'})`);
+      return { error: msg.startsWith('invalid') ? "This setup can't be sent: something in it is too large or not allowed." : "Couldn't prepare the setup. Restart sbtlTV and try again." };
     }
   });
 
@@ -121,11 +140,18 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
   ipcMain.handle('mailbox:cancel', async () => { generation++; await stopAll(); return { success: true }; });
 
   ipcMain.handle('mailbox:state', () => {
-    const state = role === 'receive'
-      ? (receiveFailed ? { step: 'failed', reason: 'broken' } : view(receiver?.state, workUpTo))
-      : role === 'send' ? view(sender?.state, workUpTo) : null;
+    const state = role === 'receive' ? view(receiver?.state, workUpTo) : role === 'send' ? view(sender?.state, workUpTo) : null;
     return { success: true, data: { role, state, staged } };
   });
 
-  return { stop: async () => { generation++; await stopAll(); }, active: () => role !== null };
+  // Quitting waits for a stop already under way (closing the window starts one), so the other side hears "cancelled"
+  let stopping: Promise<void> | null = null;
+  const stop = () => {
+    if (role !== null || !stopping) {
+      generation++;
+      stopping = stopAll().finally(() => { stopping = null; });
+    }
+    return stopping ?? Promise.resolve();
+  };
+  return { stop, active: () => role !== null || stopping !== null };
 }

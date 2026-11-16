@@ -485,6 +485,29 @@ export function replaceSetup(input: { sources: SetupSource[]; settings: Partial<
   for (const { playlist: _playlist, ...source } of input.sources) saveSource(source as Source);
 }
 
+/**
+ * A setup received with Send a setup: replaces only what it carries. Sent sources replace the
+ * sources; sent settings replace the settings that travel (machine ones stay, as with Import); each
+ * sent API key replaces that key. Anything not sent stays as it is.
+ */
+export function applyReceivedSetup(input: { sources?: SetupSource[]; settings?: Partial<AppSettings>; apiKeys: { tmdb?: string; posterDb?: string; subdl?: string } }): void {
+  if (input.settings) {
+    const kept = keptOnImport(store.get('settings') as unknown as Record<string, unknown>);
+    const keys = { tmdbApiKey: getSettings().tmdbApiKey, posterDbApiKey: getSettings().posterDbApiKey, subdlApiKey: getSettings().subdlApiKey };
+    store.set('settings', { theme: 'dark', vodRefreshHours: 24, epgRefreshHours: 6, ...kept } as StoredSettings);
+    updateSettings({ ...input.settings, ...keys });
+  }
+  updateSettings({
+    ...(input.apiKeys.tmdb && { tmdbApiKey: input.apiKeys.tmdb }),
+    ...(input.apiKeys.posterDb && { posterDbApiKey: input.apiKeys.posterDb }),
+    ...(input.apiKeys.subdl && { subdlApiKey: input.apiKeys.subdl }),
+  });
+  if (input.sources) {
+    store.set('sources', []);
+    for (const { playlist: _playlist, ...source } of input.sources) saveSource(source as Source);
+  }
+}
+
 /** Local backups: a random key sealed by this computer's keyring (as passwords are). */
 export const keyringProtector: KeyProtector = {
   protect: (key) => encryptPassword(key.toString('base64')),

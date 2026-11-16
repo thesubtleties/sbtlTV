@@ -56,28 +56,31 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
       ...(settings ? ['settings' as const] : []),
       ...(myKeys ? ['apiKeys' as const] : []),
     ];
-    const lists = await readLists([], settings);
-    const playlists = picked.length ? await rebuildFilePlaylists(sources.filter((s) => picked.includes(s.id))) : {};
-    const apiKeys = Object.fromEntries(Object.entries(theirKeys).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()]));
     try {
+      const lists = await readLists([], settings);
+      const playlists = picked.length ? await rebuildFilePlaylists(sources.filter((s) => picked.includes(s.id))) : {};
+      const apiKeys = Object.fromEntries(Object.entries(theirKeys).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()]));
       const r = await window.mailbox.send({ parts, sourceIds: picked, extras: { sources: extras, apiKeys }, lists, playlists }, code);
       if (r.error) setError(r.error); else setState({ step: 'ringing' });
+    } catch {
+      setError("Couldn't prepare the setup. Restart sbtlTV and try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  const again = () => { gen.current++; void window.mailbox?.cancel(); setState(null); setCode(''); };
+  // Keeps the typed code after "isn't valid" so it can be checked and fixed
+  const again = () => { gen.current++; void window.mailbox?.cancel(); setState(null); };
 
   if (state) {
     const line = knockLine('send', state);
     return (
       <div className="knock-panel">
         {state.step === 'words' && <KnockWords words={state.words} />}
-        <Hint tone={line.tone === 'error' ? 'danger' : line.tone === 'ok' ? 'ok' : undefined}>{line.text}</Hint>
+        <div aria-live="polite"><Hint tone={line.tone === 'error' ? 'danger' : line.tone === 'ok' ? 'ok' : undefined}>{line.text}</Hint></div>
         <div className="knock-panel__actions">
           {state.step === 'words' && <Button variant="primary" onClick={() => void window.mailbox?.confirm()}>Words match, send</Button>}
-          {(state.step === 'ringing' || state.step === 'words' || state.step === 'sent') && <Button onClick={again}>Cancel</Button>}
+          {(state.step === 'ringing' || state.step === 'words' || state.step === 'sending' || state.step === 'sent') && <Button onClick={again}>Cancel</Button>}
           {line.canRetry && <Button onClick={again}>Start again</Button>}
           {state.step === 'received' && <Button onClick={onClose}>Done</Button>}
         </div>
@@ -117,7 +120,7 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
             </>
           )}
           <div className="knock-panel__actions">
-            <Button type="submit" variant="primary" disabled={!draft.name.trim() || !/^https?:\/\/\S+$/i.test(draft.url.trim())}>Add</Button>
+            <Button type="submit" variant="primary" disabled={!draft.name.trim() || !/^https?:\/\/\S+$/i.test(draft.url.trim()) || (draft.type === 'xtream' && (!draft.username?.trim() || !draft.password?.trim()))}>Add</Button>
             <Button onClick={() => setDraft(null)}>Cancel</Button>
           </div>
         </form>
@@ -133,12 +136,14 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
           <TextField aria-label="RatingPosterDB key for them" placeholder="RatingPosterDB" autoComplete="off" value={theirKeys.posterDb} onChange={(e) => setTheirKeys({ ...theirKeys, posterDb: e.target.value })} />
         </div>
       </OptionRow>
-      <OptionRow title="Their code" help="On their computer: Sync & transfer › Show my code.">
-        <TextField aria-label="Their code" placeholder="XXXX-XXXX" autoComplete="off" spellCheck={false} value={code} onChange={(e) => setCode(e.target.value)} />
+      <OptionRow title="Their code" help="On their computer: Live TV › Receive a setup, or Settings › Sync & transfer › Show my code.">
+        <form onSubmit={(e) => { e.preventDefault(); if (!busy && !nothing && code.replace(/[\s-]/g, '').length === 8) void knock(); }}>
+          <TextField aria-label="Their code" placeholder="XXXX-XXXX" autoComplete="off" spellCheck={false} value={code} onChange={(e) => setCode(e.target.value)} />
+        </form>
       </OptionRow>
       {error && <Hint tone="danger">{error}</Hint>}
       <div className="knock-panel__actions">
-        <Button variant="primary" disabled={busy || nothing || code.replace(/[\s-]/g, '').length !== 8} onClick={() => void knock()}>{busy ? 'Knocking…' : 'Knock'}</Button>
+        <Button variant="primary" disabled={busy || nothing || code.replace(/[\s-]/g, '').length !== 8} onClick={() => void knock()}>{busy ? 'Connecting…' : 'Connect'}</Button>
         <Button onClick={onClose}>Close</Button>
       </div>
     </div>
