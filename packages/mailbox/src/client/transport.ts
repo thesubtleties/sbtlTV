@@ -23,6 +23,9 @@ const CHALLENGE_REFRESH_MS = CHALLENGE_TTL_MS / 3;
 /** No reply from the relay is bigger than a drop as base64 in JSON. */
 const MAX_REPLY_CHARS = Math.ceil(MAX_DROP_BYTES * 4 / 3) + 4096;
 
+/** No reply is bigger than every computer's box in one list (10 x 1 MiB as base64, plus room) */
+const MAX_ANY_REPLY_CHARS = Math.ceil(10 * 1024 * 1024 * 4 / 3) + 128 * 1024;
+
 /** No answer from the relay in this long = offline (a drop of 2 MB on a slow line still fits) */
 const REQUEST_TIMEOUT_MS = 60_000;
 
@@ -74,7 +77,13 @@ export class Transport {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       res = await Promise.race([
-        this.o.fetch(new Request(this.o.base + path, { method, headers, body: text || undefined, signal: abort.signal })),
+        // The body is read inside the same window: a reply that stalls after its headers is offline too
+        this.o.fetch(new Request(this.o.base + path, { method, headers, body: text || undefined, signal: abort.signal })).then(async (r) => {
+          const announced = Number(r.headers.get('content-length'));
+          if (Number.isFinite(announced) && announced > MAX_ANY_REPLY_CHARS) throw new Error('too big');
+          const body = r.status === 204 || r.status === 304 ? null : await r.text();
+          return new Response(body, { status: r.status, headers: r.headers });
+        }),
         new Promise<never>((_, reject) => { timer = setTimeout(() => { abort.abort(); reject(new Error('timeout')); }, this.o.timeoutMs ?? REQUEST_TIMEOUT_MS); }),
       ]);
     } catch {

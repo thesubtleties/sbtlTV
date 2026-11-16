@@ -17,7 +17,20 @@ const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 export function registerSyncRoutes(app: Hono, d: {
   groups: GroupStore; err: Err; cfg: () => Settings; now: () => number;
   guardWrite: (c: Context) => Promise<string | Response>;
+  /** Memory for an upload being read (shared with drops); null = no room now */
+  reserveInflight: (bytes: number) => (() => void) | null;
+  /** False until the database is ready */
+  ready: () => boolean;
+  maxDbBytes: () => number;
 }) {
+  // Not ready yet, or paused (reads too: a list reply can be large): everything sync is busy
+  const gate = async (c: Context, next: () => Promise<void>) => {
+    if (!d.ready() || d.cfg().syncPaused) return d.err(c, 429, 'busy');
+    await next();
+  };
+  app.use('/v1/groups/*', gate);
+  app.use('/v1/sync/*', gate);
+  let listsInFlight = 0;
   const today = () => utcDay(d.now());
   const ids = (c: Context, ...names: string[]) => names.every((n) => HEX32.test(c.req.param(n) ?? ''));
   const token = (c: Context): Buffer | null => {
@@ -41,9 +54,21 @@ export function registerSyncRoutes(app: Hono, d: {
 
   app.put('/v1/groups/:gid/boxes/:did', async (c) => {
     if (!ids(c, 'gid', 'did')) return d.err(c, 400, 'bad-request');
-    if (d.cfg().syncPaused) return d.err(c, 429, 'busy');
     const th = token(c);
     if (!th) return d.err(c, 403, 'denied');
+    // Room for the body first, before a byte of it is read (shared with drops)
+    const announced = Number(c.req.header('content-length'));
+    const release = d.reserveInflight(Number.isFinite(announced) && announced > 0 ? announced : MAX_BOX_BYTES * 2);
+    if (!release) return d.err(c, 429, 'busy');
+    try {
+      return await putBox(c, th);
+    } finally {
+      release();
+    }
+  });
+
+  async function putBox(c: Context, th: Buffer): Promise<Response> {
+    if ((await d.groups.sizeBytes()) > d.maxDbBytes()) return d.err(c, 429, 'busy');
     const text = await d.guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
     if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) return d.err(c, 400, 'bad-request');
@@ -55,18 +80,29 @@ export function registerSyncRoutes(app: Hono, d: {
     if (out === 'denied') return d.err(c, 403, 'denied');
     if (out === 'moved' || out === 'full') return d.err(c, 409, out);
     return c.json(out);
-  });
+  }
 
   app.get('/v1/groups/:gid/boxes', async (c) => {
     if (!ids(c, 'gid')) return d.err(c, 400, 'bad-request');
     const since = Number(c.req.query('since') ?? '0');
     if (!Number.isSafeInteger(since) || since < 0) return d.err(c, 400, 'bad-request');
     const auth = await authorise(c); if (auth !== 'ok') return auth;
+    // A list reply can be large (every box): only so many at once, the rest try again
+    if (listsInFlight >= d.cfg().listsInFlight) return d.err(c, 429, 'busy');
+    listsInFlight++;
+    try {
+      return await listReply(c, since);
+    } finally {
+      listsInFlight--;
+    }
+  });
+
+  async function listReply(c: Context, since: number): Promise<Response> {
     const l = await d.groups.list(c.req.param('gid')!, since, today());
     if (!l) return d.err(c, 404, 'not-found');
     if ('moved' in l) return c.json(l);
     return c.json({ seq: l.seq, epoch: await d.groups.epoch(), computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) });
-  });
+  }
 
   app.delete('/v1/groups/:gid/boxes/:did', async (c) => {
     if (!ids(c, 'gid', 'did')) return d.err(c, 400, 'bad-request');
@@ -77,7 +113,6 @@ export function registerSyncRoutes(app: Hono, d: {
 
   app.post('/v1/groups/:gid/rekey', async (c) => {
     if (!ids(c, 'gid')) return d.err(c, 400, 'bad-request');
-    if (d.cfg().syncPaused) return d.err(c, 429, 'busy');
     const th = token(c);
     if (!th) return d.err(c, 403, 'denied');
     // A group the relay doesn't have (it lost its data) is created already retired; one it has

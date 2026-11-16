@@ -187,4 +187,43 @@ describe('sync routes: guards (lens 7)', () => {
     expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=abc`, { token: g.accessToken })).status).toBe(400);
     expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=1.5`, { token: g.accessToken })).status).toBe(400);
   });
+
+  it('"sync paused" also stops list reads (review C1)', async () => {
+    const { call } = setup({ syncPaused: true }); const g = group();
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(429);
+  });
+
+  it('list replies in flight are limited: the rest are told busy (review C1)', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const store = new MemoryGroupStore();
+    const slow = Object.assign(Object.create(store), { list: async (...a: Parameters<MemoryGroupStore['list']>) => { await gate; return store.list(...a); } });
+    const { call } = setup({ groups: slow, listsInFlight: 1 }); const g = group();
+    await put(call, g);
+    const first = call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(429);
+    release();
+    expect((await first).status).toBe(200);
+  });
+
+  it('box uploads in flight are limited before any proof is checked (review C2)', async () => {
+    const { call } = setup({ syncInflightBytes: 100 }); const g = group();
+    const r = await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(200) } });
+    expect(r.status).toBe(429);
+  });
+
+  it('over the database size cap, uploads are refused busy (review C3)', async () => {
+    const { call } = setup({ syncMaxDbBytes: 10 }); const g = group();
+    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(200);
+    const g2 = group();
+    expect((await call('PUT', `/v1/groups/${g2.groupId}/boxes/${g2.did}`, { token: g2.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(429);
+  });
+
+  it('sync uploads have their own proof-of-work level: busy sync does not slow "Get a code" (review C5)', async () => {
+    const { call } = setup({ busyPerMinute: 1 }); const g = group();
+    for (let i = 0; i < 4; i++) await put(call, g, newDeviceId());
+    const hello = await (await call('GET', '/v1/hello')).json();
+    expect(hello.bits).toBe(4);
+  });
 });

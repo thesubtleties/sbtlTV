@@ -18,4 +18,10 @@ describe('Transport timer (lens 7)', () => {
       expect(vi.getTimerCount()).toBe(0);
     } finally { vi.useRealTimers(); }
   });
+
+  it('a reply whose body never finishes is "offline" after the timeout too (review C6)', async () => {
+    const stalled = () => new Response(new ReadableStream({ start() { /* headers sent, body never comes */ } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    const t = new Transport({ base: 'http://x', version: '0.17.0', timeoutMs: 50, fetch: async () => stalled() });
+    await expect(t.get('/v1/hello')).rejects.toMatchObject({ code: 'offline' });
+  });
 });

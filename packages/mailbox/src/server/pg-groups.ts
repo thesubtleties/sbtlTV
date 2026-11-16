@@ -170,5 +170,16 @@ export class PgGroupStore implements GroupStore {
     return (await this.pool.query<{ v: string }>(`select v from sync_meta where k = 'epoch'`)).rows[0].v;
   }
 
+  private size = { at: -Infinity, bytes: 0 };
+  /** The database's size, read at most every 30 s (it only needs to stop a disk from filling) */
+  async sizeBytes() {
+    const now = Date.now();
+    if (now - this.size.at > 30_000) {
+      const r = await this.pool.query<{ n: string }>('select pg_database_size(current_database()) as n');
+      this.size = { at: now, bytes: Number(r.rows[0].n) };
+    }
+    return this.size.bytes;
+  }
+
   async close() { await this.pool.end(); }
 }

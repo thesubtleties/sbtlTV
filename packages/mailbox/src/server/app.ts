@@ -39,9 +39,13 @@ export interface MailboxOptions {
   // Fixed overrides (tests), used when no `settings` is given
   powBits?: number; minVersion?: string; maxStoredBytes?: number;
   largeDropBytesPerHour?: number; paused?: boolean; largeDropsPaused?: boolean;
-  syncPaused?: boolean; newGroupsPaused?: boolean;
+  syncPaused?: boolean; newGroupsPaused?: boolean; busyPerMinute?: number; listsInFlight?: number;
+  /** Tests: the in-flight budget for sync uploads, and the database size cap, in bytes */
+  syncInflightBytes?: number; syncMaxDbBytes?: number;
   /** Sync groups (Postgres in production); in memory when not given */
   groups?: GroupStore;
+  /** False until the database is ready (the relay serves the knock meanwhile; sync answers busy) */
+  groupsReady?: () => boolean;
 }
 
 export function createApp(opts: MailboxOptions = {}) {
@@ -56,15 +60,21 @@ export function createApp(opts: MailboxOptions = {}) {
     ...(opts.largeDropsPaused !== undefined && { largeDropsPaused: opts.largeDropsPaused }),
     ...(opts.syncPaused !== undefined && { syncPaused: opts.syncPaused }),
     ...(opts.newGroupsPaused !== undefined && { newGroupsPaused: opts.newGroupsPaused }),
+    ...(opts.busyPerMinute !== undefined && { busyPerMinute: opts.busyPerMinute }),
+    ...(opts.listsInFlight !== undefined && { listsInFlight: opts.listsInFlight }),
   };
   const groups = opts.groups ?? new MemoryGroupStore();
   const cfg = opts.settings ?? (() => fixed);
   const store = new KnockStore(now, opts.maxActive, () => cfg().dropMemoryMb * 1024 * 1024);
   const proofs = new SeenProofs(now);
-  const governor = new PowGovernor(now, () => {
+  const levels = () => {
     const s = cfg();
     return { base: s.powBits, maxExtra: s.maxExtraBits, busyPerMinute: s.busyPerMinute, quietPerMinute: s.quietPerMinute, quietMinutes: s.quietMinutes };
-  });
+  };
+  const governor = new PowGovernor(now, levels);
+  // Sync uploads count on their own: busy sync doesn't make "Get a code" slower for everyone
+  const syncGovernor = new PowGovernor(now, levels);
+  const isSync = (path: string) => path.startsWith('/v1/groups/');
 
   // Challenges: "<issued ms, base 36>-<HMAC>" with a secret that lives only in this process. Nobody
   // can make one for later, so proofs can't be computed ahead and saved up; a restart voids them all.
@@ -105,7 +115,7 @@ export function createApp(opts: MailboxOptions = {}) {
   app.use('*', async (c, next) => {
     await next();
     c.res.headers.set(TIME_HEADER, String(now()));
-    c.res.headers.set(LEVEL_HEADER, String(governor.bits()));
+    c.res.headers.set(LEVEL_HEADER, String((isSync(c.req.path) ? syncGovernor : governor).bits()));
     c.res.headers.set(CHALLENGE_HEADER, issueChallenge());
   });
 
@@ -123,7 +133,7 @@ export function createApp(opts: MailboxOptions = {}) {
   });
 
   /** Proof-of-work (more for bigger bodies) for writes, checked before the body is parsed. Returns the body text or a Response. */
-  async function guardWrite(c: Context): Promise<string | Response> {
+  async function guardWrite(c: Context, gov: PowGovernor = governor): Promise<string | Response> {
     if (cfg().paused) return err(c, 429, 'busy');
     const text = await c.req.text();
     const header = c.req.header(POW_HEADER) ?? '';
@@ -131,11 +141,11 @@ export function createApp(opts: MailboxOptions = {}) {
     const challenge = header.slice(0, dot), nonce = header.slice(dot + 1);
     const issued = dot > 0 ? challengeIssuedAt(challenge) : null;
     const input = issued !== null ? powInput(c.req.path, text, challenge, c.req.header(VERSION_HEADER) ?? '') : '';
-    const need = powBitsFor(governor.accepted(), Buffer.byteLength(text));
+    const need = powBitsFor(gov.accepted(), Buffer.byteLength(text));
     if (issued === null || !checkPow(input, nonce, need) || !proofs.use(input + nonce, issued)) {
-      return err(c, 428, 'pow', { [POW_BITS_HEADER]: String(powBitsFor(governor.bits(), Buffer.byteLength(text))) });
+      return err(c, 428, 'pow', { [POW_BITS_HEADER]: String(powBitsFor(gov.bits(), Buffer.byteLength(text))) });
     }
-    governor.proven();
+    gov.proven();
     return text;
   }
 
@@ -281,7 +291,18 @@ export function createApp(opts: MailboxOptions = {}) {
     return c.body(null, 204);
   });
 
-  registerSyncRoutes(app, { groups, guardWrite, err, cfg, now });
+  // Memory for uploads being read: drops and sync boxes share one budget
+  const reserveInflight = (bytes: number): (() => void) | null => {
+    if (inflightDropBytes + bytes > (opts.syncInflightBytes ?? MAX_INFLIGHT_DROP_BYTES)) return null;
+    inflightDropBytes += bytes;
+    return () => { inflightDropBytes -= bytes; };
+  };
+  registerSyncRoutes(app, {
+    groups, err, cfg, now, reserveInflight,
+    guardWrite: (c) => guardWrite(c, syncGovernor),
+    ready: opts.groupsReady ?? (() => true),
+    maxDbBytes: () => opts.syncMaxDbBytes ?? cfg().syncMaxDbMb * 1024 * 1024,
+  });
 
   app.get('/healthz', (c) => c.text('ok'));
   return { app, store, groups };

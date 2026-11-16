@@ -42,6 +42,8 @@ export interface GroupStore {
   sweep(today: string): Promise<number>;
   /** This database's id: different only after the data was lost and started again. */
   epoch(): Promise<string>;
+  /** About how much the stored data takes (for the size cap) */
+  sizeBytes(): Promise<number>;
   close(): Promise<void>;
 }
 
@@ -138,5 +140,13 @@ export class MemoryGroupStore implements GroupStore {
   }
 
   async epoch() { return this.id; }
+  async sizeBytes() {
+    let n = 0;
+    for (const g of this.groups.values()) {
+      for (const b of g.boxes.values()) n += b.sealed.length;
+      for (const r of g.rekeys.values()) n += r.sealed.length;
+    }
+    return n;
+  }
   async close() {}
 }
