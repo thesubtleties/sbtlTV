@@ -12,7 +12,14 @@ const settings = new LiveSettings(settingsFromEnv(process.env), fileReader(proce
 let groups: GroupStore = new MemoryGroupStore();
 if (process.env.DATABASE_URL) {
   const pool = makePool(process.env.DATABASE_URL);
-  await migrate(pool);
+  // A new pod can't reach the database for its first ~20 s (network policy lag on this cluster):
+  // keep trying for a minute instead of crashing once on every roll
+  for (let attempt = 1; ; attempt++) {
+    try { await migrate(pool); break; } catch (e) {
+      if (attempt >= 30) throw e;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
   groups = new PgGroupStore(pool);
 }
 const { app, store } = createApp({ settings: () => settings.get(), groups });
