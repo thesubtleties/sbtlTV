@@ -1,6 +1,8 @@
 import { useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type StoredWatchProgress } from '../db';
+import { syncOut } from '../services/sync/outbox';
+import { progressRecord } from '../services/sync/records';
 import { seriesKey, episodeProgressId, movieProgressId } from '../services/continue-watching/series-key';
 
 /** Get watch progress for a movie by stream_id */
@@ -63,6 +65,7 @@ export async function updateWatchProgress(opts: {
     id = movieProgressId(opts.streamId);
   }
 
+  let row: StoredWatchProgress | undefined;
   // put() replaces the whole record. A save that has not decided the subtitle
   // delay yet (undefined: the play started and the saved delay is not restored
   // yet) keeps the stored one; a number (0 clears) replaces it.
@@ -86,7 +89,7 @@ export async function updateWatchProgress(opts: {
         };
       }
     }
-    await db.watchProgress.put({
+    row = {
       id,
       type: opts.type,
       tmdb_id: opts.tmdbId,
@@ -103,25 +106,38 @@ export async function updateWatchProgress(opts: {
       updated_at: new Date(),
       source_id: opts.sourceId,
       ...delayFields,
-    });
+    };
+    await db.watchProgress.put(row);
   });
+  if (row) syncOut([progressRecord(row)]);
+}
+
+/** Deletes progress rows; each with TMDB identity goes to sync as a removal (when sync is on). */
+export async function clearProgressIds(ids: string[]): Promise<void> {
+  const rows = (await db.watchProgress.bulkGet(ids)).filter((r): r is StoredWatchProgress => !!r);
+  await db.watchProgress.bulkDelete(ids);
+  const at = Date.now();
+  syncOut(rows.map((r) => progressRecord(r, true, at)));
+}
+
+/** A whole series group by identity; uses the INDEXED field (series_tmdb_id or the v13 series_stream_id) — no full scan. */
+export async function clearProgressSeries(id: { tmdbId?: number; seriesStreamId?: string }): Promise<void> {
+  let keys: string[];
+  if (id.tmdbId != null) keys = await db.watchProgress.where('series_tmdb_id').equals(id.tmdbId).primaryKeys();
+  else if (id.seriesStreamId) keys = await db.watchProgress.where('series_stream_id').equals(id.seriesStreamId).primaryKeys();
+  else return;
+  await clearProgressIds(keys);
 }
 
 /** Clear progress: a single id (movie/episode), or an entire series group by identity. */
 export function useClearProgress() {
   const clearOne = useCallback(async (id: string) => {
-    try { await db.watchProgress.delete(id); }
+    try { await clearProgressIds([id]); }
     catch (e) { console.error('clearOne failed', e); }
   }, []);
-  // Identity-based; uses the INDEXED field (series_tmdb_id or the v13 series_stream_id) — no full scan.
   const clearSeries = useCallback(async (id: { tmdbId?: number; seriesStreamId?: string }) => {
-    try {
-      let keys: string[];
-      if (id.tmdbId != null) keys = await db.watchProgress.where('series_tmdb_id').equals(id.tmdbId).primaryKeys();
-      else if (id.seriesStreamId) keys = await db.watchProgress.where('series_stream_id').equals(id.seriesStreamId).primaryKeys();
-      else return;
-      await db.watchProgress.bulkDelete(keys);
-    } catch (e) { console.error('clearSeries failed', e); }
+    try { await clearProgressSeries(id); }
+    catch (e) { console.error('clearSeries failed', e); }
   }, []);
   return { clearOne, clearSeries };
 }
