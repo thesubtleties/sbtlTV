@@ -39,7 +39,7 @@ export interface MailboxOptions {
   // Fixed overrides (tests), used when no `settings` is given
   powBits?: number; minVersion?: string; maxStoredBytes?: number;
   largeDropBytesPerHour?: number; paused?: boolean; largeDropsPaused?: boolean;
-  syncPaused?: boolean; newGroupsPaused?: boolean; busyPerMinute?: number; listsInFlight?: number;
+  syncPaused?: boolean; newGroupsPaused?: boolean; busyPerMinute?: number; listInflightBytes?: number;
   /** Tests: the in-flight budget for sync uploads, and the database size cap, in bytes */
   syncInflightBytes?: number; syncMaxDbBytes?: number;
   /** Sync groups (Postgres in production); in memory when not given */
@@ -61,7 +61,6 @@ export function createApp(opts: MailboxOptions = {}) {
     ...(opts.syncPaused !== undefined && { syncPaused: opts.syncPaused }),
     ...(opts.newGroupsPaused !== undefined && { newGroupsPaused: opts.newGroupsPaused }),
     ...(opts.busyPerMinute !== undefined && { busyPerMinute: opts.busyPerMinute }),
-    ...(opts.listsInFlight !== undefined && { listsInFlight: opts.listsInFlight }),
   };
   const groups = opts.groups ?? new MemoryGroupStore();
   const cfg = opts.settings ?? (() => fixed);
@@ -302,6 +301,7 @@ export function createApp(opts: MailboxOptions = {}) {
     guardWrite: (c) => guardWrite(c, syncGovernor),
     ready: opts.groupsReady ?? (() => true),
     maxDbBytes: () => opts.syncMaxDbBytes ?? cfg().syncMaxDbMb * 1024 * 1024,
+    listBudgetBytes: () => opts.listInflightBytes ?? cfg().listMbInFlight * 1024 * 1024,
   });
 
   app.get('/healthz', (c) => c.text('ok'));

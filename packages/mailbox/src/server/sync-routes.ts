@@ -22,6 +22,7 @@ export function registerSyncRoutes(app: Hono, d: {
   /** False until the database is ready */
   ready: () => boolean;
   maxDbBytes: () => number;
+  listBudgetBytes: () => number;
 }) {
   // Not ready yet, or paused (reads too: a list reply can be large): everything sync is busy
   const gate = async (c: Context, next: () => Promise<void>) => {
@@ -30,7 +31,11 @@ export function registerSyncRoutes(app: Hono, d: {
   };
   app.use('/v1/groups/*', gate);
   app.use('/v1/sync/*', gate);
-  let listsInFlight = 0;
+  // Large list replies (a full re-read) share a byte budget, held until each reply is fully sent:
+  // a slow reader keeps its share. Small replies (the usual "anything new?") are always served, so one
+  // client looping full re-reads can't lock everyone else out.
+  let listBytesInFlight = 0;
+  const SMALL_REPLY = 64 * 1024;
   const today = () => utcDay(d.now());
   const ids = (c: Context, ...names: string[]) => names.every((n) => HEX32.test(c.req.param(n) ?? ''));
   const token = (c: Context): Buffer | null => {
@@ -87,21 +92,32 @@ export function registerSyncRoutes(app: Hono, d: {
     const since = Number(c.req.query('since') ?? '0');
     if (!Number.isSafeInteger(since) || since < 0) return d.err(c, 400, 'bad-request');
     const auth = await authorise(c); if (auth !== 'ok') return auth;
-    // A list reply can be large (every box): only so many at once, the rest try again
-    if (listsInFlight >= d.cfg().listsInFlight) return d.err(c, 429, 'busy');
-    listsInFlight++;
-    try {
-      return await listReply(c, since);
-    } finally {
-      listsInFlight--;
-    }
+    return listReply(c, since);
   });
 
   async function listReply(c: Context, since: number): Promise<Response> {
     const l = await d.groups.list(c.req.param('gid')!, since, today());
     if (!l) return d.err(c, 404, 'not-found');
     if ('moved' in l) return c.json(l);
-    return c.json({ seq: l.seq, epoch: await d.groups.epoch(), computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) });
+    const body = Buffer.from(JSON.stringify({ seq: l.seq, epoch: await d.groups.epoch(), computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) }));
+    if (body.length <= SMALL_REPLY) return c.body(body, 200, { 'content-type': 'application/json' });
+    if (listBytesInFlight + body.length > d.listBudgetBytes()) return d.err(c, 429, 'busy');
+    listBytesInFlight += body.length;
+    let released = false;
+    const release = () => { if (!released) { released = true; listBytesInFlight -= body.length; } };
+    const safety = setTimeout(release, 120_000);   // a reader that never finishes gives it back eventually
+    safety.unref?.();
+    const CHUNK = 64 * 1024;
+    let at = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(ctl) {
+        if (at >= body.length) { ctl.close(); clearTimeout(safety); release(); return; }
+        ctl.enqueue(new Uint8Array(body.subarray(at, at + CHUNK)));
+        at += CHUNK;
+      },
+      cancel() { clearTimeout(safety); release(); },
+    }, { highWaterMark: 0 });
+    return new Response(stream, { status: 200, headers: { 'content-type': 'application/json', 'content-length': String(body.length) } });
   }
 
   app.delete('/v1/groups/:gid/boxes/:did', async (c) => {

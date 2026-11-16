@@ -193,18 +193,15 @@ describe('sync routes: guards (lens 7)', () => {
     expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(429);
   });
 
-  it('list replies in flight are limited: the rest are told busy (review C1)', async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((r) => { release = r; });
-    const store = new MemoryGroupStore();
-    const slow = Object.assign(Object.create(store), { list: async (...a: Parameters<MemoryGroupStore['list']>) => { await gate; return store.list(...a); } });
-    const { call } = setup({ groups: slow, listsInFlight: 1 }); const g = group();
-    await put(call, g);
-    const first = call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
-    await new Promise((r) => setTimeout(r, 20));
-    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(429);
-    release();
-    expect((await first).status).toBe(200);
+  it('large list replies share a byte budget held until they are sent; small ones are always served (review C1, security)', async () => {
+    const { call } = setup({ listInflightBytes: 100_000 }); const g = group();
+    await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(70_000) }, pow: true });
+    const first = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });   // ~93 KB, not read yet
+    expect(first.status).toBe(200);
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(429);   // budget held by the unread reply
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=1`, { token: g.accessToken })).status).toBe(200);   // a small "anything new?" still works
+    await first.text();                                                                                                 // read: the budget comes back
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(200);
   });
 
   it('box uploads in flight are limited before any proof is checked (review C2)', async () => {
