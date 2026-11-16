@@ -23,7 +23,9 @@ export interface OtherComputer { name: string; pub: string; counter: number; seq
 export interface PreviousGroup {
   key: string;          // sealed old group key
   removed: string[];    // computers removed at that move (empty when this computer only followed it)
-  at: number;           // when this computer moved away; watched for at most 90 days
+  at: number;           // when this computer moved away
+  /** The remover only: the computers that stayed (id -> public key), for moving a rebuilt old group again */
+  members?: Record<string, string>;
 }
 export interface SyncFile {
   v: 1; status: SyncStatus;

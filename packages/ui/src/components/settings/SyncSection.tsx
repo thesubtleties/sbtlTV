@@ -10,7 +10,7 @@ import './SyncSection.css';
 const PROBLEM: Partial<Record<SyncView['status'], string>> = {
   removed: 'This computer was removed from sync.',
   ended: 'Sync ended (unused for 90 days). Add a computer to start again.',
-  keyring: 'Sync needs a working keyring on this computer.',
+  keyring: 'Sync needs your keyring. Rejoin from another computer.',
   update: 'Update sbtlTV to keep syncing.',
 };
 
@@ -22,6 +22,7 @@ export function SyncSection({ adding, onAdding }: { adding: boolean; onAdding: (
   const [view, setView] = useState<SyncView | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const missing = useUIStore((s) => s.settings.syncMissingTitles ?? 'gray');
   const updateSettings = useUIStore((s) => s.updateSettings);
@@ -85,7 +86,15 @@ export function SyncSection({ adding, onAdding }: { adding: boolean; onAdding: (
                     </div>
                     {c.thisOne
                       ? <Button onClick={() => setRenaming(c.name)}>Rename</Button>
-                      : <Button onClick={() => void run(() => sync.remove(c.id))}>Remove</Button>}
+                      : removing === c.id
+                        ? (
+                          <div className="sync-computers__confirm">
+                            <span>Remove {c.name}? To bring it back, add it again.</span>
+                            <Button variant="danger" onClick={() => { setRemoving(null); void run(() => sync.remove(c.id)); }}>Remove</Button>
+                            <Button onClick={() => setRemoving(null)}>Cancel</Button>
+                          </div>
+                        )
+                        : <Button onClick={() => setRemoving(c.id)}>Remove</Button>}
                   </>
                 )}
               </div>

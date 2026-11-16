@@ -2708,6 +2708,9 @@ ipcMain.handle('updater-install', () => {
     return { error: 'No update has been downloaded yet' };
   }
   try {
+    // The installer is already starting: quit at once, no hold for a knock or a sync push (the last
+    // saved progress goes up on the next launch)
+    installingUpdate = true;
     autoUpdater.quitAndInstall(false, true);
     return { success: true };
   } catch (err) {
@@ -3183,6 +3186,8 @@ app.whenReady().then(async () => {
 ipcMain.on('data-request-port', (event) => dataHost?.giveRendererPort(event.sender));
 
 let mailboxStopped = false;
+/** Quitting to install an update: skip the hold (see updater-install) */
+let installingUpdate = false;
 /** The page saves playback progress before quitting (at most 1.5 s), so sync can push it. */
 const askRendererToSave = () => new Promise<void>((resolve) => {
   const w = mainWindow?.webContents;
@@ -3197,7 +3202,7 @@ app.on('before-quit', (event) => {
   // First pass: a knock in progress (or its cancel, started by closing the window) lets the relay
   // hear it's cancelled, the page saves progress and sync pushes it: all within 3 seconds. Then quit
   // for real; the data process stops on that second pass.
-  if (!mailboxStopped) {
+  if (!mailboxStopped && !installingUpdate) {
     mailboxStopped = true;
     event.preventDefault();
     const knock = mailbox.active() ? Promise.race([mailbox.stop(), new Promise((r) => setTimeout(r, 1000))]) : Promise.resolve();

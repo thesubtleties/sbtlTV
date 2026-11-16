@@ -67,8 +67,16 @@ export class SyncEngine {
   private lastPullAt = -Infinity;
 
   constructor(private d: EngineDeps) {
+    // The keys are opened later (ready()): on Linux and Windows the OS keyring isn't reachable
+    // until Electron is ready, and a "keyring" decided too early would stick
     this.f = d.store.load();
-    if (this.f) this.unlock();
+  }
+
+  /** Opens the keys if they aren't open yet, or retries after a keyring that wasn't reachable. */
+  private ready(): boolean {
+    if (!this.f) return false;
+    if (!this.keys || this.problem === 'keyring') this.unlock();
+    return !!this.keys && this.problem !== 'keyring';
   }
 
   private now() { return (this.d.now ?? Date.now)(); }
@@ -113,9 +121,9 @@ export class SyncEngine {
     };
   }
 
-  private usable(): boolean { return !!this.f && !!this.keys && this.problem !== 'keyring'; }
-
   start(): void {
+    this.ready();
+    this.emit();
     void this.pull();
     if (this.timers() && !this.pullTimer) {
       this.pullTimer = setInterval(() => void this.pull(), PULL_EVERY_MS);
@@ -136,12 +144,14 @@ export class SyncEngine {
 
   record(records: SyncRecord[]): void {
     const f = this.f;
-    if (!f || !this.usable() || f.status !== 'active') return;
+    if (!f || !this.ready() || f.status !== 'active') return;
     const own = new Map(f.own.map((r) => [recordKey(r), r]));
     let changed = false;
     for (const r of records) {
       const k = recordKey(r);
       if (isNewer(r, own.get(k))) { own.set(k, r); changed = true; }
+      // The page made it, so its lists already have it: never hand it back
+      if ((f.applied[k] ?? 0) < r.at) f.applied[k] = r.at;
     }
     if (!changed) return;
     let list = [...pruneTombstones(own, this.now()).values()];
@@ -176,8 +186,22 @@ export class SyncEngine {
     this.firstDirty = null;
     if (!f || !k || this.problem === 'keyring' || f.status !== 'active') return;
     f.counter += 1;
-    const records = f.own.filter((r) => f.parts[recordPart(r)]);
-    const sealed = sealBox(k.encKey, k.groupId, f.deviceId, Buffer.from(JSON.stringify({ v: 1, counter: f.counter, name: f.name, pub: f.pub, records })));
+    let records = f.own.filter((r) => f.parts[recordPart(r)]);
+    const seal = () => sealBox(k.encKey, k.groupId, f.deviceId, Buffer.from(JSON.stringify({ v: 1, counter: f.counter, name: f.name, pub: f.pub, records })));
+    let sealed = seal();
+    // Over the limit (years of history): leave the oldest finished titles out of the box until it
+    // fits. They stay finished on this computer; they just stop syncing.
+    if (sealed.length > MAX_BOX_BYTES) {
+      const finished = records.filter((r) => (r.k === 'pm' || r.k === 'pe') && r.done).sort((x, y) => x.at - y.at);
+      let drop = 0;
+      while (sealed.length > MAX_BOX_BYTES && drop < finished.length) {
+        drop = Math.min(finished.length, drop + Math.max(1, Math.ceil(finished.length / 8)));
+        const out = new Set(finished.slice(0, drop));
+        records = records.filter((r) => !out.has(r));
+        sealed = seal();
+      }
+      this.d.log('Sync: the box was over the size limit; left out the oldest finished titles');
+    }
     this.save();
     if (sealed.length > MAX_BOX_BYTES) { this.d.log('Sync: this computer\'s box is over the size limit'); return; }
     try {
@@ -203,6 +227,7 @@ export class SyncEngine {
   pull(): Promise<void> { return this.run(() => this.pullNow()); }
 
   private async pullNow(): Promise<void> {
+    this.ready();
     const f = this.f, k = this.keys;
     if (!f || !k || this.problem === 'keyring' || (f.status !== 'active' && f.status !== 'pending')) return;
     this.lastPullAt = this.now();
@@ -259,7 +284,6 @@ export class SyncEngine {
     const f = this.f!, k = this.keys!;
     const keep: SyncFile['previous'] = [];
     for (const p of f.previous) {
-      if (this.now() - p.at > GROUP_IDLE_DAYS * DAY) continue;
       let old: { K: Buffer };
       try { old = this.d.store.open({ ...f, key: p.key }); } catch { continue; }
       const g = deriveGroup(old.K);
@@ -267,6 +291,9 @@ export class SyncEngine {
       try {
         const l = await client.list(0);
         if (l && l.moved && l.waiting === 0) continue;   // everyone has caught up
+        // Gone from the relay and not back for 90 days: nobody will rebuild it now. While it's there
+        // and someone still waits for a key, it's kept alive however long that takes.
+        if (l === null && this.now() - p.at > GROUP_IDLE_DAYS * DAY) continue;
         if (l && !l.moved && p.removed.length > 0) {
           const keys = new Map<string, Buffer>();
           for (const b of l.boxes) {
@@ -274,6 +301,11 @@ export class SyncEngine {
             let box: ReturnType<typeof parseBox>;
             try { box = parseBox(openBox(g.encKey, g.groupId, b.id, b.sealed)); } catch { box = null; }
             if (box) keys.set(b.id, sealRekey(decodeB64(box.pub, 32), g.encKey, k.K, g.groupId, b.id));
+          }
+          // And the computers that stayed but are still away (no box here yet): they'd otherwise look removed
+          for (const [id, pub] of Object.entries(p.members ?? {})) {
+            if (id === f.deviceId || p.removed.includes(id) || keys.has(id)) continue;
+            try { keys.set(id, sealRekey(decodeB64(pub, 32), g.encKey, k.K, g.groupId, id)); } catch { /* a bad key: skip */ }
           }
           await client.rekey(keys);
           this.d.log('Sync: an old group came back; moved it again');
@@ -300,14 +332,30 @@ export class SyncEngine {
     const merged = mergeRecords([f.own, ...Object.values(f.others).map((o) => o.records)]);
     const out: SyncRecord[] = [];
     const settings: Partial<Record<SyncedSettingKey, unknown>> = {};
+    let adopted = false;
     for (const [key, w] of merged) {
-      if (own.get(key) === w || !f.parts[recordPart(w)] || (f.applied[key] ?? 0) >= w.at) continue;
-      f.applied[key] = w.at;
-      if (w.k === 'set') settings[w.key] = w.value; else out.push(w);
+      if (!f.parts[recordPart(w)]) continue;
+      // This computer now carries the winner too, so it outlives the computer that made it
+      if (own.get(key) !== w && isNewer(w, own.get(key))) { own.set(key, w); adopted = true; }
+      if ((f.applied[key] ?? 0) >= w.at) continue;
+      // Settings are applied here in main; lists count as applied only once the page confirms (confirm())
+      if (w.k === 'set') { settings[w.key] = w.value; f.applied[key] = w.at; } else out.push(w);
     }
     f.applied = Object.fromEntries(Object.entries(f.applied).filter(([key]) => merged.has(key)));
+    if (adopted) { f.own = [...own.values()]; this.schedulePush(); }
     if (out.length) this.d.onApply(out);
     if (Object.keys(settings).length) this.d.onSettings(settings);
+  }
+
+  /** The page wrote these records into its lists: they won't be handed over again. */
+  confirm(records: SyncRecord[]): void {
+    const f = this.f;
+    if (!f) return;
+    for (const r of records) {
+      const key = recordKey(r);
+      if ((f.applied[key] ?? 0) < r.at) f.applied[key] = r.at;
+    }
+    this.save();
   }
 
   private async followMove(): Promise<void> {
@@ -338,7 +386,9 @@ export class SyncEngine {
     const sealed = this.d.store.seal(K, device);   // throws KeyringUnavailable: nothing is kept
     this.f = {
       v: 1, status, ...sealed, deviceId: newDeviceId(), pub: device.publicRaw.toString('base64'), name,
-      counter: 0, parts: { ...DEFAULT_PARTS }, own: [], others: {}, since: 0, lastSync: null, pendingUntil: null, applied: {},
+      counter: 0, parts: { ...DEFAULT_PARTS }, own: [], others: {}, since: 0, lastSync: null,
+      // A pending group the other computer never joins is forgotten (giverSent restarts the clock)
+      pendingUntil: status === 'pending' ? this.now() + PENDING_MS : null, applied: {},
       epoch: null, previous: [],
     };
     this.setKey(K, device);
@@ -347,7 +397,7 @@ export class SyncEngine {
   }
 
   async joinPayload(): Promise<JoinPayload> {
-    if (this.problem === 'keyring') throw new KeyringUnavailable();
+    if (this.f && !this.ready()) throw new KeyringUnavailable();
     const f0 = this.f;
     if (!f0 || f0.status === 'removed' || f0.status === 'ended') this.newFile('pending', randomBytes(32), this.d.defaultName);
     const f = this.f!;
@@ -355,6 +405,11 @@ export class SyncEngine {
       key: this.keys!.K.toString('base64'),
       computers: [{ id: f.deviceId, name: f.name }, ...Object.entries(f.others).map(([id, o]) => ({ id, name: o.name }))],
     };
+  }
+
+  /** "Add a computer" failed or was cancelled before anyone joined: forget the pending group. */
+  abandonPending(): void {
+    if (this.f?.status === 'pending' && Object.keys(this.f.others).length === 0) this.forget();
   }
 
   giverSent(): void {
@@ -396,8 +451,9 @@ export class SyncEngine {
         if (id !== deviceId) keys.set(id, sealRekey(decodeB64(o.pub, 32), k.encKey, newK, k.groupId, id));
       }
       await k.client.rekey(keys);   // a relay error reaches the caller: nothing changed here yet
+      const members = Object.fromEntries(Object.entries(f.others).filter(([id]) => id !== deviceId).map(([id, o]) => [id, o.pub]));
       delete f.others[deviceId];
-      f.previous.push({ key: f.key, removed: [deviceId], at: this.now() });
+      f.previous.push({ key: f.key, removed: [deviceId], at: this.now(), members });
       this.switchKey(newK);
       await this.pushNow();
       this.emit();

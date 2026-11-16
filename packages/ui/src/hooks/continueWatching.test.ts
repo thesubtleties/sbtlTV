@@ -22,3 +22,12 @@ describe('movieForRecord', () => {
     expect(movieForRecord({ stream_id: 'gone', tmdb_id: 3 }, byStream, byTmdb)).toBeUndefined();
   });
 });
+
+describe('newestPerTitle', () => {
+  it('one card per movie when two providers hold the same title: the newest copy (M2)', async () => {
+    const { newestPerTitle } = await import('./useContinueWatching');
+    const r = (id: string, tmdb_id: number | undefined, t: number) => ({ id, tmdb_id, updated_at: new Date(t) }) as never;
+    const out = newestPerTitle([r('movie_b', 603, 9), r('movie_a', 603, 5), r('movie_x', undefined, 7), r('movie_y', undefined, 3)]);
+    expect((out as { id: string }[]).map((x) => x.id)).toEqual(['movie_b', 'movie_x', 'movie_y']);
+  });
+});

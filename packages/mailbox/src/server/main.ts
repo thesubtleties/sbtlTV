@@ -1,8 +1,7 @@
 import { serve } from '@hono/node-server';
-import pg from 'pg';
 import { createApp } from './app.js';
 import { MemoryGroupStore, utcDay, type GroupStore } from './groups.js';
-import { PgGroupStore, migrate } from './pg-groups.js';
+import { PgGroupStore, makePool, migrate } from './pg-groups.js';
 import { LiveSettings, fileReader, settingsFromEnv } from './settings.js';
 
 const port = Number(process.env.PORT ?? 8080);
@@ -12,7 +11,7 @@ const settings = new LiveSettings(settingsFromEnv(process.env), fileReader(proce
 // Sync groups: Postgres when DATABASE_URL is set (the cluster), else in memory (local development)
 let groups: GroupStore = new MemoryGroupStore();
 if (process.env.DATABASE_URL) {
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
+  const pool = makePool(process.env.DATABASE_URL);
   await migrate(pool);
   groups = new PgGroupStore(pool);
 }

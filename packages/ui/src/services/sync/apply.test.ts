@@ -45,4 +45,10 @@ describe('applyRecords', () => {
     await applyRecords([{ k: 'wl', type: 'movie', tmdb: 603, name: 'M', at: 3 }], lookupNone);
     expect(await db.watchlist.get('movie_603')).toBeTruthy();
   });
+
+  it('a removal never deletes an entry added after it (a computer joining a group with old removals) (I4)', async () => {
+    await db.watchlist.put({ id: 'movie_603', type: 'movie', tmdb_id: 603, name: 'M', added: new Date(5_000) });
+    await applyRecords([{ k: 'wl', type: 'movie', tmdb: 603, name: 'M', at: 1_000, removed: true }], lookupNone);
+    expect(await db.watchlist.get('movie_603')).toBeTruthy();
+  });
 });

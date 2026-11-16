@@ -6,6 +6,7 @@ import { groupBySeriesKey } from '../services/continue-watching/grouping';
 import { selectActiveEpisode } from '../services/continue-watching/next-episode';
 import { pickMissing, type MissingTitle } from '../services/sync/missing';
 import { useUIStore } from '../stores/uiStore';
+import { useSyncActive } from './useSyncActive';
 
 const MAX = 30;   // same cap as Continue Watching
 const NO_PROGRESS: StoredWatchProgress[] = [];
@@ -13,12 +14,14 @@ const NO_WATCHLIST: StoredWatchlistItem[] = [];
 const NONE: { progress: MissingTitle[]; watchlist: MissingTitle[] } = { progress: [], watchlist: [] };
 
 /**
- * Titles in Continue Watching or the watchlist (often synced from another computer) that this
- * library doesn't have. Empty when the person chose Hide, and until the library has answered (so
- * nothing flashes as missing while it loads).
+ * Titles in Continue Watching or the watchlist synced from another computer that this library
+ * doesn't have. Only while sync is on (without it, leftovers from a removed provider stay hidden as
+ * before, and no TMDB poster lookups start). Empty when the person chose Hide, and until the library
+ * has answered (so nothing flashes as missing while it loads).
  */
 export function useMissingTitles(type: 'movie' | 'series'): { progress: MissingTitle[]; watchlist: MissingTitle[] } {
-  const hide = useUIStore((s) => s.settings.syncMissingTitles === 'hide');
+  const syncOn = useSyncActive();
+  const hide = useUIStore((s) => s.settings.syncMissingTitles === 'hide') || !syncOn;
   const movieRecs = useLiveQuery(async () => (hide || type !== 'movie' ? NO_PROGRESS
     : (await db.watchProgress.where('type').equals('movie').and((r) => !r.completed && !!r.tmdb_id).toArray())
       .sort((a, b) => +b.updated_at - +a.updated_at).slice(0, MAX)), [type, hide]) ?? NO_PROGRESS;

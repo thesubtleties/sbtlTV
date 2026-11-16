@@ -268,6 +268,8 @@ export interface SyncApi {
   ready: () => Promise<void>;
   view: () => Promise<SyncView>;
   record: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;
+  /** These were written into the lists (after applyRecords): don't hand them over again */
+  applied: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;
   pull: () => Promise<void>;
   setParts: (parts: SyncParts) => Promise<void>;
   rename: (name: string) => Promise<void>;

@@ -30,7 +30,7 @@ export function registerMailbox(deps: {
   stage(body: SetupBody): { token: string; preview: SetupPreview };
   log: (m: string) => void;
   /** Sync: "Add a computer" sends a join instead of a setup; a received join waits for Join */
-  sync: { joinPayload(): Promise<JoinPayload>; giverSent(): void; activateJoin(j: JoinPayload, name: string): Promise<void> };
+  sync: { joinPayload(): Promise<JoinPayload>; giverSent(): void; abandonPending(): void; activateJoin(j: JoinPayload, name: string): Promise<void> };
 }): { stop(): Promise<void>; active(): boolean } {
   let workUpTo = 0;
   const transport = () => relayTransport({ onWorkSeconds: (sec) => { workUpTo = sec; } });
@@ -45,8 +45,13 @@ export function registerMailbox(deps: {
   // Every start and cancel takes a new number: a start that finishes after a later cancel stands down
   let generation = 0;
 
+  /** An "Add a computer" in progress that the other computer doesn't have yet */
+  let joinSending = false;
+
   const stopAll = async () => {
     const r = receiver, s = sender;
+    // Cancelled before they had it: nothing should be left waiting for them
+    if (joinSending) { joinSending = false; deps.sync.abandonPending(); }
     receiver = null; sender = null; pending = null; staged = undefined; stagedJoin = undefined; role = null; workUpTo = 0;
     await r?.cancel(); await s?.cancel();
   };
@@ -131,10 +136,11 @@ ipcMain.handle('mailbox:sendJoin', async (_e, code: string) => {
     if (mine !== generation) return { success: false };
     role = 'send';
     pending = packJoin(await deps.sync.joinPayload());
+    joinSending = true;
     const s = new Sender(transport(), EFF_WORDS, (st: SendState) => {
       if (s !== sender) return;
-      if (st.step === 'received') { deps.log('Relay: join picked up'); deps.sync.giverSent(); }
-      else if (st.step === 'failed') deps.log(`Relay: join ended (${st.reason})`);
+      if (st.step === 'received') { joinSending = false; deps.log('Relay: join picked up'); deps.sync.giverSent(); }
+      else if (st.step === 'failed') { joinSending = false; deps.sync.abandonPending(); deps.log(`Relay: join ended (${st.reason})`); }
     });
     sender = s;
     void s.ring(String(code));

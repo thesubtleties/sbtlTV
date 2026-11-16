@@ -328,6 +328,7 @@ contextBridge.exposeInMainWorld('sync', {
   ready: () => ipcRenderer.invoke('sync:ready'),
   view: () => ipcRenderer.invoke('sync:view'),
   record: (records: unknown[]) => ipcRenderer.invoke('sync:record', records),
+  applied: (records: unknown[]) => ipcRenderer.invoke('sync:applied', records),
   pull: () => ipcRenderer.invoke('sync:pull'),
   setParts: (p: unknown) => ipcRenderer.invoke('sync:setParts', p),
   rename: (name: string) => ipcRenderer.invoke('sync:rename', name),

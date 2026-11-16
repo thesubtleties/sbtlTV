@@ -64,7 +64,8 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [defaultName, setDefaultName] = useState('');
-  useEffect(() => { void window.sync?.view().then((v) => setDefaultName(v.defaultName)); }, []);
+  const [syncing, setSyncing] = useState(false);
+  useEffect(() => { void window.sync?.view().then((v) => { setDefaultName(v.defaultName); setSyncing(v.status === 'active'); }); }, [imp.step]);
   // One knock at a time: opening Send, Receive or Add a computer closes the others
   const openSend = () => { setReceiving(false); setAdding(false); setTransfer(transfer === 'send' ? 'none' : 'send'); };
   const openReceive = () => { if (!receiving && transfer === 'send') setTransfer('none'); setAdding(false); setReceiving(!receiving); };
@@ -249,6 +250,7 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
           <div className="setup-preview">
             <div className="setup-preview__summary">
               <Hint>Join sync with {names(imp.computers)}? Your watchlist and progress will be shared with them.</Hint>
+              {syncing && <Hint tone="warn">This computer leaves its current sync.</Hint>}
             </div>
             <OptionRow title="Name this computer" help="Blank uses the placeholder.">
               <form onSubmit={(e) => { e.preventDefault(); if (!joining) void join(); }}>

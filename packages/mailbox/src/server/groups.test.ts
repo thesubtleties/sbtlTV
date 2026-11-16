@@ -12,3 +12,12 @@ describe('days', () => {
     expect(utcDay(Date.UTC(2026, 10, 16, 23, 59))).toBe('2026-11-16');
   });
 });
+
+describe('the Postgres pool', () => {
+  it('survives a dropped connection (an unhandled pool error would end the relay)', async () => {
+    const { makePool } = await import('./pg-groups.js');
+    const pool = makePool('postgres://nobody@127.0.0.1:1/none');
+    expect(() => pool.emit('error', new Error('connection terminated'))).not.toThrow();
+    await pool.end();
+  });
+});

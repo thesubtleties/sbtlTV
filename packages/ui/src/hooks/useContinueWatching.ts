@@ -54,6 +54,17 @@ export async function mergedEpisodesForSeries(series: { series_id: string; tmdb_
   return mergeEpisodes(series.series_id, relatedIds, allEps);
 }
 
+/** Records newest first, one per TMDB title (the same movie from two providers is one card); records without a TMDB id all stay. */
+export function newestPerTitle<T extends { tmdb_id?: number; updated_at: Date }>(recs: T[]): T[] {
+  const seen = new Set<number>();
+  return [...recs].sort((a, b) => +b.updated_at - +a.updated_at).filter((r) => {
+    if (r.tmdb_id == null) return true;
+    if (seen.has(r.tmdb_id)) return false;
+    seen.add(r.tmdb_id);
+    return true;
+  });
+}
+
 /** The movie a progress record plays: its own copy by stream id, else this computer's copy by TMDB id (progress synced from another computer). */
 export function movieForRecord(
   r: { stream_id?: string; tmdb_id?: number },
@@ -66,8 +77,7 @@ export function movieForRecord(
 function useMovieItems(active: boolean): ContinueItem[] {
   const recs = useLiveQuery(async () => {
     if (!active) return NO_RECORDS;
-    return (await db.watchProgress.where('type').equals('movie').and((r) => !r.completed).toArray())
-      .sort((a, b) => +b.updated_at - +a.updated_at)
+    return newestPerTitle(await db.watchProgress.where('type').equals('movie').and((r) => !r.completed).toArray())
       .slice(0, MAX_ROW_ITEMS);
   }, [active]) ?? NO_RECORDS;
   const streamIds = useMemo(() => recs.map((r) => r.stream_id ?? '').filter(Boolean), [recs]);

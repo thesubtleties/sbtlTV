@@ -58,6 +58,12 @@ export function registerSync(deps: {
     engine.record(records.map(validateRecord).filter((r): r is SyncRecord => r !== null && r.k !== 'set'));
   });
   ipcMain.handle('sync:pull', () => { engine.nudge(); });
+  // The page wrote these into its lists (only then are they "applied": a closed window or a failed
+  // write gets them again on the next pull)
+  ipcMain.handle('sync:applied', (_e, records: unknown) => {
+    if (!Array.isArray(records) || records.length > 50_000) return;
+    engine.confirm(records.map(validateRecord).filter((r): r is SyncRecord => r !== null));
+  });
   ipcMain.handle('sync:setParts', (_e, p: unknown) => {
     const o = p as Record<string, unknown> | null;
     if (!o || typeof o.watchlist !== 'boolean' || typeof o.progress !== 'boolean' || typeof o.settings !== 'boolean') return;

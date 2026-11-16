@@ -6,6 +6,8 @@ export interface TransportOpts {
   base: string; version: string; fetch: Fetch; now?: () => number;
   /** A sync group's access token, sent as Authorization: Bearer on every request */
   auth?: string;
+  /** A request with no answer by then is "offline" (and is aborted): one stalled request must not block sync */
+  timeoutMs?: number;
   /** The level to assume before the server has said (it says on every reply and in /v1/hello) */
   bits?: number;
   /** Called before each proof with its difficulty, so the app can say how long it may take */
@@ -20,6 +22,9 @@ export class MailboxError extends Error {
 const CHALLENGE_REFRESH_MS = CHALLENGE_TTL_MS / 3;
 /** No reply from the relay is bigger than a drop as base64 in JSON. */
 const MAX_REPLY_CHARS = Math.ceil(MAX_DROP_BYTES * 4 / 3) + 4096;
+
+/** No answer from the relay in this long = offline (a drop of 2 MB on a slow line still fits) */
+const REQUEST_TIMEOUT_MS = 60_000;
 
 /** The most work the app will do for one request (2^28 ≈ 270 M hashes, ~4 min on an average computer). */
 const MAX_BITS = 28;
@@ -65,10 +70,17 @@ export class Transport {
       headers[POW_HEADER] = `${challenge}.${nonce}`;
     }
     let res: Response;
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      res = await this.o.fetch(new Request(this.o.base + path, { method, headers, body: text || undefined }));
+      res = await Promise.race([
+        this.o.fetch(new Request(this.o.base + path, { method, headers, body: text || undefined, signal: abort.signal })),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => { abort.abort(); reject(new Error('timeout')); }, this.o.timeoutMs ?? REQUEST_TIMEOUT_MS); }),
+      ]);
     } catch {
       throw new MailboxError('offline');
+    } finally {
+      clearTimeout(timer);
     }
     const challenge = res.headers.get(CHALLENGE_HEADER);
     if (challenge) this.challenge = { value: challenge, at: this.clock() };

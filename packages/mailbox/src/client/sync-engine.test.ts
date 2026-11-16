@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -13,15 +14,17 @@ import { fakeSealer } from './sync-test-helpers.js';
 const DAY = 86_400_000;
 
 function world() {
-  let relay = createApp({ powBits: 4 });
   let t = Date.UTC(2026, 10, 16);
+  // The relay keeps the same clock as the computers (its dates decide what its cleanup deletes)
+  let relay = createApp({ powBits: 4, now: () => t });
   const make = (name: string, sealerOn = true, dirPath = mkdtempSync(join(tmpdir(), 'eng-'))) => {
     const got = { applied: [] as SyncRecord[], settings: [] as Record<string, unknown>[], snapshots: 0, views: [] as SyncView[] };
-    const e = new SyncEngine({
+    // The page writes what it's handed and confirms it (as App.tsx does after applyRecords)
+    const e: SyncEngine = new SyncEngine({
       store: new SyncStore(join(dirPath, 'sync-state.json'), fakeSealer(sealerOn)),
       transport: (auth) => new Transport({ base: 'http://x', version: '0.17.0', bits: 4, auth, fetch: async (r) => relay.app.fetch(r) }),
       defaultName: name, log: () => {}, timers: false, now: () => t,
-      onApply: (r) => { got.applied.push(...r); }, onSettings: (v) => { got.settings.push(v); },
+      onApply: (r) => { got.applied.push(...r); queueMicrotask(() => e.confirm(r)); }, onSettings: (v) => { got.settings.push(v); },
       onSnapshotNeeded: () => { got.snapshots++; }, onChange: (v) => { got.views.push(v); },
     });
     return { e, got, dirPath };
@@ -29,7 +32,7 @@ function world() {
   return {
     make,
     advance: (ms: number) => { t += ms; },
-    wipe: () => { relay = createApp({ powBits: 4 }); },
+    wipe: () => { relay = createApp({ powBits: 4, now: () => t }); },
     relay: () => relay,
     now: () => t,
   };
@@ -132,6 +135,21 @@ describe('SyncEngine', () => {
     expect(b.got.applied).toContainEqual(wl(w.now()));
   });
 
+  it('a computer away for 7 months still follows: the remover keeps the old group alive while someone waits (M1)', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const c = w.make('Mac');
+    await c.e.activateJoin(await a.e.joinPayload(), 'Mac');
+    await a.e.pull(); await b.e.pull();
+    await a.e.remove(thisId(c.e));
+    for (let i = 0; i < 7; i++) {
+      w.advance(30 * DAY);
+      await a.e.pull();
+      await w.relay().groups.sweep(new Date(w.now()).toISOString().slice(0, 10));
+    }
+    await b.e.pull();
+    expect(b.e.view().status).toBe('active');
+  });
+
   it('group missing with the same database id: Sync ended, never recreated (Amendment A)', async () => {
     const w = world(); const { a, b } = await pair(w);
     await a.e.pull();
@@ -166,15 +184,50 @@ describe('SyncEngine', () => {
     expect(c.got.applied).not.toContainEqual(wl(w.now()));
   });
 
+  it('re-moving a rebuilt old group also seals the key to computers still away (I5)', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const c = w.make('Mac'), d = w.make('Den');
+    await c.e.activateJoin(await a.e.joinPayload(), 'Mac');
+    await d.e.activateJoin(await a.e.joinPayload(), 'Den');
+    await a.e.pull(); await b.e.pull(); await c.e.pull(); await d.e.pull();
+    await a.e.remove(thisId(c.e));   // b, c and d are away
+    w.wipe();
+    await a.e.pull();
+    await b.e.pull();                // b rebuilds the old group
+    await a.e.pull();                // a moves it again: to b AND d (away), not c
+    await d.e.pull();                // d comes back later
+    expect(d.e.view().status).toBe('active');
+    await c.e.pull();
+    expect(c.e.view().status).not.toBe('active');
+  });
+
   it('a keyring that stopped working: status keyring, no crash, nothing sent (Review Focus 3)', async () => {
     const w = world();
     const a = w.make('Mac');
     await a.e.joinPayload();
     const again = w.make('Mac', false, a.dirPath);
+    again.e.start();
     expect(again.e.view().status).toBe('keyring');
     again.e.record([wl(w.now())]);
     await again.e.flush(); await again.e.pull();
     await expect(again.e.joinPayload()).rejects.toThrow();
+  });
+
+  it('a keyring reachable only after startup (Linux/Windows before ready): sync opens on start, not "keyring" (C1)', async () => {
+    const w = world(); const { a } = await pair(w);
+    let on = false;
+    const late = { ...fakeSealer(), available: () => on };
+    const again = new SyncEngine({
+      store: new SyncStore(join(a.dirPath, 'sync-state.json'), late),
+      transport: (auth) => new Transport({ base: 'http://x', version: '0.17.0', bits: 4, auth, fetch: async (r) => w.relay().app.fetch(r) }),
+      defaultName: 'x', log: () => {}, timers: false, now: w.now,
+      onApply: () => {}, onSettings: () => {}, onSnapshotNeeded: () => {}, onChange: () => {},
+    });
+    expect(again.view().status).not.toBe('keyring');
+    on = true;
+    again.start();
+    await again.pull();
+    expect(again.view().status).toBe('active');
   });
 
   it('a pending giver whose computer never joined forgets the key after 15 minutes', async () => {
@@ -183,6 +236,18 @@ describe('SyncEngine', () => {
     w.advance(16 * 60_000);
     await a.e.pull();
     expect(a.e.view().status).toBe('off');
+  });
+
+  it('Add a computer that failed or was cancelled leaves nothing waiting (M4)', async () => {
+    const w = world(); const a = w.make('Mac');
+    await a.e.joinPayload();
+    a.e.abandonPending();
+    expect(a.e.view().status).toBe('off');
+    const b = w.make('Mac');
+    await b.e.joinPayload();                // never rang at all
+    w.advance(16 * 60_000);
+    await b.e.pull();
+    expect(b.e.view().status).toBe('off');
   });
 
   it('leave: the box goes; the other sees one computer fewer', async () => {
@@ -211,6 +276,52 @@ describe('SyncEngine', () => {
     await a.e.pull();
     expect(aState().others[bId].counter).toBe(newer);
     expect(aState().others[bId].records).toContainEqual(expect.objectContaining({ removed: true }));
+  });
+
+  it("a computer carries the changes it received, so they outlive the computer that made them (I3)", async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const t0 = w.now();
+    b.e.record([wl(t0)]); await b.e.flush();          // B: added
+    await a.e.pull();
+    w.advance(1000);
+    a.e.record([wl(w.now(), true)]); await a.e.flush(); // A: removed later
+    await b.e.pull(); await b.e.flush();              // B adopts it (its push timer, here by hand)
+    await a.e.leave();                                  // A retires
+    const c = w.make('Mac');
+    await c.e.activateJoin(await b.e.joinPayload(), 'Mac');
+    await b.e.pull(); w.advance(31_000); await c.e.pull();
+    expect(c.got.applied.filter((r) => r.k === 'wl' && !('removed' in r && r.removed))).toEqual([]);
+  });
+
+  it('changes the page never confirmed (window closed, write failed) are handed over again (I2)', async () => {
+    const w = world(); const { a } = await pair(w);
+    const handed: SyncRecord[] = [];
+    const b2 = new SyncEngine({
+      store: new SyncStore(join(mkdtempSync(join(tmpdir(), 'eng-')), 'sync-state.json'), fakeSealer()),
+      transport: (auth) => new Transport({ base: 'http://x', version: '0.17.0', bits: 4, auth, fetch: async (r) => w.relay().app.fetch(r) }),
+      defaultName: 'B', log: () => {}, timers: false, now: w.now,
+      onApply: (r) => { handed.push(...r); },   // never confirms: no page listening
+      onSettings: () => {}, onSnapshotNeeded: () => {}, onChange: () => {},
+    });
+    await b2.activateJoin(await a.e.joinPayload(), 'B');
+    await a.e.pull();
+    a.e.record([wl(w.now())]); await a.e.flush();
+    await b2.pull(); await b2.pull();
+    expect(handed.filter((r) => r.k === 'wl')).toHaveLength(2);
+    b2.confirm(handed);
+    await b2.pull();
+    expect(handed.filter((r) => r.k === 'wl')).toHaveLength(2);
+  });
+
+  it('a box over the size limit leaves out the oldest finished progress, and still sends (M14)', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const noise = () => randomBytes(300).toString('base64');   // titles that don't compress
+    const finished: SyncRecord[] = Array.from({ length: 4000 }, (_, i) => ({ k: 'pm', tmdb: 10_000 + i, name: noise(), pos: 100, dur: 100, done: true, at: 1_000 + i }));
+    const current: SyncRecord = { k: 'pm', tmdb: 42, name: 'Still watching', pos: 50, dur: 100, done: false, at: 2_000 };
+    a.e.record([...finished, current]); await a.e.flush();
+    await b.e.pull();
+    expect(b.got.applied).toContainEqual(current);
+    expect(b.got.applied.filter((r) => r.k === 'pm' && r.done).length).toBeLessThan(4000);
   });
 
   it('uniqueName numbers taken names', () => {

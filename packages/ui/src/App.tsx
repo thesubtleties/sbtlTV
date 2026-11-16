@@ -147,7 +147,7 @@ async function tryLoadWithFallbacks(
  * or undefined (keep the stored one) while a saved delay is not restored yet;
  * a user's delay change passes the value it saved for its own load.
  */
-function saveVodProgress(info: VodPlayInfo, position: number, duration: number, subtitle?: SubtitleChoice): Promise<void> {
+function saveVodProgress(info: VodPlayInfo, position: number, duration: number, subtitle?: SubtitleChoice, how?: { sync?: boolean }): Promise<void> {
   const sub = subtitle ?? currentSubtitle();
   if (!info.streamId || !(duration > 0)) return Promise.resolve();
   return updateWatchProgress({
@@ -166,7 +166,7 @@ function saveVodProgress(info: VodPlayInfo, position: number, duration: number, 
     subSpeed: sub?.speed,
     subdlId: sub?.subdlId,
     subdlAi: sub?.ai,
-  }).catch((err) => debugLog(`Saving watch progress failed: ${err instanceof Error ? err.message : err}`));
+  }, how).catch((err) => debugLog(`Saving watch progress failed: ${err instanceof Error ? err.message : err}`));
 }
 
 /** The subtitle choice saved with progress: delay, speed and SubDL file. */
@@ -399,7 +399,7 @@ function App() {
           const now = Date.now();
           if (now - lastProgressSaveRef.current >= 15000) {
             lastProgressSaveRef.current = now;
-            saveVodProgress(info, status.position, status.duration);
+            void saveVodProgress(info, status.position, status.duration, undefined, { sync: false });
           }
         }
       }
@@ -745,7 +745,8 @@ function App() {
     const offs = [
       window.sync.onView((v) => setSyncActive(v.status === 'active')),
       window.sync.onSnapshot(() => { void sendSnapshot(); }),
-      window.sync.onApply((records) => { void applyRecords(records); }),
+      // Confirmed only once written: a failed write comes back on the next pull
+      window.sync.onApply((records) => { void applyRecords(records).then(() => window.sync?.applied(records)).catch((e) => debugLog(`Sync: applying failed: ${e instanceof Error ? e.name : 'error'}`, 'sync')); }),
       window.sync.onSettingsReplaced(async () => {
         const r = await window.storage?.getSettings();
         if (r?.data) useUIStore.getState().hydrateSettings(r.data);

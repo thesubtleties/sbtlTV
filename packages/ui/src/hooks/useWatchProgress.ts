@@ -51,7 +51,7 @@ export async function updateWatchProgress(opts: {
   subSpeed?: number;
   subdlId?: string | null;
   subdlAi?: boolean;
-}): Promise<void> {
+}, how: { sync?: boolean } = {}): Promise<void> {
   if (opts.duration <= 0) return;
 
   const progress = Math.round((opts.position / opts.duration) * 100);
@@ -111,7 +111,8 @@ export async function updateWatchProgress(opts: {
     // A stand-in from sync (this title's progress from another computer, before this one had a copy) gives way to this copy
     if (opts.type === 'movie' && opts.tmdbId && id !== `movie_tmdb_${opts.tmdbId}`) await db.watchProgress.delete(`movie_tmdb_${opts.tmdbId}`);
   });
-  if (row) syncOut([progressRecord(row)]);
+  // The 15-second saves while playing stay here; pause, stop and quit send (spec: push on pause/stop/close)
+  if (row && how.sync !== false) syncOut([progressRecord(row)]);
 }
 
 /** Deletes progress rows; each with TMDB identity goes to sync as a removal (when sync is on). */

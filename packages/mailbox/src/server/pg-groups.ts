@@ -24,6 +24,17 @@ create table if not exists sync_rekeys (
 create index if not exists sync_groups_last_seen on sync_groups (last_seen);
 `;
 
+/**
+ * The relay's pool. A connection that drops while idle (database restart, failover) makes the
+ * pool emit 'error'; unhandled, that would end the process and every knock in memory with it.
+ * The pool reconnects on its own; nothing is logged (no addresses anywhere).
+ */
+export function makePool(connectionString: string): pg.Pool {
+  const pool = new pg.Pool({ connectionString, max: 5 });
+  pool.on('error', () => {});
+  return pool;
+}
+
 export async function migrate(pool: pg.Pool): Promise<void> {
   await pool.query(DDL);
   await pool.query(`insert into sync_meta (k, v) values ('schema', $1), ('epoch', $2) on conflict (k) do nothing`,
@@ -125,11 +136,12 @@ export class PgGroupStore implements GroupStore {
     return r.rowCount ?? 0;
   }
 
-  private epochValue: string | null = null;
-  /** Set once at migration and never changed, so read once */
+  /**
+   * Read every time (one tiny query): a database recreated under a running relay must show its new
+   * id, or computers would take "group gone, same id" for "really deleted" and end sync.
+   */
   async epoch() {
-    this.epochValue ??= (await this.pool.query<{ v: string }>(`select v from sync_meta where k = 'epoch'`)).rows[0].v;
-    return this.epochValue;
+    return (await this.pool.query<{ v: string }>(`select v from sync_meta where k = 'epoch'`)).rows[0].v;
   }
 
   async close() { await this.pool.end(); }

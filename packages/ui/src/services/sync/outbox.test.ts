@@ -41,6 +41,13 @@ describe('changes go to sync as TMDB-keyed records', () => {
     expect(sent.map((r) => r.k === 'pe' && r.removed && r.e).sort()).toEqual([1, 2]);
   });
 
+  it("the 15-second saves during playback stay on this computer; pause, stop and quit send (I1)", async () => {
+    await updateWatchProgress({ type: 'movie', streamId: 's1_1', tmdbId: 603, position: 15, duration: 8160, name: 'M' }, { sync: false });
+    expect(sent).toEqual([]);
+    await updateWatchProgress({ type: 'movie', streamId: 's1_1', tmdbId: 603, position: 30, duration: 8160, name: 'M' });
+    expect(sent).toHaveLength(1);
+  });
+
   it('nothing is sent while sync is off', async () => {
     setSyncActive(false);
     await toggleWatchlist('series', { tmdbId: 1399, name: 'GoT' });

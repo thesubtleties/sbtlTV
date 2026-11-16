@@ -27,8 +27,9 @@ export async function applyRecords(records: SyncRecord[], lookup: Lookup = libra
       if (r.k === 'wl') {
         const id = `${r.type}_${r.tmdb}`;
         if (r.removed) {
-          const ids = (await db.watchlist.where('tmdb_id').equals(r.tmdb).toArray()).filter((w) => w.type === r.type).map((w) => w.id);
-          await db.watchlist.bulkDelete([id, ...ids]);
+          // Only entries added before the removal: one added later here (or before joining) stays
+          const ids = (await db.watchlist.where('tmdb_id').equals(r.tmdb).toArray()).filter((w) => w.type === r.type && +w.added <= r.at).map((w) => w.id);
+          await db.watchlist.bulkDelete(ids);
         } else if (!(await db.watchlist.get(id))) {
           await db.watchlist.put({ id, type: r.type, tmdb_id: r.tmdb, name: r.name, added: when });
         }
