@@ -30,6 +30,8 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter @sbtltv/mailbox typecheck
       - run: pnpm --filter @sbtltv/mailbox test
+      # The bundle the image runs: catches resolution problems the tests (TypeScript via vitest) can't
+      - run: pnpm --filter @sbtltv/mailbox build
   # The live relay changes with releases: :main is built from main only. Started by hand on another
   # branch, the image gets only its commit SHA, for trying a branch on the cluster first
   image:

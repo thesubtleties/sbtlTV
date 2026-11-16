@@ -167,8 +167,8 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
 
       <Section title="Transfer setup" description="To another computer, or someone else's."
         actions={<>
-          <Button onClick={openSend} disabled={imp.step === 'applying'}>Send to a device…</Button>
-          <Button onClick={() => setTransfer(transfer === 'export' ? 'none' : 'export')} disabled={imp.step === 'applying'}>Export to file…</Button>
+          <Button onClick={openSend} aria-expanded={transfer === 'send'} disabled={imp.step === 'applying'}>Send to a device…</Button>
+          <Button onClick={() => setTransfer(transfer === 'export' ? 'none' : 'export')} aria-expanded={transfer === 'export'} disabled={imp.step === 'applying'}>Export to file…</Button>
         </>}>
         {transfer === 'send' && <SendSetupPanel onClose={() => setTransfer('none')} />}
         {transfer === 'export' && <>
@@ -201,7 +201,7 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
 
       <Section title="Receive" description="A setup, or to join your sync."
         actions={<>
-          <Button onClick={openReceive} disabled={imp.step === 'applying'}>Show my code</Button>
+          <Button onClick={openReceive} aria-expanded={receiving} disabled={imp.step === 'applying'}>Show my code</Button>
           <Button onClick={() => void pick()} disabled={imp.step === 'applying'}>Import file…</Button>
         </>}>
         {receiving && imp.step !== 'preview' && (
