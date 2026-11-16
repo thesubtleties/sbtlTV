@@ -215,7 +215,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         description="sbtlTV connects directly to each of these. Like a web browser, each request also says it comes from sbtlTV and which system you use."
       >
         <Who title="Your IPTV provider" status="always"
-          sees="Your IP address, your account, the series you open or point at, and what you watch and when. They provide the streams." />
+          sees="Your IP address, your account, the series you open, point at or have in Continue Watching, and what you watch and when. They provide the streams." />
         <Who title="Guide sources" status="always"
           sees="Your IP address and when the guide refreshes: your provider's guide, and any guide URLs you add." />
         <Who title="Image hosts" status="always"

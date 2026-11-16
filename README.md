@@ -170,7 +170,7 @@ sbtlTV has no account and sends no analytics, tracking or crash reports. Its own
 
 | Who | When | What they see |
 |-----|------|---------------|
-| Your IPTV provider | Always | Your IP address, your account, the series you open or point at, and what you watch and when |
+| Your IPTV provider | Always | Your IP address, your account, the series you open, point at or have in Continue Watching, and what you watch and when |
 | Guide (EPG) sources | Always | Your IP address and when the guide refreshes (your provider's guide, plus any guide URLs you add) |
 | Image hosts | Always | Your IP address and which images: channel logos and posters load from the addresses in your provider's data and from TMDB's image server |
 | GitHub | Always | Two public data files, no account (the movie/series match file for library syncs, and TMDB's browse lists when you have no TMDB key), and update checks when sbtlTV starts (can be turned off): your IP address and sbtlTV version |
