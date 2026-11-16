@@ -1,5 +1,5 @@
 // packages/mailbox/src/client/sync-store.test.ts
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -85,5 +85,13 @@ describe('SyncStore: what it refuses (lens 7)', () => {
     const s = new SyncStore(p, fakeSealer());
     const f = { ...file(s), key: fakeSealer().seal(randomBytes(16).toString('base64')) };
     expect(() => s.open(f)).toThrow(KeyringUnavailable);
+  });
+
+  it('a file that cannot be read right now is left alone and nothing throws (review D5)', () => {
+    const d = dir(); const p = join(d, 'sync-state.json');
+    mkdirSync(p);   // reading a directory fails (stands in for a locked or unreadable file)
+    expect(() => new SyncStore(p, fakeSealer()).load()).not.toThrow();
+    expect(new SyncStore(p, fakeSealer()).load()).toBeNull();
+    expect(existsSync(`${p}.bad`)).toBe(false);
   });
 });

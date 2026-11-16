@@ -65,11 +65,15 @@ export class SyncStore {
 
   load(): SyncFile | null {
     if (!existsSync(this.file)) return null;
+    let text: string;
+    // Can't be read right now (locked, permissions): leave it alone, sync waits for the next start
+    try { text = readFileSync(this.file, 'utf8'); } catch { return null; }
     try {
-      const f = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<SyncFile> | null;
+      const f = JSON.parse(text) as Partial<SyncFile> | null;
       if (looksRight(f)) return { ...f, epoch: typeof f.epoch === 'string' ? f.epoch : null, previous: Array.isArray(f.previous) ? f.previous : [], interrupted: Array.isArray(f.interrupted) ? f.interrupted : [], removedIds: Array.isArray(f.removedIds) ? f.removedIds : [] };
-    } catch { /* below */ }
-    renameSync(this.file, `${this.file}.bad`);
+    } catch { /* not JSON: below */ }
+    // Read but not a sync file: kept aside (never trusted), and never a reason not to start
+    try { renameSync(this.file, `${this.file}.bad`); } catch { /* still not trusted */ }
     return null;
   }
 
