@@ -121,7 +121,7 @@ test('R8: the rest of the settings are typed and capped too', () => {
 
 test('R8: the preview counts every part it shows', () => {
   const p = describeSetup(validateSetupBody({ ...good(), settings: undefined, apiKeys: { posterDb: 'k' }, lists: { watchlist: [{ id: 'w' }], progress: [{ id: 'a' }, { id: 'b' }] } }));
-  assert.deepEqual([p.settings, p.apiKeys, p.favorites, p.watchlist, p.progress], [false, true, 0, 1, 2]);
+  assert.deepEqual([p.settings, p.apiKeys, p.favorites, p.watchlist, p.progress], [false, ['RatingPosterDB'], 0, 1, 2]);
 });
 
 const storedSetup = () => ({
@@ -160,7 +160,7 @@ test('a file playlist still waiting to be imported travels as its pending conten
 test('the SubDL key travels under apiKeys only, typed and capped like the others', () => {
   const body = validateSetupBody({ ...good(), apiKeys: { subdl: 'subdl_key' } });
   assert.equal(body.apiKeys?.subdl, 'subdl_key');
-  assert.equal(describeSetup(validateSetupBody({ ...good(), settings: undefined, apiKeys: { subdl: 'k' } })).apiKeys, true);
+  assert.deepEqual(describeSetup(validateSetupBody({ ...good(), settings: undefined, apiKeys: { subdl: 'k' } })).apiKeys, ['SubDL']);
   assert.throws(() => validateSetupBody({ ...good(), apiKeys: { subdl: 5 } }), /invalid/);
   const stored = { ...storedSetup(), settings: { channelSortOrder: 'number', subdlApiKey: 'sk' } as never };
   const out = buildSetupBody(['settings', 'apiKeys'], stored, {}, {}, meta);

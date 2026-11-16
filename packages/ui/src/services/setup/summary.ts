@@ -16,7 +16,7 @@ export function setupSummary(p: SetupPreview): string {
   const parts: string[] = [];
   if (p.sources.length) parts.push(`${count(p.sources.length, 'source', 'sources')} (${p.sources.map(sourceLine).join('; ')})`);
   if (p.settings) parts.push('settings');
-  if (p.apiKeys) parts.push('API keys');
+  if (p.apiKeys.length) parts.push(`${p.apiKeys.length > 1 ? 'API keys' : 'API key'} (${p.apiKeys.join(', ')})`);
   if (p.favorites) parts.push(count(p.favorites, 'favorite', 'favorites'));
   if (p.watchlist) parts.push(count(p.watchlist, 'watchlist item', 'watchlist items'));
   if (p.progress) parts.push(`watch progress for ${count(p.progress, 'title', 'titles')}`);

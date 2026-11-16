@@ -219,7 +219,10 @@ export type SetupPart = 'sources' | 'logins' | 'settings' | 'apiKeys' | 'favorit
 export interface SetupPreview {
   app: string; exportedAt: string; platform: string;
   sources: { name: string; type: string; withLogin: boolean; fromFile: boolean; host: string | null }[];
-  settings: boolean; apiKeys: boolean; favorites: number; watchlist: number; progress: number;
+  settings: boolean;
+  /** Which keys it carries, by product name (TMDB, RatingPosterDB, SubDL) */
+  apiKeys: string[];
+  favorites: number; watchlist: number; progress: number;
 }
 export interface SetupListsWire { favorites?: unknown[]; watchlist?: unknown[]; progress?: unknown[]; lastCategory?: string }
 type SetupResult<T> = { success: true; data: T } | { success: false; canceled: true } | { success?: undefined; error: string };
