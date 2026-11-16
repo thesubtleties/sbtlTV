@@ -35,11 +35,15 @@ export function createApp(opts: MailboxOptions = {}) {
   const largeBudget = opts.largeDropBytesPerHour ?? 200 * 1024 * 1024;
   let largeHour = -1;
   let largeUsed = 0;
-  const largeRoom = (bytes: number) => {
+  /** Takes room in this hour's large-drop budget up front (drops in flight together can't overrun it). */
+  const reserveLarge = (bytes: number) => {
     const h = Math.floor(now() / 3_600_000);
     if (h !== largeHour) { largeHour = h; largeUsed = 0; }
-    return largeUsed + bytes <= largeBudget;
+    if (largeUsed + bytes > largeBudget) return false;
+    largeUsed += bytes;
+    return true;
   };
+  const releaseLarge = (bytes: number, hour: number) => { if (hour === largeHour) largeUsed = Math.max(0, largeUsed - bytes); };
   const app = new Hono();
 
   const err = (c: Context, status: 400 | 404 | 413 | 426 | 428 | 429, error: ErrorCode, headers?: Record<string, string>) => c.json({ error }, status, headers);
@@ -173,14 +177,15 @@ export function createApp(opts: MailboxOptions = {}) {
     if (size > MAX_DROP_BYTES) return err(c, 413, 'too-big');
     // Large drops: switchable, and an hourly budget for everyone together (said before any work)
     const large = size > LARGE_DROP_BYTES;
-    if (large && (opts.largeDropsPaused || !largeRoom(size))) return err(c, 429, 'busy');
-    const text = await guardWrite(c); if (typeof text !== 'string') return text;
+    if (large && (opts.largeDropsPaused || !reserveLarge(size))) return err(c, 429, 'busy');
+    const hour = largeHour;
+    const giveBack = () => { if (large) releaseLarge(size, hour); };
+    const text = await guardWrite(c); if (typeof text !== 'string') { giveBack(); return text; }
     const body = parse(text);
-    if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) return err(c, 400, 'bad-request');
+    if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) { giveBack(); return err(c, 400, 'bad-request'); }
     const stored = store.drop(k, body.sealed);
-    if (stored === 'gone') return err(c, 404, 'not-found');
-    if (stored === 'busy') return err(c, 429, 'busy');
-    if (large) largeUsed += size;
+    if (stored === 'gone') { giveBack(); return err(c, 404, 'not-found'); }
+    if (stored === 'busy') { giveBack(); return err(c, 429, 'busy'); }
     return c.body(null, 204);
   });
 

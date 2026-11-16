@@ -281,4 +281,26 @@ describe('mailbox server', () => {
     expect((await call('PUT', `/v1/ring/${r.json.ticket}/drop`, { sealed: b64(300 * 1024) }, true)).json).toEqual({ error: 'busy' });
     expect((await call('PUT', `/v1/ring/${r.json.ticket}/drop`, { sealed: b64(1024) }, true)).status).toBe(204);
   }, 60_000);
+
+  it('large drops sent at the same moment cannot overrun the hourly budget together', async () => {
+    const t = 1_800_000_000_000;
+    const { app } = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', largeDropBytesPerHour: 400 * 1024 });
+    const m = Math.floor(t / 60_000);
+    const call = async (method: string, path: string, body?: unknown, pow = false) => {
+      const text = body === undefined ? '' : JSON.stringify(body);
+      const headers: Record<string, string> = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0' };
+      if (pow) headers[POW_HEADER] = `${m}.${solvePow(powInput(path, text, m, '0.17.0'), powBitsFor(BITS, Buffer.byteLength(text)))}`;
+      const res = await app.fetch(new Request(`http://mailbox${path}`, { method, headers, body: text || undefined }));
+      return { status: res.status, json: res.headers.get('content-type')?.includes('json') ? await res.json() : null };
+    };
+    const tickets: string[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const k = await call('POST', '/v1/knock', { commitment: b64(32, i) }, true);
+      const r = await ringWithKey(call, k.json.code, b64(32, i), true);
+      await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
+      tickets.push(r.json.ticket);
+    }
+    const results = await Promise.all(tickets.map((tk, i) => call('PUT', `/v1/ring/${tk}/drop`, { sealed: b64(300 * 1024, i + 1) }, true)));
+    expect(results.filter((r) => r.status === 204)).toHaveLength(1);
+  }, 60_000);
 });
