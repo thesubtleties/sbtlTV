@@ -17,3 +17,6 @@ export * from './tmdb-exports';
 export * from './guide-search';
 export * from './url-guard';
 export * from './source-login';
+
+// Sync records: TMDB-keyed, newest wins (pure; built in the renderer, merged in main)
+export * from './sync-records';
