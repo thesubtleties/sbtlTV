@@ -167,7 +167,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
     <SettingsTab>
       <Section
         title="On this computer"
-        description="sbtlTV has no account and sends no analytics, tracking or crash reports. Its own servers, sbtltv.com and the sbtlTV relay, are only contacted by features you choose. Use none of them and sbtlTV never connects to us."
+        description="sbtlTV has no account and sends no analytics, tracking or crash reports. Its own servers, sbtltv.com and the sbtlTV relay, are only contacted by features that require it. No connections are made if these features are turned off. Scroll down to see exactly who sees what with your current settings."
       >
         <Hint>Your settings, watch history, favorites, watchlist, guide and library are kept on this computer.</Hint>
         {protectionLine && <Hint tone={protectionLine.tone}>{protectionLine.text}</Hint>}
@@ -219,7 +219,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
           sees="With Selected lists on: your IP address, about once a day, when sbtlTV checks for new lists. Nothing about you or what you watch is sent, and requests aren't logged."
           where="Settings › Movies or Series › Selected lists" />
         <Who title="sbtlTV relay" status="when-used"
-          sees="Only while you send or receive a setup: the setup, end-to-end encrypted so even we can't read it, your IP address and your sbtlTV version. Requests aren't logged. Deleted when picked up, or after 10 minutes."
+          sees="Only while you send or receive a setup: the setup, end-to-end encrypted so even we can't read it, your IP address and your sbtlTV version. Requests aren't logged. Setup file is deleted when picked up, or after 10 minutes."
           where="Settings › Sync & transfer" />
         <Who title="TMDB" status={tmdbKeySet ? 'on' : 'not-set-up'} where="Settings › TMDB"
           sees="With your TMDB key: the key, your IP address, the lists you browse and the titles you open or point at. Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
