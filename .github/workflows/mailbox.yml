@@ -20,10 +20,11 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter @sbtltv/mailbox typecheck
       - run: pnpm --filter @sbtltv/mailbox test
-  # The live mailbox changes with releases: the image is built from main only
+  # The live relay changes with releases: :main is built from main only. Started by hand on another
+  # branch, the image gets only its commit SHA, for trying a branch on the cluster first
   image:
     needs: test
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,5 +44,5 @@ jobs:
           context: packages/mailbox
           push: true
           tags: |
-            ghcr.io/thesubtleties/sbtltv-mailbox:main
+            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/thesubtleties/sbtltv-mailbox:main' || '' }}
             ghcr.io/thesubtleties/sbtltv-mailbox:${{ github.sha }}
