@@ -4,15 +4,25 @@
  */
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { MAX_DROP_BYTES, POW_HEADER, TIME_HEADER, VERSION_HEADER, checkPow, normaliseCode, powBitsFor, powInput, versionAtLeast, type ErrorCode } from '../protocol/index.js';
+import { LEVEL_HEADER, MAX_DROP_BYTES, POW_HEADER, TIME_HEADER, VERSION_HEADER, checkPow, normaliseCode, powBitsFor, powInput, versionAtLeast, type ErrorCode } from '../protocol/index.js';
 import { KnockStore } from './store.js';
 import { SeenProofs, SenderLimiter } from './limits.js';
+import { PowGovernor } from './governor.js';
 
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const isB64 = (v: unknown, bytes: number): v is string => typeof v === 'string' && B64.test(v) && Buffer.from(v, 'base64').length === bytes;
 const HEX32 = /^[0-9a-f]{32}$/;
 
-export interface MailboxOptions { now?: () => number; powBits?: number; minVersion?: string; maxActive?: number; maxStoredBytes?: number; writesPerHour?: number }
+export interface MailboxOptions {
+  now?: () => number; powBits?: number; minVersion?: string; maxActive?: number; maxStoredBytes?: number; writesPerHour?: number;
+  /** Bytes of large drops (over LARGE_DROP_BYTES) accepted per hour, all senders together */
+  largeDropBytesPerHour?: number;
+  /** Switches: refuse all writes / refuse large drops ("busy"), without a release */
+  paused?: boolean; largeDropsPaused?: boolean;
+}
+
+/** Drops above this are "large": a real setup is ~1 KB; only file playlists get this big. */
+export const LARGE_DROP_BYTES = 256 * 1024;
 
 export function createApp(opts: MailboxOptions = {}) {
   const now = opts.now ?? Date.now;
@@ -21,12 +31,26 @@ export function createApp(opts: MailboxOptions = {}) {
   const store = new KnockStore(now, opts.maxActive, opts.maxStoredBytes);
   const limiter = new SenderLimiter(now, opts.writesPerHour ?? 5_000);
   const proofs = new SeenProofs(now);
+  const governor = new PowGovernor(now, { base: bits });
+  const largeBudget = opts.largeDropBytesPerHour ?? 200 * 1024 * 1024;
+  let largeHour = -1;
+  let largeUsed = 0;
+  const largeRoom = (bytes: number) => {
+    const h = Math.floor(now() / 3_600_000);
+    if (h !== largeHour) { largeHour = h; largeUsed = 0; }
+    return largeUsed + bytes <= largeBudget;
+  };
   const app = new Hono();
 
   const err = (c: Context, status: 400 | 404 | 413 | 426 | 428 | 429, error: ErrorCode, headers?: Record<string, string>) => c.json({ error }, status, headers);
 
   // Every reply carries the server's clock, so a client with a wrong clock can still prove work
-  app.use('*', async (c, next) => { await next(); c.res.headers.set(TIME_HEADER, String(now())); });
+  // ...and the proof-of-work level a new request needs
+  app.use('*', async (c, next) => {
+    await next();
+    c.res.headers.set(TIME_HEADER, String(now()));
+    c.res.headers.set(LEVEL_HEADER, String(governor.bits()));
+  });
 
   // Bodies are capped before anything reads them: small for the knock, the drop's size for drops
   const tooBig = (c: Context) => err(c, 413, 'too-big');
@@ -42,17 +66,19 @@ export function createApp(opts: MailboxOptions = {}) {
 
   /** Proof-of-work (more for bigger bodies) and the per-sender cap for writes. Returns the body text or a Response. */
   async function guardWrite(c: Context): Promise<string | Response> {
+    if (opts.paused) return err(c, 429, 'busy');
     // The proxy appends the address it saw; anything before it is whatever the client wrote
     const ip = (c.req.header('x-forwarded-for') ?? '').split(',').pop()?.trim() || 'unknown';
     const text = await c.req.text();
-    const need = powBitsFor(bits, Buffer.byteLength(text));
+    const need = powBitsFor(governor.accepted(), Buffer.byteLength(text));
     const [minuteText, nonce] = (c.req.header(POW_HEADER) ?? '').split('.');
     const minute = Number(minuteText);
     const fresh = Number.isInteger(minute) && Math.abs(Math.floor(now() / 60_000) - minute) <= 2;
     const input = fresh ? powInput(c.req.path, text, minute, c.req.header(VERSION_HEADER) ?? '') : '';
     if (!fresh || !nonce || !checkPow(input, nonce, need) || !proofs.use(input + nonce)) {
-      return err(c, 428, 'pow', { 'x-sbtltv-pow-bits': String(need) });
+      return err(c, 428, 'pow', { 'x-sbtltv-pow-bits': String(powBitsFor(governor.bits(), Buffer.byteLength(text))) });
     }
+    governor.proven();
     // Counted only once the work is proven: junk requests can't use up the limit for everyone
     if (!limiter.hit(ip)) return err(c, 429, 'busy');
     return text;
@@ -66,6 +92,9 @@ export function createApp(opts: MailboxOptions = {}) {
       return null;
     }
   };
+
+  // Where a send starts: the current level and the server's clock, no work needed
+  app.get('/v1/hello', (c) => c.json({ bits: governor.bits(), time: now() }));
 
   app.post('/v1/knock', async (c) => {
     const text = await guardWrite(c); if (typeof text !== 'string') return text;
@@ -140,13 +169,18 @@ export function createApp(opts: MailboxOptions = {}) {
     if (!k || k.status !== 'revealed') return err(c, 404, 'not-found');
     // Too big is said before any proof-of-work is checked (the client wouldn't solve a harder one for nothing)
     const raw = parse(await c.req.text());
-    if (raw && typeof raw.sealed === 'string' && Buffer.byteLength(raw.sealed, 'base64') > MAX_DROP_BYTES) return err(c, 413, 'too-big');
+    const size = raw && typeof raw.sealed === 'string' ? Buffer.byteLength(raw.sealed, 'base64') : 0;
+    if (size > MAX_DROP_BYTES) return err(c, 413, 'too-big');
+    // Large drops: switchable, and an hourly budget for everyone together (said before any work)
+    const large = size > LARGE_DROP_BYTES;
+    if (large && (opts.largeDropsPaused || !largeRoom(size))) return err(c, 429, 'busy');
     const text = await guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
     if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) return err(c, 400, 'bad-request');
     const stored = store.drop(k, body.sealed);
     if (stored === 'gone') return err(c, 404, 'not-found');
     if (stored === 'busy') return err(c, 429, 'busy');
+    if (large) largeUsed += size;
     return c.body(null, 204);
   });
 

@@ -217,4 +217,35 @@ describe('knock clients', () => {
     expect(receiver.state.step).toBe('code');
     await receiver.cancel();
   });
+
+  it('the app asks for the current level first, so a raised level costs no refused proof', async () => {
+    const { app } = createApp({ powBits: 7, minVersion: '0.17.0' });
+    const statuses: number[] = [];
+    const watch = async (r: Request) => { const res = await app.fetch(r); statuses.push(res.status); return res; };
+    const receiver = new Receiver(transport(watch), WORDS, () => {}, { pollMs: 5 });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    expect(statuses).not.toContain(428);
+    await receiver.cancel();
+  });
+
+  it('the app hears how much work is coming before it starts', async () => {
+    const { app } = createApp({ powBits: 6, minVersion: '0.17.0' });
+    const work: number[] = [];
+    const t = new Transport({ base: 'http://mailbox', version: '0.17.0', bits: 4, fetch: (r) => Promise.resolve(app.fetch(r)), onWork: (bits) => work.push(bits) });
+    const receiver = new Receiver(t, WORDS, () => {}, { pollMs: 5 });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    expect(work).toEqual([6]);
+    await receiver.cancel();
+  });
+
+  it('work beyond what a person should wait for is refused up front as busy', async () => {
+    const t = new Transport({ base: 'http://mailbox', version: '0.17.0', bits: 29, fetch: () => Promise.reject(new Error('should not be called')) });
+    const receiver = new Receiver(t, WORDS, () => {});
+    const started = Date.now();
+    await receiver.start();
+    expect(receiver.state).toEqual({ step: 'failed', reason: 'busy' });
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
 });

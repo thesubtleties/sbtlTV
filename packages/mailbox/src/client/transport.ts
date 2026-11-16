@@ -1,20 +1,33 @@
 /** HTTP to the mailbox: version header, proof-of-work on writes, errors as MailboxError codes. */
-import { POW_HEADER, TIME_HEADER, VERSION_HEADER, powBitsFor, powInput, solvePowAsync, type ErrorCode } from '../protocol/index.js';
+import { LEVEL_HEADER, POW_HEADER, TIME_HEADER, VERSION_HEADER, powBitsFor, powInput, solvePowAsync, type ErrorCode } from '../protocol/index.js';
 
 export type Fetch = (req: Request) => Promise<Response>;
-export interface TransportOpts { base: string; version: string; fetch: Fetch; now?: () => number; bits?: number }
+export interface TransportOpts {
+  base: string; version: string; fetch: Fetch; now?: () => number;
+  /** The level to assume before the server has said (it says on every reply and in /v1/hello) */
+  bits?: number;
+  /** Called before each proof with its difficulty, so the app can say how long it may take */
+  onWork?: (bits: number) => void;
+}
 
 export class MailboxError extends Error {
   constructor(readonly code: ErrorCode | 'offline') { super(code); }
 }
 
-/** The most work we'll do if the server asks for more than we sent. */
+/** The most work the app will do for one request (2^28 ≈ 270 M hashes, ~4 min on an average computer). */
 const MAX_BITS = 28;
 
 export class Transport {
   /** Server clock minus ours, learned from every reply (a computer's clock can be minutes off). */
   private offset = 0;
+  /** The server's current level, from its last reply; null until it has said */
+  private level: number | null = null;
   constructor(private o: TransportOpts) {}
+
+  /** Learn the level and the clock before the first proof, so it's right the first time. */
+  private async hello(): Promise<void> {
+    try { await this.send('GET', '/v1/hello', undefined, false); } catch { /* the write itself will report it */ }
+  }
 
   private serverNow(): number { return (this.o.now ?? Date.now)() + this.offset; }
 
@@ -23,9 +36,14 @@ export class Transport {
     const headers: Record<string, string> = { [VERSION_HEADER]: this.o.version };
     if (text) headers['content-type'] = 'application/json';
     // Bigger bodies cost more (same rule as the server), so the first proof is already enough
-    const need = bits ?? powBitsFor(this.o.bits ?? 20, Buffer.byteLength(text));
+    if (pow && this.level === null && bits === undefined) await this.hello();
+    const need = bits ?? powBitsFor(this.level ?? this.o.bits ?? 20, Buffer.byteLength(text));
     const before = this.offset;
+    // More than ~4 minutes on an average computer (a full-size send while the mailbox is under load):
+    // say "busy, try later" now rather than make someone wait that long
+    if (pow && need > MAX_BITS) throw new MailboxError('busy');
     if (pow) {
+      this.o.onWork?.(need);
       const minute = Math.floor(this.serverNow() / 60_000);
       headers[POW_HEADER] = `${minute}.${await solvePowAsync(powInput(path, text, minute, this.o.version), need)}`;
     }
@@ -37,6 +55,8 @@ export class Transport {
     }
     const serverTime = Number(res.headers.get(TIME_HEADER));
     if (Number.isFinite(serverTime) && serverTime > 0) this.offset = serverTime - (this.o.now ?? Date.now)();
+    const level = Number(res.headers.get(LEVEL_HEADER));
+    if (Number.isInteger(level) && level > 0 && level <= MAX_BITS) this.level = level;
     // Refused proof: redo once, at the server's difficulty if it wants more, with its clock if ours was off
     if (res.status === 428 && pow && !retried) {
       const want = Number(res.headers.get('x-sbtltv-pow-bits'));

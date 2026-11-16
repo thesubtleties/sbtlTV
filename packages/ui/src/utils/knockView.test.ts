@@ -24,4 +24,10 @@ describe('knockLine', () => {
       expect(knockLine(role, { step: 'failed', reason: 'something new' }).text).toBe('Something went wrong. Start again.');
     }
   });
+
+  it('says how long the work may take when it is more than a moment', () => {
+    expect(knockLine('send', { step: 'ringing', workUpTo: 12 }).text).toBe('Knocking… This can take up to 12 seconds.');
+    expect(knockLine('receive', { step: 'starting', workUpTo: 75 }).text).toBe('Getting a code… This can take up to 2 minutes.');
+    expect(knockLine('send', { step: 'sending', workUpTo: 2 }).text).toBe('Sending…');
+  });
 });

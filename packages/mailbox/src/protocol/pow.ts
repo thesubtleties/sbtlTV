@@ -34,10 +34,35 @@ export function solvePow(input: string, bits: number): string {
   }
 }
 
-/** Bigger bodies cost more: one extra bit (twice the work) per doubling above 64 KB. */
+/**
+ * Bigger bodies cost more: one extra bit (twice the work) per doubling above 64 KB, and another
+ * per doubling above 512 KB. A real send (~1 KB) pays the base; a large file playlist (~300 KB)
+ * about 8x; a full 2 MB about 128x, which makes bulk use slow and costly.
+ */
 export function powBitsFor(baseBits: number, bodyBytes: number): number {
-  return baseBits + Math.max(0, Math.ceil(Math.log2(bodyBytes / (64 * 1024))));
+  const over = (from: number) => Math.max(0, Math.ceil(Math.log2(bodyBytes / from)));
+  return baseBits + over(64 * 1024) + over(512 * 1024);
 }
+
+/** This computer's hashes per second for proofs (a ~30 ms sample). */
+export function measurePowRate(): number {
+  const input = powInput('/rate', '', 0, '0');
+  const start = performance.now();
+  let n = 0;
+  while (performance.now() - start < 30) { for (let i = 0; i < 1000; i++) checkPow(input, String(n++), 64); }
+  return n / ((performance.now() - start) / 1000);
+}
+
+/**
+ * Seconds a proof of `bits` may take here, padded for bad luck: the work is random, and 3x the
+ * average covers about 95 % of tries.
+ */
+export function powSecondsUpTo(bits: number, hashesPerSecond: number): number {
+  return Math.ceil((3 * 2 ** bits) / Math.max(1, hashesPerSecond));
+}
+
+/** The level a new proof needs right now (on every reply, and from GET /v1/hello). */
+export const LEVEL_HEADER = 'x-sbtltv-pow-level';
 
 /**
  * The same search in slices, giving way between them, so the app stays responsive while it works

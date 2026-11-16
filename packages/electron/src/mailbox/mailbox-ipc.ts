@@ -9,6 +9,7 @@
 import { app, ipcMain, net } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { Receiver, Sender, Transport, type ReceiveState, type SendState } from '@sbtltv/mailbox/client';
+import { measurePowRate, powSecondsUpTo } from '@sbtltv/mailbox/protocol';
 import { buildBody } from '../setup-transfer.js';
 import { fitsInDrop, packSetup, sendBody, unpackSetup, type SendSelection } from '../setup-send.js';
 import { validateSetupBody, type SetupBody, type SetupPreview, type UserLists } from '../setup-body.js';
@@ -16,15 +17,25 @@ import { EFF_WORDS } from '../eff-wordlist.js';
 
 export const MAILBOX_BASE = 'https://mailbox.sbtltv.com';
 
-/** What the page may see of a state: never the received payload. */
-const view = (s: ReceiveState | SendState | null | undefined) => (s && s.step === 'received' ? { step: 'received' } : s ?? null);
+/** What the page may see of a state: never the received payload; plus how long the current proof may take. */
+function view(s: ReceiveState | SendState | null | undefined, workUpTo: number) {
+  if (!s) return null;
+  if (s.step === 'received') return { step: 'received' };
+  if (s.step === 'starting' || s.step === 'ringing' || s.step === 'sending') return { ...s, workUpTo };
+  return s;
+}
+
+/** This computer's proof speed, measured once (~30 ms) the first time it's needed. */
+let powRate = 0;
 
 /** Returns stop() (cancels a knock in progress: quit, window closed, page reloaded) and active(). */
 export function registerMailbox(deps: { stage(body: SetupBody): { token: string; preview: SetupPreview }; log: (m: string) => void }): { stop(): Promise<void>; active(): boolean } {
+  let workUpTo = 0;
   const transport = () => new Transport({
     base: process.env.SBTLTV_MAILBOX || MAILBOX_BASE,
     version: app.getVersion(),
     fetch: (req) => net.fetch(req, { cache: 'no-store' } as RequestInit),
+    onWork: (bits) => { powRate ||= measurePowRate(); workUpTo = powSecondsUpTo(bits, powRate); },
   });
   let role: 'receive' | 'send' | null = null;
   let receiver: Receiver | null = null;
@@ -38,7 +49,7 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
 
   const stopAll = async () => {
     const r = receiver, s = sender;
-    receiver = null; sender = null; pending = null; staged = undefined; role = null; receiveFailed = false;
+    receiver = null; sender = null; pending = null; staged = undefined; role = null; receiveFailed = false; workUpTo = 0;
     await r?.cancel(); await s?.cancel();
   };
 
@@ -110,8 +121,8 @@ export function registerMailbox(deps: { stage(body: SetupBody): { token: string;
 
   ipcMain.handle('mailbox:state', () => {
     const state = role === 'receive'
-      ? (receiveFailed ? { step: 'failed', reason: 'broken' } : view(receiver?.state))
-      : role === 'send' ? view(sender?.state) : null;
+      ? (receiveFailed ? { step: 'failed', reason: 'broken' } : view(receiver?.state, workUpTo))
+      : role === 'send' ? view(sender?.state, workUpTo) : null;
     return { success: true, data: { role, state, staged } };
   });
 

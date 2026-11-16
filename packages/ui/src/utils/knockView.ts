@@ -1,9 +1,10 @@
 /** One line of copy per knock state (Settings > Sync & transfer). */
+/** workUpTo: seconds the proof-of-work may take on this computer (said when it's more than a moment) */
 export type KnockState =
-  | { step: 'starting' } | { step: 'ringing' }
+  | { step: 'starting'; workUpTo?: number } | { step: 'ringing'; workUpTo?: number }
   | { step: 'code'; code: string; expiresAt: number }
   | { step: 'words'; words: string[] }
-  | { step: 'sending' } | { step: 'sent' } | { step: 'received' }
+  | { step: 'sending'; workUpTo?: number } | { step: 'sent' } | { step: 'received' }
   | { step: 'failed'; reason: string };
 
 export interface KnockLine { text: string; tone: 'info' | 'error' | 'ok'; canRetry: boolean }
@@ -19,14 +20,19 @@ const FAIL: Record<string, string> = {
   'too-big': 'Too big to send. Use Export to file instead.',
 };
 
+function upTo(seconds: number | undefined): string {
+  if (!seconds || seconds <= 3) return '';
+  return seconds < 60 ? ` This can take up to ${seconds} seconds.` : ` This can take up to ${Math.ceil(seconds / 60)} minutes.`;
+}
+
 export function knockLine(role: 'send' | 'receive', s: KnockState): KnockLine {
   const info = (text: string): KnockLine => ({ text, tone: 'info', canRetry: false });
   switch (s.step) {
-    case 'starting': return info('Getting a code…');
-    case 'ringing': return info('Knocking…');
+    case 'starting': return info(`Getting a code…${upTo(s.workUpTo)}`);
+    case 'ringing': return info(`Knocking…${upTo(s.workUpTo)}`);
     case 'code': return info('Tell this to the person setting you up. Works for 10 minutes.');
     case 'words': return info(role === 'send' ? "Same words on their screen? Then it's really them." : 'Same words on their screen? Only then tap Same words.');
-    case 'sending': return info('Sending…');
+    case 'sending': return info(`Sending…${upTo(s.workUpTo)}`);
     case 'sent': return info('Sent. Waiting for them to accept.');
     case 'received': return role === 'send' ? { text: 'They have it. Nothing is left on our server.', tone: 'ok', canRetry: false } : info('Ready to set up.');
     case 'failed':

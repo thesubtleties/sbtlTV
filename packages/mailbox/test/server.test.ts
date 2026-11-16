@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/server/app';
-import { POW_HEADER, VERSION_HEADER, powInput, solvePow, KNOCK_TTL_MS, DROP_TTL_MS } from '../src/protocol';
+import { POW_HEADER, VERSION_HEADER, powBitsFor, powInput, solvePow, KNOCK_TTL_MS, DROP_TTL_MS } from '../src/protocol';
 
 const BITS = 4;
 function setup() {
@@ -228,4 +228,57 @@ describe('mailbox server', () => {
     await call('POST', `/v1/ring/${ring.json.ticket}/cancel`);
     expect((await call('GET', `/v1/knock/${k.json.id}`)).json).toEqual({ status: 'cancelled' });
   });
+
+  it('hello tells the app the current level and the time, without any work', async () => {
+    const { app } = createApp({ now: () => 1_800_000_000_000, powBits: 20, minVersion: '0.17.0' });
+    const res = await app.fetch(new Request('http://mailbox/v1/hello', { headers: { [VERSION_HEADER]: '0.17.0' } }));
+    expect(await res.json()).toEqual({ bits: 20, time: 1_800_000_000_000 });
+    expect(res.headers.get('x-sbtltv-pow-level')).toBe('20');
+  });
+
+  it('large drops share an hourly budget; small ones are never held back by it', async () => {
+    let t = 1_800_000_000_000;
+    const { app } = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', largeDropBytesPerHour: 400 * 1024 });
+    const call = async (method: string, path: string, body?: unknown, pow = false) => {
+      const text = body === undefined ? '' : JSON.stringify(body);
+      const headers: Record<string, string> = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0' };
+      if (pow) { const m = Math.floor(t / 60_000); headers[POW_HEADER] = `${m}.${solvePow(powInput(path, text, m, '0.17.0'), powBitsFor(BITS, Buffer.byteLength(text)))}`; }
+      const res = await app.fetch(new Request(`http://mailbox${path}`, { method, headers, body: text || undefined }));
+      return { status: res.status, json: res.headers.get('content-type')?.includes('json') ? await res.json() : null };
+    };
+    const ready = async (fill: number) => {
+      const k = await call('POST', '/v1/knock', { commitment: b64(32, fill) }, true);
+      const r = await ringWithKey(call, k.json.code, b64(32, fill), true);
+      await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
+      return r.json.ticket as string;
+    };
+    expect((await call('PUT', `/v1/ring/${await ready(1)}/drop`, { sealed: b64(300 * 1024, 1) }, true)).status).toBe(204);
+    expect((await call('PUT', `/v1/ring/${await ready(2)}/drop`, { sealed: b64(300 * 1024, 2) }, true)).json).toEqual({ error: 'busy' });
+    expect((await call('PUT', `/v1/ring/${await ready(3)}/drop`, { sealed: b64(1024, 3) }, true)).status).toBe(204);
+    t += 3_600_000;
+    expect((await call('PUT', `/v1/ring/${await ready(4)}/drop`, { sealed: b64(300 * 1024, 4) }, true)).status).toBe(204);
+  }, 60_000);
+
+  it('switches: paused refuses all writes; large drops paused refuses only big ones', async () => {
+    const t = 1_800_000_000_000;
+    const paused = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', paused: true }).app;
+    const text = JSON.stringify({ commitment: b64(32) });
+    const m = Math.floor(t / 60_000);
+    const res = await paused.fetch(new Request('http://mailbox/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0', [POW_HEADER]: `${m}.${solvePow(powInput('/v1/knock', text, m, '0.17.0'), BITS)}` }, body: text }));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: 'busy' });
+    const { app } = createApp({ now: () => t, powBits: BITS, minVersion: '0.17.0', largeDropsPaused: true });
+    const call = async (method: string, path: string, body?: unknown, pow = false) => {
+      const tx = body === undefined ? '' : JSON.stringify(body);
+      const headers: Record<string, string> = { 'content-type': 'application/json', [VERSION_HEADER]: '0.17.0' };
+      if (pow) headers[POW_HEADER] = `${m}.${solvePow(powInput(path, tx, m, '0.17.0'), powBitsFor(BITS, Buffer.byteLength(tx)))}`;
+      const r = await app.fetch(new Request(`http://mailbox${path}`, { method, headers, body: tx || undefined }));
+      return { status: r.status, json: r.headers.get('content-type')?.includes('json') ? await r.json() : null };
+    };
+    const k = await call('POST', '/v1/knock', { commitment: b64(32, 5) }, true);
+    const r = await ringWithKey(call, k.json.code, b64(32, 5), true);
+    await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
+    expect((await call('PUT', `/v1/ring/${r.json.ticket}/drop`, { sealed: b64(300 * 1024) }, true)).json).toEqual({ error: 'busy' });
+    expect((await call('PUT', `/v1/ring/${r.json.ticket}/drop`, { sealed: b64(1024) }, true)).status).toBe(204);
+  }, 60_000);
 });
