@@ -23,4 +23,16 @@ export interface DropReq { sealed: string }
 export interface DropRes { sealed: string; giverKey: string }
 export interface ReceiptReq { ok: boolean }
 export interface HelloRes { bits: number; time: number; challenge: string }
-export type ErrorCode = 'update' | 'pow' | 'not-found' | 'too-big' | 'busy' | 'bad-request';
+export type ErrorCode = 'update' | 'pow' | 'not-found' | 'too-big' | 'busy' | 'bad-request' | 'moved' | 'full' | 'denied';
+
+// Sync: one sealed box per computer in a group
+export interface PutBoxReq { sealed: string }
+export interface PutBoxRes { seq: number }
+/** moved = the group was re-keyed after a removal; waiting = computers that haven't fetched their new key yet */
+export type ListRes =
+  | { moved: true; waiting: number }
+  | { moved?: false; seq: number; computers: { id: string; seq: number }[]; boxes: { id: string; seq: number; sealed: string }[] };
+export interface RekeyReq { keys: Record<string, string> }
+export interface RekeyRes { sealed: string }
+/** The relay database's id: changes only if the database was lost and rebuilt */
+export interface EpochRes { epoch: string }
