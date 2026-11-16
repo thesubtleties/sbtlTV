@@ -176,6 +176,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         description="sbtlTV has no account and sends no analytics, tracking or crash reports. Its own servers, sbtltv.com and the sbtlTV relay, are only contacted by features that require it. No connections are made if these features are turned off. Scroll down to see exactly who sees what with your current settings."
       >
         <Hint>Your settings, watch history, favorites, watchlist, guide and library are kept on this computer.</Hint>
+        {syncOn && <Hint>With Sync on, your watchlist and watch progress (and settings, if you chose them) also go to your other computers, end-to-end encrypted through the sbtlTV relay.</Hint>}
         {protectionLine && <Hint tone={protectionLine.tone}>{protectionLine.text}</Hint>}
         {protection?.platform === 'linux' && <KeyringRow protection={protection} />}
         <Hint>
@@ -225,7 +226,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
           sees="With Selected lists on: your IP address, about once a day, when sbtlTV checks for new lists. Nothing about you or what you watch is sent, and requests aren't logged."
           where="Settings › Movies or Series › Selected lists" />
         <Who title="sbtlTV relay" status={syncOn ? 'on' : 'when-used'}
-          sees="While you send or receive a setup, or use Sync: the setup or each computer's synced lists, end-to-end encrypted so even we can't read them, your IP address and your sbtlTV version. Requests aren't logged. Setup file is deleted when picked up, or after 10 minutes; synced lists stay until you leave sync, or no computer has used it for 90 days."
+          sees="While you send or receive a setup, or use Sync: the setup, or each computer's watchlist, progress and chosen settings, end-to-end encrypted so even we can't read them; your IP address and your sbtlTV version. Requests aren't logged. A setup is deleted when picked up, or after 10 minutes; synced data stays until you leave sync, or no computer has used it for 90 days."
           where="Settings › Sync & transfer" />
         <Who title="TMDB" status={tmdbKeySet ? 'on' : 'not-set-up'} where="Settings › TMDB"
           sees="With your TMDB key: the key, your IP address, the lists you browse, the titles you open or point at, and synced titles this computer doesn't have (for their posters). Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />

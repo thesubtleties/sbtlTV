@@ -416,6 +416,13 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   // Memoized context for Virtuoso to prevent unnecessary re-renders
   const detailOpen = !!selectedItem;
+  // Back on this home from a title's page: ask sync for news (throttled in main), so changes made on
+  // another computer show while you browse; the rows redraw on their own when they arrive
+  const wasOpen = useRef(detailOpen);
+  useEffect(() => {
+    if (wasOpen.current && !detailOpen) void window.sync?.pull();
+    wasOpen.current = detailOpen;
+  }, [detailOpen]);
   const homeVirtuosoContext = useMemo((): HomeVirtuosoContext => ({
     type,
     tmdbApiKey,
