@@ -23,6 +23,7 @@ function world() {
   const send = async (r: Request) => fault?.(r) ?? relay.app.fetch(r);
   const make = (name: string, sealerOn = true, dirPath = mkdtempSync(join(tmpdir(), 'eng-'))) => {
     const got = { applied: [] as SyncRecord[], settings: [] as Record<string, unknown>[], snapshots: 0, views: [] as SyncView[] };
+    const holder = { current: {} as Record<string, unknown> };
     // The page writes what it's handed and confirms it (as App.tsx does after applyRecords)
     const e: SyncEngine = new SyncEngine({
       store: new SyncStore(join(dirPath, 'sync-state.json'), fakeSealer(sealerOn)),
@@ -30,8 +31,9 @@ function world() {
       defaultName: name, log: () => {}, timers: false, now: () => t,
       onApply: (r) => { got.applied.push(...r); queueMicrotask(() => e.confirm(r)); }, onSettings: (v) => { got.settings.push(v); },
       onSnapshotNeeded: () => { got.snapshots++; }, onChange: (v) => { got.views.push(v); },
+      currentSettings: () => holder.current as never,
     });
-    return { e, got, dirPath };
+    return { e, got, dirPath, get current() { return holder.current; }, set current(v: Record<string, unknown>) { holder.current = v; } };
   };
   return {
     make,
@@ -313,6 +315,39 @@ describe('SyncEngine', () => {
     expect(b.e.view().status).toBe('active');
   });
 
+  it('a failed upload is sent on the next pull, even after a restart (review B1)', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    w.fault((r) => (r.method === 'PUT' && /\/boxes\//.test(new URL(r.url).pathname) ? new Response(JSON.stringify({ error: 'busy' }), { status: 429 }) : undefined));
+    a.e.record([wl(w.now())]); await a.e.flush();        // the upload fails (relay busy, offline...)
+    w.fault(null);
+    const again = w.make('Linux PC', true, a.dirPath);  // sbtlTV restarted before the next try
+    again.e.start(); await again.e.pull();
+    await b.e.pull();
+    expect(b.got.applied).toContainEqual(wl(w.now()));
+  });
+
+  it('on start, an active computer asks the page for everything once (changes made while sync had a problem) (review B3)', async () => {
+    const w = world(); const { a } = await pair(w);
+    const before = a.got.snapshots;
+    a.e.start();
+    expect(a.got.snapshots).toBe(before + 1);
+  });
+
+  it("turning Settings on takes the others' settings; the first computer to turn it on supplies its own (review B5)", async () => {
+    const w = world(); const { a, b } = await pair(w);
+    a.current = { theme: 'light' }; b.current = { theme: 'dark' };
+    b.e.settingsChanged({ theme: 'dark' });      // b changed its look while its Settings switch was off
+    w.advance(1000);
+    a.e.setParts({ watchlist: true, progress: true, settings: true }); await a.e.flush();   // first: supplies light
+    w.advance(1000);
+    await b.e.pull();
+    b.e.setParts({ watchlist: true, progress: true, settings: true }); await b.e.flush();
+    await b.e.pull();
+    expect(b.got.settings).toContainEqual({ theme: 'light' });   // b takes a's, not the other way round
+    await a.e.pull();
+    expect(a.got.settings).not.toContainEqual({ theme: 'dark' });
+  });
+
   it('a keyring that stopped working: status keyring, no crash, nothing sent (Review Focus 3)', async () => {
     const w = world();
     const a = w.make('Mac');
@@ -439,6 +474,29 @@ describe('SyncEngine', () => {
     expect(done.length).toBeGreaterThan(1000);
     expect(done).toContainEqual(finished[3999]);
     expect(done).not.toContainEqual(finished[0]);
+  });
+
+  it('a long name that is taken still fits the 40-character limit, so the box is readable (review D1)', () => {
+    const long = 'x'.repeat(40);
+    expect(uniqueName(long, [long]).length).toBeLessThanOrEqual(40);
+    expect(uniqueName(long, [long])).toMatch(/ 2$/);
+  });
+
+  it('leave works offline: this computer forgets the group either way (review B6)', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    w.fault(() => new Response('down', { status: 503 }));
+    await b.e.leave();
+    expect(b.e.view().status).toBe('off');
+    w.fault(null);
+    expect(a.e.view().status).toBe('active');
+  });
+
+  it('a record dated far in the future from another computer is treated as now (review D6)', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    a.e.record([wl(w.now() + 100 * DAY)]); await a.e.flush();
+    await b.e.pull();
+    const got = b.got.applied.find((r) => r.k === 'wl');
+    expect(got && got.at).toBeLessThanOrEqual(w.now() + DAY);
   });
 
   it('uniqueName numbers taken names', () => {

@@ -49,6 +49,8 @@ export interface SyncFile {
   interrupted: string[];
   /** Every computer this one has removed: never sealed a key again, whatever old group lists it */
   removedIds: string[];
+  /** This computer has changes the relay doesn't have yet (kept across restarts; sent on the next pull) */
+  dirty?: boolean;
 }
 
 const STATUSES = new Set(['pending', 'active', 'removed', 'ended']);

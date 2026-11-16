@@ -26,13 +26,15 @@ export interface EngineDeps {
   onSettings: (values: Partial<Record<SyncedSettingKey, unknown>>) => void;
   onSnapshotNeeded: () => void; onChange: (v: SyncView) => void;
   now?: () => number; timers?: boolean;
+  /** This computer's synced settings now (theme, appearance, subtitles, autoplay), for turning Settings on */
+  currentSettings?: () => Partial<Record<SyncedSettingKey, unknown>>;
 }
 
 const DAY = 86_400_000;
 const PUSH_DELAY_MS = 5_000;
 const PUSH_MAX_WAIT_MS = 5 * 60_000;
 const PULL_EVERY_MS = 10 * 60_000;
-const NUDGE_GAP_MS = 30_000;
+const NUDGE_GAP_MS = 5_000;
 const PENDING_MS = 15 * 60_000;
 const PENDING_POLL_MS = 10_000;
 const MAX_OWN_RECORDS = 20_000;
@@ -40,7 +42,11 @@ const NAME_MAX = 40;
 
 export function uniqueName(base: string, taken: string[]): string {
   if (!taken.includes(base)) return base;
-  for (let i = 2; ; i++) if (!taken.includes(`${base} ${i}`)) return `${base} ${i}`;
+  // The number always fits: the others refuse a box whose name is over NAME_MAX
+  for (let i = 2; ; i++) {
+    const n = `${base.slice(0, NAME_MAX - String(i).length - 1).trimEnd()} ${i}`;
+    if (!taken.includes(n)) return n;
+  }
 }
 
 /** Another computer's box, rebuilt from known fields; null if it isn't one. */
@@ -127,6 +133,9 @@ export class SyncEngine {
   start(): void {
     this.ready();
     this.emit();
+    // The page sends everything once: changes made while sync couldn't take them (update needed,
+    // keyring, a crash before a push) aren't lost. Newest-wins makes repeats harmless.
+    if (this.f?.status === 'active' && this.problem === null) this.d.onSnapshotNeeded();
     void this.pull();
     if (this.timers() && !this.pullTimer) {
       this.pullTimer = setInterval(() => void this.pull(), PULL_EVERY_MS);
@@ -160,6 +169,7 @@ export class SyncEngine {
     let list = [...pruneTombstones(own, this.now()).values()];
     if (list.length > MAX_OWN_RECORDS) list = list.sort((a, b) => b.at - a.at).slice(0, MAX_OWN_RECORDS);
     f.own = list;
+    f.dirty = true;
     this.save();
     this.schedulePush();
   }
@@ -170,6 +180,7 @@ export class SyncEngine {
   }
 
   private schedulePush(): void {
+    if (this.f) this.f.dirty = true;   // every reason to push (records, rename, parts) survives a restart
     if (!this.timers()) { this.firstDirty ??= this.now(); return; }
     const now = this.now();
     this.firstDirty ??= now;
@@ -209,7 +220,9 @@ export class SyncEngine {
     if (sealed.length > MAX_BOX_BYTES) { this.d.log('Sync: this computer\'s box is over the size limit'); return; }
     try {
       await k.client.push(f.deviceId, sealed);
-      if (this.problem === 'update') { this.problem = null; this.emit(); }
+      f.dirty = false;
+      this.save();
+      if (this.problem === 'update') { this.problem = null; this.emit(); this.d.onSnapshotNeeded(); }
     } catch (e) {
       this.firstDirty ??= this.now();   // try again with the next pull
       await this.failed(e);
@@ -236,7 +249,7 @@ export class SyncEngine {
     this.lastPullAt = this.now();
     let l: Awaited<ReturnType<SyncClient['list']>>;
     try { l = await k.client.list(f.since); } catch (e) { await this.failed(e); return; }
-    if (this.problem === 'update') this.problem = null;
+    if (this.problem === 'update') { this.problem = null; this.d.onSnapshotNeeded(); }   // changes made meanwhile
     const now = this.now();
     if (l === null) {
       if (f.status === 'pending') { if (f.pendingUntil !== null && now > f.pendingUntil) this.forget(); return; }
@@ -275,7 +288,8 @@ export class SyncEngine {
       f.status = 'active'; f.pendingUntil = null;
       this.d.onSnapshotNeeded();
     }
-    if (f.status === 'active' && !present.has(f.deviceId)) await this.pushNow();
+    // Its own box missing (the relay lost it), or changes still waiting from a failed upload or a restart
+    if (f.status === 'active' && (!present.has(f.deviceId) || f.dirty)) await this.pushNow();
     f.lastSync = now;
     this.applyWinners();
     // A restore that failed (busy, offline) is tried again on every pull until it works
@@ -334,7 +348,10 @@ export class SyncEngine {
     if (!box) { this.d.log('Sync: a box could not be opened'); return; }
     const prev = f.others[id];
     if (prev && box.counter <= prev.counter) return;   // an old box again
-    f.others[id] = { name: box.name, pub: box.pub, counter: box.counter, seq, records: box.records, seenAt: now };
+    // A clock far ahead (or a record dated in the future on purpose) would win every conflict for good: treat it as now
+    const latest = now + DAY;
+    const records = box.records.map((r) => (r.at > latest ? { ...r, at: now } : r));
+    f.others[id] = { name: box.name, pub: box.pub, counter: box.counter, seq, records, seenAt: now };
   }
 
   private applyWinners(): void {
@@ -353,7 +370,7 @@ export class SyncEngine {
       if (w.k === 'set') { settings[w.key] = w.value; f.applied[key] = w.at; } else out.push(w);
     }
     f.applied = Object.fromEntries(Object.entries(f.applied).filter(([key]) => merged.has(key)));
-    if (adopted) { f.own = [...own.values()]; this.schedulePush(); }
+    if (adopted) { f.own = [...own.values()]; f.dirty = true; this.schedulePush(); }
     if (out.length) this.d.onApply(out);
     if (Object.keys(settings).length) this.d.onSettings(settings);
   }
@@ -501,6 +518,9 @@ export class SyncEngine {
       await this.pushNow();   // the giver is waiting for this box
       await this.pullNow();
       this.emit();
+      // The giver's box arrives once it has seen this one (it checks every 10 s while waiting):
+      // look again soon rather than at the 10-minute check
+      if (this.timers()) for (const ms of [10_000, 30_000, 60_000]) setTimeout(() => void this.pull(), ms).unref?.();
     });
   }
 
@@ -527,7 +547,9 @@ export class SyncEngine {
     return this.run(async () => {
       const f = this.f, k = this.keys;
       if (f && k && f.status === 'active' && this.problem !== 'keyring') {
-        try { await k.client.leave(f.deviceId); } catch (e) { if (!(e instanceof MailboxError && (e.code === 'moved' || e.code === 'not-found'))) throw e; }
+        // Best effort: offline or relay down, this computer still leaves (its box goes with the
+        // group's 90-day cleanup, or the others stop seeing it once it's gone)
+        try { await k.client.leave(f.deviceId); } catch { this.d.log('Sync: leaving could not reach the relay'); }
       }
       this.forget();
     });
@@ -551,14 +573,24 @@ export class SyncEngine {
   setParts(parts: Parts): void {
     const f = this.f;
     if (!f) return;
-    const turnedOn = (Object.keys(parts) as (keyof Parts)[]).some((p) => parts[p] && !f.parts[p]);
+    const was = f.parts;
     f.parts = { ...parts };
+    if (parts.settings && !was.settings) {
+      // Turning Settings on takes the other computers' settings when they share some (this computer's,
+      // even ones changed while it was off, count as older); the first computer to turn it on supplies its own
+      const othersShare = Object.values(f.others).some((o) => o.records.some((r) => r.k === 'set'));
+      const at = othersShare ? 1 : this.now();
+      const current = this.d.currentSettings?.() ?? {};
+      f.own = [
+        ...f.own.filter((r) => r.k !== 'set'),
+        ...Object.entries(current).filter(([, v]) => v !== undefined).map(([key, value]) => ({ k: 'set' as const, key: key as SyncedSettingKey, value, at })),
+      ];
+    }
+    const turnedOn = (Object.keys(parts) as (keyof Parts)[]).some((p) => parts[p] && !was[p]);
     if (turnedOn) {
-      // What the other computers already have now applies here too
-      f.applied = Object.fromEntries(Object.entries(f.applied).filter(([key]) => {
-        const r = [...f.own, ...Object.values(f.others).flatMap((o) => o.records)].find((x) => recordKey(x) === key);
-        return !r || f.parts[recordPart(r)];
-      }));
+      // What the other computers already have now applies here too (a key's part is in its prefix)
+      const partOf = (key: string): keyof Parts => (key.startsWith('wl:') ? 'watchlist' : key.startsWith('set:') ? 'settings' : 'progress');
+      f.applied = Object.fromEntries(Object.entries(f.applied).filter(([key]) => !(parts[partOf(key)] && !was[partOf(key)])));
       this.applyWinners();
     }
     this.save(); this.schedulePush(); this.emit();
