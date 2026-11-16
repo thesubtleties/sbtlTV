@@ -29,6 +29,18 @@ if (url) {
       expect(await store.epoch()).not.toBe(first);
     });
   });
+  describe('migrate', () => {
+    it('running again (every relay start) keeps the database id (lens 7)', async () => {
+      const pool = new pg.Pool({ connectionString: url, max: 2 });
+      pools.push(pool);
+      await pool.query('drop table if exists sync_rekeys, sync_boxes, sync_groups, sync_meta');
+      await migrate(pool);
+      const store = new PgGroupStore(pool);
+      const first = await store.epoch();
+      await migrate(pool);
+      expect(await store.epoch()).toBe(first);
+    });
+  });
 } else {
   describe.skip('GroupStore contract: postgres (set MAILBOX_TEST_PG)', () => {});
 }

@@ -21,6 +21,10 @@ describe('movieForRecord', () => {
     expect(movieForRecord({ tmdb_id: 2 }, byStream, byTmdb)).toMatchObject({ stream_id: 'other_9' });
     expect(movieForRecord({ stream_id: 'gone', tmdb_id: 3 }, byStream, byTmdb)).toBeUndefined();
   });
+  it("prefers the record's own copy over another provider's copy of the same title (lens 7)", async () => {
+    const { movieForRecord } = await import('./useContinueWatching');
+    expect(movieForRecord({ stream_id: 's1', tmdb_id: 1 }, new Map([['s1', m('s1', 1)]]), new Map([[1, m('other_1', 1)]]))).toMatchObject({ stream_id: 's1' });
+  });
 });
 
 describe('newestPerTitle', () => {
@@ -38,5 +42,10 @@ describe('seriesNeedingEpisodes', () => {
     const head = (series_id: string, completed: boolean) => ({ active: { completed }, series: { series_id }, relatedIds: [series_id] }) as never;
     const eps = [{ series_id: 'b', season_num: 1, episode_num: 1 }] as never;
     expect(seriesNeedingEpisodes([head('a', true), head('b', true), head('c', false)], eps)).toEqual(['a']);
+  });
+  it("a series whose episodes this computer has under a related copy (another provider) doesn't ask (lens 7)", async () => {
+    const { seriesNeedingEpisodes } = await import('./useContinueWatching');
+    const heads = [{ active: { completed: true }, series: { series_id: 'a' }, relatedIds: ['a', 'a2'] }] as never;
+    expect(seriesNeedingEpisodes(heads, [{ series_id: 'a2' }] as never)).toEqual([]);
   });
 });

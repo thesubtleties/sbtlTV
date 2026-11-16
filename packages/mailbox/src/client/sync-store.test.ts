@@ -64,3 +64,26 @@ describe('SyncStore', () => {
     expect(existsSync(p)).toBe(false);
   });
 });
+
+describe('SyncStore: what it refuses (lens 7)', () => {
+  it('a file with a malformed computer id is kept aside', () => {
+    const p = join(dir(), 'sync-state.json');
+    const s = new SyncStore(p, fakeSealer());
+    writeFileSync(p, JSON.stringify({ ...file(s), deviceId: '../../x' }));
+    expect(s.load()).toBeNull();
+    expect(existsSync(`${p}.bad`)).toBe(true);
+  });
+  it('a file from before removedIds and interrupted loads with empty lists', () => {
+    const p = join(dir(), 'sync-state.json');
+    const s = new SyncStore(p, fakeSealer());
+    const { removedIds: _r, interrupted: _i, ...older } = file(s);
+    writeFileSync(p, JSON.stringify(older));
+    expect(s.load()).toMatchObject({ removedIds: [], interrupted: [] });
+  });
+  it('a group key of the wrong length is "keyring", not a crash later', () => {
+    const p = join(dir(), 'sync-state.json');
+    const s = new SyncStore(p, fakeSealer());
+    const f = { ...file(s), key: fakeSealer().seal(randomBytes(16).toString('base64')) };
+    expect(() => s.open(f)).toThrow(KeyringUnavailable);
+  });
+});

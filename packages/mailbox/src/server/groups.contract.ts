@@ -114,6 +114,40 @@ export function groupStoreContract(name: string, make: () => Promise<GroupStore>
       expect(await s.createRetired(gid, th, new Map(), '2026-11-16')).toBe('exists');
     });
 
+    it('deleting a box from a moved group keeps the group: the keys still wait there (lens 7)', async () => {
+      const gid = hex(), a = hex(), b = hex(), th = h();
+      for (const d of [a, b]) await s.putBox(gid, th, d, Buffer.from(d), '2026-11-16');
+      await s.rekey(gid, new Map([[b, Buffer.from('for-b')]]), '2026-11-16');
+      await s.deleteBox(gid, a);   // the removed computer leaves (it still has the old token)
+      expect(await s.list(gid, 0, '2026-11-16')).toEqual({ moved: true, waiting: 1 });
+      expect((await s.getRekey(gid, b, '2026-11-16'))?.toString()).toBe('for-b');
+    });
+
+    it('a moved group stays until EVERY key is picked up, not just one (lens 7)', async () => {
+      const gid = hex(), a = hex(), b = hex(), th = h();
+      for (const d of [a, b]) await s.putBox(gid, th, d, Buffer.from(d), '2026-01-01');
+      await s.rekey(gid, new Map([[a, Buffer.from('A')], [b, Buffer.from('B')]]), '2026-01-01');
+      await s.getRekey(gid, a, '2026-01-02');
+      expect(await s.sweep('2026-01-10')).toBe(0);
+      expect((await s.getRekey(gid, b, '2026-01-10'))?.toString()).toBe('B');
+    });
+
+    it('a pickup counts as a check-in (lens 7)', async () => {
+      const gid = hex(), a = hex(), b = hex(), th = h();
+      for (const d of [a, b]) await s.putBox(gid, th, d, Buffer.from(d), '2026-01-01');
+      await s.rekey(gid, new Map([[a, Buffer.from('A')], [b, Buffer.from('B')]]), '2026-01-01');
+      await s.getRekey(gid, a, '2026-03-30');
+      expect(await s.sweep('2026-04-05')).toBe(0);   // 94 days after the move, 6 after the pickup
+    });
+
+    it('a list counts as a check-in (lens 7)', async () => {
+      const gid = hex(), th = h();
+      await s.putBox(gid, th, hex(), Buffer.from('x'), '2026-01-01');
+      await s.list(gid, 0, '2026-03-30');
+      expect(await s.sweep('2026-04-05')).toBe(0);
+      expect(await s.group(gid)).not.toBeNull();
+    });
+
     it('the epoch stays the same for one database', async () => {
       expect(await s.epoch()).toMatch(/^[0-9a-f]{32}$/);
       expect(await s.epoch()).toBe(await s.epoch());

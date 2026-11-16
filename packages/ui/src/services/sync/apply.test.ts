@@ -52,3 +52,34 @@ describe('applyRecords', () => {
     expect(await db.watchlist.get('movie_603')).toBeTruthy();
   });
 });
+
+describe('applyRecords: TMDB movie and TV ids are separate (lens 7)', () => {
+  it('removing a movie from the watchlist leaves the series with the same TMDB id', async () => {
+    await db.watchlist.put({ id: 'series_1399', type: 'series', tmdb_id: 1399, name: 'GoT', added: new Date(1) });
+    await applyRecords([{ k: 'wl', type: 'movie', tmdb: 1399, name: 'Some movie', at: 5_000, removed: true }], lookupNone);
+    expect(await db.watchlist.get('series_1399')).toBeTruthy();
+  });
+
+  it("movie progress never touches a series' episode rows with the same TMDB id, and still finds the movie in the library", async () => {
+    await db.watchProgress.put({ id: 'episode_1399_S1_E3', type: 'episode', tmdb_id: 1399, series_tmdb_id: 1399, season_num: 1, episode_num: 3, position: 50, duration: 3000, progress: 2, completed: false, updated_at: new Date(1_000) });
+    await applyRecords([{ k: 'pm', tmdb: 1399, name: 'Some movie', pos: 600, dur: 6000, done: false, at: 5_000 }], async () => [{ stream_id: 'src_7', tmdb_id: 1399 }]);
+    expect((await db.watchProgress.get('episode_1399_S1_E3'))?.position).toBe(50);
+    expect(await db.watchProgress.get('movie_src_7')).toMatchObject({ position: 600, type: 'movie' });
+  });
+});
+
+describe('applyRecords: a newer local row wins (lens 7)', () => {
+  it('an older movie removal leaves progress saved here after it', async () => {
+    await db.watchProgress.put({ id: 'movie_a', type: 'movie', stream_id: 'a', tmdb_id: 9, position: 99, duration: 100, progress: 99, completed: false, updated_at: new Date(9_000) });
+    await applyRecords([{ k: 'pm', tmdb: 9, name: 'x', pos: 0, dur: 0, done: false, at: 5_000, removed: true }], lookupNone);
+    expect(await db.watchProgress.get('movie_a')).toBeTruthy();
+  });
+
+  it('an older episode record (or removal) leaves the episode saved here after it', async () => {
+    await db.watchProgress.put({ id: 'episode_1399_S1_E3', type: 'episode', tmdb_id: 1399, series_tmdb_id: 1399, season_num: 1, episode_num: 3, position: 2500, duration: 3000, progress: 83, completed: false, updated_at: new Date(9_000) });
+    await applyRecords([{ k: 'pe', series: 1399, s: 1, e: 3, name: 'GoT', pos: 10, dur: 3000, done: false, at: 5_000 }], lookupNone);
+    expect((await db.watchProgress.get('episode_1399_S1_E3'))?.position).toBe(2500);
+    await applyRecords([{ k: 'pe', series: 1399, s: 1, e: 3, name: 'GoT', pos: 0, dur: 0, done: false, at: 6_000, removed: true }], lookupNone);
+    expect(await db.watchProgress.get('episode_1399_S1_E3')).toBeTruthy();
+  });
+});

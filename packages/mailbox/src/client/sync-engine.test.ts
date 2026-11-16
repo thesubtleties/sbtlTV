@@ -2,9 +2,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SyncRecord } from '@sbtltv/core';
-import { deriveGroup, tokenHash } from '../protocol/index.js';
+import { deriveGroup, newDeviceId, tokenHash } from '../protocol/index.js';
 import { createApp } from '../server/app.js';
 import { Transport } from './transport.js';
 import { SyncClient } from './sync.js';
@@ -18,12 +18,15 @@ function world() {
   let t = Date.UTC(2026, 10, 16);
   // The relay keeps the same clock as the computers (its dates decide what its cleanup deletes)
   let relay = createApp({ powBits: 4, now: () => t });
+  // A test can answer some requests itself (a relay error, a count) before the relay sees them
+  let fault: ((r: Request) => Response | undefined) | null = null;
+  const send = async (r: Request) => fault?.(r) ?? relay.app.fetch(r);
   const make = (name: string, sealerOn = true, dirPath = mkdtempSync(join(tmpdir(), 'eng-'))) => {
     const got = { applied: [] as SyncRecord[], settings: [] as Record<string, unknown>[], snapshots: 0, views: [] as SyncView[] };
     // The page writes what it's handed and confirms it (as App.tsx does after applyRecords)
     const e: SyncEngine = new SyncEngine({
       store: new SyncStore(join(dirPath, 'sync-state.json'), fakeSealer(sealerOn)),
-      transport: (auth) => new Transport({ base: 'http://x', version: '0.17.0', bits: 4, auth, fetch: async (r) => relay.app.fetch(r) }),
+      transport: (auth) => new Transport({ base: 'http://x', version: '0.17.0', bits: 4, auth, fetch: send }),
       defaultName: name, log: () => {}, timers: false, now: () => t,
       onApply: (r) => { got.applied.push(...r); queueMicrotask(() => e.confirm(r)); }, onSettings: (v) => { got.settings.push(v); },
       onSnapshotNeeded: () => { got.snapshots++; }, onChange: (v) => { got.views.push(v); },
@@ -36,6 +39,8 @@ function world() {
     wipe: () => { relay = createApp({ powBits: 4, now: () => t }); },
     relay: () => relay,
     now: () => t,
+    fault: (f: typeof fault) => { fault = f; },
+    send,
   };
 }
 
@@ -382,10 +387,214 @@ describe('SyncEngine', () => {
     await b.e.pull();
     expect(b.got.applied).toContainEqual(current);
     expect(b.got.applied.filter((r) => r.k === 'pm' && r.done).length).toBeLessThan(4000);
+    // Only the oldest go, and only as many as needed (lens 7)
+    const done = b.got.applied.filter((r) => r.k === 'pm' && r.done);
+    expect(done.length).toBeGreaterThan(1000);
+    expect(done).toContainEqual(finished[3999]);
+    expect(done).not.toContainEqual(finished[0]);
   });
 
   it('uniqueName numbers taken names', () => {
     expect(uniqueName('Mac', [])).toBe('Mac');
     expect(uniqueName('Mac', ['Mac', 'Mac 2'])).toBe('Mac 3');
+  });
+});
+
+describe('SyncEngine (lens 7)', () => {
+  const state = (x: { dirPath: string }) => JSON.parse(readFileSync(join(x.dirPath, 'sync-state.json'), 'utf8'));
+  const oldGroupOf = (x: { dirPath: string }) => deriveGroup(Buffer.from(fakeSealer().open(state(x).key), 'base64')).groupId;
+  async function trio(w: ReturnType<typeof world>) {
+    const { a, b } = await pair(w);
+    const c = w.make('Mac');
+    await c.e.activateJoin(await a.e.joinPayload(), 'Mac');
+    await a.e.pull(); await b.e.pull(); await c.e.pull();
+    return { a, b, c };
+  }
+
+  it('a pending giver that checks before the other computer joined keeps waiting', async () => {
+    const w = world(); const a = w.make('Linux PC'), b = w.make('Mac');
+    const payload = await a.e.joinPayload(); a.e.giverSent();
+    await a.e.pull();   // the 10-second poll, before b has joined
+    expect(a.e.view().status).toBe('pending');
+    await b.e.activateJoin(payload, 'Mac');
+    await a.e.pull();
+    expect(a.e.view().status).toBe('active');
+  });
+
+  it('a part turned off is not uploaded', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    a.e.setParts({ watchlist: true, progress: false, settings: false });
+    const pm: SyncRecord = { k: 'pm', tmdb: 42, name: 'Private', pos: 5, dur: 100, done: false, at: w.now() };
+    a.e.record([pm, wl(w.now())]); await a.e.flush();
+    await b.e.pull();
+    expect(b.got.applied).toContainEqual(wl(w.now()));
+    expect(b.got.applied).not.toContainEqual(pm);
+  });
+
+  it('turning settings on takes the others\' settings at once, not at the next pull', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    a.e.setParts({ watchlist: true, progress: true, settings: true });
+    a.e.settingsChanged({ theme: 'light' }); await a.e.flush();
+    await b.e.pull();
+    b.e.setParts({ watchlist: true, progress: true, settings: true });
+    expect(b.got.settings).toEqual([{ theme: 'light' }]);
+  });
+
+  it('changes every few seconds (playback) still go out within 5 minutes', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const live = new SyncEngine({
+        store: new SyncStore(join(a.dirPath, 'sync-state.json'), fakeSealer()),
+        transport: (auth) => new Transport({ base: 'http://x', version: '0.17.0', bits: 4, auth, fetch: w.send }),
+        defaultName: 'x', log: () => {}, timers: true, now: w.now,
+        onApply: () => {}, onSettings: () => {}, onSnapshotNeeded: () => {}, onChange: () => {},
+      });
+      for (let i = 0; i < 80; i++) {
+        live.record([{ k: 'pm', tmdb: 42, name: 'Playing', pos: i, dur: 1000, done: false, at: w.now() }]);
+        w.advance(4_000); await vi.advanceTimersByTimeAsync(4_000);
+      }
+      live.stop();
+    } finally { vi.useRealTimers(); }
+    await b.e.pull();
+    expect(b.got.applied.some((r) => r.k === 'pm')).toBe(true);
+  });
+
+  it('removals older than 90 days drop out of its own records', async () => {
+    const w = world(); const { a } = await pair(w);
+    a.e.record([wl(w.now(), true)]);
+    w.advance(91 * DAY);
+    a.e.record([{ k: 'pm', tmdb: 1, name: '', pos: 1, dur: 2, done: false, at: w.now() }]);
+    expect((state(a).own as SyncRecord[]).map((r) => r.k)).toEqual(['pm']);
+  });
+
+  it('the newest 20,000 of its own records are kept', async () => {
+    const w = world(); const { a } = await pair(w);
+    a.e.record(Array.from({ length: 20_001 }, (_, i) => ({ k: 'pm' as const, tmdb: i + 1, name: '', pos: 1, dur: 2, done: false, at: w.now() + i })));
+    const own = state(a).own as SyncRecord[];
+    expect(own).toHaveLength(20_000);
+    expect(own.some((r) => r.k === 'pm' && r.tmdb === 1)).toBe(false);
+  });
+
+  it('after a removal, a follower gets what the remover had not sent yet (reads the new group from the start)', async () => {
+    const w = world(); const { a, b, c } = await trio(w);
+    for (let i = 0; i < 3; i++) { w.advance(1000); b.e.record([{ k: 'pm', tmdb: 50 + i, name: 'x', pos: 1, dur: 2, done: false, at: w.now() }]); await b.e.flush(); }
+    await a.e.pull(); await b.e.pull();   // the old group's numbering is well ahead now
+    w.advance(1000);
+    const late: SyncRecord = { k: 'pm', tmdb: 99, name: 'Late', pos: 1, dur: 2, done: false, at: w.now() };
+    a.e.record([late]);                  // not pushed yet: it goes out with the removal
+    await a.e.remove(thisId(c.e));
+    await b.e.pull();
+    expect(b.got.applied).toContainEqual(late);
+  });
+
+  it('the remover retires its old group even when another computer put the new group back first', async () => {
+    const w = world(); const { a, b, c } = await trio(w);
+    await a.e.remove(thisId(c.e));
+    await b.e.pull();                    // b follows
+    w.wipe();
+    await b.e.pull();                    // b puts the NEW group back first
+    await a.e.pull();                    // a: its group is there, but the database is new
+    await c.e.pull();                    // the removed computer comes back
+    expect(c.e.view().status).toBe('removed');
+  });
+
+  it('if restoring the retired marker fails, the remover still moves the rebuilt old group again, without the removed computer', async () => {
+    const w = world(); const { a, b, c } = await trio(w);
+    await a.e.remove(thisId(c.e));       // b and c are away
+    w.wipe();
+    w.fault((r) => (r.method === 'POST' && r.url.endsWith('/rekey') ? new Response('', { status: 503 }) : undefined));
+    await a.e.pull();                    // the restore can't reach the relay
+    w.fault(null);
+    await b.e.pull(); await c.e.pull();  // both rebuild the old group
+    await a.e.pull();                    // a sees it alive: moves it again, to b only
+    await b.e.pull(); await c.e.pull();
+    expect(b.e.view().status).toBe('active');
+    expect(b.e.view().computers.map((x) => x.name).sort()).toEqual(['Linux PC', 'Linux PC 2']);
+    expect(c.e.view().status).toBe('removed');
+    await a.e.pull();
+    expect(a.e.view().interrupted).toEqual([]);   // its own move is not "someone else's"
+  });
+
+  it('an old group squatted by someone without its key also says which computers to add again', async () => {
+    const w = world(); const { a, c } = await trio(w);
+    const oldGid = oldGroupOf(c);
+    await a.e.remove(thisId(c.e));
+    w.wipe();
+    await w.relay().groups.putBox(oldGid, randomBytes(32), newDeviceId(), Buffer.from('x'), '2026-11-16');
+    await a.e.pull();
+    expect(a.e.view().interrupted).toEqual(['Linux PC 2']);
+  });
+
+  it('a computer to add again drops off the list once it is back', async () => {
+    const w = world(); const { a, b, c } = await trio(w);
+    const old = deriveGroup(Buffer.from(fakeSealer().open(state(c).key), 'base64'));
+    await a.e.remove(thisId(c.e));
+    w.wipe();
+    const t = new Transport({ base: 'http://x', version: '0.17.0', bits: 4, auth: old.accessToken, fetch: w.send });
+    await new SyncClient(t, old.groupId).rekey(new Map());
+    await a.e.pull();
+    expect(a.e.view().interrupted).toEqual(['Linux PC 2']);
+    await a.e.pull();                    // its next regular pull (drops computers no longer in its group)
+    await b.e.activateJoin(await a.e.joinPayload(), 'Linux PC 2');
+    await a.e.pull();
+    expect(a.e.view().interrupted).toEqual([]);
+  });
+
+  it('old groups are watched only while someone still waits for a key, by the follower too', async () => {
+    const w = world(); const { a, b, c } = await trio(w);
+    const d = w.make('Den');
+    await d.e.activateJoin(await a.e.joinPayload(), 'Den');
+    await a.e.pull(); await b.e.pull(); await c.e.pull();
+    await a.e.remove(thisId(c.e));
+    await b.e.pull();                    // b follows; d is still away
+    expect(state(b).previous).toHaveLength(1);
+    await d.e.pull(); await a.e.pull(); await b.e.pull();
+    expect(state(a).previous).toEqual([]);
+    expect(state(b).previous).toEqual([]);
+  });
+
+  it('joining another group leaves the old one; the name is trimmed and fits in a box', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const d = w.make('Den');
+    const payload = await d.e.joinPayload(); d.e.giverSent();
+    await b.e.activateJoin(payload, `  ${'x'.repeat(60)}  `);
+    expect(b.e.view().name).toBe('x'.repeat(40));
+    await a.e.pull();
+    expect(a.e.view().computers.map((x) => x.name)).toEqual(['Linux PC']);
+    await d.e.pull();
+    expect(d.e.view().computers.map((x) => x.name)).toContain('x'.repeat(40));
+  });
+
+  it('removing a computer that is not in the group changes nothing', async () => {
+    const w = world(); const { a } = await pair(w);
+    const before = state(a).key;
+    await a.e.remove(newDeviceId());
+    expect(state(a).key).toBe(before);
+    expect(state(a).removedIds).toEqual([]);
+  });
+
+  it('"update the app" clears once the relay accepts this version again', async () => {
+    const w = world(); const { a } = await pair(w);
+    w.fault(() => new Response(JSON.stringify({ error: 'update' }), { status: 426 }));
+    await a.e.pull();
+    expect(a.e.view().status).toBe('update');
+    w.fault(null);
+    await a.e.pull();
+    expect(a.e.view().status).toBe('active');
+  });
+
+  it('a nudge right after a pull does not ask the relay again', async () => {
+    const w = world(); const { a } = await pair(w);
+    let lists = 0;
+    w.fault((r) => { if (r.method === 'GET' && r.url.includes('/boxes?')) lists++; return undefined; });
+    await a.e.pull();
+    a.e.nudge();
+    await a.e.pull();
+    expect(lists).toBe(2);
+    w.advance(31_000);
+    a.e.nudge();
+    await a.e.pull();
+    expect(lists).toBe(4);
   });
 });

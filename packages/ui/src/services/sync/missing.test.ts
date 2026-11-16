@@ -15,6 +15,14 @@ describe('pickMissing', () => {
     });
     expect(out.progress).toEqual([{ key: 'missing-movie-3', from: 'progress', type: 'movie', tmdbId: 3, name: 'Three', pct: 50, progressIds: ['movie_tmdb_3'] }]);
   });
+  it('one card per missing movie, and a series the library has is not missing (lens 7)', () => {
+    const out = pickMissing({
+      ...none, librarySeriesTmdb: new Set([1399]),
+      movieRecs: [rec({ id: 'movie_a', stream_id: 'a', tmdb_id: 5 }), rec({ id: 'movie_b', stream_id: 'b', tmdb_id: 5 })],
+      seriesHeads: [rec({ id: 'episode_1399_S1_E2', type: 'episode', series_tmdb_id: 1399, name: 'GoT S1E2' })], watchlist: [],
+    });
+    expect(out.progress.map((m) => m.key)).toEqual(['missing-movie-5']);
+  });
   it('records without a TMDB id are never missing (they are orphans, as today)', () => {
     expect(pickMissing({ ...none, movieRecs: [rec({ stream_id: 'gone' })], seriesHeads: [], watchlist: [] }).progress).toEqual([]);
   });

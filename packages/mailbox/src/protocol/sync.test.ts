@@ -1,7 +1,7 @@
 // packages/mailbox/src/protocol/sync.test.ts
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { newKeyPair } from './pairing.js';
+import { newKeyPair, seal } from './pairing.js';
 import {
   BOX_PAD, deriveGroup, exportPrivate, keyPairFromPrivate, newDeviceId, openBox, openRekey, sealBox, sealRekey, tokenHash,
 } from './sync.js';
@@ -69,5 +69,30 @@ describe('device keys', () => {
     const k = newKeyPair();
     const back = keyPairFromPrivate(exportPrivate(k));
     expect(back.publicRaw).toEqual(k.publicRaw);
+  });
+});
+
+describe('what the relay sees gives nothing away (lens 7)', () => {
+  it('the access token is not the box key, and neither starts with the group id', () => {
+    const g = deriveGroup(randomBytes(32));
+    const token = Buffer.from(g.accessToken, 'base64url');
+    expect(g.encKey.equals(token)).toBe(false);
+    expect(token.subarray(0, 16).toString('hex')).not.toBe(g.groupId);
+    expect(g.encKey.subarray(0, 16).toString('hex')).not.toBe(g.groupId);
+  });
+});
+
+describe('box limits (lens 7)', () => {
+  const { encKey, groupId } = deriveGroup(randomBytes(32));
+  const did = newDeviceId();
+  it('refuses a box that unpacks to more than 16 MB', () => {
+    const sealed = sealBox(encKey, groupId, did, Buffer.alloc(17 * 1024 * 1024));
+    expect(() => openBox(encKey, groupId, did, sealed)).toThrow();
+  });
+  it('refuses a box whose length frame runs past its end', () => {
+    const padded = Buffer.alloc(BOX_PAD - 28);
+    padded.writeUInt32BE(BOX_PAD, 0);
+    const sealed = seal(encKey, padded, Buffer.from(`sbtl-box|${groupId}|${did}|1`));
+    expect(() => openBox(encKey, groupId, did, sealed)).toThrow('bad box');
   });
 });

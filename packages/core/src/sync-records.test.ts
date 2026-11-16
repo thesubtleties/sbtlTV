@@ -1,6 +1,6 @@
 // packages/core/src/sync-records.test.ts
 import { describe, expect, it } from 'vitest';
-import { isNewer, mergeRecords, pruneTombstones, recordKey, validateRecord, type SyncRecord } from './sync-records';
+import { isNewer, mergeRecords, pruneTombstones, recordKey, recordPart, validateRecord, type SyncRecord } from './sync-records';
 
 const wl = (at: number, removed?: true): SyncRecord => ({ k: 'wl', type: 'movie', tmdb: 603, name: 'The Matrix', at, ...(removed && { removed }) });
 const pm = (at: number, pos: number): SyncRecord => ({ k: 'pm', tmdb: 603, name: 'The Matrix', pos, dur: 8160, done: false, at });
@@ -72,5 +72,46 @@ describe('pruneTombstones', () => {
     const m = new Map<string, SyncRecord>([['a', wl(0, true)], ['b', pm(0, 1)], ['c', { k: 'wl', type: 'movie', tmdb: 7, name: 'x', at: 95 * day, removed: true }]]);
     const out = pruneTombstones(m, 100 * day);
     expect([...out.keys()]).toEqual(['b', 'c']);
+  });
+});
+
+describe('validateRecord: each field is checked (lens 7)', () => {
+  const pe = (o: Record<string, unknown> = {}) => ({ k: 'pe', series: 1399, s: 1, e: 3, name: 'GoT', pos: 10, dur: 100, done: false, at: 1, ...o });
+  it('accepts season 0 (specials) and episode 0', () => {
+    expect(validateRecord(pe({ s: 0, e: 0 }))).toMatchObject({ s: 0, e: 0 });
+  });
+  it('rejects a bad episode number, a TMDB id of 0, a time of 0, a negative position and a missing done', () => {
+    expect(validateRecord(pe({ e: -1 }))).toBeNull();
+    expect(validateRecord(pe({ e: 1.5 }))).toBeNull();
+    expect(validateRecord(pe({ series: 0 }))).toBeNull();
+    expect(validateRecord({ ...pm(1, 2), tmdb: 0 })).toBeNull();
+    expect(validateRecord({ ...pm(1, 2), at: 0 })).toBeNull();
+    expect(validateRecord({ ...pm(1, 2), at: -5 })).toBeNull();
+    expect(validateRecord({ ...pm(1, 2), pos: -1 })).toBeNull();
+    const { done: _d, ...noDone } = pm(1, 2) as unknown as Record<string, unknown>;
+    expect(validateRecord(noDone)).toBeNull();
+  });
+  it('rejects an unknown watchlist type, a removed flag that is not true, and a removed setting', () => {
+    expect(validateRecord({ ...wl(1), type: 'tv' })).toBeNull();
+    expect(validateRecord({ ...wl(1), removed: 'yes' })).toBeNull();
+    expect(validateRecord({ ...wl(1), removed: false })).toBeNull();
+    expect(validateRecord({ k: 'set', key: 'theme', value: 'dark', at: 1, removed: true })).toBeNull();
+  });
+});
+
+describe('recordPart', () => {
+  it('names the part each kind belongs to', () => {
+    expect(recordPart(wl(1))).toBe('watchlist');
+    expect(recordPart(pm(1, 1))).toBe('progress');
+    expect(recordPart({ k: 'pe', series: 1, s: 1, e: 1, name: 'x', pos: 1, dur: 2, done: false, at: 1 })).toBe('progress');
+    expect(recordPart({ k: 'set', key: 'theme', value: 'dark', at: 1 })).toBe('settings');
+  });
+});
+
+describe('pruneTombstones window', () => {
+  it('keeps a removal for 90 days', () => {
+    const day = 86_400_000;
+    const m = new Map<string, SyncRecord>([['young', wl(11 * day, true)], ['old', wl(9 * day, true)]]);
+    expect([...pruneTombstones(m, 100 * day).keys()]).toEqual(['young']);
   });
 });

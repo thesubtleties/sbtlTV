@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { CHALLENGE_HEADER, POW_HEADER, VERSION_HEADER, deriveGroup, newDeviceId, powBitsFor, powInput, solvePow } from '../protocol/index.js';
 import { createApp } from './app.js';
+import { MemoryGroupStore } from './groups.js';
 
 const V = '0.17.0';
 function setup(over: Parameters<typeof createApp>[0] = {}) {
@@ -125,5 +126,51 @@ describe('sync routes', () => {
     const { app } = createApp({ minVersion: '0.17.0' });
     const r = await app.fetch(new Request(`http://x/v1/groups/${'a'.repeat(32)}/boxes?since=0`, { headers: { [VERSION_HEADER]: '0.16.0' } }));
     expect(r.status).toBe(426);
+  });
+});
+
+describe('sync routes: guards (lens 7)', () => {
+  const put = (call: ReturnType<typeof setup>['call'], g: ReturnType<typeof group>, did = g.did) =>
+    call('PUT', `/v1/groups/${g.groupId}/boxes/${did}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true });
+
+  it('"no new groups" still lets an existing group write', async () => {
+    const groups = new MemoryGroupStore(); const g = group();
+    expect((await put(setup({ groups }).call, g)).status).toBe(200);
+    expect((await put(setup({ groups, newGroupsPaused: true }).call, g)).status).toBe(200);
+  });
+
+  it('leave needs the group token: a stranger cannot delete a box', async () => {
+    const { call } = setup(); const g = group();
+    await put(call, g);
+    expect((await call('DELETE', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: group().accessToken })).status).toBe(403);
+    expect((await call('DELETE', `/v1/groups/${g.groupId}/boxes/${g.did}`)).status).toBe(403);
+    expect((await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).boxes).toHaveLength(1);
+  });
+
+  it('a new key needs the group token, and a refused fetch does not count as picked up', async () => {
+    const { call } = setup(); const g = group(); const other = newDeviceId();
+    await put(call, g); await put(call, g, other);
+    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: sealed(140) } }, pow: true })).status).toBe(204);
+    expect((await call('GET', `/v1/groups/${g.groupId}/rekey/${other}`, { token: group().accessToken })).status).toBe(403);
+    expect((await call('GET', `/v1/groups/${g.groupId}/rekey/${other}`)).status).toBe(403);
+    expect(await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).toEqual({ moved: true, waiting: 1 });
+  });
+
+  it('rekey refuses too many keys, bad computer ids and oversized keys; sync paused refuses it', async () => {
+    const { call } = setup(); const g = group();
+    await put(call, g);
+    const rekey = (keys: Record<string, string>, c = call) => c('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys }, pow: true });
+    expect((await rekey(Object.fromEntries(Array.from({ length: 11 }, () => [newDeviceId(), sealed(140)])))).status).toBe(400);
+    expect((await rekey({ 'not-a-device': sealed(140) })).status).toBe(400);
+    expect((await rekey({ [newDeviceId()]: sealed(600) })).status).toBe(400);
+    expect((await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).boxes).toHaveLength(1);
+    expect((await rekey({}, setup({ syncPaused: true }).call)).status).toBe(429);
+  });
+
+  it('a since that is not a number is a bad request', async () => {
+    const { call } = setup(); const g = group();
+    await put(call, g);
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=abc`, { token: g.accessToken })).status).toBe(400);
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=1.5`, { token: g.accessToken })).status).toBe(400);
   });
 });

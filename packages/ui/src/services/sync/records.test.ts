@@ -16,6 +16,10 @@ describe('records from rows', () => {
     const ep = movie({ id: 'episode_1399_S1_E3', type: 'episode', tmdb_id: 1399, series_tmdb_id: 1399, season_num: 1, episode_num: 3, name: 'GoT S1E3' });
     expect(progressRecord(ep)).toMatchObject({ k: 'pe', series: 1399, s: 1, e: 3 });
   });
+  it('season 0 (specials) and episode 0 sync (lens 7)', () => {
+    const ep = movie({ id: 'episode_1399_S0_E0', type: 'episode', tmdb_id: 1399, series_tmdb_id: 1399, season_num: 0, episode_num: 0, name: 'GoT special' });
+    expect(progressRecord(ep)).toMatchObject({ k: 'pe', series: 1399, s: 0, e: 0 });
+  });
   it('rows without TMDB identity do not sync', () => {
     expect(progressRecord(movie({ tmdb_id: undefined }))).toBeNull();
     expect(progressRecord(movie({ type: 'episode', series_tmdb_id: undefined, season_num: 1, episode_num: 1 }))).toBeNull();
