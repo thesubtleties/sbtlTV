@@ -1,0 +1,113 @@
+/**
+ * Sync groups: one sealed box per computer, addressed by a group id only the computers can derive.
+ * Postgres in production (pg-groups.ts); this in-memory twin runs the same contract in tests and
+ * when the relay runs without a database (local development). Dates are whole days on purpose:
+ * the relay learns at most which day a group checked in.
+ */
+import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { GROUP_IDLE_DAYS, MAX_COMPUTERS } from '../protocol/index.js';
+
+export interface BoxRow { id: string; seq: number; sealed: Buffer }
+export type ListResult = { seq: number; computers: { id: string; seq: number }[]; boxes: BoxRow[] };
+/** A group re-keyed after a removal: how many remaining computers haven't fetched their new key */
+export type Moved = { moved: true; waiting: number };
+
+export interface GroupStore {
+  /** null = no such group */
+  group(gid: string): Promise<{ tokenHash: Buffer; moved: boolean } | null>;
+  /** Creates the group (with this token hash) when it doesn't exist. */
+  putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string): Promise<{ seq: number } | 'moved' | 'full' | 'denied'>;
+  /** Boxes changed after `since`, and every computer's id + seq. Refreshes last_seen. */
+  list(gid: string, since: number, today: string): Promise<ListResult | Moved | null>;
+  /** The group goes with its last box. */
+  deleteBox(gid: string, did: string): Promise<void>;
+  rekey(gid: string, keys: Map<string, Buffer>, today: string): Promise<'ok' | 'moved' | null>;
+  /** This computer's new key after a move; marks it fetched and refreshes last_seen. */
+  getRekey(gid: string, did: string, today: string): Promise<Buffer | null>;
+  /**
+   * Deletes groups nobody checked in with for GROUP_IDLE_DAYS, and moved groups once every key
+   * was fetched and a day has passed since the last check-in (for a lost reply). Returns how many.
+   */
+  sweep(today: string): Promise<number>;
+  /** This database's id: different only after the data was lost and started again. */
+  epoch(): Promise<string>;
+  close(): Promise<void>;
+}
+
+export const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+export function dayMinus(today: string, days: number): string {
+  return utcDay(Date.parse(`${today}T00:00:00Z`) - days * 86_400_000);
+}
+export const sameHash = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeEqual(a, b);
+
+interface Group {
+  tokenHash: Buffer; movedOn: string | null; lastSeen: string; seq: number;
+  boxes: Map<string, BoxRow>; rekeys: Map<string, { sealed: Buffer; fetched: boolean }>;
+}
+
+export class MemoryGroupStore implements GroupStore {
+  private groups = new Map<string, Group>();
+  private id = randomBytes(16).toString('hex');
+
+  async group(gid: string) {
+    const g = this.groups.get(gid);
+    return g ? { tokenHash: g.tokenHash, moved: g.movedOn !== null } : null;
+  }
+
+  async putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string) {
+    let g = this.groups.get(gid);
+    if (!g) { g = { tokenHash, movedOn: null, lastSeen: today, seq: 0, boxes: new Map(), rekeys: new Map() }; this.groups.set(gid, g); }
+    if (!sameHash(g.tokenHash, tokenHash)) return 'denied' as const;
+    if (g.movedOn) return 'moved' as const;
+    if (!g.boxes.has(did) && g.boxes.size >= MAX_COMPUTERS) return 'full' as const;
+    g.seq += 1; g.lastSeen = today;
+    g.boxes.set(did, { id: did, seq: g.seq, sealed: Buffer.from(sealed) });
+    return { seq: g.seq };
+  }
+
+  async list(gid: string, since: number, today: string): Promise<ListResult | Moved | null> {
+    const g = this.groups.get(gid);
+    if (!g) return null;
+    g.lastSeen = today;
+    if (g.movedOn) return { moved: true, waiting: [...g.rekeys.values()].filter((r) => !r.fetched).length };
+    const all = [...g.boxes.values()];
+    return { seq: g.seq, computers: all.map(({ id, seq }) => ({ id, seq })), boxes: all.filter((b) => b.seq > since) };
+  }
+
+  async deleteBox(gid: string, did: string) {
+    const g = this.groups.get(gid);
+    if (!g) return;
+    g.boxes.delete(did);
+    if (g.boxes.size === 0 && !g.movedOn) this.groups.delete(gid);
+  }
+
+  async rekey(gid: string, keys: Map<string, Buffer>, today: string) {
+    const g = this.groups.get(gid);
+    if (!g) return null;
+    if (g.movedOn) return 'moved' as const;
+    g.movedOn = today; g.lastSeen = today; g.boxes.clear();
+    g.rekeys = new Map([...keys].map(([did, sealed]) => [did, { sealed: Buffer.from(sealed), fetched: false }]));
+    return 'ok' as const;
+  }
+
+  async getRekey(gid: string, did: string, today: string) {
+    const g = this.groups.get(gid);
+    const r = g?.rekeys.get(did);
+    if (!g || !r) return null;
+    r.fetched = true; g.lastSeen = today;
+    return r.sealed;
+  }
+
+  async sweep(today: string) {
+    const idle = dayMinus(today, GROUP_IDLE_DAYS);
+    let n = 0;
+    for (const [gid, g] of this.groups) {
+      const caughtUp = g.movedOn !== null && g.lastSeen < today && [...g.rekeys.values()].every((r) => r.fetched);
+      if (g.lastSeen < idle || caughtUp) { this.groups.delete(gid); n++; }
+    }
+    return n;
+  }
+
+  async epoch() { return this.id; }
+  async close() {}
+}
