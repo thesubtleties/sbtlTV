@@ -35,6 +35,7 @@ import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
 import { registerSetupTransfer } from './setup-transfer.js';
 import { registerMailbox } from './mailbox/mailbox-ipc.js';
 import { registerSync } from './mailbox/sync-ipc.js';
+import { fitAppearance, type AppearanceLike } from './sync-appearance.js';
 import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { makeZip } from './zip-writer.js';
 const { autoUpdater } = electronUpdater;
@@ -520,6 +521,18 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
       event.preventDefault();
       debugLog(`Blocked navigation to: ${url}`, 'app');
     }
+  });
+
+  // Closing the window (the X button) is the usual way to quit on Windows and Linux: the page saves
+  // where playback is and sync sends it before the window goes (at most 3 s), as quitting does
+  let closeSaved = false;
+  mainWindow.on('close', (event) => {
+    if (closeSaved || installingUpdate || nativeRecoveryInProgress || !mainWindow) return;
+    event.preventDefault();
+    closeSaved = true;
+    const w = mainWindow;
+    void Promise.race([askRendererToSave().then(() => sync.engine.flush()), new Promise((r) => setTimeout(r, 3000))])
+      .finally(() => { if (!w.isDestroyed()) w.close(); });
   });
 
   mainWindow.on('closed', () => {
@@ -2638,11 +2651,25 @@ const setupTransfer = registerSetupTransfer({
 const sync = registerSync({
   renderer: () => mainWindow?.webContents ?? null,
   log: (m) => debugLog(m, 'sync'),
-  // Settings from the user's other computers: stored, then the same follow-ups a change here gets
-  applySettings: (values) => {
+  currentSettings: () => {
+    const s = storage.getSettings();
+    return { theme: s.theme, appearance: s.appearance, subtitles: s.subtitles, autoplayNextEpisode: s.autoplayNextEpisode };
+  },
+  // Settings from the user's other computers: stored, then the same follow-ups a change here gets.
+  // A palette or accent this desktop can't give (Caelestia, the system accent) keeps this computer's.
+  applySettings: async (values) => {
+    if (values.appearance && typeof values.appearance === 'object') {
+      const desktop = await readDesktopColors().catch(() => ({ accent: null, caelestia: null }));
+      values = { ...values, appearance: fitAppearance(values.appearance as AppearanceLike, storage.getSettings().appearance ?? {}, { caelestia: !!desktop.caelestia, accent: !!desktop.accent }) };
+    }
+    const previousLanguage = storage.getSettings().subtitles?.language;
     storage.updateSettings(values as Parameters<typeof storage.updateSettings>[0]);
     if ('subtitles' in values || 'appearance' in values) {
       try { applySubtitleStyle('settings synced'); } catch { debugLog('Sync: applying the subtitle style failed', 'sync'); }
+    }
+    // A caption language from another computer: live captions follow, as for a change made here
+    if ('subtitles' in values && storage.getSettings().subtitles?.language !== previousLanguage) {
+      try { captions.recheckLanguage(); } catch { debugLog('Sync: re-checking captions failed', 'sync'); }
     }
     dataHost?.pushSettings();
   },
@@ -2714,6 +2741,7 @@ ipcMain.handle('updater-install', () => {
     autoUpdater.quitAndInstall(false, true);
     return { success: true };
   } catch (err) {
+    installingUpdate = false;   // not installing after all: later quits save and send as usual
     const msg = err instanceof Error ? err.message : 'Install failed';
     debugLog(`Failed to quit and install: ${msg}`, 'updater');
     return { error: msg };

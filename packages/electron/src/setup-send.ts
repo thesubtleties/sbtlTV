@@ -1,3 +1,4 @@
+import { randomBytes, randomInt } from 'node:crypto';
 /**
  * The body for Send to a device: the picked parts of this computer's setup (only the picked
  * sources), plus providers and keys typed in just for this send (never saved here). Pure.
@@ -24,8 +25,13 @@ export function packSetup(body: SetupBody): Buffer {
 /** A join to someone's sync, carried by the knock instead of a setup: their group key and computer names. */
 export interface JoinPayload { key: string; computers: { id: string; name: string }[] }
 
+/**
+ * Padded with 1.5-6 KB of random filler (it doesn't compress): sealed, a join is then the size of a
+ * small setup, so the relay can't tell "Add a computer" from "Send a setup" by size.
+ */
 export function packJoin(j: JoinPayload): Buffer {
-  return gzipSync(Buffer.from(JSON.stringify({ sbtlSync: 1, key: j.key, computers: j.computers })));
+  const pad = randomBytes(1100 + randomInt(0, 3400)).toString('base64');
+  return gzipSync(Buffer.from(JSON.stringify({ sbtlSync: 1, key: j.key, computers: j.computers, pad })));
 }
 
 function validateJoin(o: Record<string, unknown>): JoinPayload {

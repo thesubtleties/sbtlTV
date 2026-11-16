@@ -104,3 +104,10 @@ test('a join travels as its own kind and is checked', () => {
 test('a setup still unpacks as a setup', () => {
   assert.equal(unpackDrop(packSetup(base)).kind, 'setup');
 });
+
+test('a join is padded to look like a small setup (the relay can only see sizes)', () => {
+  const join = { key: Buffer.alloc(32, 7).toString('base64'), computers: [{ id: 'a'.repeat(32), name: 'Mac' }] };
+  const packed = packJoin(join);
+  assert.ok(packed.length >= 1500, `only ${packed.length} bytes`);
+  assert.deepEqual(unpackDrop(packed), { kind: 'join', join });
+});

@@ -22,7 +22,9 @@ const HEX32 = /^[0-9a-f]{32}$/;
 export function registerSync(deps: {
   renderer: () => WebContents | null;
   log: (m: string) => void;
-  applySettings: (values: Partial<Record<SyncedSettingKey, unknown>>) => void;
+  applySettings: (values: Partial<Record<SyncedSettingKey, unknown>>) => void | Promise<void>;
+  /** This computer's synced settings now (for turning Settings on) */
+  currentSettings: () => Partial<Record<SyncedSettingKey, unknown>>;
 }) {
   const send = (channel: string, data?: unknown) => { const w = deps.renderer(); if (w && !w.isDestroyed()) w.send(channel, data); };
   const engine = new SyncEngine({
@@ -42,10 +44,11 @@ export function registerSync(deps: {
         if (v && typeof v === 'object' && !Array.isArray(v)) ok[k] = v;
       }
       if (Object.keys(ok).length === 0) return;
-      deps.applySettings(ok);
-      send('settings-replaced');
+      // The page reloads its settings only once they're stored
+      void Promise.resolve(deps.applySettings(ok)).then(() => send('settings-replaced'), () => deps.log('Sync: applying settings failed'));
     },
     onSnapshotNeeded: () => send('sync-snapshot'),
+    currentSettings: deps.currentSettings,
     onChange: (v) => send('sync-view', v),
   });
 
