@@ -23,7 +23,13 @@ function Who({ title, sees, status, where }: { title: string; sees: string; stat
     <div className="privacy__row">
       <div>
         <div className="st-row__title">{title}</div>
-        {where && <div className="privacy__where">{where}</div>}
+        {where && (
+          <div className="privacy__where" aria-label={where}>
+            {where.split(' › ').map((part, i) => (
+              <span key={part}>{i > 0 && <span className="privacy__where-sep" aria-hidden="true">›</span>}{part}</span>
+            ))}
+          </div>
+        )}
         <div className="st-row__help">{sees}</div>
       </div>
       <span className={`privacy__status privacy__status--${status}`}>{STATUS_LABEL[status]}</span>
