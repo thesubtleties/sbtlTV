@@ -219,7 +219,10 @@ export type SetupPart = 'sources' | 'logins' | 'settings' | 'apiKeys' | 'favorit
 export interface SetupPreview {
   app: string; exportedAt: string; platform: string;
   sources: { name: string; type: string; withLogin: boolean; fromFile: boolean; host: string | null }[];
-  settings: boolean; apiKeys: boolean; favorites: number; watchlist: number; progress: number;
+  settings: boolean;
+  /** Which keys it carries, by product name (TMDB, RatingPosterDB, SubDL) */
+  apiKeys: string[];
+  favorites: number; watchlist: number; progress: number;
 }
 export interface SetupListsWire { favorites?: unknown[]; watchlist?: unknown[]; progress?: unknown[]; lastCategory?: string }
 type SetupResult<T> = { success: true; data: T } | { success: false; canceled: true } | { success?: undefined; error: string };
@@ -229,11 +232,22 @@ export interface SetupApi {
   unlock: (token: string, passphrase: string) => Promise<SetupResult<SetupPreview>>;
   backups: () => Promise<{ success: true; data: { name: string; label: string }[] }>;
   openBackup: (name: string) => Promise<SetupResult<{ token: string; preview: SetupPreview }>>;
-  apply: (token: string, opts: { backupFirst: boolean; currentLists: SetupListsWire; currentPlaylists: Record<string, string> }) => Promise<SetupResult<{ lists: SetupListsWire; backupName: string | null }> | { error: string; backupName: string | null }>;
+  apply: (token: string, opts: { backupFirst: boolean; currentLists: SetupListsWire; currentPlaylists: Record<string, string> }) => Promise<SetupResult<{ lists: SetupListsWire | null; backupName: string | null }> | { error: string; backupName: string | null }>;
   relaunch: () => Promise<void>;
   showFile: () => Promise<void>;
   pendingPlaylists: () => Promise<{ sourceId: string; content: string }[]>;
   settlePlaylists: (sourceIds: string[]) => Promise<void>;
+}
+
+/** Settings > Sync & transfer: send or receive a setup through the sbtlTV relay. */
+export interface MailboxSendSource { name: string; type: 'xtream' | 'm3u'; url: string; username?: string; password?: string }
+export interface MailboxApi {
+  receive: () => Promise<{ success?: boolean; error?: string }>;
+  send: (sel: { parts: SetupPart[]; sourceIds: string[] | null; extras: { sources: MailboxSendSource[]; apiKeys: { tmdb?: string; posterDb?: string; subdl?: string } }; lists: SetupListsWire; playlists: Record<string, string> }, code: string) => Promise<{ success?: boolean; error?: string }>;
+  confirm: () => Promise<{ success?: boolean; error?: string }>;
+  sameWords: () => Promise<{ success?: boolean }>;
+  cancel: () => Promise<{ success?: boolean }>;
+  state: () => Promise<{ success: boolean; data: { role: 'send' | 'receive' | null; state: import('../utils/knockView').KnockState | null; staged?: { token: string; preview: SetupPreview } } }>;
 }
 
 export interface PrivacyApi {
@@ -424,6 +438,7 @@ declare global {
     appearance?: AppearanceApi;
     privacy?: PrivacyApi;
     setup?: SetupApi;
+    mailbox?: MailboxApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
     debug?: DebugApi;

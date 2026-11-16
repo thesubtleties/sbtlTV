@@ -306,8 +306,11 @@ function App() {
   const [rewindBump, setRewindBump] = useState(0);
   // Settings opened on a specific tab (the rewind tip), else its default.
   const [settingsTab, setSettingsTab] = useState<SettingsTabId | undefined>(undefined);
+  const [settingsReceive, setSettingsReceive] = useState(false);
+  // Stable, so the memoized guide doesn't re-render with every App render
+  const openReceiveSetup = useCallback(() => { setSettingsTab('backup'); setSettingsReceive(true); setActiveView('settings'); }, []);
   // Leaving Settings by any route (Escape, another view) forgets the tab the tip opened it on.
-  useEffect(() => { if (activeView !== 'settings') setSettingsTab(undefined); }, [activeView]);
+  useEffect(() => { if (activeView !== 'settings') { setSettingsTab(undefined); setSettingsReceive(false); } }, [activeView]);
   useEffect(() => {
     playbackRef.current = { duration, volume, activeView, categoriesOpen };
   }, [duration, volume, activeView, categoriesOpen]);
@@ -1112,10 +1115,11 @@ function App() {
         onClose={closeActiveView}
         scrollTopNonce={channelScrollNonce}
         searchFocusNonce={guideSearchNonce}
+        onReceiveSetup={openReceiveSetup}
       />
 
       {/* Settings Panel */}
-      {activeView === 'settings' && <Settings initialTab={settingsTab} onClose={() => { setActiveView('none'); setSettingsTab(undefined); }} />}
+      {activeView === 'settings' && <Settings initialTab={settingsTab} initialReceive={settingsReceive} onClose={() => { setActiveView('none'); setSettingsTab(undefined); setSettingsReceive(false); }} />}
 
       {/* Movies Page */}
       {activeView === 'movies' && (

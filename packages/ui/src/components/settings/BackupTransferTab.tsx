@@ -5,7 +5,10 @@ import { useUIStore } from '../../stores/uiStore';
 import { readLists, replaceLists, type ListPart } from '../../services/setup/lists';
 import { rebuildFilePlaylists } from '../../services/setup/filePlaylists';
 import { setupSummary } from '../../services/setup/summary';
+import { receivedNote } from '../../utils/receivedNote';
 import { Button, Hint, OnOff, OptionRow, Section, SettingsTab, TextField } from './ui';
+import { SendSetupPanel } from './SendSetupPanel';
+import { ReceiveSetupPanel } from './ReceiveSetupPanel';
 
 const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: boolean }[] = [
   { id: 'sources', title: 'Sources', defaultOn: true },
@@ -27,14 +30,14 @@ function exportedOn(iso: string): string {
 type ImportState =
   | { step: 'idle' }
   | { step: 'passphrase'; token: string; error?: string }
-  | { step: 'preview'; token: string; preview: SetupPreview; restoring?: boolean }
+  | { step: 'preview'; token: string; preview: SetupPreview; restoring?: boolean; received?: boolean }
   | { step: 'applying' }
   | { step: 'failed'; error: string; backupName: string | null };
 
 /** The last export, kept by Settings while it is open (switching tabs keeps it; closing Settings clears it). */
 export interface LastExport { passphrase: string; filePath: string }
 
-export function BackupTransferTab({ lastExport, onExported }: { lastExport: LastExport | null; onExported: (e: LastExport) => void }) {
+export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoReceiveUsed }: { lastExport: LastExport | null; onExported: (e: LastExport) => void; autoReceive?: boolean; onAutoReceiveUsed?: () => void }) {
   const sources = useUIStore((s) => s.sources);
   const [parts, setParts] = useState(() => new Set(EXPORT_PARTS.filter((p) => p.defaultOn).map((p) => p.id)));
   const [exporting, setExporting] = useState(false);
@@ -46,6 +49,14 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
   const [unlocking, setUnlocking] = useState(false);
   const [backupFirst, setBackupFirst] = useState(true);
   const [backups, setBackups] = useState<{ name: string; label: string }[]>([]);
+  // Transfer: one of export or send open at a time (an export just made stays open). Receive: the code panel.
+  const [transfer, setTransfer] = useState<'none' | 'export' | 'send'>(lastExport ? 'export' : 'none');
+  const [receiving, setReceiving] = useState(!!autoReceive);
+  // "Receive a setup" opens the code once; coming back to this tab later doesn't start another
+  useEffect(() => { if (autoReceive) onAutoReceiveUsed?.(); }, [autoReceive, onAutoReceiveUsed]);
+  // One knock at a time: opening Send closes Receive and the other way round
+  const openSend = () => { setReceiving(false); setTransfer(transfer === 'send' ? 'none' : 'send'); };
+  const openReceive = () => { if (!receiving && transfer === 'send') setTransfer('none'); setReceiving(!receiving); };
 
   useEffect(() => { void window.setup?.backups().then((r) => setBackups(r.data)); }, []);
 
@@ -107,7 +118,7 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
       if ('error' in r) return setImp({ step: 'failed', error: r.error, backupName: 'backupName' in r ? r.backupName : null });
       if (!r.success) return setImp({ step: 'idle' });
       backupName = r.data.backupName;
-      await replaceLists(r.data.lists);
+      if (r.data.lists) await replaceLists(r.data.lists);   // null: a received setup leaves the lists alone
       await window.setup!.relaunch();
     } catch (error) {
       setImp({ step: 'failed', error: error instanceof Error ? error.message : String(error), backupName });
@@ -125,7 +136,7 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
   if (window.platform?.isPortable) {
     return (
       <SettingsTab>
-        <Section title="Backup & transfer"
+        <Section title="Sync & transfer"
           description={<>Not in the portable version. Install sbtlTV to export or import your setup; it also keeps itself up to date. <a href="https://github.com/thesubtleties/sbtlTV/releases/latest" target="_blank" rel="noopener noreferrer">Download</a></>} />
       </SettingsTab>
     );
@@ -133,8 +144,14 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
 
   return (
     <SettingsTab>
-      <Section title="Export setup" description="Your setup in one file, locked with a passphrase. For another computer, or someone else's."
-        actions={<Button variant="primary" onClick={() => void exportSetup()} disabled={exporting || parts.size === 0 || imp.step === 'applying'}>{exporting ? 'Exporting…' : 'Export…'}</Button>}>
+      <Section title="Transfer setup" description="To another computer, or someone else's."
+        actions={<>
+          <Button onClick={openSend} disabled={imp.step === 'applying'}>Send to a device…</Button>
+          <Button onClick={() => setTransfer(transfer === 'export' ? 'none' : 'export')} disabled={imp.step === 'applying'}>Export to file…</Button>
+        </>}>
+        {transfer === 'send' && <SendSetupPanel onClose={() => setTransfer('none')} />}
+        {transfer === 'export' && <>
+        <Hint>One file, locked with a passphrase.</Hint>
         {/* Above the choices: on a short screen it would land out of sight */}
         {exported && (
           <div className="setup-passphrase">
@@ -155,10 +172,23 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
           </OptionRow>
         ))}
         {exportError && <Hint tone="danger">{exportError}</Hint>}
+        <div className="setup-preview__actions">
+          <Button variant="primary" onClick={() => void exportSetup()} disabled={exporting || parts.size === 0 || imp.step === 'applying'}>{exporting ? 'Exporting…' : 'Export…'}</Button>
+        </div>
+        </>}
       </Section>
 
-      <Section title="Import setup" description="Open a setup file exported from sbtlTV."
-        actions={<Button onClick={() => void pick()} disabled={imp.step === 'applying'}>Import…</Button>}>
+      <Section title="Receive" description="A setup from another computer."
+        actions={<>
+          <Button onClick={openReceive} disabled={imp.step === 'applying'}>Show my code</Button>
+          <Button onClick={() => void pick()} disabled={imp.step === 'applying'}>Import file…</Button>
+        </>}>
+        {receiving && imp.step !== 'preview' && (
+          <ReceiveSetupPanel
+            onReceived={(token, preview) => { setReceiving(false); setImp({ step: 'preview', token, preview, received: true }); }}
+            onClose={() => setReceiving(false)}
+          />
+        )}
         {imp.step === 'passphrase' && (
           <form onSubmit={(e) => { e.preventDefault(); void unlock(imp.token); }}>
             <OptionRow title="Passphrase" help="The five words from the export.">
@@ -168,16 +198,28 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
             <Button type="submit" variant="primary" disabled={unlocking}>{unlocking ? 'Opening…' : 'Open'}</Button>
           </form>
         )}
-        {imp.step === 'preview' && (
+        {imp.step === 'preview' && imp.received && sources.length === 0 && (
+          // A fresh install: nothing to replace, so no warning and no backup, just yes or no
           <div className="setup-preview">
-            <Hint>
-              From sbtlTV {imp.preview.app} on {platformName(imp.preview.platform)}{exportedOn(imp.preview.exportedAt)}: {setupSummary(imp.preview)}.
-            </Hint>
-            <Hint tone="warn">Replaces your sources, settings, API keys, favorites, watchlist and watch progress. Anything not in the file is cleared.</Hint>
-            <OptionRow title="Back up my setup first"><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
+            <div className="setup-preview__summary"><Hint>Ready to set up: {setupSummary(imp.preview)}.</Hint></div>
             <div className="setup-preview__actions">
-              <Button variant="danger" onClick={() => void apply(imp.token)}>{imp.restoring ? 'Replace and restore' : 'Replace and import'}</Button>
-              <Button onClick={() => setImp({ step: 'idle' })}>Cancel</Button>
+              <Button variant="primary" onClick={() => void apply(imp.token, false)}>Set up sbtlTV</Button>
+              <Button onClick={() => setImp({ step: 'idle' })}>Decline</Button>
+            </div>
+          </div>
+        )}
+        {imp.step === 'preview' && !(imp.received && sources.length === 0) && (
+          <div className="setup-preview">
+            <div className="setup-preview__summary">
+              <Hint>
+                From sbtlTV {imp.preview.app} on {platformName(imp.preview.platform)}{exportedOn(imp.preview.exportedAt)}: {setupSummary(imp.preview)}.
+              </Hint>
+              <Hint tone="warn">{imp.received ? receivedNote(imp.preview) : 'Replaces your sources, settings, API keys, favorites, watchlist and watch progress. Anything not in the file is cleared.'}</Hint>
+            </div>
+            <OptionRow title="Back up my setup first" help="Kept on this computer. Restore it here if needed."><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
+            <div className="setup-preview__actions">
+              <Button variant="danger" onClick={() => void apply(imp.token)}>{imp.restoring ? 'Replace and restore' : imp.received ? 'Replace' : 'Replace and import'}</Button>
+              <Button onClick={() => setImp({ step: 'idle' })}>{imp.received ? 'Decline' : 'Cancel'}</Button>
             </div>
           </div>
         )}
@@ -193,6 +235,28 @@ export function BackupTransferTab({ lastExport, onExported }: { lastExport: Last
             )}
           </>
         )}
+      </Section>
+
+      <Section title="How sending works">
+        <div className="setup-how">
+          <div>
+            <div className="setup-how__title">To receive</div>
+            <ol className="setup-how__steps">
+              <li>Show my code, and tell it to the person sending.</li>
+              <li>They type it in. You both see three words.</li>
+              <li>Same words? Tap Same words. Nothing changes until you accept it.</li>
+            </ol>
+          </div>
+          <div>
+            <div className="setup-how__title">To send</div>
+            <ol className="setup-how__steps">
+              <li>Ask for their code. They find it under Live TV › Receive a setup, or here.</li>
+              <li>Pick what to send, type the code, Connect.</li>
+              <li>Check you both see the same three words, then send.</li>
+            </ol>
+          </div>
+        </div>
+        <Hint>Only use a code from someone you know. Different words mean someone else answered: stop there. The setup is end-to-end encrypted on the sbtlTV relay, so even we can't read it, and it's deleted once picked up.</Hint>
       </Section>
 
       {backups.length > 0 && (

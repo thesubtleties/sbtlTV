@@ -25,8 +25,21 @@
   background: var(--accent-faint);
 }
 
-.privacy__note {
-  color: var(--text-3);
+/* Where the switch for a service lives, under its name */
+.privacy__where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin: 3px 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.privacy__where-sep {
+  margin: 0 6px;
+  color: var(--faint);
+  font-weight: 400;
 }
 
 .privacy__ip {

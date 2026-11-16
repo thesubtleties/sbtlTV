@@ -46,8 +46,55 @@
   cursor: pointer;
 }
 
+/* A received or imported setup, before it's applied: what it is, then the choice */
+.setup-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setup-preview__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 620px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.setup-preview__summary .st-hint {
+  max-width: none;
+}
+
 .setup-preview__actions {
   display: flex;
   gap: 8px;
   margin-top: 8px;
+}
+
+/* How sending works: receive and send side by side, stacked when narrow */
+.setup-how {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px 32px;
+  max-width: 720px;
+}
+
+.setup-how__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.setup-how__steps {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.setup-how__steps li + li {
+  margin-top: 4px;
 }

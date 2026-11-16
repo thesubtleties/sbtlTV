@@ -1,0 +1,53 @@
+.knock-code {
+  font-family: var(--font-mono, 'Fira Mono', monospace);
+  font-size: 28px;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  user-select: all;
+}
+
+.knock-words {
+  font-family: var(--font-mono, 'Fira Mono', monospace);
+  font-size: 20px;
+  color: var(--accent);
+}
+
+.knock-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* The code or words with the line that explains them: one group */
+.knock-panel__show {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.knock-panel__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.knock-draft {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  /* .st-row__control shrinks children to their content: without a width the columns overlap */
+  align-self: stretch;
+  width: 100%;
+  max-width: 480px;
+}
+
+/* .st-input is content-box: at width 100% its padding would spill into the next column */
+.knock-draft > .st-input,
+.knock-draft > .st-select {
+  box-sizing: border-box;
+  max-width: none;
+}
+
+.knock-draft > .knock-panel__actions {
+  grid-column: 1 / -1;
+}

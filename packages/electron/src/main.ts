@@ -33,6 +33,7 @@ import { preferredCaptionLanguage } from './subtitle-settings.js';
 import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store.js';
 import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
 import { registerSetupTransfer } from './setup-transfer.js';
+import { registerMailbox } from './mailbox/mailbox-ipc.js';
 import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { makeZip } from './zip-writer.js';
 const { autoUpdater } = electronUpdater;
@@ -523,7 +524,14 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
   mainWindow.on('closed', () => {
     mainWindow = null;
     if (!nativeRecoveryInProgress) killMpv();
+    void mailbox.stop();   // a knock with no window to show it would only confuse the other side
   });
+
+  // A reload or a crashed page loses the knock's screen: cancel it so the other side hears
+  mainWindow.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) void mailbox.stop();
+  });
+  mainWindow.webContents.on('render-process-gone', () => { void mailbox.stop(); });
 
   // Drive the renderer's "fullscreen" state (button icon + Esc-to-exit). macOS uses true OS
   // fullscreen events; Linux uses maximize state. Windows is driven directly from the
@@ -2617,11 +2625,13 @@ ipcMain.handle('privacy-switch-keyring', (_event, keyring: unknown) => {
 });
 
 // Settings > Backup & transfer (setup-transfer.ts)
-registerSetupTransfer({
+const setupTransfer = registerSetupTransfer({
   window: () => mainWindow,
   relaunch: () => restartApp(),
   log: (m) => debugLog(m, 'setup'),
 });
+// Settings > Sync & transfer: send and receive through the mailbox (mailbox/mailbox-ipc.ts)
+const mailbox = registerMailbox({ stage: setupTransfer.stage, log: (m) => debugLog(m, 'mailbox') });
 
 // A failure is logged by its reason only, never with an address.
 ipcMain.handle('privacy-check-ip', async () => {
@@ -3156,7 +3166,16 @@ app.whenReady().then(async () => {
 
 ipcMain.on('data-request-port', (event) => dataHost?.giveRendererPort(event.sender));
 
-app.on('before-quit', () => {
+let mailboxStopped = false;
+app.on('before-quit', (event) => {
+  // A knock in progress (or its cancel, started by closing the window): let the relay hear it's
+  // cancelled, at most a second, then quit for real; the data process stops on that second pass
+  if (mailbox.active() && !mailboxStopped) {
+    mailboxStopped = true;
+    event.preventDefault();
+    void Promise.race([mailbox.stop(), new Promise((r) => setTimeout(r, 1000))]).then(() => app.quit());
+    return;
+  }
   dataHost?.shutdown();
   dataHost = null;
 });
