@@ -142,6 +142,9 @@
 :root[data-palette='sbtl'] .placeholder__logo { color: var(--faint); }
 /* sbtl light: the logo in its button colour (the slate blue), at 85% */
 :root[data-palette='sbtl-light'] .placeholder__logo { color: color-mix(in srgb, var(--accent) 85%, transparent); }
+/* Mocha: its bright green only on the background logo (dim); the small logos stay in its text colour */
+:root[data-palette='mocha'] .placeholder__logo { color: color-mix(in srgb, var(--accent) 20%, transparent); }
+:root[data-palette='mocha'] .title-bar-logo { color: var(--text); }
 
 /* Sync status indicator - sits below logo with fixed height to prevent shifting */
 .sync-status {

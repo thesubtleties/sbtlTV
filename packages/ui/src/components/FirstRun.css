@@ -183,8 +183,10 @@
 
 .first-run__title:focus { outline: none; }
 
-/* sbtl keeps its logo white (its text colour); every other palette, sbtl light included, takes its accent */
+/* sbtl and Mocha keep these logos in their text colour (their accents are too bright here); the others take their accent */
 :root[data-palette='sbtl'] .first-run__logo,
-:root[data-palette='sbtl'] .whats-new__logo {
+:root[data-palette='sbtl'] .whats-new__logo,
+:root[data-palette='mocha'] .first-run__logo,
+:root[data-palette='mocha'] .whats-new__logo {
   color: var(--text);
 }
