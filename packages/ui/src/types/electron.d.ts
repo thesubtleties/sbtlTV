@@ -255,7 +255,7 @@ export interface MailboxApi {
 }
 
 /** Settings > Sync & transfer > Sync (the engine lives in main; see packages/mailbox/src/client/sync-engine.ts) */
-export type SyncParts = { watchlist: boolean; progress: boolean; settings: boolean };
+export type SyncParts = { watchlist: boolean; progress: boolean; settings: boolean; favorites: boolean };
 export interface SyncView {
   status: 'off' | 'pending' | 'active' | 'removed' | 'ended' | 'keyring' | 'update';
   lastSync: number | null;

@@ -72,8 +72,8 @@ export function registerSync(deps: {
   });
   ipcMain.handle('sync:setParts', (_e, p: unknown) => {
     const o = p as Record<string, unknown> | null;
-    if (!o || typeof o.watchlist !== 'boolean' || typeof o.progress !== 'boolean' || typeof o.settings !== 'boolean') return;
-    engine.setParts({ watchlist: o.watchlist, progress: o.progress, settings: o.settings });
+    if (!o || typeof o.watchlist !== 'boolean' || typeof o.progress !== 'boolean' || typeof o.settings !== 'boolean' || typeof o.favorites !== 'boolean') return;
+    engine.setParts({ watchlist: o.watchlist, progress: o.progress, settings: o.settings, favorites: o.favorites });
   });
   ipcMain.handle('sync:rename', (_e, name: unknown) => { if (typeof name === 'string') engine.rename(name); });
   ipcMain.handle('sync:remove', async (_e, id: unknown) => {

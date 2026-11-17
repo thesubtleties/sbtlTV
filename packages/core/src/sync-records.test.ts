@@ -115,3 +115,24 @@ describe('pruneTombstones window', () => {
     expect([...pruneTombstones(m, 100 * day).keys()]).toEqual(['young']);
   });
 });
+
+describe('fav records', () => {
+  const fav = { k: 'fav', host: 'provider.example', ch: '1234', guide: 'CNN.us', name: 'CNN HD', at: 1_700_000_000_000 };
+  it('validates, keys by host and channel id, and belongs to Favorites', () => {
+    const r = validateRecord(fav)!;
+    expect(r).toEqual(fav);
+    expect(recordKey(r)).toBe('fav:provider.example:1234');
+    expect(recordPart(r)).toBe('favorites');
+  });
+  it('a removal needs no guide id; extra fields are dropped', () => {
+    expect(validateRecord({ k: 'fav', host: 'file', ch: 'abc', name: 'X', at: 5, removed: true, url: 'http://x' })).toEqual({ k: 'fav', host: 'file', ch: 'abc', name: 'X', at: 5, removed: true });
+  });
+  it('rejects bad hosts and ids (no logins, schemes or paths)', () => {
+    for (const host of ['', 'http://a.b', 'user:pw@a.b', 'a.b/path', 'A'.repeat(300)]) expect(validateRecord({ ...fav, host })).toBeNull();
+    for (const ch of ['', 'x'.repeat(200)]) expect(validateRecord({ ...fav, ch })).toBeNull();
+    expect(validateRecord({ ...fav, guide: 'g'.repeat(300) })).toBeNull();
+  });
+  it('an unknown kind is ignored, not an error (older builds meeting newer records)', () => {
+    expect(validateRecord({ k: 'zz', at: 5 })).toBeNull();
+  });
+});

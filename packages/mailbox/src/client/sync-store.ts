@@ -11,8 +11,8 @@ import { exportPrivate, keyPairFromPrivate, type KeyPair } from '../protocol/ind
 export interface Sealer { available(): boolean; seal(plain: string): string; open(sealed: string): string }
 export class KeyringUnavailable extends Error { constructor() { super('keyring unavailable'); } }
 
-export type Parts = { watchlist: boolean; progress: boolean; settings: boolean };
-export const DEFAULT_PARTS: Parts = { watchlist: true, progress: true, settings: false };
+export type Parts = { watchlist: boolean; progress: boolean; settings: boolean; favorites: boolean };
+export const DEFAULT_PARTS: Parts = { watchlist: true, progress: true, settings: false, favorites: true };
 export type SyncStatus = 'pending' | 'active' | 'removed' | 'ended';
 export interface OtherComputer { name: string; pub: string; counter: number; seq: number; records: SyncRecord[]; seenAt: number }
 /**
@@ -70,7 +70,8 @@ export class SyncStore {
     try { text = readFileSync(this.file, 'utf8'); } catch { return null; }
     try {
       const f = JSON.parse(text) as Partial<SyncFile> | null;
-      if (looksRight(f)) return { ...f, epoch: typeof f.epoch === 'string' ? f.epoch : null, previous: Array.isArray(f.previous) ? f.previous : [], interrupted: Array.isArray(f.interrupted) ? f.interrupted : [], removedIds: Array.isArray(f.removedIds) ? f.removedIds : [] };
+      // A part added later (Favorites) starts at its default for computers already in a sync
+      if (looksRight(f)) return { ...f, parts: { ...DEFAULT_PARTS, ...f.parts }, epoch: typeof f.epoch === 'string' ? f.epoch : null, previous: Array.isArray(f.previous) ? f.previous : [], interrupted: Array.isArray(f.interrupted) ? f.interrupted : [], removedIds: Array.isArray(f.removedIds) ? f.removedIds : [] };
     } catch { /* not JSON: below */ }
     // Read but not a sync file: kept aside (never trusted), and never a reason not to start
     try { renameSync(this.file, `${this.file}.bad`); } catch { /* still not trusted */ }
