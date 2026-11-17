@@ -22,7 +22,7 @@ describe('Movies & Series header setting', () => {
     const floating = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Floating')!;
     await act(async () => floating.click());
     expect(useUIStore.getState().settings.appearance?.header).toBe('floating');
-    expect(JSON.stringify(saved.at(-1))).toContain('"header":"floating"');
+    expect(JSON.stringify(saved[saved.length - 1])).toContain('"header":"floating"');
     expect(host.textContent).toContain('A floating bar; categories in a Genres panel.');
   });
 
