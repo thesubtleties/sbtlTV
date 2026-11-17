@@ -11,6 +11,7 @@
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import './HorizontalCategoryStrip.css';
+import './HeaderStyles.css';
 
 interface Category {
   id: string;
@@ -76,6 +77,12 @@ const ChevronLeft = () => (
   </svg>
 );
 
+const ChevronDown = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+);
+
 const ChevronRight = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="9 18 15 12 9 6" />
@@ -95,6 +102,8 @@ export function HorizontalCategoryStrip({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  // Experiment (header style B): the category list as a sheet under a Genres button
+  const [genresOpen, setGenresOpen] = useState(false);
 
   // Process categories: strip prefixes and sort alphabetically
   const processedCategories = useMemo(() => {
@@ -207,6 +216,8 @@ export function HorizontalCategoryStrip({
         </button>
       )}
 
+      {/* Experiment: one group for the navigation (layout-neutral unless a header style uses it) */}
+      <div className="h-category-strip__nav">
       {/* Left arrow */}
       <button
         className={`h-category-strip__arrow h-category-strip__arrow--left ${canScrollLeft ? 'visible' : ''}`}
@@ -258,6 +269,35 @@ export function HorizontalCategoryStrip({
       >
         <ChevronRight />
       </button>
+
+      {/* Experiment (header style B): Genres button + sheet; hidden in the default style */}
+      {showUnifiedHeader && (
+        <div className="h-category-strip__genres">
+          <button
+            className={`h-category-strip__genres-btn ${selectedId && selectedId !== 'all' ? 'active' : ''}`}
+            onClick={() => setGenresOpen((o) => !o)}
+            aria-expanded={genresOpen}
+          >
+            {processedCategories.find((c) => c.id === selectedId)?.displayName ?? 'Genres'}
+            <ChevronDown />
+          </button>
+          {genresOpen && (
+            <div className="h-category-strip__sheet" role="menu">
+              {processedCategories.map((cat) => (
+                <button
+                  key={cat.id}
+                  role="menuitem"
+                  className={`h-category-strip__sheet-item ${selectedId === cat.id ? 'active' : ''}`}
+                  onClick={() => { onSelect(cat.id); setGenresOpen(false); }}
+                >
+                  {cat.displayName}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      </div>
 
       {/* Search input - only in unified header */}
       {showUnifiedHeader && onSearchChange && (

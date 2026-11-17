@@ -1,0 +1,162 @@
+/*
+ * Experiment (exp/hero-under-chrome): header styles to try over the full-bleed hero. Picked with
+ * <html data-hstyle="text|capsule">; without it the header looks as it always has.
+ */
+
+/* Default: the group is invisible to layout and the Genres button doesn't show */
+.h-category-strip__nav { display: contents; }
+.h-category-strip__genres { display: none; }
+
+/* ---------- A: text tabs ---------- */
+:root[data-hstyle='text'] .h-category-strip--unified { gap: 20px; }
+:root[data-hstyle='text'] .h-category-strip--unified .h-category-strip__back {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  padding: 6px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+}
+:root[data-hstyle='text'] .h-category-strip--unified .h-category-strip__scroll { gap: 4px; }
+:root[data-hstyle='text'] .h-category-strip--unified .h-category-strip__pill {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  border-color: transparent !important;
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 500;
+  padding: 6px 12px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.75);
+  position: relative;
+}
+:root[data-hstyle='text'] .h-category-strip--unified .h-category-strip__pill:hover { color: #fff; }
+:root[data-hstyle='text'] .h-category-strip--unified .h-category-strip__pill.active {
+  color: #fff;
+  font-weight: 700;
+}
+:root[data-hstyle='text'] .h-category-strip--unified .h-category-strip__pill.active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* Search: a round glass button that widens when used */
+:root[data-hstyle='text'] .h-category-strip--unified .h-category-strip__search {
+  width: 40px;
+  min-width: 40px;
+  padding: 0 11px;
+  border-radius: 999px;
+  overflow: hidden;
+  background-color: rgba(0, 0, 0, 0.35) !important;
+  border-color: rgba(255, 255, 255, 0.18);
+  transition: width 0.25s ease;
+}
+:root[data-hstyle='text'] .h-category-strip--unified .h-category-strip__search:focus-within,
+:root[data-hstyle='text'] .h-category-strip--unified .h-category-strip__search:has(input:not(:placeholder-shown)) {
+  width: 280px;
+}
+
+/* ---------- B: glass capsule + genres sheet ---------- */
+:root[data-hstyle='capsule'] .h-category-strip--unified { justify-content: space-between; }
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(20, 20, 24, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+/* Only Home and All stay in the capsule; the rest live in the Genres sheet */
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__arrow,
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__pill:nth-child(n + 3) { display: none; }
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__scroll-wrapper { flex: none; }
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before,
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after { display: none; }
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__scroll { gap: 2px; overflow: visible; }
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__pill,
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__genres-btn {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  border: none !important;
+  border-radius: 999px;
+  padding: 8px 18px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+}
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__pill.active,
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__genres-btn.active {
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #111;
+}
+:root[data-hstyle='capsule'] .h-category-strip__genres { display: block; position: relative; }
+:root[data-hstyle='capsule'] .h-category-strip__genres-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: inherit;
+}
+:root[data-hstyle='capsule'] .h-category-strip__genres-btn svg { width: 16px; height: 16px; }
+:root[data-hstyle='capsule'] .h-category-strip__sheet {
+  position: absolute;
+  top: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, 80vw);
+  max-height: 60vh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(20, 20, 24, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  z-index: 60;
+}
+:root[data-hstyle='capsule'] .h-category-strip__sheet-item {
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font: inherit;
+  cursor: pointer;
+}
+:root[data-hstyle='capsule'] .h-category-strip__sheet-item:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+:root[data-hstyle='capsule'] .h-category-strip__sheet-item.active { color: var(--accent); font-weight: 700; }
+/* Back and search as round glass buttons at either side */
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__back {
+  border-radius: 999px;
+  background: rgba(20, 20, 24, 0.45) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px) !important;
+  padding: 8px 14px 8px 10px;
+}
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__search {
+  border-radius: 999px;
+  width: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  overflow: hidden;
+  background-color: rgba(20, 20, 24, 0.45) !important;
+  border-color: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px) !important;
+  transition: width 0.25s ease;
+}
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__search:focus-within,
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__search:has(input:not(:placeholder-shown)) {
+  width: 280px;
+}
