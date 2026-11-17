@@ -75,21 +75,8 @@ export interface AppSettings {
 
 export type { LinuxPlayerMode };
 
-export const PALETTES = ['sbtl', 'sbtl-light', 'mocha', 'pi', 'catppuccin', 'tokyonight', 'kanagawa', 'gruvbox', 'nord', 'rosepine', 'everforest', 'dracula', 'caelestia'] as const;
-export const TYPEFACES = ['fira', 'mono', 'system'] as const;
-export const ACCENTS = ['palette', 'system'] as const;
-export interface Appearance {
-  palette: (typeof PALETTES)[number];
-  typeface: (typeof TYPEFACES)[number];
-  accent: (typeof ACCENTS)[number];  // 'system' takes the OS accent where there is one
-}
-
-function normalizeAppearance(value: Partial<Appearance> | undefined): Appearance {
-  const palette = PALETTES.find(p => p === value?.palette) ?? 'sbtl';
-  const typeface = TYPEFACES.find(t => t === value?.typeface) ?? 'fira';
-  const accent = ACCENTS.find(a => a === value?.accent) ?? 'palette';
-  return { palette, typeface, accent };
-}
+export { PALETTES, TYPEFACES, ACCENTS, HEADERS, normalizeAppearance, type Appearance } from './appearance.js';
+import { normalizeAppearance, type Appearance } from './appearance.js';
 
 // Internal storage format (encrypted)
 interface StoredSettings {
