@@ -562,6 +562,18 @@
   overflow-y: auto;
 }
 
+/* In the first-run setup: the panel is the frame */
+.source-form--inline {
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  width: auto;
+  max-width: 560px;
+  max-height: none;
+  overflow: visible;
+}
+
 .source-form h3 {
   margin: 0 0 20px 0;
   font-size: 16px;
