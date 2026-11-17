@@ -3,10 +3,11 @@
  * Records from the user's other computers, written into this computer's lists. Straight to Dexie:
  * nothing here is reported back to sync. A local row saved later than a record is left alone.
  */
-import type { SyncRecord } from '@sbtltv/core';
+import type { FavoriteRecord, SyncRecord } from '@sbtltv/core';
 import { db, type StoredWatchProgress } from '../../db';
 import { data } from '../../data/client';
 import { episodeProgressId, movieProgressId } from '../continue-watching/series-key';
+import { applyFavoriteRecords } from './applyFavorites';
 
 type Lookup = (tmdbIds: number[]) => Promise<{ stream_id: string; tmdb_id?: number }[]>;
 const libraryLookup: Lookup = (tmdbIds) => data.query({ type: 'movies', by: { kind: 'tmdbIds', tmdbIds }, sourceIds: [] });
@@ -14,6 +15,8 @@ const libraryLookup: Lookup = (tmdbIds) => data.query({ type: 'movies', by: { ki
 const pct = (pos: number, dur: number) => (dur > 0 ? Math.round((pos / dur) * 100) : 0);
 
 export async function applyRecords(records: SyncRecord[], lookup: Lookup = libraryLookup): Promise<void> {
+  const favorites = records.filter((r): r is FavoriteRecord => r.k === 'fav');
+  if (favorites.length) await applyFavoriteRecords(favorites);
   const movieNeeds = records.filter((r) => r.k === 'pm' && !r.removed).map((r) => (r as Extract<SyncRecord, { k: 'pm' }>).tmdb);
   const library = new Map<number, string>();
   if (movieNeeds.length) {

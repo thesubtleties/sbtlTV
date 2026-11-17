@@ -40,6 +40,7 @@ import { perfMeasure, perfStart } from './utils/perfMarks';
 import { ErrorCard } from './components/ErrorCard';
 import { sendSnapshot, setSyncActive } from './services/sync/outbox';
 import { applyRecords } from './services/sync/apply';
+import { rematchFavorites } from './services/sync/applyFavorites';
 import { FirstRun, OfferSync } from './components/FirstRun';
 import { WhatsNew } from './components/WhatsNew';
 import { WHATS_NEW, type WhatsNewItem } from './whatsNewItems';
@@ -319,6 +320,9 @@ function App() {
   const settingsLoaded = useSettingsLoaded();
   const sourcesLoaded = useSourcesLoaded();
   const sourceCount = useUIStore((s) => s.sources.length);
+  // A source added, turned on or off: synced favorites waiting for a channel may land now
+  const sourcesKey = useUIStore((s) => s.sources.map((x) => `${x.id}:${x.enabled ? 1 : 0}`).join(','));
+  useEffect(() => { if (sourcesKey) void rematchFavorites().catch(() => {}); }, [sourcesKey]);
   const firstRunMarker = useUIStore((s) => s.settings.firstRun);
   const [firstRun, setFirstRun] = useState<FirstRunMode | 'closed'>(null);
   const liveFirstRun = firstRunMode({ settingsLoaded, sourcesLoaded, sourceCount, marker: firstRunMarker });
@@ -905,6 +909,8 @@ function App() {
     // usually follows it: it clears when either stage ends, and the guide stage
     // starting raises it again. A source with no guide only ever sends channels.
     const toast = (title: string) => useToastStore.getState().addToast({ kind: 'error', title, message: 'Check the source and your connection — details are in the debug log.', duration: 8000 });
+    // New channels: synced favorites still waiting for theirs may find it now
+    if (p.stage === 'channels' && p.state === 'finished') void rematchFavorites().catch(() => {});
     if (p.stage === 'channels' || p.stage === 'epg') {
       setChannelSyncing(p.state === 'started');
       if (p.state === 'failed') toast(p.stage === 'channels' ? 'Sync failed' : 'Guide sync failed');
