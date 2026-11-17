@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest';
+import { baseVersion, compareVersions, whatsNewToShow } from './whatsNew';
+import type { WhatsNewItem } from '../whatsNewItems';
+
+const item: WhatsNewItem = { id: 'sync', title: 'Sync', text: 'x' };
+const items = { '0.17.0': [item] };
+const s = { current: '0.17.0', lastSeen: '0.16.0', buildKind: 'release', hasSources: true, firstRun: null, items } as const;
+
+describe('compareVersions', () => {
+  it('orders numbers and prereleases', () => {
+    expect(compareVersions('0.17.0', '0.16.9')).toBeGreaterThan(0);
+    expect(compareVersions('0.10.0', '0.9.0')).toBeGreaterThan(0);
+    expect(compareVersions('0.17.0-beta.1', '0.17.0')).toBeLessThan(0);
+    expect(compareVersions('0.17.0-beta.10', '0.17.0-beta.2')).toBeGreaterThan(0);
+    expect(compareVersions('0.17.0', '0.17.0')).toBe(0);
+    expect(baseVersion('0.17.0-beta.3')).toBe('0.17.0');
+  });
+});
+
+describe('whatsNewToShow', () => {
+  it('shows the new version items once after an update', () => {
+    expect(whatsNewToShow(s)).toEqual([item]);
+    expect(whatsNewToShow({ ...s, lastSeen: '0.17.0' })).toBe(null);
+  });
+  it('a beta and its stable share one list: shown once across beta.1, beta.2 and 0.17.0', () => {
+    expect(whatsNewToShow({ ...s, current: '0.17.0-beta.1' })).toEqual([item]);
+    expect(whatsNewToShow({ ...s, current: '0.17.0-beta.2', lastSeen: '0.17.0-beta.1' })).toBe(null);
+    expect(whatsNewToShow({ ...s, current: '0.17.0', lastSeen: '0.17.0-beta.2' })).toBe(null);
+  });
+  it('skipped versions see only the current list', () => {
+    expect(whatsNewToShow({ ...s, lastSeen: '0.14.0' })).toEqual([item]);
+  });
+  it('never on test or local builds', () => {
+    expect(whatsNewToShow({ ...s, buildKind: 'test' })).toBe(null);
+    expect(whatsNewToShow({ ...s, buildKind: 'local' })).toBe(null);
+  });
+  it('never on a fresh install (the first run is showing, or no sources and nothing seen)', () => {
+    expect(whatsNewToShow({ ...s, firstRun: 'setup', lastSeen: undefined, hasSources: false })).toBe(null);
+    expect(whatsNewToShow({ ...s, lastSeen: undefined, hasSources: false })).toBe(null);
+  });
+  it('an update from 0.16 or older (no marker yet, has sources) counts as updated', () => {
+    expect(whatsNewToShow({ ...s, lastSeen: undefined })).toEqual([item]);
+  });
+  it('a version without items shows nothing', () => {
+    expect(whatsNewToShow({ ...s, current: '0.17.1', lastSeen: '0.17.0' })).toBe(null);
+  });
+});
