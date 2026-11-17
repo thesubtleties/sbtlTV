@@ -142,3 +142,181 @@
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search:has(input:not(:placeholder-shown)) {
   width: 280px;
 }
+
+/* ---------- Floating: one glass capsule (Home · All · Genres), back and search as round glass buttons ---------- */
+/* In the Simple style the capsule group is invisible to layout and the Genres button isn't shown */
+.h-category-strip__nav { display: contents; }
+.h-category-strip__genres,
+.h-category-strip__indicator { display: none; }
+
+/* Caelestia's motion (/etc/xdg/quickshell/caelestia/components/Anim.qml) */
+:root[data-vod-header='floating'] {
+  --ease-spatial: cubic-bezier(0.38, 1.21, 0.22, 1);       /* moves, overshoots a little, settles */
+  --ease-spatial-fast: cubic-bezier(0.42, 1.67, 0.21, 0.9);
+  --ease-effects: cubic-bezier(0.34, 0.8, 0.34, 1);        /* fades and colour */
+  --ease-out: cubic-bezier(0.3, 0, 0.8, 0.15);             /* leaving */
+  --glass: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+:root[data-vod-header='floating'] .h-category-strip--unified { justify-content: space-between; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background-color: var(--glass);
+  border: 1px solid var(--edge);
+  backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.3);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  transition: background-color 250ms var(--ease-effects), border-color 250ms var(--ease-effects), box-shadow 250ms var(--ease-effects);
+}
+/* Only Home and All stay in the capsule; the categories live in the Genres panel */
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__arrow,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__pill:nth-child(n + 3) { display: none; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll-wrapper { flex: none; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after { display: none; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll { gap: 2px; overflow: visible; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__pill,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__genres-btn {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 18px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 220ms var(--ease-effects), transform 220ms var(--ease-spatial-fast);
+}
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__pill:active,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__genres-btn:active { transform: scale(0.94); }
+/* The highlight is the backing: the active item only changes colour */
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__pill.active,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__genres-btn.active {
+  background: transparent;
+  color: var(--on-button);
+}
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__indicator {
+  display: block;
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: var(--ind-w, 0px);
+  transform: translateX(var(--ind-x, 0px));
+  opacity: var(--ind-o, 0);
+  border-radius: 999px;
+  background: var(--button);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.25);
+  transition: transform 500ms var(--ease-spatial), width 500ms var(--ease-spatial), opacity 200ms var(--ease-effects);
+  pointer-events: none;
+}
+:root[data-vod-header='floating'] .h-category-strip__genres { display: block; position: static; }
+:root[data-vod-header='floating'] .h-category-strip__genres-label {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root[data-vod-header='floating'] .h-category-strip__genres-btn svg { width: 16px; height: 16px; transition: transform 500ms var(--ease-spatial); }
+:root[data-vod-header='floating'] .h-category-strip__genres-btn[aria-expanded='true'] svg { transform: rotate(180deg); }
+
+/* The panel grows out of the capsule: while it's open the capsule's own glass is off, so the panel's is the only layer
+   (no seam; and the capsule isn't the panel's backdrop root, which would stop its blur) */
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__nav:has(.h-category-strip__sheet) {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+:root[data-vod-header='floating'] .h-category-strip__sheet {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, 80vw);
+  max-height: 60vh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: calc(var(--cap-h, 48px) + 12px) 14px 14px;
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  border: 1px solid var(--edge);
+  backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.45);
+  z-index: -1;
+  clip-path: inset(0 0 0 0 round 24px);
+  animation: hs-sheet-grow 520ms var(--ease-spatial) both;
+}
+:root[data-vod-header='floating'] .h-category-strip__sheet--closing { animation: hs-sheet-shrink 300ms var(--ease-out) both; }
+@keyframes hs-sheet-grow {
+  from { clip-path: inset(0 calc(50% - var(--cap-w, 240px) / 2) calc(100% - var(--cap-h, 48px)) round 999px); }
+  to { clip-path: inset(0 0 0 0 round 24px); }
+}
+@keyframes hs-sheet-shrink {
+  from { clip-path: inset(0 0 0 0 round 24px); }
+  to { clip-path: inset(0 calc(50% - var(--cap-w, 240px) / 2) calc(100% - var(--cap-h, 48px)) round 999px); }
+}
+:root[data-vod-header='floating'] .h-category-strip__sheet-item {
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  animation: hs-item-in 320ms var(--ease-effects) both;
+  animation-delay: calc(140ms + min(var(--i, 0), 40) * 9ms);
+  transition: background-color 180ms var(--ease-effects), color 180ms var(--ease-effects), transform 220ms var(--ease-spatial-fast);
+}
+:root[data-vod-header='floating'] .h-category-strip__sheet-item:hover,
+:root[data-vod-header='floating'] .h-category-strip__sheet-item:focus-visible { background: var(--fill-3); transform: translateX(3px); outline: none; }
+:root[data-vod-header='floating'] .h-category-strip__sheet-item.active { color: var(--accent); font-weight: 700; }
+:root[data-vod-header='floating'] .h-category-strip__sheet--closing .h-category-strip__sheet-item { animation: hs-item-out 140ms var(--ease-out) both; animation-delay: 0ms; }
+@keyframes hs-item-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes hs-item-out { to { opacity: 0; } }
+
+/* Back and search: round glass buttons at either side; search swells open from its circle */
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__back {
+  border-radius: 999px;
+  background-color: var(--glass);
+  border: 1px solid var(--edge);
+  backdrop-filter: blur(18px);
+  color: var(--fg);
+  padding: 8px 14px 8px 10px;
+}
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search {
+  border-radius: 999px;
+  width: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  overflow: hidden;
+  cursor: pointer;
+  color: var(--fg);
+  background-color: var(--glass);
+  border-color: var(--edge);
+  backdrop-filter: blur(18px);
+  transition: width 500ms var(--ease-spatial), background-color 250ms var(--ease-effects);
+}
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search:focus-within,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search:has(input:not(:placeholder-shown)) { width: 280px; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-vod-header='floating'] .h-category-strip__sheet,
+  :root[data-vod-header='floating'] .h-category-strip__sheet-item { animation-duration: 1ms !important; animation-delay: 0ms !important; }
+  :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__indicator,
+  :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search { transition-duration: 1ms; }
+}
