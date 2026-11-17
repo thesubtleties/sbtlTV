@@ -105,7 +105,9 @@ test('malformed but well-typed requests are refused before they reach the databa
   routeRendererMessage(db, { id: 21, type: 'channelSearch', query: 'a', sourceIds: [], limit: -1 }, (r) => replies.push(r), () => {});
   routeRendererMessage(db, { id: 22, type: 'channelsByIds', streamIds: new Array(100_001).fill('x') }, (r) => replies.push(r), () => {});
   routeRendererMessage(db, { id: 23, type: 'programsInRange', streamIds: ['s1_10'], windowStartMs: 'now', windowEndMs: 1 }, (r) => replies.push(r), () => {});
-  assert.deepEqual(replies.map((r) => [r.id, r.ok]), [[20, false], [21, false], [22, false], [23, false]]);
+  routeRendererMessage(db, { id: 24, type: 'channelsByGuideIds', guideIds: new Array(100_001).fill('x'), sourceIds: [] }, (r) => replies.push(r), () => {});
+  routeRendererMessage(db, { id: 25, type: 'channelsByGuideIds', guideIds: ['x'], sourceIds: 'm1' }, (r) => replies.push(r), () => {});
+  assert.deepEqual(replies.map((r) => [r.id, r.ok]), [[20, false], [21, false], [22, false], [23, false], [24, false], [25, false]]);
   assert.ok(replies.every((r) => !r.ok && /invalid request/.test(r.error)));
 });
 

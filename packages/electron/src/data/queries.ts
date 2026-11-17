@@ -118,6 +118,12 @@ export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
       const rows = stmt(db, `select ${CHANNEL_COLS} from channels where stream_id in (select value from json_each(?)) order by name collate nocase`).all(j(req.streamIds));
       return withCategoryIds(db, (rows as ChannelWire[]).map(fixChannel), 'channel');
     }
+    case 'channelsByGuideIds': {
+      // Synced favorites from another computer: this computer's channels with the same guide id
+      const rows = stmt(db, `select ${CHANNEL_COLS} from channels where ${SRC} and epg_channel_id != '' and epg_channel_id in (select value from json_each($guides)) order by channel_num is null, channel_num, name collate nocase`)
+        .all({ $sources: j(req.sourceIds), $guides: j(req.guideIds) });
+      return withCategoryIds(db, (rows as ChannelWire[]).map(fixChannel), 'channel');
+    }
     case 'channelCount':
       return (stmt(db, `select count(*) as c from channels where ${SRC}`).get({ $sources: j(req.sourceIds) }) as { c: number }).c;
     case 'channelSearch': {

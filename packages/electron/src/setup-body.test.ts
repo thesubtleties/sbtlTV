@@ -52,8 +52,8 @@ test('only the travelling settings are exported', () => {
 });
 
 test('an import keeps machine settings and internal markers, nothing it replaces', () => {
-  const stored = { theme: 'dark', channelSortOrder: 'number', linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, firstRun: 'offer-sync', lastSeenVersion: '0.16.0', encryptedTmdbApiKey: 'x' };
-  assert.deepEqual(keptOnImport(stored), { linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, firstRun: 'offer-sync', lastSeenVersion: '0.16.0' });
+  const stored = { theme: 'dark', channelSortOrder: 'number', linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, firstRun: 'offer-sync', lastSeenVersion: '0.16.0', syncMissingChannels: 'gray', encryptedTmdbApiKey: 'x' };
+  assert.deepEqual(keptOnImport(stored), { linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, firstRun: 'offer-sync', lastSeenVersion: '0.16.0', syncMissingChannels: 'gray' });
 });
 
 test('the first-run and What\'s new markers never travel: not exported, and a setup carrying them is refused', () => {

@@ -418,3 +418,15 @@ test('guideSearch caps a very long description', () => {
   const r = runQuery(db, { id: 1, type: 'guideSearch', query: 'big news', sourceIds: [], nowMs: 500, hideAdult: false }) as GuideSearchResult;
   assert.ok(r.later[0].description.length <= 600);
 });
+
+test('channels by guide id: only the given sources, never an empty guide id (synced favorites)', () => {
+  const db = new DatabaseSync(':memory:');
+  createSchema(db);
+  db.exec(`insert into channels(stream_id, source_id, name, channel_num, direct_url, epg_channel_id) values
+    ('m1_1', 'm1', 'CNN HD', 7, 'u', 'CNN.us'),
+    ('m1_2', 'm1', 'CNN SD', 3, 'u', 'CNN.us'),
+    ('m2_9', 'm2', 'CNN', 1, 'u', 'CNN.us'),
+    ('m1_3', 'm1', 'Blank', 1, 'u', '')`);
+  const rows = runQuery(db, { id: 1, type: 'channelsByGuideIds', guideIds: ['CNN.us', ''], sourceIds: ['m1'] }) as { stream_id: string }[];
+  assert.deepEqual(rows.map((r) => r.stream_id), ['m1_2', 'm1_1']);
+});

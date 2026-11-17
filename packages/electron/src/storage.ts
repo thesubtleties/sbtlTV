@@ -47,6 +47,7 @@ export interface AppSettings {
   subdlApiKey?: string;            // SubDL API key (downloaded subtitles)
   rpdbBackdropsEnabled?: boolean;  // Use RPDB for backdrop images (tier 2+)
   syncMissingTitles?: 'gray' | 'hide';  // Synced titles this computer doesn't have (machine setting)
+  syncMissingChannels?: 'hide' | 'gray';  // Synced favorite channels this computer doesn't have (machine setting)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF protection bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering (default: alphabetical)
@@ -104,6 +105,7 @@ interface StoredSettings {
   encryptedSubdlApiKey?: string;    // Base64 encoded encrypted buffer
   rpdbBackdropsEnabled?: boolean;   // Use RPDB for backdrop images
   syncMissingTitles?: 'gray' | 'hide';
+  syncMissingChannels?: 'hide' | 'gray';
   allowLanSources?: boolean;        // Allow requests to LAN IPs
   debugLoggingEnabled?: boolean;    // Write verbose logs to file
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
@@ -276,6 +278,7 @@ export function getSettings(): AppSettings {
   }
   result.rpdbBackdropsEnabled = stored.rpdbBackdropsEnabled ?? false;
   result.syncMissingTitles = stored.syncMissingTitles === 'hide' ? 'hide' : 'gray';
+  result.syncMissingChannels = stored.syncMissingChannels === 'gray' ? 'gray' : 'hide';
   result.allowLanSources = stored.allowLanSources ?? false;
   result.debugLoggingEnabled = stored.debugLoggingEnabled ?? false;
   result.channelSortOrder = stored.channelSortOrder ?? 'alphabetical';
@@ -354,6 +357,7 @@ export function updateSettings(settings: Partial<AppSettings>): void {
     updated.encryptedSubdlApiKey = settings.subdlApiKey ? encryptPassword(settings.subdlApiKey) : undefined;
   }
   if (settings.syncMissingTitles !== undefined) updated.syncMissingTitles = settings.syncMissingTitles === 'hide' ? 'hide' : 'gray';
+  if (settings.syncMissingChannels !== undefined) updated.syncMissingChannels = settings.syncMissingChannels === 'gray' ? 'gray' : 'hide';
   if (settings.rpdbBackdropsEnabled !== undefined) {
     updated.rpdbBackdropsEnabled = settings.rpdbBackdropsEnabled;
   }

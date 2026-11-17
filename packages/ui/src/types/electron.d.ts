@@ -325,6 +325,7 @@ export interface AppSettings {
   subdlApiKey?: string;            // SubDL API key for downloaded subtitles
   rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
   syncMissingTitles?: 'gray' | 'hide';  // Synced titles this computer doesn't have
+  syncMissingChannels?: 'hide' | 'gray';  // Synced favorite channels this computer doesn't have (default hide)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
