@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Source } from '../../types/electron';
 import { data } from '../../data/client';
@@ -55,6 +55,8 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
 }) {
   const [formData, setFormData] = useState<SourceFormData>(() => (editing ? formFromSource(editing) : emptyForm));
   const [error, setError] = useState<string | null>(null);
+  // A save in progress (a big playlist import takes seconds): a second Continue/Enter must not add it twice
+  const savingRef = useRef(false);
   const editingId = editing?.id ?? null;
   const toast = useToast();
   const updateSettings = useUpdateSettings();
@@ -100,7 +102,16 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!window.storage) return;
+    if (!window.storage || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      await submit();
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  async function submit() {
 
     // Validation
     if (!formData.name.trim()) {
@@ -131,7 +142,7 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
       epg_url: formData.epgUrl.trim() || undefined,
     };
 
-    const result = await window.storage.saveSource(source);
+    const result = await window.storage!.saveSource(source);
     if (result.error) {
       setError(result.error);
       return;

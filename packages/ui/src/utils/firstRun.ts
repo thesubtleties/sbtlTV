@@ -5,7 +5,8 @@ export type StepId = (typeof STEPS)[number];
 /** What the first-run panel shows now: the setup (no sources, never finished), the one-time sync offer after a received setup, or nothing. */
 export function firstRunMode(s: { settingsLoaded: boolean; sourcesLoaded: boolean; sourceCount: number; marker: 'offer-sync' | 'done' | undefined }): FirstRunMode {
   if (!s.settingsLoaded || !s.sourcesLoaded || s.marker === 'done') return null;
-  if (s.marker === 'offer-sync') return 'offer-sync';
+  // The sync offer follows a received setup; with no source (the apply failed, or the setup had none) it's the setup again
+  if (s.marker === 'offer-sync') return s.sourceCount > 0 ? 'offer-sync' : 'setup';
   return s.sourceCount === 0 ? 'setup' : null;
 }
 

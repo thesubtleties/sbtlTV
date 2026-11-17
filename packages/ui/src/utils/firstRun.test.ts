@@ -17,6 +17,9 @@ describe('firstRunMode', () => {
   it('done is for good, even with no sources', () => {
     expect(firstRunMode({ ...base, marker: 'done' })).toBe(null);
   });
+  it('an offer with no source (the apply failed, or the setup had no sources) is the setup again', () => {
+    expect(firstRunMode({ ...base, sourceCount: 0, marker: 'offer-sync' })).toBe('setup');
+  });
   it('after a received setup it offers sync once', () => {
     expect(firstRunMode({ ...base, sourceCount: 2, marker: 'offer-sync' })).toBe('offer-sync');
   });

@@ -321,7 +321,18 @@ function App() {
   const firstRunMarker = useUIStore((s) => s.settings.firstRun);
   const [firstRun, setFirstRun] = useState<FirstRunMode | 'closed'>(null);
   const liveFirstRun = firstRunMode({ settingsLoaded, sourcesLoaded, sourceCount, marker: firstRunMarker });
-  useEffect(() => { if (firstRun === null && liveFirstRun) setFirstRun(liveFirstRun); }, [firstRun, liveFirstRun]);
+  useEffect(() => {
+    if (firstRun !== null || !liveFirstRun) return;
+    setFirstRun(liveFirstRun);
+    // A fresh install has nothing new to show: record this version now, so quitting the setup half way
+    // (with a source already saved) doesn't look like an update on the next launch
+    if (liveFirstRun === 'setup' && !useUIStore.getState().settings.lastSeenVersion) {
+      void window.platform?.getVersion().then((version) => {
+        useUIStore.getState().updateSettings({ lastSeenVersion: version });
+        void saveSettings({ lastSeenVersion: version });
+      });
+    }
+  }, [firstRun, liveFirstRun]);
   const firstRunOpen = firstRun === 'setup' || firstRun === 'offer-sync';
   const firstRunOpenRef = useRef(false);
   firstRunOpenRef.current = firstRunOpen;
@@ -359,6 +370,8 @@ function App() {
   }, []);
   const [settingsReceive, setSettingsReceive] = useState(false);
   const [settingsAdd, setSettingsAdd] = useState(false);
+  // Bumped to open Settings afresh on a tab (What's new may be shown over an open Settings)
+  const [settingsKey, setSettingsKey] = useState(0);
   // Stable, so the memoized guide doesn't re-render with every App render
   const openReceiveSetup = useCallback(() => { setSettingsTab('backup'); setSettingsReceive(true); setActiveView('settings'); }, []);
   // Leaving Settings by any route (Escape, another view) forgets the tab the tip opened it on.
@@ -1213,7 +1226,7 @@ function App() {
       />
 
       {/* Settings Panel */}
-      {activeView === 'settings' && <Settings initialTab={settingsTab} initialReceive={settingsReceive} initialAdd={settingsAdd} onShowWhatsNew={showWhatsNew} onClose={() => { setActiveView('none'); setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); }} />}
+      {activeView === 'settings' && <Settings key={settingsKey} initialTab={settingsTab} initialReceive={settingsReceive} initialAdd={settingsAdd} onShowWhatsNew={showWhatsNew} onClose={() => { setActiveView('none'); setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); }} />}
 
       {/* Movies Page */}
       {activeView === 'movies' && (
@@ -1244,6 +1257,7 @@ function App() {
             closeWhatsNew();
             setSettingsTab('backup');
             setSettingsAdd(to === 'add-computer');
+            setSettingsKey((k) => k + 1);
             setActiveView('settings');
           }}
         />
