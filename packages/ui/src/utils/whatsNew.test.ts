@@ -75,3 +75,26 @@ describe('WHATS_NEW', () => {
     }
   });
 });
+
+import { latestList, whatsNewOnLaunch as onLaunch } from './whatsNew';
+
+describe('versions without their own list', () => {
+  const lists = { '0.17.0': [item], '0.15.0': [{ ...item, id: 'old' }] };
+  it('a patch release still shows the newest list not seen yet', () => {
+    expect(whatsNewToShow({ ...s, items: lists, current: '0.17.1', lastSeen: '0.16.0' })).toEqual([item]);
+    expect(whatsNewToShow({ ...s, items: lists, current: '0.17.2', lastSeen: '0.17.1' })).toBe(null);
+    expect(whatsNewToShow({ ...s, items: lists, current: '0.17.1', lastSeen: undefined })).toEqual([item]);
+  });
+  it('About shows the newest list up to this version', () => {
+    expect(latestList(lists, '0.17.3')).toEqual([item]);
+    expect(latestList(lists, '0.16.0')).toEqual([{ ...item, id: 'old' }]);
+    expect(latestList(lists, '0.14.0')).toBe(null);
+  });
+  it('a beta with nothing to show never records itself as seen (its list may come in a later beta)', () => {
+    expect(onLaunch({ ...s, items: {}, current: '0.18.0-beta.1', lastSeen: '0.17.0' })).toBe(null);
+    expect(onLaunch({ ...s, items: {}, current: '0.18.0', lastSeen: '0.17.0' })).toBe('record');
+  });
+  it('every list is keyed by a plain X.Y.Z version', () => {
+    for (const key of Object.keys(WHATS_NEW)) expect(key).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});

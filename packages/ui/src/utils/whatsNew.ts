@@ -26,7 +26,16 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** The items to show after an update, or null. Betas share their release's list, so it shows once. */
+/** The newest list for a version up to `current` (a patch release shows its release's list); null if none. */
+export function latestList(items: Record<string, WhatsNewItem[]>, current: string, after?: string): WhatsNewItem[] | null {
+  const top = baseVersion(current);
+  const keys = Object.keys(items)
+    .filter((k) => items[k].length > 0 && compareVersions(k, top) <= 0 && (after === undefined || compareVersions(k, baseVersion(after)) > 0))
+    .sort(compareVersions);
+  return keys.length ? items[keys[keys.length - 1]] : null;
+}
+
+/** The items to show after an update, or null: the newest list not seen yet. Betas share their release's list, so it shows once. */
 export function whatsNewToShow(s: {
   current: string;
   lastSeen: string | undefined;
@@ -38,8 +47,7 @@ export function whatsNewToShow(s: {
   if (s.buildKind !== 'release' || s.firstRun !== null) return null;
   if (s.lastSeen === undefined && !s.hasSources) return null;
   if (s.lastSeen !== undefined && compareVersions(baseVersion(s.current), baseVersion(s.lastSeen)) <= 0) return null;
-  const list = s.items[baseVersion(s.current)];
-  return list && list.length > 0 ? list : null;
+  return latestList(s.items, s.current, s.lastSeen);
 }
 
 /**
@@ -49,5 +57,6 @@ export function whatsNewToShow(s: {
 export function whatsNewOnLaunch(s: Parameters<typeof whatsNewToShow>[0]): { show: WhatsNewItem[] } | 'record' | null {
   const items = whatsNewToShow(s);
   if (items) return { show: items };
-  return s.buildKind === 'release' && s.firstRun === null && s.lastSeen !== s.current ? 'record' : null;
+  // Never on a beta: its list may only arrive in a later beta, and recording it would skip that list for good
+  return s.buildKind === 'release' && s.firstRun === null && s.lastSeen !== s.current && !s.current.includes('-') ? 'record' : null;
 }

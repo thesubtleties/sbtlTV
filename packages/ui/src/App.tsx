@@ -43,7 +43,7 @@ import { applyRecords } from './services/sync/apply';
 import { FirstRun, OfferSync } from './components/FirstRun';
 import { WhatsNew } from './components/WhatsNew';
 import { WHATS_NEW, type WhatsNewItem } from './whatsNewItems';
-import { baseVersion, whatsNewOnLaunch } from './utils/whatsNew';
+import { latestList, whatsNewOnLaunch } from './utils/whatsNew';
 import { firstRunMode, heldFirstRun, type FirstRunMode } from './utils/firstRun';
 
 // Auto-hide controls after this many milliseconds of inactivity
@@ -365,8 +365,8 @@ function App() {
   }, []);
   const showWhatsNew = useCallback(() => {
     void window.platform?.getVersion().then((version) => {
-      const items = WHATS_NEW[baseVersion(version)];
-      if (items?.length) setWhatsNew({ version, items });
+      const items = latestList(WHATS_NEW, version);
+      if (items) setWhatsNew({ version, items });
     });
   }, []);
   const [settingsReceive, setSettingsReceive] = useState(false);

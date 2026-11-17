@@ -6,7 +6,7 @@ import { debugLog } from '../../utils/debugLog';
 import { OnOff } from './ui';
 import './AboutTab.css';
 import { WHATS_NEW } from '../../whatsNewItems';
-import { baseVersion } from '../../utils/whatsNew';
+import { latestList } from '../../utils/whatsNew';
 
 interface AboutTabProps {
   autoUpdateEnabled: boolean;
@@ -167,7 +167,7 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange, onShowWhatsNew
         </div>
 
         <div className="about-tab__notes">
-          {onShowWhatsNew && !!WHATS_NEW[baseVersion(version)]?.length && (
+          {onShowWhatsNew && !!version && !!latestList(WHATS_NEW, version) && (
             <button type="button" className="st-btn" onClick={onShowWhatsNew}>What's new</button>
           )}
           <a
