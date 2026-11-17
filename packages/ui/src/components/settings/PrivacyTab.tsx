@@ -140,6 +140,12 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
   const [ipCheck, setIpCheck] = useState<IpCheck>({ state: 'idle' });
   const selectedListsEnabled = useSelectedListsEnabled();
   const [protection, setProtection] = useState<StorageProtection | null>(null);
+  const [syncOn, setSyncOn] = useState(false);
+  useEffect(() => {
+    if (!window.sync) return;
+    void window.sync.view().then((v) => setSyncOn(v.status === 'active'));
+    return window.sync.onView((v) => setSyncOn(v.status === 'active'));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,6 +176,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         description="sbtlTV has no account and sends no analytics, tracking or crash reports. Its own servers, sbtltv.com and the sbtlTV relay, are only contacted by features that require it. No connections are made if these features are turned off. Scroll down to see exactly who sees what with your current settings."
       >
         <Hint>Your settings, watch history, favorites, watchlist, guide and library are kept on this computer.</Hint>
+        {syncOn && <Hint>With Sync on, your watchlist and watch progress (and settings, if you chose them) also go to your other computers, end-to-end encrypted through the sbtlTV relay.</Hint>}
         {protectionLine && <Hint tone={protectionLine.tone}>{protectionLine.text}</Hint>}
         {protection?.platform === 'linux' && <KeyringRow protection={protection} />}
         <Hint>
@@ -208,7 +215,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         description="sbtlTV connects directly to each of these. Like a web browser, each request also says it comes from sbtlTV and which system you use."
       >
         <Who title="Your IPTV provider" status="always"
-          sees="Your IP address, your account, the series you open or point at, and what you watch and when. They provide the streams." />
+          sees="Your IP address, your account, the series you open, point at or have in Continue Watching, and what you watch and when. They provide the streams." />
         <Who title="Guide sources" status="always"
           sees="Your IP address and when the guide refreshes: your provider's guide, and any guide URLs you add." />
         <Who title="Image hosts" status="always"
@@ -218,11 +225,11 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         <Who title="sbtltv.com" status={selectedListsEnabled ? 'on' : 'off'}
           sees="With Selected lists on: your IP address, about once a day, when sbtlTV checks for new lists. Nothing about you or what you watch is sent, and requests aren't logged."
           where="Settings › Movies or Series › Selected lists" />
-        <Who title="sbtlTV relay" status="when-used"
-          sees="Only while you send or receive a setup: the setup, end-to-end encrypted so even we can't read it, your IP address and your sbtlTV version. Requests aren't logged. Setup file is deleted when picked up, or after 10 minutes."
+        <Who title="sbtlTV relay" status={syncOn ? 'on' : 'when-used'}
+          sees="While you send or receive a setup, or use Sync: the setup, or each computer's watchlist, progress and chosen settings, end-to-end encrypted so even we can't read them; your IP address and your sbtlTV version. Requests aren't logged. A setup is deleted when picked up, or after 10 minutes; synced data stays until you leave sync, or no computer has used it for 90 days."
           where="Settings › Sync & transfer" />
         <Who title="TMDB" status={tmdbKeySet ? 'on' : 'not-set-up'} where="Settings › TMDB"
-          sees="With your TMDB key: the key, your IP address, the lists you browse and the titles you open or point at. Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
+          sees="With your TMDB key: the key, your IP address, the lists you browse, the titles you open or point at, and synced titles this computer doesn't have (for their posters). Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
         <Who title="RatingPosterDB" status={posterDbKeySet ? 'on' : 'not-set-up'} where="Settings › Poster DB"
           sees="With your RPDB key: the key, your IP address and which titles' posters you see; with RPDB backdrops on, also the titles you open or point at." />
         <Who title="SubDL" status={subdlKeySet ? 'on' : 'not-set-up'} where="Settings › Subtitles"

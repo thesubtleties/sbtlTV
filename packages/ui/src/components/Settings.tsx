@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Source } from '../types/electron';
 import { useUIStore, useSettingsLoaded } from '../stores/uiStore';
 import { SettingsSidebar, type SettingsTabId } from './settings/SettingsSidebar';
@@ -38,6 +38,9 @@ export function Settings({ onClose, initialTab, initialReceive }: SettingsProps)
   const [receivePending, setReceivePending] = useState(!!initialReceive && initialTab === 'backup');
   const receiveUsed = useCallback(() => setReceivePending(false), []);
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'sources');
+  const contentRef = useRef<HTMLDivElement>(null);
+  // Each tab starts at the top, not wherever the previous tab was scrolled to
+  useEffect(() => { contentRef.current?.scrollTo({ top: 0 }); }, [activeTab]);
   const [sources, setSources] = useState<Source[]>([]);
   const [isEncryptionAvailable, setIsEncryptionAvailable] = useState(true);
 
@@ -385,7 +388,7 @@ export function Settings({ onClose, initialTab, initialReceive }: SettingsProps)
           />
 
           {/* Tab Content */}
-          <div className="settings-content">
+          <div className="settings-content" ref={contentRef}>
             {renderTabContent()}
           </div>
         </div>

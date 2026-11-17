@@ -142,3 +142,22 @@ describe('review: SubDL fields across saves', () => {
     expect(await getSubtitleDelayCandidate('movie', { streamId: 'm-1', tmdbId: 550 })).toEqual({ delay: 0, duration: 7200, speed: 1.02 });
   });
 });
+
+describe('progress synced by TMDB id only', () => {
+  it("is replaced by this computer's own copy once it plays", async () => {
+    await db.watchProgress.put({ id: 'movie_tmdb_603', type: 'movie', tmdb_id: 603, position: 50, duration: 100, progress: 50, completed: false, updated_at: new Date(1) });
+    await updateWatchProgress({ type: 'movie', streamId: 'src_7', tmdbId: 603, position: 60, duration: 100 });
+    expect(await db.watchProgress.get('movie_tmdb_603')).toBeUndefined();
+    expect(await db.watchProgress.get('movie_src_7')).toMatchObject({ position: 60 });
+  });
+});
+
+describe('removing a movie from Continue Watching', () => {
+  it('clears every copy of it (two providers), so the card does not come back with the older one (review D3)', async () => {
+    const { clearMovieTitle } = await import('./useWatchProgress');
+    const base = { type: 'movie' as const, tmdb_id: 603, position: 10, duration: 100, progress: 10, completed: false };
+    await db.watchProgress.bulkPut([{ id: 'movie_a', stream_id: 'a', updated_at: new Date(2), ...base }, { id: 'movie_b', stream_id: 'b', updated_at: new Date(1), ...base }]);
+    await clearMovieTitle(603, 'movie_a');
+    expect(await db.watchProgress.count()).toBe(0);
+  });
+});

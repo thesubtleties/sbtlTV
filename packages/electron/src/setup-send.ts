@@ -1,3 +1,4 @@
+import { randomBytes, randomInt } from 'node:crypto';
 /**
  * The body for Send to a device: the picked parts of this computer's setup (only the picked
  * sources), plus providers and keys typed in just for this send (never saved here). Pure.
@@ -21,9 +22,40 @@ export function packSetup(body: SetupBody): Buffer {
   return gzipSync(Buffer.from(JSON.stringify(body)));
 }
 
-/** Throws on anything that isn't a valid setup within the size limit. */
+/** A join to someone's sync, carried by the knock instead of a setup: their group key and computer names. */
+export interface JoinPayload { key: string; computers: { id: string; name: string }[] }
+
+/**
+ * Padded with 1.5-6 KB of random filler (it doesn't compress): sealed, a join is then the size of a
+ * small setup, so the relay can't tell "Add a computer" from "Send a setup" by size.
+ */
+export function packJoin(j: JoinPayload): Buffer {
+  const pad = randomBytes(1500 + randomInt(0, 3000)).toString('base64');
+  return gzipSync(Buffer.from(JSON.stringify({ sbtlSync: 1, key: j.key, computers: j.computers, pad })));
+}
+
+function validateJoin(o: Record<string, unknown>): JoinPayload {
+  const key = o.key;
+  if (typeof key !== 'string' || !/^[A-Za-z0-9+/]{43}=$/.test(key) || Buffer.from(key, 'base64').length !== 32) throw new Error('invalid: join key');
+  if (!Array.isArray(o.computers) || o.computers.length < 1 || o.computers.length > 10) throw new Error('invalid: join computers');
+  const computers = o.computers.map((c: unknown) => {
+    const x = c as Record<string, unknown> | null;
+    if (!x || typeof x.id !== 'string' || !/^[0-9a-f]{32}$/.test(x.id) || typeof x.name !== 'string' || !x.name || x.name.length > 60) throw new Error('invalid: join computer');
+    return { id: x.id, name: x.name };
+  });
+  return { key, computers };
+}
+
+export function unpackDrop(payload: Buffer): { kind: 'setup'; body: SetupBody } | { kind: 'join'; join: JoinPayload } {
+  const v: unknown = JSON.parse(gunzipSync(payload, { maxOutputLength: MAX_RECEIVED_BYTES }).toString('utf8'));
+  if (v && typeof v === 'object' && (v as Record<string, unknown>).sbtlSync === 1) return { kind: 'join', join: validateJoin(v as Record<string, unknown>) };
+  return { kind: 'setup', body: validateSetupBody(v) };
+}
+
 export function unpackSetup(payload: Buffer): SetupBody {
-  return validateSetupBody(JSON.parse(gunzipSync(payload, { maxOutputLength: MAX_RECEIVED_BYTES }).toString('utf8')));
+  const d = unpackDrop(payload);
+  if (d.kind !== 'setup') throw new Error('invalid: not a setup');
+  return d.body;
 }
 
 export interface SendExtras {

@@ -14,6 +14,11 @@ import { ContinueWatchingRow } from './vod/ContinueWatchingRow';
 import { useUIStore, useVodNavigation } from '../stores/uiStore';
 import type { StoredMovie, StoredSeries } from '../db';
 import { type MediaItem, type VodType, type VodPlayInfo } from '../types/media';
+import { useMissingTitles } from '../hooks/useMissingTitles';
+import { toggleWatchlist } from '../hooks/useWatchlist';
+import { clearMovieTitle } from '../hooks/useWatchProgress';
+import type { MissingTitle } from '../services/sync/missing';
+import { MissingRow } from './vod/MissingCard';
 import './VodPage.css';
 
 // Animation timing (must match .vod-page transition in VodPage.css: 0.35s)
@@ -26,8 +31,9 @@ type CarouselRow = {
   title: string;
   items: MediaItem[];
   loading?: boolean;
-  kind?: 'continue';
+  kind?: 'continue' | 'missing';
   continueItems?: ContinueItem[];
+  missing?: MissingTitle[];
   tag?: 'selected';
   subtitle?: string;
 };
@@ -45,6 +51,7 @@ interface HomeVirtuosoContext {
   progressMap?: Map<string, number>;
   onContinuePlay: (item: ContinueItem) => void;
   onContinueRemove: (item: ContinueItem) => void;
+  onMissingRemove: (item: MissingTitle) => void;
 }
 
 // Header component for Virtuoso (defined outside render to prevent remounting)
@@ -80,8 +87,14 @@ const CarouselRowContent = (
         items={row.continueItems ?? []}
         onPlay={context.onContinuePlay}
         onRemove={context.onContinueRemove}
+        missing={row.missing}
+        onRemoveMissing={context.onMissingRemove}
       />
     );
+  }
+
+  if (row.kind === 'missing') {
+    return <MissingRow title={row.title} items={row.missing ?? []} onRemove={context.onMissingRemove} />;
   }
 
   return (
@@ -230,6 +243,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   } = useVodHomeData(type);
 
   const continueItems = useContinueWatchingResolved(type);
+  const missing = useMissingTitles(type);
   const { clearOne, clearSeries } = useClearProgress();
 
   // Resolve selected groupKey back to category IDs for VodBrowse
@@ -242,8 +256,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     const rows: CarouselRow[] = [];
 
     // Continue Watching — always row #1 when non-empty (Virtuoso-safe: in the data array, never CSS-hidden)
-    if (continueItems.length > 0) {
-      rows.push({ key: 'continue-watching', title: 'Continue Watching', items: [], kind: 'continue', continueItems });
+    if (continueItems.length > 0 || missing.progress.length > 0) {
+      rows.push({ key: 'continue-watching', title: 'Continue Watching', items: [], kind: 'continue', continueItems, missing: missing.progress });
     }
 
     // Watchlist (top of home, only when non-empty)
@@ -253,6 +267,10 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         title: 'My Watchlist',
         items: watchlistItems,
       });
+    }
+    // Watchlist titles this computer doesn't have (synced from another), grayed
+    if (missing.watchlist.length > 0) {
+      rows.push({ key: 'watchlist-missing', title: 'Watchlist: not on this computer', items: [], kind: 'missing', missing: missing.watchlist });
     }
 
     // Trending
@@ -318,7 +336,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
     return rows;
   }, [
-    continueItems,
+    continueItems, missing,
     watchlistItems,
     trendingItems, trendingLoading,
     popularItems, popularLoading,
@@ -380,8 +398,15 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   }, [handlePlay, openDetail]);
 
   const handleContinueRemove = useCallback((it: ContinueItem) => {
-    if (it.kind === 'movie') clearOne(it.key);
+    if (it.kind === 'movie') void clearMovieTitle(it.media.tmdb_id ?? undefined, it.key);
     else clearSeries({ tmdbId: it.seriesTmdbId, seriesStreamId: it.seriesStreamId });
+  }, [clearOne, clearSeries]);
+
+  // A grayed title (not in this library): removing it syncs like any removal
+  const handleMissingRemove = useCallback((m: MissingTitle) => {
+    if (m.from === 'watchlist') void toggleWatchlist(m.type, { tmdbId: m.tmdbId, name: m.name });
+    else if (m.type === 'movie') for (const id of m.progressIds ?? []) clearOne(id);
+    else clearSeries({ tmdbId: m.tmdbId });
   }, [clearOne, clearSeries]);
 
   // Hero is loading if we have no items AND data is still being fetched
@@ -391,6 +416,13 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   // Memoized context for Virtuoso to prevent unnecessary re-renders
   const detailOpen = !!selectedItem;
+  // Back on this home from a title's page: ask sync for news (throttled in main), so changes made on
+  // another computer show while you browse; the rows redraw on their own when they arrive
+  const wasOpen = useRef(detailOpen);
+  useEffect(() => {
+    if (wasOpen.current && !detailOpen) void window.sync?.pull();
+    wasOpen.current = detailOpen;
+  }, [detailOpen]);
   const homeVirtuosoContext = useMemo((): HomeVirtuosoContext => ({
     type,
     tmdbApiKey,
@@ -403,7 +435,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     progressMap: type === 'movie' ? movieProgressMap : undefined,
     onContinuePlay: handleContinuePlay,
     onContinueRemove: handleContinueRemove,
-  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, detailOpen, openDetail, handleHeroPlay, movieProgressMap, handleContinuePlay, handleContinueRemove]);
+    onMissingRemove: handleMissingRemove,
+  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, detailOpen, openDetail, handleHeroPlay, movieProgressMap, handleContinuePlay, handleContinueRemove, handleMissingRemove]);
 
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {

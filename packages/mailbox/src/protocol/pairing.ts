@@ -3,7 +3,7 @@
  * in the middle (even our own server) can't search keys until the three words match.
  * Node built-ins only: X25519, HKDF-SHA256, AES-256-GCM.
  */
-import { createCipheriv, createDecipheriv, createHash, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes, timingSafeEqual, type KeyObject } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createPrivateKey, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes, timingSafeEqual, type KeyObject } from 'node:crypto';
 
 export interface KeyPair { privateKey: KeyObject; publicRaw: Buffer }
 
@@ -45,9 +45,24 @@ export function knockWords(commitment: Buffer, giverPub: Buffer, receiverPub: Bu
   return [pick(0), pick(1), pick(2)];
 }
 
-export function dropKey(mine: KeyPair, theirPub: Buffer, commitment: Buffer): Buffer {
+/** HKDF over an X25519 shared secret (the knock's drop key and sync's rekey both use it). */
+export function x25519Key(mine: KeyPair, theirPub: Buffer, salt: Buffer, info: string): Buffer {
   const shared = diffieHellman({ privateKey: mine.privateKey, publicKey: publicFromRaw(theirPub) });
-  return Buffer.from(hkdfSync('sha256', shared, commitment, 'sbtl-drop', 32));
+  return Buffer.from(hkdfSync('sha256', shared, salt, info, 32));
+}
+
+export function dropKey(mine: KeyPair, theirPub: Buffer, commitment: Buffer): Buffer {
+  return x25519Key(mine, theirPub, commitment, 'sbtl-drop');
+}
+
+/** A long-term key kept by the app (sealed by the OS keyring): PKCS#8 DER out and back in. */
+export function exportPrivate(k: KeyPair): Buffer {
+  return k.privateKey.export({ format: 'der', type: 'pkcs8' }) as Buffer;
+}
+export function keyPairFromPrivate(der: Buffer): KeyPair {
+  const privateKey = createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
+  const pub = createPublicKey(privateKey).export({ format: 'der', type: 'spki' });
+  return { privateKey, publicRaw: Buffer.from(pub.subarray(pub.length - 32)) };
 }
 
 export function seal(key: Buffer, plaintext: Buffer, aad: Buffer): Buffer {

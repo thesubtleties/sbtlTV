@@ -8,8 +8,10 @@ import { Button, Hint } from './ui';
  * Show my code → same words? → the received setup goes to the Import preview (onReceived), where
  * the existing Back up first and Replace and import apply it. Leaving the panel cancels the knock.
  */
-export function ReceiveSetupPanel({ onReceived, onClose }: {
+export function ReceiveSetupPanel({ onReceived, onJoin, onClose }: {
   onReceived: (token: string, preview: SetupPreview) => void;
+  /** The drop was a join to someone's sync (names of its computers): the tab asks Join / Decline */
+  onJoin: (computers: string[]) => void;
   onClose: () => void;
 }) {
   const [state, setState] = useState<KnockState>({ step: 'starting' });
@@ -33,8 +35,14 @@ export function ReceiveSetupPanel({ onReceived, onClose }: {
         handed.current = staged.token;
         onReceived(staged.token, staged.preview);
       }
+      const join = r.data.join;
+      if (r.data.state.step === 'received' && join && handed.current !== 'join') {
+        handed.current = 'join';
+        onJoin(join.computers);
+      }
     }, 500);
-    return () => { window.clearInterval(id); void window.mailbox?.cancel(); };
+    // A join handed over waits in main for Join or Decline: leaving the panel doesn't drop it
+    return () => { window.clearInterval(id); if (handed.current !== 'join') void window.mailbox?.cancel(); };
     // Starts once per mount (the panel is shown when someone asks for a code)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

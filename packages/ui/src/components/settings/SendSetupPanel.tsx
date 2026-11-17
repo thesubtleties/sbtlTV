@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { MailboxSendSource, SetupPart } from '../../types/electron';
 import { useUIStore } from '../../stores/uiStore';
 import { readLists } from '../../services/setup/lists';
 import { rebuildFilePlaylists } from '../../services/setup/filePlaylists';
-import { knockLine, type KnockState } from '../../utils/knockView';
-import { KnockWords } from './KnockWords';
+import { KnockSendView, useKnockSend } from './useKnockSend';
 import { Button, Hint, OnOff, OptionRow, TextField } from './ui';
 
 type TheirKeys = { tmdb: string; posterDb: string; subdl: string };
@@ -24,71 +23,26 @@ export function SendSetupPanel({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState<MailboxSendSource | null>(null);
   const [theirKeys, setTheirKeys] = useState<TheirKeys>({ tmdb: '', posterDb: '', subdl: '' });
   const [code, setCode] = useState('');
-  const [state, setState] = useState<KnockState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  // Bumped on every action: a poll answered after it describes the old knock and is dropped
-  const gen = useRef(0);
-  const started = useRef(false);
-
-  useEffect(() => {
-    const id = window.setInterval(async () => {
-      const asked = gen.current;
-      const r = await window.mailbox?.state();
-      if (asked !== gen.current) return;
-      if (r?.data.role === 'send' && r.data.state) setState(r.data.state);
-    }, 500);
-    // Cancels only a send this panel started (the Receive panel may own the mailbox)
-    return () => { window.clearInterval(id); if (started.current) void window.mailbox?.cancel(); };
-  }, []);
+  const { state, error, busy, begin, again } = useKnockSend();
 
   const nothing = picked.length === 0 && extras.length === 0 && !settings && !myKeys && !Object.values(theirKeys).some(Boolean);
 
-  async function knock() {
-    if (!window.mailbox || busy) return;
-    gen.current++;
-    started.current = true;
-    setBusy(true);
-    setError(null);
+  function knock() {
     const parts: SetupPart[] = [
       ...(picked.length ? ['sources' as const] : []),
       ...(picked.length && logins ? ['logins' as const] : []),
       ...(settings ? ['settings' as const] : []),
       ...(myKeys ? ['apiKeys' as const] : []),
     ];
-    try {
+    return begin(async () => {
       const lists = await readLists([], settings);
       const playlists = picked.length ? await rebuildFilePlaylists(sources.filter((s) => picked.includes(s.id))) : {};
       const apiKeys = Object.fromEntries(Object.entries(theirKeys).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()]));
-      const r = await window.mailbox.send({ parts, sourceIds: picked, extras: { sources: extras, apiKeys }, lists, playlists }, code);
-      if (r.error) setError(r.error); else setState({ step: 'ringing' });
-    } catch {
-      setError("Couldn't prepare the setup. Restart sbtlTV and try again.");
-    } finally {
-      setBusy(false);
-    }
+      return window.mailbox!.send({ parts, sourceIds: picked, extras: { sources: extras, apiKeys }, lists, playlists }, code);
+    }, "Couldn't prepare the setup. Restart sbtlTV and try again.");
   }
 
-  // Keeps the typed code after "isn't valid" so it can be checked and fixed
-  const again = () => { gen.current++; void window.mailbox?.cancel(); setState(null); };
-
-  if (state) {
-    const line = knockLine('send', state);
-    return (
-      <div className="knock-panel">
-        <div className="knock-panel__show">
-          {state.step === 'words' && <KnockWords words={state.words} />}
-          <div aria-live="polite"><Hint tone={line.tone === 'error' ? 'danger' : line.tone === 'ok' ? 'ok' : undefined}>{line.text}</Hint></div>
-        </div>
-        <div className="knock-panel__actions">
-          {state.step === 'words' && <Button variant="primary" onClick={() => void window.mailbox?.confirm()}>Words match, send</Button>}
-          {(state.step === 'ringing' || state.step === 'words' || state.step === 'sending' || state.step === 'sent') && <Button onClick={again}>Cancel</Button>}
-          {line.canRetry && <Button onClick={again}>Start again</Button>}
-          {state.step === 'received' && <Button onClick={onClose}>Done</Button>}
-        </div>
-      </div>
-    );
-  }
+  if (state) return <KnockSendView role="send" state={state} confirmLabel="Words match, send" onAgain={again} onDone={onClose} />;
 
   return (
     <div className="knock-panel">

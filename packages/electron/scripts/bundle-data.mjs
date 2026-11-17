@@ -30,8 +30,11 @@ if (entries.length) await build({
 // one copy of setup-transfer and friends.
 if (existsSync('src/mailbox/mailbox-ipc.ts')) {
   await build({
-    entryPoints: ['src/mailbox/mailbox-ipc.ts'],
+    // Two entries sharing one copy of the mailbox code (splitting): the knock and Sync
+    entryPoints: ['src/mailbox/mailbox-ipc.ts', 'src/mailbox/sync-ipc.ts'],
     outdir: 'dist/mailbox',
+    splitting: true,
+    chunkNames: 'chunks/[name]-[hash]',
     bundle: true,
     platform: 'node',
     format: 'esm',
@@ -49,11 +52,15 @@ if (existsSync('src/mailbox/mailbox-ipc.ts')) {
 
 // Guard: the bundle must import this package's own modules, never carry its own copy of them (a
 // second settings store on the same file). Fails the build if the plugin above stopped matching.
-if (existsSync('dist/mailbox/mailbox-ipc.js')) {
-  const { readFileSync } = await import('node:fs');
-  const out = readFileSync('dist/mailbox/mailbox-ipc.js', 'utf8');
-  if (out.includes('new Store(') || out.includes('electron-store')) {
-    console.error('bundle-data: dist/mailbox/mailbox-ipc.js contains its own settings store; the own-modules plugin did not apply');
-    process.exit(1);
+// Every file written counts (both entries and their shared chunks).
+if (existsSync('dist/mailbox')) {
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : e.name.endsWith('.js') ? [`${d}/${e.name}`] : []));
+  for (const file of walk('dist/mailbox')) {
+    const out = readFileSync(file, 'utf8');
+    if (out.includes('new Store(') || out.includes('electron-store')) {
+      console.error(`bundle-data: ${file} contains its own settings store; the own-modules plugin did not apply`);
+      process.exit(1);
+    }
   }
 }

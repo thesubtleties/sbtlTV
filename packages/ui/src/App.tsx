@@ -38,6 +38,8 @@ import { resumeSettled } from './hooks/resumeSettle';
 import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
 import { perfMeasure, perfStart } from './utils/perfMarks';
 import { ErrorCard } from './components/ErrorCard';
+import { sendSnapshot, setSyncActive } from './services/sync/outbox';
+import { applyRecords } from './services/sync/apply';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -145,10 +147,10 @@ async function tryLoadWithFallbacks(
  * or undefined (keep the stored one) while a saved delay is not restored yet;
  * a user's delay change passes the value it saved for its own load.
  */
-function saveVodProgress(info: VodPlayInfo, position: number, duration: number, subtitle?: SubtitleChoice): void {
+function saveVodProgress(info: VodPlayInfo, position: number, duration: number, subtitle?: SubtitleChoice, how?: { sync?: boolean }): Promise<void> {
   const sub = subtitle ?? currentSubtitle();
-  if (!info.streamId || !(duration > 0)) return;
-  updateWatchProgress({
+  if (!info.streamId || !(duration > 0)) return Promise.resolve();
+  return updateWatchProgress({
     type: info.type === 'series' ? 'episode' : 'movie',
     streamId: info.streamId,
     tmdbId: info.tmdbId,
@@ -164,7 +166,7 @@ function saveVodProgress(info: VodPlayInfo, position: number, duration: number, 
     subSpeed: sub?.speed,
     subdlId: sub?.subdlId,
     subdlAi: sub?.ai,
-  }).catch((err) => debugLog(`Saving watch progress failed: ${err instanceof Error ? err.message : err}`));
+  }, how).catch((err) => debugLog(`Saving watch progress failed: ${err instanceof Error ? err.message : err}`));
 }
 
 /** The subtitle choice saved with progress: delay, speed and SubDL file. */
@@ -377,6 +379,17 @@ function App() {
         setDuration(status.duration);
       }
 
+      // Paused: save now (the 15 s tick could be minutes away, and sync pushes after a save)
+      if (status.playing === false && playingRef.current) {
+        const info = vodInfoRef.current;
+        const pos = status.position ?? usePlaybackStore.getState().position;
+        const dur = status.duration ?? durationRef.current;
+        if (info?.streamId && dur > 0 && !progressBlockedRef.current && resumeSettled(pos, resumeTargetRef.current)) {
+          lastProgressSaveRef.current = Date.now();
+          void saveVodProgress(info, pos, dur);
+        }
+      }
+
       // Save watch progress for VOD (throttled to every 15 seconds)
       if (status.position !== undefined && status.duration && status.duration > 0) {
         const info = vodInfoRef.current;
@@ -386,7 +399,7 @@ function App() {
           const now = Date.now();
           if (now - lastProgressSaveRef.current >= 15000) {
             lastProgressSaveRef.current = now;
-            saveVodProgress(info, status.position, status.duration);
+            void saveVodProgress(info, status.position, status.duration, undefined, { sync: false });
           }
         }
       }
@@ -725,6 +738,35 @@ function App() {
   useEffect(() => {
     if (channelCount > 0 && useUIStore.getState().dataProblem === 'reset') useUIStore.getState().setDataProblem(null);
   }, [channelCount]);
+
+  // Sync: changes from the user's other computers, and what this one has when sync starts here
+  useEffect(() => {
+    if (!window.sync) return;
+    const offs = [
+      window.sync.onView((v) => setSyncActive(v.status === 'active')),
+      window.sync.onSnapshot(() => { void sendSnapshot(); }),
+      // Confirmed only once written: a failed write comes back on the next pull
+      window.sync.onApply((records) => { void applyRecords(records).then(() => window.sync?.applied(records)).catch((e) => debugLog(`Sync: applying failed: ${e instanceof Error ? e.name : 'error'}`, 'sync')); }),
+      window.sync.onSettingsReplaced(async () => {
+        const r = await window.storage?.getSettings();
+        if (r?.data) useUIStore.getState().hydrateSettings(r.data);
+      }),
+      // Quitting: save where playback is, so sync can push it
+      window.sync.onBeforeQuit(async () => {
+        const info = vodInfoRef.current;
+        const pos = usePlaybackStore.getState().position;
+        if (info?.streamId && !progressBlockedRef.current && resumeSettled(pos, resumeTargetRef.current)) await saveVodProgress(info, pos, durationRef.current);
+      }),
+    ];
+    void window.sync.view().then((v) => setSyncActive(v.status === 'active'));
+    void window.sync.ready();   // listening now: main may start pulling
+    const onFocus = () => { void window.sync?.pull(); };
+    window.addEventListener('focus', onFocus);
+    return () => { offs.forEach((off) => off()); window.removeEventListener('focus', onFocus); };
+  }, []);
+
+  // Opening Movies or Series asks sync for news (throttled in main)
+  useEffect(() => { if (activeView === 'movies' || activeView === 'series') void window.sync?.pull(); }, [activeView]);
 
   // Hydrate settings from disk into Zustand (runs unconditionally, even without sources)
   useEffect(() => {

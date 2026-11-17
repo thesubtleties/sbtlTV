@@ -1,6 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type StoredWatchlistItem } from '../db';
+import { syncOut } from '../services/sync/outbox';
+import { watchlistRecord } from '../services/sync/records';
 import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
 
@@ -29,30 +31,36 @@ export function useIsOnWatchlist(type: 'movie' | 'series', tmdbId?: number, stre
   return item !== undefined && item !== null;
 }
 
-export function useToggleWatchlist() {
-  return useCallback(async (
-    type: 'movie' | 'series',
-    opts: { tmdbId?: number; streamId?: string; name: string; posterPath?: string }
-  ) => {
-    const key = opts.tmdbId ? String(opts.tmdbId) : opts.streamId;
-    if (!key) return;
+/** Adds or removes a title; with a TMDB id the change also goes to sync (when it's on). */
+export async function toggleWatchlist(
+  type: 'movie' | 'series',
+  opts: { tmdbId?: number; streamId?: string; name: string; posterPath?: string }
+): Promise<void> {
+  const key = opts.tmdbId ? String(opts.tmdbId) : opts.streamId;
+  if (!key) return;
 
-    const id = wlId(type, key);
-    const existing = await db.watchlist.get(id);
-    if (existing) {
-      await db.watchlist.delete(id);
-    } else {
-      await db.watchlist.put({
-        id,
-        type,
-        tmdb_id: opts.tmdbId,
-        stream_id: opts.streamId,
-        name: opts.name,
-        poster_path: opts.posterPath,
-        added: new Date(),
-      });
-    }
-  }, []);
+  const id = wlId(type, key);
+  const existing = await db.watchlist.get(id);
+  if (existing) {
+    await db.watchlist.delete(id);
+    if (opts.tmdbId) syncOut([watchlistRecord(type, opts.tmdbId, opts.name, Date.now(), true)]);
+  } else {
+    const added = new Date();
+    await db.watchlist.put({
+      id,
+      type,
+      tmdb_id: opts.tmdbId,
+      stream_id: opts.streamId,
+      name: opts.name,
+      poster_path: opts.posterPath,
+      added,
+    });
+    if (opts.tmdbId) syncOut([watchlistRecord(type, opts.tmdbId, opts.name, +added)]);
+  }
+}
+
+export function useToggleWatchlist() {
+  return useCallback(toggleWatchlist, []);
 }
 
 // Watchlist entries stay on Dexie; the movie and series rows come from the data

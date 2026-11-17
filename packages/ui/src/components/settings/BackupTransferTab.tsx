@@ -8,6 +8,8 @@ import { setupSummary } from '../../services/setup/summary';
 import { receivedNote } from '../../utils/receivedNote';
 import { Button, Hint, OnOff, OptionRow, Section, SettingsTab, TextField } from './ui';
 import { SendSetupPanel } from './SendSetupPanel';
+import { SyncSection } from './SyncSection';
+import { nameIfBlank } from '../../utils/computerName';
 import { ReceiveSetupPanel } from './ReceiveSetupPanel';
 
 const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: boolean }[] = [
@@ -31,8 +33,12 @@ type ImportState =
   | { step: 'idle' }
   | { step: 'passphrase'; token: string; error?: string }
   | { step: 'preview'; token: string; preview: SetupPreview; restoring?: boolean; received?: boolean }
+  | { step: 'join'; computers: string[] }
   | { step: 'applying' }
   | { step: 'failed'; error: string; backupName: string | null };
+
+/** "Mac", "Mac and Linux PC", "Mac, Linux PC and Windows PC" */
+const names = (list: string[]) => (list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}` : list[0] ?? '');
 
 /** The last export, kept by Settings while it is open (switching tabs keeps it; closing Settings clears it). */
 export interface LastExport { passphrase: string; filePath: string }
@@ -54,9 +60,24 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
   const [receiving, setReceiving] = useState(!!autoReceive);
   // "Receive a setup" opens the code once; coming back to this tab later doesn't start another
   useEffect(() => { if (autoReceive) onAutoReceiveUsed?.(); }, [autoReceive, onAutoReceiveUsed]);
-  // One knock at a time: opening Send closes Receive and the other way round
-  const openSend = () => { setReceiving(false); setTransfer(transfer === 'send' ? 'none' : 'send'); };
-  const openReceive = () => { if (!receiving && transfer === 'send') setTransfer('none'); setReceiving(!receiving); };
+  const [adding, setAdding] = useState(false);
+  const [joinName, setJoinName] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [defaultName, setDefaultName] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  useEffect(() => { void window.sync?.view().then((v) => { setDefaultName(v.defaultName); setSyncing(v.status === 'active'); }); }, [imp.step]);
+  // One knock at a time: opening Send, Receive or Add a computer closes the others
+  const openSend = () => { setReceiving(false); setAdding(false); setTransfer(transfer === 'send' ? 'none' : 'send'); };
+  const openReceive = () => { if (!receiving && transfer === 'send') setTransfer('none'); setAdding(false); setReceiving(!receiving); };
+  const openAdding = (open: boolean) => { if (open) { setReceiving(false); if (transfer === 'send') setTransfer('none'); } setAdding(open); };
+  const join = async () => {
+    setJoining(true); setJoinError(null);
+    const r = await window.mailbox?.join(joinName);
+    setJoining(false);
+    if (r?.error) setJoinError(r.error); else { setImp({ step: 'idle' }); setJoinName(''); }
+  };
+  const declineJoin = () => { void window.mailbox?.cancel(); setImp({ step: 'idle' }); setJoinName(''); setJoinError(null); };
 
   useEffect(() => { void window.setup?.backups().then((r) => setBackups(r.data)); }, []);
 
@@ -144,10 +165,37 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
 
   return (
     <SettingsTab>
+      <details className="setup-how-drawer">
+        <summary className="setup-how-drawer__summary">How sending works</summary>
+        <div className="setup-how-drawer__body">
+          <div className="setup-how">
+            <div>
+              <div className="setup-how__title">To receive</div>
+              <ol className="setup-how__steps">
+                <li>Show my code, and tell it to the person sending.</li>
+                <li>They type it in. You both see three words.</li>
+                <li>Same words? Tap Same words. Nothing changes until you accept it.</li>
+              </ol>
+            </div>
+            <div>
+              <div className="setup-how__title">To send</div>
+              <ol className="setup-how__steps">
+                <li>Ask for their code. They find it under Live TV › Receive a setup, or here.</li>
+                <li>Pick what to send, type the code, Connect.</li>
+                <li>Check you both see the same three words, then send.</li>
+              </ol>
+            </div>
+          </div>
+          <Hint>Only use a code from someone you know. Different words mean someone else answered: stop there. The setup is end-to-end encrypted on the sbtlTV relay, so even we can't read it, and it's deleted once picked up. Adding a computer to Sync works the same way.</Hint>
+        </div>
+      </details>
+
+      <SyncSection adding={adding} onAdding={openAdding} />
+
       <Section title="Transfer setup" description="To another computer, or someone else's."
         actions={<>
-          <Button onClick={openSend} disabled={imp.step === 'applying'}>Send to a device…</Button>
-          <Button onClick={() => setTransfer(transfer === 'export' ? 'none' : 'export')} disabled={imp.step === 'applying'}>Export to file…</Button>
+          <Button onClick={openSend} aria-expanded={transfer === 'send'} disabled={imp.step === 'applying'}>Send to a device…</Button>
+          <Button onClick={() => setTransfer(transfer === 'export' ? 'none' : 'export')} aria-expanded={transfer === 'export'} disabled={imp.step === 'applying'}>Export to file…</Button>
         </>}>
         {transfer === 'send' && <SendSetupPanel onClose={() => setTransfer('none')} />}
         {transfer === 'export' && <>
@@ -178,14 +226,15 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
         </>}
       </Section>
 
-      <Section title="Receive" description="A setup from another computer."
+      <Section title="Receive" description="A setup, or to join your sync."
         actions={<>
-          <Button onClick={openReceive} disabled={imp.step === 'applying'}>Show my code</Button>
+          <Button onClick={openReceive} aria-expanded={receiving} disabled={imp.step === 'applying'}>Show my code</Button>
           <Button onClick={() => void pick()} disabled={imp.step === 'applying'}>Import file…</Button>
         </>}>
         {receiving && imp.step !== 'preview' && (
           <ReceiveSetupPanel
             onReceived={(token, preview) => { setReceiving(false); setImp({ step: 'preview', token, preview, received: true }); }}
+            onJoin={(computers) => { setReceiving(false); setImp({ step: 'join', computers }); }}
             onClose={() => setReceiving(false)}
           />
         )}
@@ -223,6 +272,24 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
             </div>
           </div>
         )}
+        {imp.step === 'join' && (
+          <div className="setup-preview">
+            <div className="setup-preview__summary">
+              <Hint>Join sync with {names(imp.computers)}? Your watchlist and progress will be shared with them.</Hint>
+              {syncing && <Hint tone="warn">This computer leaves its current sync.</Hint>}
+            </div>
+            <OptionRow title="Name this computer" help={`Leave blank for “${nameIfBlank(defaultName, imp.computers)}”.`}>
+              <form onSubmit={(e) => { e.preventDefault(); if (!joining) void join(); }}>
+                <TextField autoFocus aria-label="Name this computer" placeholder={nameIfBlank(defaultName, imp.computers)} maxLength={40} value={joinName} onChange={(e) => setJoinName(e.target.value)} />
+              </form>
+            </OptionRow>
+            {joinError && <Hint tone="danger">{joinError}</Hint>}
+            <div className="setup-preview__actions">
+              <Button variant="primary" disabled={joining} onClick={() => void join()}>{joining ? 'Joining…' : 'Join'}</Button>
+              <Button onClick={declineJoin}>Decline</Button>
+            </div>
+          </div>
+        )}
         {imp.step === 'applying' && <Hint>Working… sbtlTV restarts when done.</Hint>}
         {imp.step === 'failed' && (
           <>
@@ -237,27 +304,6 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
         )}
       </Section>
 
-      <Section title="How sending works">
-        <div className="setup-how">
-          <div>
-            <div className="setup-how__title">To receive</div>
-            <ol className="setup-how__steps">
-              <li>Show my code, and tell it to the person sending.</li>
-              <li>They type it in. You both see three words.</li>
-              <li>Same words? Tap Same words. Nothing changes until you accept it.</li>
-            </ol>
-          </div>
-          <div>
-            <div className="setup-how__title">To send</div>
-            <ol className="setup-how__steps">
-              <li>Ask for their code. They find it under Live TV › Receive a setup, or here.</li>
-              <li>Pick what to send, type the code, Connect.</li>
-              <li>Check you both see the same three words, then send.</li>
-            </ol>
-          </div>
-        </div>
-        <Hint>Only use a code from someone you know. Different words mean someone else answered: stop there. The setup is end-to-end encrypted on the sbtlTV relay, so even we can't read it, and it's deleted once picked up.</Hint>
-      </Section>
 
       {backups.length > 0 && (
         <Section title="Restore previous setup" description="Made before each import (with Back up first on). The last three stay on this computer.">

@@ -6,13 +6,15 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import {
-  CHALLENGE_HEADER, CHALLENGE_TTL_MS, LEVEL_HEADER, MAX_DROP_BYTES, POW_BITS_HEADER, POW_HEADER, TIME_HEADER, VERSION_HEADER,
+  CHALLENGE_HEADER, CHALLENGE_TTL_MS, LEVEL_HEADER, MAX_BOX_BYTES, MAX_DROP_BYTES, POW_BITS_HEADER, POW_HEADER, TIME_HEADER, VERSION_HEADER,
   checkPow, normaliseCode, powBitsFor, powInput, versionAtLeast, type ErrorCode,
 } from '../protocol/index.js';
 import { KnockStore } from './store.js';
 import { SeenProofs } from './limits.js';
 import { PowGovernor } from './governor.js';
 import { DEFAULTS, type Settings } from './settings.js';
+import { MemoryGroupStore, type GroupStore } from './groups.js';
+import { registerSyncRoutes } from './sync-routes.js';
 
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 /** Canonical base64 of exactly `bytes` bytes (re-encoding gives the same text). */
@@ -24,6 +26,9 @@ const isB64 = (v: unknown, bytes: number): v is string => {
 const HEX32 = /^[0-9a-f]{32}$/;
 /** A drop request's body at most: the sealed bytes as base64 inside a little JSON. */
 const MAX_DROP_BODY = Math.ceil(MAX_DROP_BYTES * 4 / 3) + 1024;
+/** A sync box upload at most: the sealed box as base64 inside a little JSON. */
+const BOX_ROUTE = /^\/v1\/groups\/[^/]+\/boxes\/[^/]+$/;
+const MAX_BOX_BODY = Math.ceil(MAX_BOX_BYTES * 4 / 3) + 1024;
 /** Drop bodies being read at once, all knocks together (memory while uploads are in flight). */
 const MAX_INFLIGHT_DROP_BYTES = 64 * 1024 * 1024;
 
@@ -34,6 +39,14 @@ export interface MailboxOptions {
   // Fixed overrides (tests), used when no `settings` is given
   powBits?: number; minVersion?: string; maxStoredBytes?: number;
   largeDropBytesPerHour?: number; paused?: boolean; largeDropsPaused?: boolean;
+  syncPaused?: boolean; newGroupsPaused?: boolean; busyPerMinute?: number; listInflightBytes?: number;
+  smallListInflightBytes?: number; listHoldMs?: number; smallListHoldMs?: number;
+  /** Tests: the in-flight budget for sync uploads, and the database size cap, in bytes */
+  syncInflightBytes?: number; syncMaxDbBytes?: number;
+  /** Sync groups (Postgres in production); in memory when not given */
+  groups?: GroupStore;
+  /** False until the database is ready (the relay serves the knock meanwhile; sync answers busy) */
+  groupsReady?: () => boolean;
 }
 
 export function createApp(opts: MailboxOptions = {}) {
@@ -46,14 +59,22 @@ export function createApp(opts: MailboxOptions = {}) {
     ...(opts.largeDropBytesPerHour !== undefined && { largeDropMbPerHour: opts.largeDropBytesPerHour / (1024 * 1024) }),
     ...(opts.paused !== undefined && { paused: opts.paused }),
     ...(opts.largeDropsPaused !== undefined && { largeDropsPaused: opts.largeDropsPaused }),
+    ...(opts.syncPaused !== undefined && { syncPaused: opts.syncPaused }),
+    ...(opts.newGroupsPaused !== undefined && { newGroupsPaused: opts.newGroupsPaused }),
+    ...(opts.busyPerMinute !== undefined && { busyPerMinute: opts.busyPerMinute }),
   };
+  const groups = opts.groups ?? new MemoryGroupStore();
   const cfg = opts.settings ?? (() => fixed);
   const store = new KnockStore(now, opts.maxActive, () => cfg().dropMemoryMb * 1024 * 1024);
   const proofs = new SeenProofs(now);
-  const governor = new PowGovernor(now, () => {
+  const levels = () => {
     const s = cfg();
     return { base: s.powBits, maxExtra: s.maxExtraBits, busyPerMinute: s.busyPerMinute, quietPerMinute: s.quietPerMinute, quietMinutes: s.quietMinutes };
-  });
+  };
+  const governor = new PowGovernor(now, levels);
+  // Sync uploads count on their own: busy sync doesn't make "Get a code" slower for everyone
+  const syncGovernor = new PowGovernor(now, levels);
+  const isSync = (path: string) => path.startsWith('/v1/groups/');
 
   // Challenges: "<issued ms, base 36>-<HMAC>" with a secret that lives only in this process. Nobody
   // can make one for later, so proofs can't be computed ahead and saved up; a restart voids them all.
@@ -85,7 +106,7 @@ export function createApp(opts: MailboxOptions = {}) {
   let inflightDropBytes = 0;
 
   const app = new Hono();
-  const err = (c: Context, status: 400 | 404 | 413 | 426 | 428 | 429, error: ErrorCode, headers?: Record<string, string>) => c.json({ error }, status, headers);
+  const err = (c: Context, status: 400 | 403 | 404 | 409 | 413 | 426 | 428 | 429, error: ErrorCode, headers?: Record<string, string>) => c.json({ error }, status, headers);
 
   // Nothing about a failed request is written anywhere, unexpected ones included
   app.onError((_e, c) => c.json({ error: 'bad-request' satisfies ErrorCode }, 400));
@@ -94,7 +115,7 @@ export function createApp(opts: MailboxOptions = {}) {
   app.use('*', async (c, next) => {
     await next();
     c.res.headers.set(TIME_HEADER, String(now()));
-    c.res.headers.set(LEVEL_HEADER, String(governor.bits()));
+    c.res.headers.set(LEVEL_HEADER, String((isSync(c.req.path) ? syncGovernor : governor).bits()));
     c.res.headers.set(CHALLENGE_HEADER, issueChallenge());
   });
 
@@ -103,7 +124,8 @@ export function createApp(opts: MailboxOptions = {}) {
   const DROP_ROUTE = /^\/v1\/ring\/[^/]+\/drop$/;
   const small = bodyLimit({ maxSize: 8 * 1024, onError: tooBig });
   const large = bodyLimit({ maxSize: MAX_DROP_BODY, onError: tooBig });
-  app.use('/v1/*', (c, next) => (DROP_ROUTE.test(c.req.path) ? large : small)(c, next));
+  const box = bodyLimit({ maxSize: MAX_BOX_BODY, onError: tooBig });
+  app.use('/v1/*', (c, next) => (DROP_ROUTE.test(c.req.path) ? large : BOX_ROUTE.test(c.req.path) && c.req.method === 'PUT' ? box : small)(c, next));
 
   app.use('/v1/*', async (c, next) => {
     if (!versionAtLeast(c.req.header(VERSION_HEADER) ?? '', cfg().minVersion)) return err(c, 426, 'update');
@@ -111,7 +133,7 @@ export function createApp(opts: MailboxOptions = {}) {
   });
 
   /** Proof-of-work (more for bigger bodies) for writes, checked before the body is parsed. Returns the body text or a Response. */
-  async function guardWrite(c: Context): Promise<string | Response> {
+  async function guardWrite(c: Context, gov: PowGovernor = governor): Promise<string | Response> {
     if (cfg().paused) return err(c, 429, 'busy');
     const text = await c.req.text();
     const header = c.req.header(POW_HEADER) ?? '';
@@ -119,11 +141,11 @@ export function createApp(opts: MailboxOptions = {}) {
     const challenge = header.slice(0, dot), nonce = header.slice(dot + 1);
     const issued = dot > 0 ? challengeIssuedAt(challenge) : null;
     const input = issued !== null ? powInput(c.req.path, text, challenge, c.req.header(VERSION_HEADER) ?? '') : '';
-    const need = powBitsFor(governor.accepted(), Buffer.byteLength(text));
+    const need = powBitsFor(gov.accepted(), Buffer.byteLength(text));
     if (issued === null || !checkPow(input, nonce, need) || !proofs.use(input + nonce, issued)) {
-      return err(c, 428, 'pow', { [POW_BITS_HEADER]: String(powBitsFor(governor.bits(), Buffer.byteLength(text))) });
+      return err(c, 428, 'pow', { [POW_BITS_HEADER]: String(powBitsFor(gov.bits(), Buffer.byteLength(text))) });
     }
-    governor.proven();
+    gov.proven();
     return text;
   }
 
@@ -269,6 +291,23 @@ export function createApp(opts: MailboxOptions = {}) {
     return c.body(null, 204);
   });
 
+  // Memory for uploads being read: drops and sync boxes share one budget
+  const reserveInflight = (bytes: number): (() => void) | null => {
+    if (inflightDropBytes + bytes > (opts.syncInflightBytes ?? MAX_INFLIGHT_DROP_BYTES)) return null;
+    inflightDropBytes += bytes;
+    return () => { inflightDropBytes -= bytes; };
+  };
+  registerSyncRoutes(app, {
+    groups, err, cfg, now, reserveInflight,
+    guardWrite: (c) => guardWrite(c, syncGovernor),
+    ready: opts.groupsReady ?? (() => true),
+    maxDbBytes: () => opts.syncMaxDbBytes ?? cfg().syncMaxDbMb * 1024 * 1024,
+    listBudgetBytes: () => opts.listInflightBytes ?? cfg().listMbInFlight * 1024 * 1024,
+    smallListBudgetBytes: () => opts.smallListInflightBytes ?? cfg().smallListMbInFlight * 1024 * 1024,
+    listHoldMs: opts.listHoldMs ?? 120_000,
+    smallListHoldMs: opts.smallListHoldMs ?? 15_000,
+  });
+
   app.get('/healthz', (c) => c.text('ok'));
-  return { app, store };
+  return { app, store, groups };
 }

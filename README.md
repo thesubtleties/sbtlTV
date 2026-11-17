@@ -21,6 +21,7 @@ sbtlTV aims to be a dead-simple, low-latency player that looks good and stays ou
 - **Movies & Series** - Netflix-style home page with hero section, carousels, and detail views; More like this rows from your own library (with a TMDB key); resting on a card loads its page ahead, and episode lists refresh when they're more than a day old
 - **Selected Lists** - Hand-picked themed rows on the Movies and Series homes, matched to your own library (a signed list from sbtltv.com, checked once a day; can be turned off)
 - **Send a Setup** - Set up someone's sbtlTV from yours with a short code and three matching words; end-to-end encrypted, even we can't read it. Providers and keys can be ones you enter just for them
+- **Sync** - Keep your watchlist, watch progress and (if you choose) look and subtitle settings in step on your own computers, with no account; end-to-end encrypted, even we can't read it. Titles one computer doesn't have show grayed (or hidden). Sources, favorites and each computer's own choices stay put
 - **Multi-source with Priority** - Connect multiple Xtream sources; drag-and-drop to set priority for dedup and playback order
 - **Cross-source Merging** - VOD deduplicates across sources; series gap-fill episodes from other providers
 - **Watchlist & Favorites** - Save movies/series to a watchlist carousel; favorite channels for quick access
@@ -149,9 +150,19 @@ Enable logging in Settings → Debug for troubleshooting. Logs are saved to your
 - **macOS**: `~/Library/Application Support/sbtlTV`
 - **Linux**: `~/.config/sbtlTV`
 
+## Sync
+
+Settings > Sync & transfer > *Add a computer*. The other computer shows a code (*Show my code*), you type it, both screens show the same three words, and the other computer taps *Join*. There's no account.
+
+- **What syncs:** your watchlist and watch progress (resume points and finished marks), and, if you turn it on, look, subtitle and player settings. Titles are matched by TMDB, so it works when the computers have different providers.
+- **What doesn't:** sources and logins, favorite channels, and each computer's own choices (player mode, keyring, debug log and so on).
+- **How:** each computer keeps everything locally and puts one sealed box on the sbtlTV relay. The key never leaves your computers, so the relay can't read the boxes. Changes go up a few seconds after you make them; each computer checks when it starts, when you click into it, when you open Movies or Series, and every 10 minutes.
+- **Titles one computer doesn't have** show grayed in Continue Watching and a watchlist row (with a TMDB poster when that computer has a TMDB key), or you can hide them.
+- **Removing a computer** changes the lock for the others, so it can't read anything new. A computer that was away follows when it comes back.
+
 ## Privacy
 
-sbtlTV has no account and sends no analytics, tracking or crash reports. Its own servers (sbtltv.com and the sbtlTV relay) see only what is listed below. Settings > Privacy shows how this applies on your computer.
+sbtlTV has no account and sends no analytics, tracking or crash reports. Its own servers, sbtltv.com and the sbtlTV relay, are only contacted by features that require it, and no connections are made if those features are off. Settings > Privacy shows exactly who sees what with your current settings.
 
 **On your computer:** settings, watch history, favorites, watchlist, guide and library, and subtitles downloaded from SubDL (removed with your SubDL key). Saved passwords and API keys are encrypted by your system (the macOS Keychain, Windows, or a Linux keyring such as KWallet or GNOME Keyring); on Linux without a keyring they are stored without strong encryption, and Settings > Privacy says so. The debug log is off by default; when on, it stays on your computer and links in it are cleaned of login details.
 
@@ -159,13 +170,13 @@ sbtlTV has no account and sends no analytics, tracking or crash reports. Its own
 
 | Who | When | What they see |
 |-----|------|---------------|
-| Your IPTV provider | Always | Your IP address, your account, the series you open or point at, and what you watch and when |
+| Your IPTV provider | Always | Your IP address, your account, the series you open, point at or have in Continue Watching, and what you watch and when |
 | Guide (EPG) sources | Always | Your IP address and when the guide refreshes (your provider's guide, plus any guide URLs you add) |
 | Image hosts | Always | Your IP address and which images: channel logos and posters load from the addresses in your provider's data and from TMDB's image server |
 | GitHub | Always | Two public data files, no account (the movie/series match file for library syncs, and TMDB's browse lists when you have no TMDB key), and update checks when sbtlTV starts (can be turned off): your IP address and sbtlTV version |
 | sbtltv.com | With Selected lists on (default) | Your IP address, about once a day, when sbtlTV fetches the signed Selected lists file. Nothing about you or what you watch; requests aren't logged. Off in Settings > Movies & Series |
-| sbtlTV relay | Only while you send or receive a setup | The setup, end-to-end encrypted so even we can't read it, your IP address and your sbtlTV version; requests aren't logged. Deleted when picked up, or after 10 minutes |
-| TMDB | With your TMDB key | Your key, your IP address, the lists you browse and the titles you open or point at. Without a key, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address |
+| sbtlTV relay | Only while you send or receive a setup, or use Sync | The setup, or each computer's watchlist, progress and chosen settings, end-to-end encrypted so even we can't read them; your IP address and your sbtlTV version. Requests aren't logged and there are no backups. A setup is deleted when picked up, or after 10 minutes; synced data stays until you leave sync, or no computer has used it for 90 days |
+| TMDB | With your TMDB key | Your key, your IP address, the lists you browse, the titles you open or point at, and synced titles this computer doesn't have (for their posters). Without a key, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address |
 | RatingPosterDB | With your RPDB key | Your key, your IP address and which titles' posters you see; with RPDB backdrops on, also the titles you open or point at |
 | SubDL | With your SubDL key | Your key, your IP address, and which movies and episodes you get subtitles for, in which language (searched when subtitles are on and the file has none in your language, or when you open Find subtitles) |
 | ESPN | With team logos on (off by default on new installs) | Your IP address and which teams are playing on the channel you watch |

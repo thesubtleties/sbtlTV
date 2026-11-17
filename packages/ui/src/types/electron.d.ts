@@ -247,7 +247,42 @@ export interface MailboxApi {
   confirm: () => Promise<{ success?: boolean; error?: string }>;
   sameWords: () => Promise<{ success?: boolean }>;
   cancel: () => Promise<{ success?: boolean }>;
-  state: () => Promise<{ success: boolean; data: { role: 'send' | 'receive' | null; state: import('../utils/knockView').KnockState | null; staged?: { token: string; preview: SetupPreview } } }>;
+  state: () => Promise<{ success: boolean; data: { role: 'send' | 'receive' | null; state: import('../utils/knockView').KnockState | null; staged?: { token: string; preview: SetupPreview }; join?: { computers: string[] } } }>;
+  /** Sync: "Add a computer" rings their code with a join instead of a setup */
+  sendJoin: (code: string) => Promise<{ success?: boolean; error?: string }>;
+  /** A received join: join the sync with this computer's name (blank = its platform name) */
+  join: (name: string) => Promise<{ success?: boolean; error?: string }>;
+}
+
+/** Settings > Sync & transfer > Sync (the engine lives in main; see packages/mailbox/src/client/sync-engine.ts) */
+export type SyncParts = { watchlist: boolean; progress: boolean; settings: boolean };
+export interface SyncView {
+  status: 'off' | 'pending' | 'active' | 'removed' | 'ended' | 'keyring' | 'update';
+  lastSync: number | null;
+  parts: SyncParts;
+  name: string | null;
+  defaultName: string;
+  /** Computers to add again: an old group was retired by someone else after the relay lost its data */
+  interrupted: string[];
+  computers: { id: string; name: string; thisOne: boolean; lastSeen: number | null }[];
+}
+export interface SyncApi {
+  ready: () => Promise<void>;
+  view: () => Promise<SyncView>;
+  record: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;
+  /** These were written into the lists (after applyRecords): don't hand them over again */
+  applied: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;
+  pull: () => Promise<void>;
+  dismissInterrupted: () => Promise<void>;
+  setParts: (parts: SyncParts) => Promise<void>;
+  rename: (name: string) => Promise<void>;
+  remove: (deviceId: string) => Promise<{ error?: string }>;
+  leave: () => Promise<{ error?: string }>;
+  onView: (cb: (v: SyncView) => void) => () => void;
+  onApply: (cb: (records: import('@sbtltv/core').SyncRecord[]) => void) => () => void;
+  onSnapshot: (cb: () => void) => () => void;
+  onSettingsReplaced: (cb: () => void) => () => void;
+  onBeforeQuit: (cb: () => Promise<void> | void) => () => void;
 }
 
 export interface PrivacyApi {
@@ -287,6 +322,7 @@ export interface AppSettings {
   posterDbApiKey?: string;         // RatingPosterDB API key for rating posters
   subdlApiKey?: string;            // SubDL API key for downloaded subtitles
   rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
+  syncMissingTitles?: 'gray' | 'hide';  // Synced titles this computer doesn't have
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
@@ -439,6 +475,7 @@ declare global {
     privacy?: PrivacyApi;
     setup?: SetupApi;
     mailbox?: MailboxApi;
+    sync?: SyncApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
     debug?: DebugApi;

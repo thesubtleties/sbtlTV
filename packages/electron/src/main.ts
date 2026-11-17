@@ -34,9 +34,16 @@ import { isKeyring, keyringToKeep, resolvePasswordStore } from './password-store
 import { removeBackups, resetCacheIfMarked } from './setup-backups.js';
 import { registerSetupTransfer } from './setup-transfer.js';
 import { registerMailbox } from './mailbox/mailbox-ipc.js';
+import { registerSync } from './mailbox/sync-ipc.js';
+import { fitAppearance, type AppearanceLike } from './sync-appearance.js';
 import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { makeZip } from './zip-writer.js';
+import { holdSingleInstance } from './single-instance.js';
 const { autoUpdater } = electronUpdater;
+
+// One copy per profile, decided before anything else runs (see single-instance.ts).
+// process.exit, not app.exit: nothing below may run in a copy that isn't going to.
+if (!holdSingleInstance({ argv: process.argv, requestLock: () => app.requestSingleInstanceLock() })) process.exit(0);
 
 // Before the keyring is opened (Chromium picks it when the app is ready): keep
 // using the keyring the passwords were saved with (see password-store.ts).
@@ -123,6 +130,16 @@ const MIN_WIDTH = 640;
 const MIN_HEIGHT = 620;
 
 let mainWindow: BrowserWindow | null = null;
+// Another launch on this profile: bring this window forward (once, while that copy keeps asking)
+let lastSecondInstance = 0;
+app.on('second-instance', () => {
+  if (Date.now() - lastSecondInstance < 15_000) return;
+  lastSecondInstance = Date.now();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
 // Kept for a window that loads after the data process has reported
 let dataStatus: 'fatal' | 'reset' | null = null;
 let dataHost: DataHost | null = null;
@@ -519,6 +536,18 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
       event.preventDefault();
       debugLog(`Blocked navigation to: ${url}`, 'app');
     }
+  });
+
+  // Closing the window (the X button) is the usual way to quit on Windows and Linux: the page saves
+  // where playback is and sync sends it before the window goes (at most 3 s), as quitting does
+  let closeSaved = false;
+  mainWindow.on('close', (event) => {
+    if (closeSaved || installingUpdate || nativeRecoveryInProgress || !mainWindow) return;
+    event.preventDefault();
+    closeSaved = true;
+    const w = mainWindow;
+    void Promise.race([askRendererToSave().then(() => sync.engine.flush()), new Promise((r) => setTimeout(r, 3000))])
+      .finally(() => { if (!w.isDestroyed()) w.close(); });
   });
 
   mainWindow.on('closed', () => {
@@ -2277,6 +2306,8 @@ ipcMain.handle('storage-update-settings', async (_event, settings: Parameters<ty
   if (settings.selectedListsEnabled === false) followUp('removing the Selected lists copy', dropListsCache);
   if (settings.selectedListsEnabled === true) followUp('checking for Selected lists', () => { listsFailedAt = 0; void refreshSelectedLists(); });
   followUp('sending settings to the data process', () => dataHost?.pushSettings());
+  // A synced setting changed here becomes this computer's sync record (ignored while sync is off)
+  followUp('telling sync', () => sync.settingsChanged(settings as Record<string, unknown>));
   return { success: true };
 });
 
@@ -2631,7 +2662,34 @@ const setupTransfer = registerSetupTransfer({
   log: (m) => debugLog(m, 'setup'),
 });
 // Settings > Sync & transfer: send and receive through the mailbox (mailbox/mailbox-ipc.ts)
-const mailbox = registerMailbox({ stage: setupTransfer.stage, log: (m) => debugLog(m, 'mailbox') });
+// Sync: the engine starts when the page says it's listening (sync:ready), so nothing it hands over is lost
+const sync = registerSync({
+  renderer: () => mainWindow?.webContents ?? null,
+  log: (m) => debugLog(m, 'sync'),
+  currentSettings: () => {
+    const s = storage.getSettings();
+    return { theme: s.theme, appearance: s.appearance, subtitles: s.subtitles, autoplayNextEpisode: s.autoplayNextEpisode };
+  },
+  // Settings from the user's other computers: stored, then the same follow-ups a change here gets.
+  // A palette or accent this desktop can't give (Caelestia, the system accent) keeps this computer's.
+  applySettings: async (values) => {
+    if (values.appearance && typeof values.appearance === 'object') {
+      const desktop = await readDesktopColors().catch(() => ({ accent: null, caelestia: null }));
+      values = { ...values, appearance: fitAppearance(values.appearance as AppearanceLike, storage.getSettings().appearance ?? {}, { caelestia: !!desktop.caelestia, accent: !!desktop.accent }) };
+    }
+    const previousLanguage = storage.getSettings().subtitles?.language;
+    storage.updateSettings(values as Parameters<typeof storage.updateSettings>[0]);
+    if ('subtitles' in values || 'appearance' in values) {
+      try { applySubtitleStyle('settings synced'); } catch { debugLog('Sync: applying the subtitle style failed', 'sync'); }
+    }
+    // A caption language from another computer: live captions follow, as for a change made here
+    if ('subtitles' in values && storage.getSettings().subtitles?.language !== previousLanguage) {
+      try { captions.recheckLanguage(); } catch { debugLog('Sync: re-checking captions failed', 'sync'); }
+    }
+    dataHost?.pushSettings();
+  },
+});
+const mailbox = registerMailbox({ stage: setupTransfer.stage, log: (m) => debugLog(m, 'mailbox'), sync: sync.engine });
 
 // A failure is logged by its reason only, never with an address.
 ipcMain.handle('privacy-check-ip', async () => {
@@ -2692,9 +2750,13 @@ ipcMain.handle('updater-install', () => {
     return { error: 'No update has been downloaded yet' };
   }
   try {
+    // The installer is already starting: quit at once, no hold for a knock or a sync push (the last
+    // saved progress goes up on the next launch)
+    installingUpdate = true;
     autoUpdater.quitAndInstall(false, true);
     return { success: true };
   } catch (err) {
+    installingUpdate = false;   // not installing after all: later quits save and send as usual
     const msg = err instanceof Error ? err.message : 'Install failed';
     debugLog(`Failed to quit and install: ${msg}`, 'updater');
     return { error: msg };
@@ -3167,13 +3229,30 @@ app.whenReady().then(async () => {
 ipcMain.on('data-request-port', (event) => dataHost?.giveRendererPort(event.sender));
 
 let mailboxStopped = false;
+/** Quitting to install an update: skip the hold (see updater-install) */
+let installingUpdate = false;
+/** The page saves playback progress before quitting (at most 1.5 s), so sync can push it. */
+const askRendererToSave = () => new Promise<void>((resolve) => {
+  const w = mainWindow?.webContents;
+  if (!w || w.isDestroyed()) return resolve();
+  const done = () => { ipcMain.removeListener('app-quit-ready', done); resolve(); };
+  ipcMain.once('app-quit-ready', done);
+  w.send('app-before-quit');
+  setTimeout(done, 1500);
+});
+
 app.on('before-quit', (event) => {
-  // A knock in progress (or its cancel, started by closing the window): let the relay hear it's
-  // cancelled, at most a second, then quit for real; the data process stops on that second pass
-  if (mailbox.active() && !mailboxStopped) {
+  // First pass: a knock in progress (or its cancel, started by closing the window) lets the relay
+  // hear it's cancelled, the page saves progress and sync pushes it: all within 3 seconds. Then quit
+  // for real; the data process stops on that second pass.
+  if (!mailboxStopped && !installingUpdate) {
     mailboxStopped = true;
     event.preventDefault();
-    void Promise.race([mailbox.stop(), new Promise((r) => setTimeout(r, 1000))]).then(() => app.quit());
+    const knock = mailbox.active() ? Promise.race([mailbox.stop(), new Promise((r) => setTimeout(r, 1000))]) : Promise.resolve();
+    void Promise.race([
+      Promise.all([knock, askRendererToSave().then(() => sync.engine.flush())]),
+      new Promise((r) => setTimeout(r, 3000)),
+    ]).finally(() => { sync.engine.stop(); app.quit(); });
     return;
   }
   dataHost?.shutdown();
