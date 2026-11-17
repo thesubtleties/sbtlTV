@@ -4,7 +4,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
-import { GROUP_IDLE_DAYS, MAX_COMPUTERS } from '../protocol/index.js';
+import { BOX_PAD, GROUP_IDLE_DAYS, MAX_COMPUTERS } from '../protocol/index.js';
 import { createHash } from 'node:crypto';
 import { dayMinus, sameHash, type GroupStore, type ListResult, type Moved, type RekeyEntry } from './groups.js';
 
@@ -82,7 +82,10 @@ export class PgGroupStore implements GroupStore {
 
   putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace = false) {
     return tx(this.pool, async (c) => {
-      if (onlyReplace && !(await c.query('select 1 from sync_boxes where group_id = $1 and device_id = $2', [gid, did])).rowCount) return 'busy' as const;
+      if (onlyReplace) {
+        const old = (await c.query<{ n: number }>('select octet_length(sealed) as n from sync_boxes where group_id = $1 and device_id = $2', [gid, did])).rows[0];
+        if (!old || sealed.length > Number(old.n) + BOX_PAD) return 'busy' as const;
+      }
       await c.query('insert into sync_groups (id, token_hash, last_seen) values ($1, $2, $3) on conflict (id) do nothing', [gid, tokenHash, today]);
       const g = (await c.query<{ token_hash: Buffer; moved_on: string | null }>('select token_hash, moved_on from sync_groups where id = $1 for update', [gid])).rows[0];
       if (!sameHash(g.token_hash, tokenHash)) return 'denied' as const;

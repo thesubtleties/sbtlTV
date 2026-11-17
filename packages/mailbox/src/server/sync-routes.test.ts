@@ -269,6 +269,9 @@ describe('sync routes: guards (lens 7)', () => {
     expect((await call('PUT', `/v1/groups/${g2.groupId}/boxes/${g2.did}`, { token: g2.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(429);
     expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${newDeviceId()}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(429);
     expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(200);
+    // ...but not blow it up: one 16 KB step at most
+    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(64 * BOX_PAD) }, pow: true })).status).toBe(429);
+    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(2 * BOX_PAD) }, pow: true })).status).toBe(200);
   });
 
   it('sync uploads have their own proof-of-work level: busy sync does not slow "Get a code" (review C5)', async () => {
@@ -342,6 +345,23 @@ describe('sync routes: what counts as a download', () => {
     await new Promise((r) => setTimeout(r, 60));
     await expect(slow.text()).rejects.toThrow();
     expect(await list(call, g)).toBe(200);   // the cut-off one didn't count
+    expect(await list(call, g)).toBe(429);
+  });
+
+  it('a reader that takes every byte counts even if it never finishes the reply; one cut off before the last part does not', async () => {
+    const { call } = limited(1, { listInflightBytes: 1_000_000 }); const g = group();
+    expect((await putBox(call, g, 4 * BOX_PAD)).status).toBe(200);   // ~87 KB: two parts
+    const cut = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
+    const r1 = cut.body!.getReader();
+    await r1.read();                 // the first part only
+    await r1.cancel();
+    expect(await list(call, g)).toBe(200);   // the cut-off one didn't count; this one does
+    expect((await putBox(call, g, 4 * BOX_PAD)).status).toBe(200);
+    const sly = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
+    const r2 = sly.body!.getReader();
+    let got = 0;
+    while (got < Number(sly.headers.get('content-length'))) got += (await r2.read()).value!.length;
+    await r2.cancel();               // every byte, but never reads the end
     expect(await list(call, g)).toBe(429);
   });
 

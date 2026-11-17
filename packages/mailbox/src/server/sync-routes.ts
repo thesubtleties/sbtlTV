@@ -89,8 +89,9 @@ export function registerSyncRoutes(app: Hono, d: {
   });
 
   async function putBox(c: Context, th: Buffer): Promise<Response> {
-    // Over the size cap a computer can still replace its own box (sync keeps working for everyone
-    // already in); only new boxes and groups wait
+    // Over the size cap a computer can still replace its own box, growing it by one 16 KB step at
+    // most (sync keeps working for everyone already in, and boxes made small can't be grown to
+    // fill the disk); new boxes and groups wait
     const full = (await d.groups.sizeBytes()) > d.maxDbBytes();
     const text = await d.guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
@@ -156,14 +157,13 @@ export function registerSyncRoutes(app: Hono, d: {
         timer.unref?.();
       },
       pull(ctl) {
-        if (!body || at >= body.length) {
-          // Asked for more after the last part: the whole reply was read. Only a download that
-          // arrived counts (a cut-off one, a sleeping laptop, a quit app doesn't)
-          if (body) for (const v of versions) d.downloads.add(boxKey(gid, v.id), v.seq);
-          clearTimeout(timer); ctl.close(); release(); return;
-        }
+        if (!body || at >= body.length) { clearTimeout(timer); ctl.close(); release(); return; }
         ctl.enqueue(new Uint8Array(body.subarray(at, at + SMALL_REPLY)));
         at += SMALL_REPLY;
+        // The last part is handed out: that's a download. One cut off before it (a slow line, a
+        // sleeping laptop, a quit app) doesn't count; one that has every byte always does, however
+        // the reader ends it
+        if (at >= body.length) for (const v of versions) d.downloads.add(boxKey(gid, v.id), v.seq);
       },
       cancel() { clearTimeout(timer); release(); },
     }, { highWaterMark: 0 });

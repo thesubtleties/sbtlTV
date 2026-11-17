@@ -163,6 +163,11 @@ export function groupStoreContract(name: string, make: () => Promise<GroupStore>
       await s.putBox(gid, th, a, Buffer.from('a1'), '2026-11-16');
       expect(await s.putBox(gid, th, a, Buffer.from('a2'), '2026-11-16', true)).toEqual({ seq: 2 });
       expect(await s.putBox(gid, th, hex(), Buffer.from('b1'), '2026-11-16', true)).toBe('busy');
+      // Grown by one step at most: a box made small can't be blown up past the cap
+      const small = Buffer.alloc(100, 1);
+      await s.putBox(gid, th, a, small, '2026-11-16', true);
+      expect(await s.putBox(gid, th, a, Buffer.alloc(100 + 16 * 1024, 2), '2026-11-16', true)).toEqual({ seq: 4 });
+      expect(await s.putBox(gid, th, a, Buffer.alloc(100 + 16 * 1024 + 16 * 1024 + 1, 3), '2026-11-16', true)).toBe('busy');
     });
 
     it('the epoch stays the same for one database', async () => {

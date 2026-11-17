@@ -5,7 +5,7 @@
  * the relay learns at most which day a group checked in.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { GROUP_IDLE_DAYS, MAX_COMPUTERS } from '../protocol/index.js';
+import { BOX_PAD, GROUP_IDLE_DAYS, MAX_COMPUTERS } from '../protocol/index.js';
 
 export interface BoxRow { id: string; seq: number; sealed: Buffer }
 /** A remaining computer's new key after a move: sealed for it, with the hash of its pick-up proof (null: no proof possible) */
@@ -20,7 +20,8 @@ export interface GroupStore {
   group(gid: string): Promise<{ tokenHash: Buffer; moved: boolean } | null>;
   /**
    * Creates the group (with this token hash) when it doesn't exist. onlyReplace (the database is
-   * over its size cap): only a computer replacing its own box gets through; anything new is 'busy'.
+   * over its size cap): only a computer replacing its own box, at most one BOX_PAD step bigger,
+   * gets through; anything new or grown more is 'busy'.
    */
   putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace?: boolean): Promise<{ seq: number } | 'moved' | 'full' | 'denied' | 'busy'>;
   /** Boxes changed after `since`, and every computer's id + seq. Refreshes last_seen. */
@@ -72,7 +73,8 @@ export class MemoryGroupStore implements GroupStore {
 
   async putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace = false) {
     let g = this.groups.get(gid);
-    if (onlyReplace && !g?.boxes.has(did)) return 'busy' as const;
+    const old = g?.boxes.get(did);
+    if (onlyReplace && (!old || sealed.length > old.sealed.length + BOX_PAD)) return 'busy' as const;
     if (!g) { g = { tokenHash, movedOn: null, lastSeen: today, seq: 0, boxes: new Map(), rekeys: new Map() }; this.groups.set(gid, g); }
     if (!sameHash(g.tokenHash, tokenHash)) return 'denied' as const;
     if (g.movedOn) return 'moved' as const;
