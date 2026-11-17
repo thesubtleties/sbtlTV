@@ -164,3 +164,103 @@
 /* B floats for good: only the window-button bar fills in behind it; the capsule, back and search stay
    glass over the art and over the rows as they scroll under */
 :root[data-hstyle='capsule'] .vod-page--bleed::after { height: 32px; }
+
+/* ---------- B motion: Caelestia's curves (/etc/xdg/quickshell/caelestia components/Anim.qml) ---------- */
+.h-category-strip__indicator { display: none; }
+:root[data-hstyle='capsule'] {
+  --ease-spatial: cubic-bezier(0.38, 1.21, 0.22, 1);       /* expressiveDefaultSpatial: moves, overshoots a little, settles */
+  --ease-spatial-fast: cubic-bezier(0.42, 1.67, 0.21, 0.9); /* expressiveFastSpatial */
+  --ease-effects: cubic-bezier(0.34, 0.8, 0.34, 1);        /* expressiveDefaultEffects: fades and colour */
+  --ease-out: cubic-bezier(0.3, 0, 0.8, 0.15);             /* emphasizedAccel: leaving */
+}
+/* One highlight that glides to the active item */
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__indicator {
+  display: block;
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: var(--ind-w, 0px);
+  transform: translateX(var(--ind-x, 0px));
+  opacity: var(--ind-o, 0);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  transition: transform 500ms var(--ease-spatial), width 500ms var(--ease-spatial), opacity 200ms var(--ease-effects);
+  pointer-events: none;
+}
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__pill,
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__genres-btn {
+  position: relative;
+  z-index: 1;
+  transition: color 220ms var(--ease-effects), transform 220ms var(--ease-spatial-fast);
+}
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__pill:active,
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__genres-btn:active { transform: scale(0.94); }
+/* The highlight is the backing now: the active item only changes colour */
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__pill.active,
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__genres-btn.active {
+  background: transparent !important;
+  color: #111;
+}
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__genres-btn svg {
+  transition: transform 500ms var(--ease-spatial);
+}
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__genres-btn[aria-expanded='true'] svg { transform: rotate(180deg); }
+
+/* The sheet grows out of the capsule: the capsule's own glass hands over to the sheet's (one layer, no
+   seam), and the sheet opens from the capsule's shape to a panel */
+:root[data-hstyle='capsule'] .h-category-strip__nav {
+  transition: background-color 250ms var(--ease-effects), border-color 250ms var(--ease-effects), box-shadow 250ms var(--ease-effects);
+}
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__nav--sheet {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;   /* else it would be the sheet's backdrop root and the sheet couldn't blur the page */
+}
+:root[data-hstyle='capsule'] .h-category-strip__genres { position: static; }
+:root[data-hstyle='capsule'] .h-category-strip__sheet {
+  top: 0;
+  padding-top: calc(var(--cap-h, 48px) + 12px);
+  z-index: -1;
+  border-radius: 24px;
+  clip-path: inset(0 0 0 0 round 24px);
+  animation: hs-sheet-grow 520ms var(--ease-spatial) both;
+}
+:root[data-hstyle='capsule'] .h-category-strip__sheet--closing {
+  animation: hs-sheet-shrink 300ms var(--ease-out) both;
+}
+@keyframes hs-sheet-grow {
+  from { clip-path: inset(0 calc(50% - var(--cap-w, 240px) / 2) calc(100% - var(--cap-h, 48px)) round 999px); }
+  to { clip-path: inset(0 0 0 0 round 24px); }
+}
+@keyframes hs-sheet-shrink {
+  from { clip-path: inset(0 0 0 0 round 24px); }
+  to { clip-path: inset(0 calc(50% - var(--cap-w, 240px) / 2) calc(100% - var(--cap-h, 48px)) round 999px); }
+}
+/* The genres ripple in, row by row */
+:root[data-hstyle='capsule'] .h-category-strip__sheet-item {
+  animation: hs-item-in 320ms var(--ease-effects) both;
+  animation-delay: calc(140ms + min(var(--i, 0), 40) * 9ms);
+  transition: background-color 180ms var(--ease-effects), color 180ms var(--ease-effects), transform 220ms var(--ease-spatial-fast);
+}
+:root[data-hstyle='capsule'] .h-category-strip__sheet-item:hover { transform: translateX(3px); }
+:root[data-hstyle='capsule'] .h-category-strip__sheet--closing .h-category-strip__sheet-item {
+  animation: hs-item-out 140ms var(--ease-out) both;
+  animation-delay: 0ms;
+}
+@keyframes hs-item-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes hs-item-out { to { opacity: 0; } }
+/* Search swells open from its circle */
+:root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__search {
+  transition: width 500ms var(--ease-spatial), background-color 250ms var(--ease-effects);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-hstyle='capsule'] .h-category-strip__sheet,
+  :root[data-hstyle='capsule'] .h-category-strip__sheet-item { animation-duration: 1ms !important; animation-delay: 0ms !important; }
+  :root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__indicator { transition-duration: 1ms; }
+}

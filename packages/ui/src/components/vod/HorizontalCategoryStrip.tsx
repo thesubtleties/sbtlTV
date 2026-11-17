@@ -9,7 +9,7 @@
  * - Mouse wheel horizontal scroll support
  */
 
-import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, type CSSProperties } from 'react';
 import './HorizontalCategoryStrip.css';
 import './HeaderStyles.css';
 
@@ -102,8 +102,54 @@ export function HorizontalCategoryStrip({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
-  // Experiment (header style B): the category list as a sheet under a Genres button
-  const [genresOpen, setGenresOpen] = useState(false);
+  // Experiment (header style B): the category list as a sheet that grows out of the capsule.
+  // 'closing' keeps it drawn while it shrinks back in
+  const [genres, setGenres] = useState<'closed' | 'open' | 'closing'>('closed');
+  const genresOpen = genres === 'open';
+  const navRef = useRef<HTMLDivElement>(null);
+  const setGenresOpen = useCallback((next: boolean | ((o: boolean) => boolean)) => {
+    setGenres((g) => {
+      const open = typeof next === 'function' ? next(g === 'open') : next;
+      if (open) return 'open';
+      return g === 'open' ? 'closing' : g;
+    });
+  }, []);
+  useEffect(() => {
+    if (genres !== 'closing') return;
+    const t = setTimeout(() => setGenres('closed'), 320);
+    return () => clearTimeout(t);
+  }, [genres]);
+  // A click anywhere else, or Escape, closes the sheet
+  useEffect(() => {
+    if (!genresOpen) return;
+    const away = (e: PointerEvent) => { if (!navRef.current?.contains(e.target as Node)) setGenresOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setGenresOpen(false); };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc); };
+  }, [genresOpen, setGenresOpen]);
+  // The capsule's one highlight glides to the active item; the sheet needs the capsule's size to grow from
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const place = () => {
+      const active = nav.querySelector<HTMLElement>('.h-category-strip__pill.active, .h-category-strip__genres-btn.active')
+        ?? nav.querySelector<HTMLElement>('.h-category-strip__genres-btn');
+      const box = nav.getBoundingClientRect();
+      if (active && active.offsetParent) {
+        const r = active.getBoundingClientRect();
+        nav.style.setProperty('--ind-x', `${r.left - box.left}px`);
+        nav.style.setProperty('--ind-w', `${r.width}px`);
+        nav.style.setProperty('--ind-o', active.classList.contains('active') ? '1' : '0');
+      }
+      nav.style.setProperty('--cap-w', `${box.width}px`);
+      nav.style.setProperty('--cap-h', `${box.height}px`);
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(nav);
+    return () => ro.disconnect();
+  }, [selectedId, genres]);
 
   // Process categories: strip prefixes and sort alphabetically
   const processedCategories = useMemo(() => {
@@ -217,7 +263,8 @@ export function HorizontalCategoryStrip({
       )}
 
       {/* Experiment: one group for the navigation (layout-neutral unless a header style uses it) */}
-      <div className="h-category-strip__nav">
+      <div className={`h-category-strip__nav ${genres !== 'closed' ? 'h-category-strip__nav--sheet' : ''}`} ref={navRef}>
+      <span className="h-category-strip__indicator" aria-hidden="true" />
       {/* Left arrow */}
       <button
         className={`h-category-strip__arrow h-category-strip__arrow--left ${canScrollLeft ? 'visible' : ''}`}
@@ -281,12 +328,13 @@ export function HorizontalCategoryStrip({
             {processedCategories.find((c) => c.id === selectedId)?.displayName ?? 'Genres'}
             <ChevronDown />
           </button>
-          {genresOpen && (
-            <div className="h-category-strip__sheet" role="menu">
-              {processedCategories.map((cat) => (
+          {genres !== 'closed' && (
+            <div className={`h-category-strip__sheet ${genres === 'closing' ? 'h-category-strip__sheet--closing' : ''}`} role="menu">
+              {processedCategories.map((cat, i) => (
                 <button
                   key={cat.id}
                   role="menuitem"
+                  style={{ '--i': i } as CSSProperties}
                   className={`h-category-strip__sheet-item ${selectedId === cat.id ? 'active' : ''}`}
                   onClick={() => { onSelect(cat.id); setGenresOpen(false); }}
                 >
