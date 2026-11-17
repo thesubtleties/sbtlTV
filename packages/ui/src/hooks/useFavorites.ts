@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
+import { favoritesOut } from '../services/sync/outbox';
 
 function favId(streamId: string): string {
   return `channel_${streamId}`;
@@ -16,22 +17,22 @@ export function useIsFavoriteChannel(streamId: string | undefined): boolean {
   return fav !== undefined && fav !== null;
 }
 
+/** Favorite or unfavorite a channel; with Sync on, the other computers follow. */
+export async function toggleFavoriteChannel(streamId: string, name: string): Promise<void> {
+  const id = favId(streamId);
+  const existing = await db.favorites.get(id);
+  if (existing) {
+    await db.favorites.delete(id);
+    await favoritesOut([existing], Date.now(), true);
+  } else {
+    const row = { id, type: 'channel' as const, stream_id: streamId, name, added: new Date() };
+    await db.favorites.put(row);
+    await favoritesOut([row], +row.added);
+  }
+}
+
 export function useToggleFavoriteChannel() {
-  return useCallback(async (streamId: string, name: string) => {
-    const id = favId(streamId);
-    const existing = await db.favorites.get(id);
-    if (existing) {
-      await db.favorites.delete(id);
-    } else {
-      await db.favorites.put({
-        id,
-        type: 'channel',
-        stream_id: streamId,
-        name,
-        added: new Date(),
-      });
-    }
-  }, []);
+  return useCallback((streamId: string, name: string) => toggleFavoriteChannel(streamId, name), []);
 }
 
 // Favorites stay on Dexie; the channel rows they point at come from the data

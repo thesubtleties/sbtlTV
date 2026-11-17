@@ -41,3 +41,21 @@ describe('matchFavorite', () => {
     expect(matchFavorite({ host: 'x.example', ch: '1', name: 'A' }, { sources, byId: new Map(), byGuide: [] })).toBe(null);
   });
 });
+
+import { favoriteIdentity } from './favorites';
+
+describe('favoriteIdentity (what goes out)', () => {
+  const sources = [{ id: 'm1', url: 'http://provider.example' }];
+  it('a favorite that came through Sync keeps the key it came with, even on a different local channel (Review Focus 4)', () => {
+    const row = { stream_id: 'm2_9', sync: { host: 'provider.example', ch: '1234', guide: 'CNN.us' } };
+    expect(favoriteIdentity(row, { sources, channel: { source_id: 'm2', epg_channel_id: 'CNN.us' } })).toEqual({ host: 'provider.example', ch: '1234', guide: 'CNN.us' });
+  });
+  it("a local favorite: its source's server, the channel id without the prefix, and its guide id", () => {
+    expect(favoriteIdentity({ stream_id: 'm1_77' }, { sources, channel: { source_id: 'm1', epg_channel_id: 'ESPN.us' } })).toEqual({ host: 'provider.example', ch: '77', guide: 'ESPN.us' });
+    expect(favoriteIdentity({ stream_id: 'm1_77' }, { sources, channel: { source_id: 'm1', epg_channel_id: '' } })).toEqual({ host: 'provider.example', ch: '77' });
+  });
+  it('unknown channel or source: nothing to send', () => {
+    expect(favoriteIdentity({ stream_id: 'm1_77' }, { sources })).toBe(null);
+    expect(favoriteIdentity({ stream_id: 'zz_77' }, { sources, channel: { source_id: 'zz', epg_channel_id: '' } })).toBe(null);
+  });
+});

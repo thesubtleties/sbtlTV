@@ -46,3 +46,19 @@ export function matchFavorite(
   const best = [...pool].sort((a, b) => score(a) - score(b) || (a.channel_num ?? Infinity) - (b.channel_num ?? Infinity) || a.name.length - b.name.length)[0];
   return best.stream_id;
 }
+
+/**
+ * What a favorite on this computer is called for Sync: the identity it came with (so a removal reaches
+ * every computer), else its own source's server and channel id, with its guide id. null if unknown.
+ */
+export function favoriteIdentity(
+  row: { stream_id?: string; sync?: { host: string; ch: string; guide?: string } },
+  lookup: { sources: { id: string; url: string }[]; channel?: { source_id: string; epg_channel_id?: string | null } },
+): { host: string; ch: string; guide?: string } | null {
+  if (row.sync) return row.sync;
+  if (!row.stream_id || !lookup.channel) return null;
+  const source = lookup.sources.find((s) => s.id === lookup.channel!.source_id);
+  if (!source) return null;
+  const guide = lookup.channel.epg_channel_id;
+  return { host: sourceHost(source), ch: channelPart(row.stream_id, source.id), ...(guide ? { guide } : {}) };
+}
