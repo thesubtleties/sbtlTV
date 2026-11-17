@@ -20,6 +20,7 @@ import { clearMovieTitle } from '../hooks/useWatchProgress';
 import type { MissingTitle } from '../services/sync/missing';
 import { MissingRow } from './vod/MissingCard';
 import './VodPage.css';
+import './vod/HeroBleed.css';
 
 // Animation timing (must match .vod-page transition in VodPage.css: 0.35s)
 const SLIDE_DURATION_MS = 350;
@@ -482,8 +483,32 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // Determine animation mode: page-level (no detail) vs detail-level (has detail)
   const hasDetail = !!selectedItem;
   const shouldPageBeCollapsed = (isEntering || isPageCollapsed) && !hasDetail;
+  // Experiment: on the home view the hero runs up under the title bar and this header, which fade
+  // in to the page colour as the hero scrolls away (HeroBleed.css)
+  const bleed = selectedCategoryId === null;
+  const pageRef = useRef<HTMLDivElement>(null);
+  const setChromeFade = useCallback((scrollTop: number) => {
+    const page = pageRef.current;
+    const hero = page?.querySelector<HTMLElement>('.hero');
+    const strip = page?.querySelector<HTMLElement>('.h-category-strip');
+    if (!page || !hero || !strip) return;
+    const chrome = 32 + strip.offsetHeight;
+    page.style.setProperty('--bleed-chrome', `${chrome}px`);
+    // Solid once the hero's bottom edge reaches the header
+    const fade = Math.min(1, Math.max(0, scrollTop / Math.max(1, hero.offsetHeight - chrome)));
+    document.documentElement.style.setProperty('--chrome-fade', fade.toFixed(3));
+  }, []);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('hero-bleed', bleed);
+    if (bleed) requestAnimationFrame(() => setChromeFade(scrollPosition));
+    return () => { root.classList.remove('hero-bleed'); root.style.removeProperty('--chrome-fade'); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the starting scroll only, not every scroll
+  }, [bleed, setChromeFade]);
+
   const pageClasses = [
     'vod-page',
+    bleed ? 'vod-page--bleed' : '',
     // Animate whole page when entering/exiting without detail
     shouldPageBeCollapsed ? 'vod-page--collapsed' : '',
     // Hide page content when detail is animating out
@@ -494,7 +519,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={pageClasses}>
+    <div className={pageClasses} ref={pageRef}>
       {/* Unified header: back + categories + search */}
       <HorizontalCategoryStrip
         categories={groupedCategories.map(g => ({ id: g.groupKey, name: g.name }))}
@@ -549,6 +574,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
               // Only track scroll on home view
               if (selectedCategoryId === null) {
                 setScrollPosition((e.target as HTMLElement).scrollTop);
+                setChromeFade((e.target as HTMLElement).scrollTop);
               }
             }}
           />

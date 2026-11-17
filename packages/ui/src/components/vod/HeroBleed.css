@@ -1,0 +1,69 @@
+/*
+ * Experiment (exp/hero-under-chrome): on the Movies / Series home the hero runs up to the window's
+ * top edge, under the title bar and the header. Both are see-through over the art and fade in to the
+ * page colour as the hero scrolls away. --chrome-fade (0 at the top, 1 once the hero has passed under
+ * the header) and --bleed-chrome (title bar + header height) are set by VodPage.
+ */
+
+/* The page starts at the window's top, under the title bar */
+.vod-page--bleed {
+  top: 0;
+}
+
+/* The header floats over the content instead of pushing it down */
+.vod-page--bleed > .h-category-strip {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 0) * 100%), transparent);
+  backdrop-filter: blur(calc(var(--chrome-fade, 0) * 16px));
+}
+
+/* The title bar: see-through over the art, the page colour once scrolled */
+:root.hero-bleed .title-bar {
+  background: color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 0) * 100%), transparent);
+  backdrop-filter: blur(calc(var(--chrome-fade, 0) * 20px));
+}
+
+/* A soft shade along the top keeps the window buttons, the logo and the pills readable on bright art;
+   it goes as the bars fill in */
+.vod-page--bleed::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--bleed-chrome, 108px) + 72px);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0.35) 55%, transparent);
+  opacity: calc(1 - var(--chrome-fade, 0));
+  pointer-events: none;
+  z-index: 40;
+}
+
+/* The hero grows by the bars' height, so the art starts at pixel 0 and the title keeps its place */
+.vod-page--bleed .hero {
+  height: calc(55vh + var(--bleed-chrome, 108px));
+  min-height: calc(400px + var(--bleed-chrome, 108px));
+  max-height: calc(600px + var(--bleed-chrome, 108px));
+}
+
+/* Pills, back button and search over the art: a dark frosted backing so they hold up on any image
+   (light art included); it eases back to their normal fill as the header fills in */
+.vod-page--bleed > .h-category-strip .h-category-strip__back,
+.vod-page--bleed > .h-category-strip .h-category-strip__pill:not(.active),
+.vod-page--bleed > .h-category-strip .h-category-strip__search {
+  background-color: color-mix(in srgb, var(--bg) calc((1 - var(--chrome-fade, 0)) * 60%), var(--fill-1));
+  backdrop-filter: blur(10px);
+}
+
+/* The strip's edge fades are painted in the page colour: only once the header is solid */
+.vod-page--bleed .h-category-strip__scroll-wrapper::before,
+.vod-page--bleed .h-category-strip__scroll-wrapper::after {
+  background-image: none;
+  background: linear-gradient(to right, color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 0) * 100%), transparent), transparent);
+}
+.vod-page--bleed .h-category-strip__scroll-wrapper::after {
+  background: linear-gradient(to left, color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 0) * 100%), transparent), transparent);
+}
