@@ -13,6 +13,9 @@ import './styles/palettes.css';
 import './styles/tokens.css';
 import './App.css';
 
+// Experiment build: header style 'text' (HeaderStyles.css)
+document.documentElement.dataset.hstyle = 'text';
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AppErrorBoundary>
