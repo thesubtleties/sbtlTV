@@ -31,6 +31,11 @@ export interface Settings {
   smallListMbInFlight: number;
   /** Database size above which sync uploads are refused as busy (a full disk would stop sync for everyone) */
   syncMaxDbMb: number;
+  /**
+   * Downloads of one version of a box before the relay stops serving it (until the box changes).
+   * Normal sync downloads each version about once per other computer: at most 9, plus retries.
+   */
+  maxBoxDownloads: number;
   /** A minute with more proven writes than this raises the level one step */
   busyPerMinute: number;
   /** The most steps above powBits */
@@ -53,6 +58,7 @@ export const DEFAULTS: Settings = {
   listMbInFlight: 256,
   smallListMbInFlight: 256,
   syncMaxDbMb: 1536,
+  maxBoxDownloads: 30,
   busyPerMinute: 100,
   maxExtraBits: 3,
   quietPerMinute: 50,
@@ -77,6 +83,7 @@ const RULES: Record<keyof Settings, Rule> = {
   listMbInFlight: int(1, 100_000),
   smallListMbInFlight: int(1, 100_000),
   syncMaxDbMb: int(1, 1_000_000),
+  maxBoxDownloads: int(1, 1_000_000),
   busyPerMinute: int(1, 1_000_000),
   maxExtraBits: int(0, 8),
   quietPerMinute: int(0, 1_000_000),
@@ -99,7 +106,7 @@ const ENV: Record<string, keyof Settings> = {
   LARGE_DROP_KB: 'largeDropKb', LARGE_DROP_MB_PER_HOUR: 'largeDropMbPerHour', MAILBOX_PAUSED: 'paused',
   LARGE_DROPS_PAUSED: 'largeDropsPaused', BUSY_PER_MINUTE: 'busyPerMinute', MAX_EXTRA_BITS: 'maxExtraBits',
   QUIET_PER_MINUTE: 'quietPerMinute', QUIET_MINUTES: 'quietMinutes',
-  SYNC_PAUSED: 'syncPaused', NEW_GROUPS_PAUSED: 'newGroupsPaused', LIST_MB_IN_FLIGHT: 'listMbInFlight', SMALL_LIST_MB_IN_FLIGHT: 'smallListMbInFlight', SYNC_MAX_DB_MB: 'syncMaxDbMb',
+  SYNC_PAUSED: 'syncPaused', NEW_GROUPS_PAUSED: 'newGroupsPaused', LIST_MB_IN_FLIGHT: 'listMbInFlight', SMALL_LIST_MB_IN_FLIGHT: 'smallListMbInFlight', SYNC_MAX_DB_MB: 'syncMaxDbMb', MAX_BOX_DOWNLOADS: 'maxBoxDownloads',
 };
 
 export function settingsFromEnv(env: Record<string, string | undefined>): Partial<Settings> {

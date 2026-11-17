@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { BOX_PAD, CHALLENGE_HEADER, sealBox, POW_HEADER, VERSION_HEADER, deriveGroup, newDeviceId, powBitsFor, powInput, solvePow } from '../protocol/index.js';
 import { createApp } from './app.js';
+import { DEFAULTS } from './settings.js';
 import { MemoryGroupStore } from './groups.js';
 
 const V = '0.17.0';
@@ -271,5 +272,49 @@ describe('sync routes: guards (lens 7)', () => {
     for (let i = 0; i < 4; i++) await put(call, g, newDeviceId());
     const hello = await (await call('GET', '/v1/hello')).json();
     expect(hello.bits).toBe(4);
+  });
+});
+
+describe('sync routes: one version of a box is downloaded only so many times', () => {
+  const limited = (max: number) => setup({ settings: () => ({ ...DEFAULTS, powBits: 4, minVersion: V, maxBoxDownloads: max }) });
+  const putBox = (call: ReturnType<typeof setup>['call'], g: ReturnType<typeof group>, did = g.did) =>
+    call('PUT', `/v1/groups/${g.groupId}/boxes/${did}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true });
+  const list = async (call: ReturnType<typeof setup>['call'], g: ReturnType<typeof group>, since = 0) => {
+    const r = await call('GET', `/v1/groups/${g.groupId}/boxes?since=${since}`, { token: g.accessToken });
+    if (r.status === 200) await r.text();
+    return r.status;
+  };
+
+  it('a handed-around group stops serving that version; "anything new?" still works; a new version is served again', async () => {
+    const { call } = limited(3); const g = group();
+    expect((await putBox(call, g)).status).toBe(200);
+    for (let i = 0; i < 3; i++) expect(await list(call, g)).toBe(200);
+    expect(await list(call, g)).toBe(429);       // the 4th download of the same version
+    expect(await list(call, g, 1)).toBe(200);    // nothing new since seq 1: no box in the reply, not counted
+    expect((await putBox(call, g)).status).toBe(200);
+    expect(await list(call, g, 1)).toBe(200);    // the new version, downloaded afresh
+  });
+
+  it('a full group syncing all day never reaches the default limit', async () => {
+    const { call } = setup(); const g = group();
+    const dids = Array.from({ length: 10 }, () => newDeviceId());
+    const since = new Map(dids.map((x) => [x, 0]));
+    for (const x of dids) await putBox(call, g, x);
+    // Every computer pushes in turn; each one reads what changed since its last read, twice (a retry)
+    for (let round = 0; round < 6; round++) {
+      for (const pusher of dids) {
+        expect((await putBox(call, g, pusher)).status).toBe(200);
+        for (const reader of dids) {
+          if (reader === pusher) continue;
+          let seq = 0;
+          for (let i = 0; i < 2; i++) {
+            const r = await call('GET', `/v1/groups/${g.groupId}/boxes?since=${since.get(reader)}`, { token: g.accessToken });
+            expect(r.status).toBe(200);
+            seq = (await r.json()).seq;
+          }
+          since.set(reader, seq);
+        }
+      }
+    }
   });
 });

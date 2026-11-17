@@ -45,6 +45,18 @@ export function registerSyncRoutes(app: Hono, d: {
   const SMALL_REPLY = 64 * 1024;
   const PER_GROUP = 4;
   const today = () => utcDay(d.now());
+  // Each version of a box is downloaded about once by each other computer in its group. Many more
+  // means its token is being handed around: that version stops being served until the box changes,
+  // so a group can't serve as a download link. Counts only, in memory, per box version; nothing
+  // about who asked. Entries nobody downloaded for a week go.
+  const downloads = new Map<string, { seq: number; n: number; at: number }>();
+  let lastSweep = d.now();
+  const WEEK = 7 * 86_400_000;
+  const sweepDownloads = () => {
+    if (d.now() - lastSweep < 3_600_000) return;
+    lastSweep = d.now();
+    for (const [k, e] of downloads) if (d.now() - e.at > WEEK) downloads.delete(k);
+  };
   const ids = (c: Context, ...names: string[]) => names.every((n) => HEX32.test(c.req.param(n) ?? ''));
   const token = (c: Context): Buffer | null => {
     const m = TOKEN.exec(c.req.header('authorization') ?? '');
@@ -110,12 +122,16 @@ export function registerSyncRoutes(app: Hono, d: {
     if (!l) return d.err(c, 404, 'not-found');
     if ('moved' in l) return c.json(l);
     const gid = c.req.param('gid')!;
+    sweepDownloads();
+    const seen = (b: { id: string; seq: number }) => { const e = downloads.get(`${gid}/${b.id}`); return e && e.seq === b.seq ? e.n : 0; };
+    if (l.boxes.some((b) => seen(b) >= d.cfg().maxBoxDownloads)) return d.err(c, 429, 'busy');
     let body: Buffer | null = Buffer.from(JSON.stringify({ seq: l.seq, epoch: await d.groups.epoch(), computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) }));
     const size = body.length;
     const kind = size <= SMALL_REPLY ? 'small' : 'large';
     const budget = kind === 'small' ? d.smallListBudgetBytes() : d.listBudgetBytes();
     if ((perGroup.get(gid) ?? 0) >= PER_GROUP || inFlight[kind] + size > budget) return d.err(c, 429, 'busy');
     inFlight[kind] += size;
+    for (const b of l.boxes) downloads.set(`${gid}/${b.id}`, { seq: b.seq, n: seen(b) + 1, at: d.now() });
     perGroup.set(gid, (perGroup.get(gid) ?? 0) + 1);
     let released = false;
     const release = () => {
