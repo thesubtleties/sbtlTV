@@ -2,7 +2,7 @@
 
 .whats-new {
   position: fixed;
-  top: 0;
+  top: 32px; /* below the title bar: the window buttons stay usable */
   right: 0;
   bottom: 0;
   z-index: 1050; /* above Settings, below the first-run setup */
@@ -11,6 +11,7 @@
   flex-direction: column;
   background: color-mix(in srgb, var(--card) 97%, transparent);
   border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
   color: var(--text);
   box-shadow: -12px 0 32px color-mix(in srgb, #000 30%, transparent);
   animation: whats-new-in 200ms ease-out;

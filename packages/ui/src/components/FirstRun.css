@@ -2,7 +2,7 @@
 
 .first-run {
   position: fixed;
-  inset: 0;
+  inset: 32px 0 0; /* below the title bar: the window buttons stay usable */
   z-index: 1100; /* above Settings (1000) and the source form overlay (1001) */
 }
 

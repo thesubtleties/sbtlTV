@@ -21,7 +21,7 @@ const names = (list: string[]) => (list.length > 1 ? `${list.slice(0, -1).join('
  * Receive a setup or a sync join: Show my code, Import file…, then the passphrase, preview, join and
  * apply steps. onApplying runs before a setup is applied (and the app restarts).
  */
-export function ReceiveSection({ im, receiving, onReceiving, title = 'Receive', description = 'A setup, or to join your sync.', onApplying, actions }: {
+export function ReceiveSection({ im, receiving, onReceiving, title = 'Receive', description = 'A setup, or to join your sync.', onApplying, actions, onPanelClose }: {
   im: SetupImport;
   receiving: boolean;
   onReceiving: (open: boolean) => void;
@@ -30,6 +30,8 @@ export function ReceiveSection({ im, receiving, onReceiving, title = 'Receive', 
   onApplying?: () => Promise<void>;
   /** Replaces the Show my code / Import file… buttons */
   actions?: ReactNode;
+  /** The person closed the code panel (not: a setup or join arrived) */
+  onPanelClose?: () => void;
 }) {
   const sources = useUIStore((s) => s.sources);
   const { imp, setImp, passphrase, setPassphrase, unlocking, backupFirst, setBackupFirst, pick, unlock, restoreNow, joinName, setJoinName, joining, joinError, join, declineJoin, defaultName, syncing } = im;
@@ -44,7 +46,7 @@ export function ReceiveSection({ im, receiving, onReceiving, title = 'Receive', 
           <ReceiveSetupPanel
             onReceived={(token, preview) => { onReceiving(false); setImp({ step: 'preview', token, preview, received: true }); }}
             onJoin={(computers) => { onReceiving(false); setImp({ step: 'join', computers }); }}
-            onClose={() => onReceiving(false)}
+            onClose={() => { onReceiving(false); onPanelClose?.(); }}
           />
         )}
         {imp.step === 'passphrase' && (

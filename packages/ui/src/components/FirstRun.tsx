@@ -97,6 +97,8 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
   const [step, setStep] = useState<StepId>('welcome');
   // The receive panel, opened from Welcome or from the sync step
   const [receiveFrom, setReceiveFrom] = useState<StepId | null>(null);
+  // The code panel inside the receive view (closes when a setup or join arrives; the view stays for its preview)
+  const [codeOpen, setCodeOpen] = useState(false);
   const [joined, setJoined] = useState(false);
   const [savedSource, setSavedSource] = useState<Source | null>(null);
   const [editingSaved, setEditingSaved] = useState(false);
@@ -122,6 +124,7 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
     if (im.imp.step === 'join') im.declineJoin();
     else if (im.imp.step !== 'idle' && im.imp.step !== 'applying') im.setImp({ step: 'idle' });
     void window.mailbox?.cancel();
+    setCodeOpen(false);
     setReceiveFrom(null);
   };
 
@@ -133,14 +136,18 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
     body = (
       <ReceiveSection
         im={im}
-        receiving
-        onReceiving={(open) => { if (!open && im.imp.step === 'idle') setReceiveFrom(null); }}
+        receiving={codeOpen}
+        onReceiving={setCodeOpen}
+        onPanelClose={() => setReceiveFrom(null)}
         title={receiveFrom === 'sync' ? 'Join its sync' : 'Receive a setup'}
         description={receiveFrom === 'sync'
           ? 'On the other computer, open Settings › Sync & transfer › Add a computer… and type this code.'
           : 'Tell this code to the person sending, or type it on your other computer.'}
         onApplying={() => saveSettings({ firstRun: 'offer-sync' })}
-        actions={<Button onClick={() => void im.pick()} disabled={im.imp.step === 'applying'}>Import file…</Button>}
+        actions={<>
+          {!codeOpen && im.imp.step === 'idle' && <Button onClick={() => setCodeOpen(true)}>Show my code</Button>}
+          <Button onClick={() => void im.pick()} disabled={im.imp.step === 'applying'}>Import file…</Button>
+        </>}
       />
     );
   } else if (step === 'welcome') {
@@ -149,7 +156,7 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
         <StepHead title="Welcome to sbtlTV" lede="Let's get you set up. It takes a minute or two." />
         <div className="first-run__choices">
           <Choice main title="Set up sbtlTV" text="Add your TV source and pick a look." onClick={() => setStep('source')} />
-          <Choice title="Receive a setup" text="Someone sends you theirs with a short code, or bring it from your other computer." onClick={() => setReceiveFrom('welcome')} />
+          <Choice title="Receive a setup" text="Someone sends you theirs with a short code, or bring it from your other computer." onClick={() => { setReceiveFrom('welcome'); setCodeOpen(true); }} />
         </div>
       </>
     );
@@ -206,7 +213,7 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
           ? <Hint tone="ok">This computer is in your sync.</Hint>
           : (
             <div className="first-run__choices">
-              <Choice title="Join its sync" text="Shows a code to type in on the other computer, under Add a computer." onClick={() => setReceiveFrom('sync')} />
+              <Choice title="Join its sync" text="Shows a code to type in on the other computer, under Add a computer." onClick={() => { setReceiveFrom('sync'); setCodeOpen(true); }} />
             </div>
           )}
         <Hint>Its look comes too only if you turn on Settings in Sync.</Hint>
@@ -266,22 +273,25 @@ export function OfferSyncFrame({ onJoin, onNotNow, children }: { onJoin: () => v
 
 export function OfferSync({ onFinish }: { onFinish: () => void }) {
   const [joining, setJoining] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
   const done = () => { void markDone().then(onFinish); };
   const im = useSetupImport(done);
   const cancel = () => {
     if (!joining) { done(); return; }
     if (im.imp.step === 'join') im.declineJoin();
     void window.mailbox?.cancel();
+    setCodeOpen(false);
     setJoining(false);
   };
   return (
-    <OfferSyncFrame onJoin={() => setJoining(true)} onNotNow={cancel}>
+    <OfferSyncFrame onJoin={() => { setJoining(true); setCodeOpen(true); }} onNotNow={cancel}>
       {joining
         ? (
           <ReceiveSection
             im={im}
-            receiving
-            onReceiving={(open) => { if (!open && im.imp.step === 'idle') setJoining(false); }}
+            receiving={codeOpen}
+            onReceiving={setCodeOpen}
+            onPanelClose={() => setJoining(false)}
             title="Join its sync"
             description="On the other computer, open Settings › Sync & transfer › Add a computer… and type this code."
             actions={<></>}
