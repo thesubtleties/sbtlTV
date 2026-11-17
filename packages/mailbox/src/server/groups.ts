@@ -73,6 +73,8 @@ export class MemoryGroupStore implements GroupStore {
 
   async putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace = false) {
     let g = this.groups.get(gid);
+    // The token first: without it nothing about the group's boxes shows (not even whether one exists)
+    if (g && !sameHash(g.tokenHash, tokenHash)) return 'denied' as const;
     const old = g?.boxes.get(did);
     if (onlyReplace && (!old || sealed.length > old.sealed.length + BOX_PAD)) return 'busy' as const;
     if (!g) { g = { tokenHash, movedOn: null, lastSeen: today, seq: 0, boxes: new Map(), rekeys: new Map() }; this.groups.set(gid, g); }

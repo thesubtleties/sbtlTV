@@ -83,6 +83,9 @@ export class PgGroupStore implements GroupStore {
   putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace = false) {
     return tx(this.pool, async (c) => {
       if (onlyReplace) {
+        // The token first: without it nothing about the group's boxes shows (not even whether one exists)
+        const g = (await c.query<{ token_hash: Buffer }>('select token_hash from sync_groups where id = $1', [gid])).rows[0];
+        if (g && !sameHash(g.token_hash, tokenHash)) return 'denied' as const;
         const old = (await c.query<{ n: number }>('select octet_length(sealed) as n from sync_boxes where group_id = $1 and device_id = $2', [gid, did])).rows[0];
         if (!old || sealed.length > Number(old.n) + BOX_PAD) return 'busy' as const;
       }

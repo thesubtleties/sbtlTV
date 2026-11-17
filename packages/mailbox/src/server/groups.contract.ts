@@ -163,6 +163,9 @@ export function groupStoreContract(name: string, make: () => Promise<GroupStore>
       await s.putBox(gid, th, a, Buffer.from('a1'), '2026-11-16');
       expect(await s.putBox(gid, th, a, Buffer.from('a2'), '2026-11-16', true)).toEqual({ seq: 2 });
       expect(await s.putBox(gid, th, hex(), Buffer.from('b1'), '2026-11-16', true)).toBe('busy');
+      // A wrong token learns nothing about the group's boxes: denied, not busy
+      expect(await s.putBox(gid, h(), a, Buffer.from('x'), '2026-11-16', true)).toBe('denied');
+      expect(await s.putBox(gid, h(), hex(), Buffer.from('x'), '2026-11-16', true)).toBe('denied');
       // Grown by one step at most: a box made small can't be blown up past the cap
       const small = Buffer.alloc(100, 1);
       await s.putBox(gid, th, a, small, '2026-11-16', true);
