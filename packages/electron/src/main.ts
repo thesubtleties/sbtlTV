@@ -40,6 +40,7 @@ import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type Rep
 import { makeZip } from './zip-writer.js';
 import { holdSingleInstance } from './single-instance.js';
 import { buildKind } from './build-kind.js';
+import { saveOnWindowClose } from './window-close.js';
 const { autoUpdater } = electronUpdater;
 
 // One copy per profile, decided before anything else runs (see single-instance.ts).
@@ -543,7 +544,8 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
   // where playback is and sync sends it before the window goes (at most 3 s), as quitting does
   let closeSaved = false;
   mainWindow.on('close', (event) => {
-    if (closeSaved || installingUpdate || nativeRecoveryInProgress || !mainWindow) return;
+    // mailboxStopped: a quit is under way and already saved (see before-quit)
+    if (!mainWindow || !saveOnWindowClose({ alreadySaved: closeSaved, quitting: mailboxStopped, installingUpdate, recovering: nativeRecoveryInProgress })) return;
     event.preventDefault();
     closeSaved = true;
     const w = mainWindow;
