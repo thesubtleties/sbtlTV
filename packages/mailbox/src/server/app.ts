@@ -10,7 +10,10 @@ import {
   checkPow, normaliseCode, powBitsFor, powInput, versionAtLeast, type ErrorCode,
 } from '../protocol/index.js';
 import { KnockStore } from './store.js';
-import { SeenProofs } from './limits.js';
+import { Downloads, SeenProofs } from './limits.js';
+import { Metrics } from './metrics.js';
+import { AtRestGroupStore } from './at-rest.js';
+import { looksSealed } from './sealed-check.js';
 import { PowGovernor } from './governor.js';
 import { DEFAULTS, type Settings } from './settings.js';
 import { MemoryGroupStore, type GroupStore } from './groups.js';
@@ -45,6 +48,11 @@ export interface MailboxOptions {
   syncInflightBytes?: number; syncMaxDbBytes?: number;
   /** Sync groups (Postgres in production); in memory when not given */
   groups?: GroupStore;
+  /**
+   * The relay's own key (32 bytes): everything stored is sealed with it once more (at-rest.ts).
+   * Required with a database (main.ts); a fresh random one for in-memory groups.
+   */
+  storageKey?: Buffer;
   /** False until the database is ready (the relay serves the knock meanwhile; sync answers busy) */
   groupsReady?: () => boolean;
 }
@@ -63,8 +71,19 @@ export function createApp(opts: MailboxOptions = {}) {
     ...(opts.newGroupsPaused !== undefined && { newGroupsPaused: opts.newGroupsPaused }),
     ...(opts.busyPerMinute !== undefined && { busyPerMinute: opts.busyPerMinute }),
   };
-  const groups = opts.groups ?? new MemoryGroupStore();
+  if (opts.groups && !opts.storageKey) throw new Error('a group store needs the relay storage key');
+  const metrics = new Metrics();
+  // No ids, no values: one line, so an operator knows an old or foreign row was there
+  let warned = false;
+  const unreadable = () => {
+    metrics.unreadable++;
+    if (!warned) console.warn('relay: a stored box or key did not open (stored before the storage key, or under another); left out until its computer puts it back');
+    warned = true;
+  };
+  const groups: GroupStore = new AtRestGroupStore(opts.groups ?? new MemoryGroupStore(), opts.storageKey ?? randomBytes(32), unreadable);
+  const downloads = new Downloads(now);
   const cfg = opts.settings ?? (() => fixed);
+  const maxDbBytes = () => opts.syncMaxDbBytes ?? cfg().syncMaxDbMb * 1024 * 1024;
   const store = new KnockStore(now, opts.maxActive, () => cfg().dropMemoryMb * 1024 * 1024);
   const proofs = new SeenProofs(now);
   const levels = () => {
@@ -275,6 +294,7 @@ export function createApp(opts: MailboxOptions = {}) {
       const body = parse(text);
       if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) { giveBack(); return err(c, 400, 'bad-request'); }
       if (Buffer.byteLength(body.sealed, 'base64') > MAX_DROP_BYTES) { giveBack(); return err(c, 413, 'too-big'); }
+      if (!looksSealed(Buffer.from(body.sealed, 'base64'))) { metrics.refused.unsealed++; giveBack(); return err(c, 400, 'bad-request'); }
       const stored = store.drop(k, body.sealed);
       if (stored === 'gone') { giveBack(); return err(c, 404, 'not-found'); }
       if (stored === 'busy') { giveBack(); return err(c, 429, 'busy'); }
@@ -301,13 +321,16 @@ export function createApp(opts: MailboxOptions = {}) {
     groups, err, cfg, now, reserveInflight,
     guardWrite: (c) => guardWrite(c, syncGovernor),
     ready: opts.groupsReady ?? (() => true),
-    maxDbBytes: () => opts.syncMaxDbBytes ?? cfg().syncMaxDbMb * 1024 * 1024,
+    maxDbBytes,
     listBudgetBytes: () => opts.listInflightBytes ?? cfg().listMbInFlight * 1024 * 1024,
     smallListBudgetBytes: () => opts.smallListInflightBytes ?? cfg().smallListMbInFlight * 1024 * 1024,
     listHoldMs: opts.listHoldMs ?? 120_000,
     smallListHoldMs: opts.smallListHoldMs ?? 15_000,
+    downloads, metrics,
   });
 
   app.get('/healthz', (c) => c.text('ok'));
-  return { app, store, groups };
+  /** The operator's totals (Prometheus text), served by main.ts on a port only the cluster reaches */
+  const renderMetrics = async () => metrics.render({ dbBytes: await groups.sizeBytes().catch(() => null), maxDbBytes: maxDbBytes(), tracked: downloads.size });
+  return { app, store, groups, renderMetrics };
 }

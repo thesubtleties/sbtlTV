@@ -19,7 +19,7 @@ export class Sender {
   private key: Buffer | null = null;
   private commitment: Buffer | null = null;  // both sides know it: the drop's additional data
   private stopped = false;
-  constructor(private t: Transport, private wordlist: readonly string[], private onChange: (s: SendState) => void, private opts: { pollMs?: number } = {}) {}
+  constructor(private t: Transport, private wordlist: readonly string[], private onChange: (s: SendState) => void, private opts: { pollMs?: number; log?: (line: string) => void } = {}) {}
 
   private set(s: SendState) { this.state = s; this.onChange(s); }
   private fail(e: unknown) {
@@ -79,7 +79,15 @@ export class Sender {
     try {
       const sealed = seal(this.key, payload, dropAad(this.commitment));
       if (sealed.length > MAX_DROP_BYTES) throw new MailboxError('too-big');
-      await this.t.put(`/v1/ring/${this.ticket}/drop`, { sealed: b64(sealed) });
+      try {
+        await this.t.put(`/v1/ring/${this.ticket}/drop`, { sealed: b64(sealed) });
+      } catch (e) {
+        // The relay refuses what doesn't look sealed; a real one is, about once in 8 million, by
+        // chance (its random start matches a file signature). Sealed again it starts differently.
+        if (!(e instanceof MailboxError) || e.code !== 'bad-request') throw e;
+        await this.t.put(`/v1/ring/${this.ticket}/drop`, { sealed: b64(seal(this.key, payload, dropAad(this.commitment))) });
+        this.opts.log?.('Relay: a send was refused once and went through sealed again');
+      }
       this.set({ step: 'sent' });
       const poll = tolerantPoll(this.t);
       let picked = false;

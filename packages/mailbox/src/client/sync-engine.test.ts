@@ -19,16 +19,16 @@ function world() {
   // The relay keeps the same clock as the computers (its dates decide what its cleanup deletes)
   let relay = createApp({ powBits: 4, now: () => t });
   // A test can answer some requests itself (a relay error, a count) before the relay sees them
-  let fault: ((r: Request) => Response | undefined) | null = null;
-  const send = async (r: Request) => fault?.(r) ?? relay.app.fetch(r);
+  let fault: ((r: Request) => Response | Promise<Response> | undefined) | null = null;
+  const send = async (r: Request) => (await fault?.(r)) ?? relay.app.fetch(r);
   const make = (name: string, sealerOn = true, dirPath = mkdtempSync(join(tmpdir(), 'eng-'))) => {
-    const got = { applied: [] as SyncRecord[], settings: [] as Record<string, unknown>[], snapshots: 0, views: [] as SyncView[] };
+    const got = { logs: [] as string[], applied: [] as SyncRecord[], settings: [] as Record<string, unknown>[], snapshots: 0, views: [] as SyncView[] };
     const holder = { current: {} as Record<string, unknown> };
     // The page writes what it's handed and confirms it (as App.tsx does after applyRecords)
     const e: SyncEngine = new SyncEngine({
       store: new SyncStore(join(dirPath, 'sync-state.json'), fakeSealer(sealerOn)),
       transport: (auth) => new Transport({ base: 'http://x', version: '0.17.0', bits: 4, auth, fetch: send }),
-      defaultName: name, log: () => {}, timers: false, now: () => t,
+      defaultName: name, log: (l) => { got.logs.push(l); }, timers: false, now: () => t,
       onApply: (r) => { got.applied.push(...r); queueMicrotask(() => e.confirm(r)); }, onSettings: (v) => { got.settings.push(v); },
       onSnapshotNeeded: () => { got.snapshots++; }, onChange: (v) => { got.views.push(v); },
       currentSettings: () => holder.current as never,
@@ -60,6 +60,59 @@ const thisId = (e: SyncEngine) => e.view().computers.find((x) => x.thisOne)!.id;
 const wl = (at: number, removed?: true): SyncRecord => ({ k: 'wl', type: 'movie', tmdb: 603, name: 'The Matrix', at, ...(removed && { removed }) });
 
 describe('SyncEngine', () => {
+  it('nudges while a pull hangs on a slow line do not queue more pulls behind it (review lens 3)', async () => {
+    const w = world();
+    const { a } = await pair(w);
+    let lists = 0, release: () => void = () => {};
+    const hung = new Promise<void>((r) => { release = r; });
+    w.fault((r) => {
+      if (r.method !== 'GET' || !r.url.includes('/boxes')) return undefined;
+      lists++;
+      return hung.then(() => w.relay().app.fetch(r));
+    });
+    w.advance(10_000);
+    const first = a.e.pull();
+    for (let i = 0; i < 5; i++) { w.advance(10_000); a.e.nudge(); }
+    await new Promise((r) => setTimeout(r, 20));
+    expect(lists).toBe(1);
+    release();
+    await first;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(lists).toBe(1);
+  });
+
+  it('a relay refusing this computer\'s changes several times in a row is logged once, and when it takes them again', async () => {
+    const w = world();
+    const { a } = await pair(w);
+    w.fault((r) => (r.method === 'PUT' && r.url.includes('/boxes/') ? Response.json({ error: 'busy' }, { status: 429 }) : undefined));
+    for (let i = 0; i < 4; i++) { a.e.record([wl(w.now() + i)]); await a.e.flush(); }
+    expect(a.got.logs.filter((l) => l.includes('refused'))).toEqual(['Sync: the relay refused this computer\'s changes 3 times in a row (busy)']);
+    w.fault(null);
+    a.e.record([wl(w.now() + 10)]); await a.e.flush();
+    expect(a.got.logs).toContain('Sync: the relay takes this computer\'s changes again');
+  });
+
+  it('a relay busy several pulls in a row is logged once, and when it answers again', async () => {
+    const w = world();
+    const { a } = await pair(w);
+    w.fault((r) => (r.method === 'GET' && r.url.includes('/boxes') ? Response.json({ error: 'busy' }, { status: 429 }) : undefined));
+    for (let i = 0; i < 5; i++) await a.e.pull();
+    expect(a.got.logs.filter((l) => l.includes('busy'))).toEqual(['Sync: the relay was busy 3 pulls in a row']);
+    w.fault(null);
+    await a.e.pull();
+    expect(a.got.logs).toContain('Sync: the relay answers again');
+    // Once each: the next good pull says nothing, a second streak is logged again, other errors aren't busy
+    await a.e.pull();
+    w.fault((r) => (r.method === 'GET' && r.url.includes('/boxes') ? Response.json({ error: 'bad-request' }, { status: 400 }) : undefined));
+    for (let i = 0; i < 3; i++) await a.e.pull();
+    expect(a.got.logs.filter((l) => l.includes('busy') || l.includes('answers'))).toHaveLength(2);
+    w.fault((r) => (r.method === 'GET' && r.url.includes('/boxes') ? Response.json({ error: 'busy' }, { status: 429 }) : undefined));
+    for (let i = 0; i < 3; i++) await a.e.pull();
+    expect(a.got.logs.filter((l) => l.includes('busy') || l.includes('answers'))).toEqual([
+      'Sync: the relay was busy 3 pulls in a row', 'Sync: the relay answers again', 'Sync: the relay was busy 3 pulls in a row',
+    ]);
+  });
+
   it('pairs: nothing on the relay until the joiner pushes; names are made unique', async () => {
     const w = world();
     const { a, b } = await pair(w);

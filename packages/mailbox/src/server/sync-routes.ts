@@ -1,13 +1,18 @@
 // packages/mailbox/src/server/sync-routes.ts
 /**
  * Sync on the relay: computers in a group each keep one sealed box here. The relay checks the
- * group's token (it stores only its hash), proof-of-work on writes, and sizes; it can't open a box
- * and records nothing about who asked.
+ * group's token (it stores only its hash), proof-of-work on writes, sizes, and that what's stored
+ * looks sealed; it can't open a box and records nothing about who asked. Each version of a box (and
+ * each new key) can be downloaded only so many times (limits.ts Downloads), so a group handed
+ * around is no use as a download link.
  */
 import type { Context, Hono } from 'hono';
-import { MAX_BOX_BYTES, MAX_COMPUTERS, tokenHash, type ErrorCode } from '../protocol/index.js';
+import { BOX_PAD, MAX_BOX_BYTES, MAX_COMPUTERS, REKEY_BYTES, tokenHash, type ErrorCode } from '../protocol/index.js';
 import { sameHash, utcDay, type GroupStore, type RekeyEntry } from './groups.js';
 import type { Settings } from './settings.js';
+import type { Downloads } from './limits.js';
+import type { Metrics } from './metrics.js';
+import { looksSealed, mostlyText } from './sealed-check.js';
 
 type Err = (c: Context, status: 400 | 403 | 404 | 409 | 413 | 426 | 428 | 429, error: ErrorCode) => Response;
 const HEX32 = /^[0-9a-f]{32}$/;
@@ -27,6 +32,8 @@ export function registerSyncRoutes(app: Hono, d: {
   /** A reply not fully read by then is aborted (and its memory goes with it): large / small replies */
   listHoldMs: number;
   smallListHoldMs: number;
+  downloads: Downloads;
+  metrics: Metrics;
 }) {
   // Not ready yet, or paused (reads too: a list reply can be large): everything sync is busy
   const gate = async (c: Context, next: () => Promise<void>) => {
@@ -44,6 +51,8 @@ export function registerSyncRoutes(app: Hono, d: {
   const SMALL_REPLY = 64 * 1024;
   const PER_GROUP = 4;
   const today = () => utcDay(d.now());
+  const boxKey = (gid: string, did: string) => `${gid}/${did}`;
+  const rekeyKey = (gid: string, did: string) => `${gid}/rekey/${did}`;
   const ids = (c: Context, ...names: string[]) => names.every((n) => HEX32.test(c.req.param(n) ?? ''));
   const token = (c: Context): Buffer | null => {
     const m = TOKEN.exec(c.req.header('authorization') ?? '');
@@ -80,18 +89,31 @@ export function registerSyncRoutes(app: Hono, d: {
   });
 
   async function putBox(c: Context, th: Buffer): Promise<Response> {
-    if ((await d.groups.sizeBytes()) > d.maxDbBytes()) return d.err(c, 429, 'busy');
+    // Over the size cap a computer can still replace its own box, growing it by one 16 KB step per
+    // push at most (how real boxes grow; sync keeps working for everyone already in); new boxes and
+    // groups wait. 10% over the cap everything waits: the disk comes first (the alert fires long before)
+    const size = await d.groups.sizeBytes();
+    if (size > d.maxDbBytes() * 1.1) { d.metrics.refused.db_full++; return d.err(c, 429, 'busy'); }
+    const full = size > d.maxDbBytes();
     const text = await d.guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
     if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) return d.err(c, 400, 'bad-request');
     const sealed = Buffer.from(body.sealed, 'base64');
     if (sealed.length > MAX_BOX_BYTES) return d.err(c, 413, 'too-big');
-    const gid = c.req.param('gid')!;
+    // The app pads every box to 16 KB steps and seals it: anything else isn't one of ours
+    if (sealed.length % BOX_PAD !== 0) { d.metrics.refused.unpadded++; return d.err(c, 400, 'bad-request'); }
+    if (!looksSealed(sealed)) { d.metrics.refused.unsealed++; return d.err(c, 400, 'bad-request'); }
+    const gid = c.req.param('gid')!, did = c.req.param('did')!;
     if (d.cfg().newGroupsPaused && !(await d.groups.group(gid))) return d.err(c, 429, 'busy');
-    const out = await d.groups.putBox(gid, th, c.req.param('did')!, sealed, today());
+    const out = await d.groups.putBox(gid, th, did, sealed, today(), full);
+    if (out === 'busy') { d.metrics.refused.db_full++; return d.err(c, 429, 'busy'); }
     if (out === 'denied') return d.err(c, 403, 'denied');
     if (out === 'moved' || out === 'full') return d.err(c, 409, out);
-    return c.json(out);
+    // A new version starts its count from nothing (seq can start again at 1 in a recreated group).
+    // A computer's first box: it joined, and every join re-reads all boxes, so the group starts
+    // again (pairing over and over can't use up a box nobody changed; costs an abuser a proven upload)
+    if (out.added) d.downloads.forgetAll(`${gid}/`); else d.downloads.forget(boxKey(gid, did));
+    return c.json({ seq: out.seq });
   }
 
   app.get('/v1/groups/:gid/boxes', async (c) => {
@@ -107,12 +129,23 @@ export function registerSyncRoutes(app: Hono, d: {
     if (!l) return d.err(c, 404, 'not-found');
     if ('moved' in l) return c.json(l);
     const gid = c.req.param('gid')!;
-    let body: Buffer | null = Buffer.from(JSON.stringify({ seq: l.seq, epoch: await d.groups.epoch(), computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) }));
+    const epoch = await d.groups.epoch();
+    // From here to admitting the reply there's no await, so the check and the budgets see one moment
+    if (l.boxes.some((b) => d.downloads.count(boxKey(gid, b.id), b.seq) >= d.cfg().maxBoxDownloads)) {
+      d.metrics.limited.box++;
+      return d.err(c, 429, 'busy');
+    }
+    let body: Buffer | null = Buffer.from(JSON.stringify({ seq: l.seq, epoch, computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) }));
     const size = body.length;
     const kind = size <= SMALL_REPLY ? 'small' : 'large';
     const budget = kind === 'small' ? d.smallListBudgetBytes() : d.listBudgetBytes();
     if ((perGroup.get(gid) ?? 0) >= PER_GROUP || inFlight[kind] + size > budget) return d.err(c, 429, 'busy');
     inFlight[kind] += size;
+    // A download counts when its reply is admitted, before a byte goes out: the server hands the
+    // whole reply to the network's buffers at once, so the relay can't know how much a reader got,
+    // and stopping early must not dodge the count. A pull that times out counts too; reaching the
+    // limit that way takes failing pulls on a line under ~13 kbit/s
+    for (const b of l.boxes) d.downloads.add(boxKey(gid, b.id), b.seq);
     perGroup.set(gid, (perGroup.get(gid) ?? 0) + 1);
     let released = false;
     const release = () => {
@@ -145,6 +178,7 @@ export function registerSyncRoutes(app: Hono, d: {
     if (!ids(c, 'gid', 'did')) return d.err(c, 400, 'bad-request');
     const auth = await authorise(c); if (auth !== 'ok') return auth;
     await d.groups.deleteBox(c.req.param('gid')!, c.req.param('did')!);
+    d.downloads.forget(boxKey(c.req.param('gid')!, c.req.param('did')!));
     return c.body(null, 204);
   });
 
@@ -157,8 +191,8 @@ export function registerSyncRoutes(app: Hono, d: {
     const gid = c.req.param('gid')!;
     const exists = await d.groups.group(gid);
     if (exists && !sameHash(exists.tokenHash, th)) return d.err(c, 403, 'denied');
-    // Creating one is a new group: the same switch as a first box
-    if (!exists && d.cfg().newGroupsPaused) return d.err(c, 429, 'busy');
+    // Creating one is a new group: the same switch, and the same database cap, as a first box
+    if (!exists && (d.cfg().newGroupsPaused || (await d.groups.sizeBytes()) > d.maxDbBytes())) return d.err(c, 429, 'busy');
     const text = await d.guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
     const keys = body?.keys;
@@ -170,23 +204,34 @@ export function registerSyncRoutes(app: Hono, d: {
       const e = v as { sealed?: unknown; ack?: unknown } | null;
       if (!HEX32.test(did) || !e || typeof e.sealed !== 'string' || !B64.test(e.sealed) || e.sealed.length > 512) return d.err(c, 400, 'bad-request');
       if (typeof e.ack !== 'string' || !B64.test(e.ack) || Buffer.from(e.ack, 'base64').length !== 32) return d.err(c, 400, 'bad-request');
-      map.set(did, { sealed: Buffer.from(e.sealed, 'base64'), ackHash: Buffer.from(e.ack, 'base64') });
+      // Exactly what sealRekey makes, and not text: a key's slot holds nothing else
+      const sealed = Buffer.from(e.sealed, 'base64');
+      if (sealed.length !== REKEY_BYTES || mostlyText(sealed)) { d.metrics.refused.bad_rekey++; return d.err(c, 400, 'bad-request'); }
+      map.set(did, { sealed, ackHash: Buffer.from(e.ack, 'base64') });
     }
-    if (!exists && (await d.groups.createRetired(gid, th, map, today())) === 'ok') return c.body(null, 204);
+    const fresh = () => { for (const did of map.keys()) d.downloads.forget(rekeyKey(gid, did)); };
+    if (!exists && (await d.groups.createRetired(gid, th, map, today())) === 'ok') { fresh(); return c.body(null, 204); }
     // Created meanwhile by someone else: only its own token may move it
     const now = await d.groups.group(gid);
     if (!now || !sameHash(now.tokenHash, th)) return d.err(c, now ? 403 : 404, now ? 'denied' : 'not-found');
     const out = await d.groups.rekey(gid, map, today());
     if (!out) return d.err(c, 404, 'not-found');
     if (out === 'moved') return d.err(c, 409, 'moved');
+    fresh();
     return c.body(null, 204);
   });
 
   app.get('/v1/groups/:gid/rekey/:did', async (c) => {
     if (!ids(c, 'gid', 'did')) return d.err(c, 400, 'bad-request');
     const auth = await authorise(c); if (auth !== 'ok') return auth;
-    const sealed = await d.groups.getRekey(c.req.param('gid')!, c.req.param('did')!, today());
-    return sealed ? c.json({ sealed: sealed.toString('base64') }) : d.err(c, 404, 'not-found');
+    const gid = c.req.param('gid')!, did = c.req.param('did')!;
+    // A computer fetches its new key a few times at most (until it proves it opened it). Counted
+    // before the read, so fetches at once can't all pass the check
+    if (d.downloads.count(rekeyKey(gid, did), 0) >= d.cfg().maxBoxDownloads) { d.metrics.limited.rekey++; return d.err(c, 429, 'busy'); }
+    d.downloads.add(rekeyKey(gid, did), 0);
+    const sealed = await d.groups.getRekey(gid, did, today());
+    if (!sealed) return d.err(c, 404, 'not-found');
+    return c.json({ sealed: sealed.toString('base64') });
   });
 
   // A computer proves it opened its new key: only this counts it as picked up (fetching doesn't)

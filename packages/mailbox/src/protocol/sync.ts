@@ -7,7 +7,7 @@
  */
 import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { newKeyPair, open, seal, x25519Key, type KeyPair } from './pairing.js';
+import { SEAL_OVERHEAD, newKeyPair, open, seal, x25519Key, type KeyPair } from './pairing.js';
 
 export { exportPrivate, keyPairFromPrivate } from './pairing.js';
 
@@ -17,7 +17,8 @@ export const MAX_BOX_BYTES = 1024 * 1024;
 export const MAX_COMPUTERS = 10;
 export const BOX_FORMAT = 1;
 export const GROUP_IDLE_DAYS = 90;
-const SEAL_OVERHEAD = 12 + 16;
+/** A remaining computer's new key as sealRekey makes it: ephemeral public key + sealed (new key, MAC) */
+export const REKEY_BYTES = 32 + SEAL_OVERHEAD + 64;
 const MAX_PLAIN_BYTES = 16 * 1024 * 1024;
 
 const hk = (K: Buffer, info: string, bytes: number) => Buffer.from(hkdfSync('sha256', K, Buffer.alloc(0), info, bytes));
@@ -75,7 +76,7 @@ export function sealRekey(devicePub: Buffer, oldMacKey: Buffer, newK: Buffer, ol
 }
 
 export function openRekey(device: KeyPair, oldMacKey: Buffer, sealed: Buffer, oldGroupId: string, deviceId: string): Buffer {
-  if (sealed.length < 32 + SEAL_OVERHEAD + 64) throw new Error('bad rekey');
+  if (sealed.length < REKEY_BYTES) throw new Error('bad rekey');
   const ephPub = sealed.subarray(0, 32);
   const key = x25519Key(device, ephPub, Buffer.concat([ephPub, device.publicRaw]), 'sbtl-rekey');
   const inner = open(key, sealed.subarray(32), rekeyAad(oldGroupId, deviceId));
