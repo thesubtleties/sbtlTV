@@ -8,10 +8,11 @@ describe('mailbox settings', () => {
     expect(parseSettings('not an object')).toEqual({});
   });
 
-  it('the download limit per box version comes from MAX_BOX_DOWNLOADS or the file, and is at least 20', () => {
+  it('the download limit per box version comes from MAX_BOX_DOWNLOADS or the file, and is at least 25', () => {
     expect(settingsFromEnv({ MAX_BOX_DOWNLOADS: '50' })).toEqual({ maxBoxDownloads: 50 });
     expect(parseSettings({ maxBoxDownloads: 40 })).toEqual({ maxBoxDownloads: 40 });
-    expect(parseSettings({ maxBoxDownloads: 19 })).toEqual({});
+    expect(parseSettings({ maxBoxDownloads: 24 })).toEqual({});
+    expect(parseSettings({ maxBoxDownloads: 25 })).toEqual({ maxBoxDownloads: 25 });
     expect(DEFAULTS.maxBoxDownloads).toBe(30);
   });
 

@@ -57,8 +57,8 @@ export function looksSealed(b: Buffer): boolean {
 
 /**
  * Short sealed values (a computer's new key: 124 bytes) are too small to judge by counts, but
- * random bytes are printable ASCII only 37% of the time on average; past 70% is text (about 8
- * standard deviations at 124 bytes).
+ * random bytes are printable ASCII only 37% of the time on average; past 70% is text (7.6
+ * standard deviations at 124 bytes: a real key is taken for text about once in 10^13).
  */
 export function mostlyText(b: Buffer): boolean {
   let printable = 0;

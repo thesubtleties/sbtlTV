@@ -17,8 +17,17 @@ export const keyId = (key: Buffer) => createHash('sha256').update('sbtl-relay-at
 const boxAad = (gid: string, did: string) => Buffer.from(`sbtl-relay-box|${gid}|${did}`);
 const rekeyAad = (gid: string, did: string) => Buffer.from(`sbtl-relay-rekey|${gid}|${did}`);
 
+/** The stored value, or null when it won't open (stored by a relay before this, or under another key) */
+const tryOpen = (key: Buffer, sealed: Buffer, aad: Buffer) => { try { return open(key, sealed, aad); } catch { return null; } };
+
 export class AtRestGroupStore implements GroupStore {
-  constructor(private inner: GroupStore, private key: Buffer) {
+  /**
+   * `onUnreadable`: a stored box or key didn't open. It's left out as if missing, instead of failing
+   * the whole group's reads: a computer that finds its own box missing puts it back with its next pull
+   * (sync-engine.ts), which replaces it. Nothing is deleted here (a group goes with its last box, and
+   * a group gone under the same epoch would end sync for its computers).
+   */
+  constructor(private inner: GroupStore, private key: Buffer, private onUnreadable: () => void = () => {}) {
     if (key.length !== 32) throw new Error('the relay storage key must be 32 bytes');
   }
 
@@ -38,7 +47,13 @@ export class AtRestGroupStore implements GroupStore {
   async list(gid: string, since: number, today: string): Promise<ListResult | Moved | null> {
     const l = await this.inner.list(gid, since, today);
     if (!l || 'moved' in l) return l;
-    return { ...l, boxes: l.boxes.map((b) => ({ ...b, sealed: open(this.key, b.sealed, boxAad(gid, b.id)) })) };
+    const boxes = [], gone = new Set<string>();
+    for (const b of l.boxes) {
+      const sealed = tryOpen(this.key, b.sealed, boxAad(gid, b.id));
+      if (sealed) boxes.push({ ...b, sealed });
+      else { gone.add(b.id); this.onUnreadable(); }
+    }
+    return { ...l, boxes, computers: l.computers.filter((x) => !gone.has(x.id)) };
   }
 
   deleteBox(gid: string, did: string) { return this.inner.deleteBox(gid, did); }
@@ -49,7 +64,10 @@ export class AtRestGroupStore implements GroupStore {
 
   async getRekey(gid: string, did: string, today: string) {
     const sealed = await this.inner.getRekey(gid, did, today);
-    return sealed && open(this.key, sealed, rekeyAad(gid, did));
+    if (!sealed) return null;
+    const key = tryOpen(this.key, sealed, rekeyAad(gid, did));
+    if (!key) this.onUnreadable();
+    return key;
   }
 
   ackRekey(gid: string, did: string, proof: Buffer, today: string) { return this.inner.ackRekey(gid, did, proof, today); }

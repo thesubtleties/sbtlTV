@@ -81,6 +81,17 @@ describe('SyncEngine', () => {
     expect(lists).toBe(1);
   });
 
+  it('a relay refusing this computer\'s changes several times in a row is logged once, and when it takes them again', async () => {
+    const w = world();
+    const { a } = await pair(w);
+    w.fault((r) => (r.method === 'PUT' && r.url.includes('/boxes/') ? Response.json({ error: 'busy' }, { status: 429 }) : undefined));
+    for (let i = 0; i < 4; i++) { a.e.record([wl(w.now() + i)]); await a.e.flush(); }
+    expect(a.got.logs.filter((l) => l.includes('refused'))).toEqual(['Sync: the relay refused this computer\'s changes 3 times in a row (busy)']);
+    w.fault(null);
+    a.e.record([wl(w.now() + 10)]); await a.e.flush();
+    expect(a.got.logs).toContain('Sync: the relay takes this computer\'s changes again');
+  });
+
   it('a relay busy several pulls in a row is logged once, and when it answers again', async () => {
     const w = world();
     const { a } = await pair(w);
@@ -90,6 +101,16 @@ describe('SyncEngine', () => {
     w.fault(null);
     await a.e.pull();
     expect(a.got.logs).toContain('Sync: the relay answers again');
+    // Once each: the next good pull says nothing, a second streak is logged again, other errors aren't busy
+    await a.e.pull();
+    w.fault((r) => (r.method === 'GET' && r.url.includes('/boxes') ? Response.json({ error: 'bad-request' }, { status: 400 }) : undefined));
+    for (let i = 0; i < 3; i++) await a.e.pull();
+    expect(a.got.logs.filter((l) => l.includes('busy') || l.includes('answers'))).toHaveLength(2);
+    w.fault((r) => (r.method === 'GET' && r.url.includes('/boxes') ? Response.json({ error: 'busy' }, { status: 429 }) : undefined));
+    for (let i = 0; i < 3; i++) await a.e.pull();
+    expect(a.got.logs.filter((l) => l.includes('busy') || l.includes('answers'))).toEqual([
+      'Sync: the relay was busy 3 pulls in a row', 'Sync: the relay answers again', 'Sync: the relay was busy 3 pulls in a row',
+    ]);
   });
 
   it('pairs: nothing on the relay until the joiner pushes; names are made unique', async () => {

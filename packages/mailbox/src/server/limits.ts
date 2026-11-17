@@ -56,6 +56,9 @@ export class Downloads {
   /** The box was replaced or deleted: its next version starts from nothing */
   forget(key: string): void { this.seen.delete(key); }
 
+  /** Every count under this prefix (a group: a new computer joined, and joining re-reads every box) */
+  forgetAll(prefix: string): void { for (const k of this.seen.keys()) if (k.startsWith(prefix)) this.seen.delete(k); }
+
   get size(): number { return this.seen.size; }
 
   private sweep(): void {

@@ -44,16 +44,17 @@ export function makePool(connectionString: string): pg.Pool {
  * before it existed) can't be opened: it's dropped and the epoch changes, which computers read as
  * "the relay lost its data" and put their boxes back.
  */
-export async function migrate(pool: pg.Pool, keyId: string): Promise<void> {
+export async function migrate(pool: pg.Pool, keyId: string): Promise<'kept' | 'dropped'> {
   await pool.query(DDL);
   await pool.query(`insert into sync_meta (k, v) values ('schema', $1), ('epoch', $2) on conflict (k) do nothing`,
     [String(SCHEMA_VERSION), randomBytes(16).toString('hex')]);
-  await tx(pool, async (c) => {
+  return tx(pool, async (c) => {
     const r = await c.query<{ v: string }>(`select v from sync_meta where k = 'key' for update`);
-    if (r.rows[0]?.v === keyId) return;
+    if (r.rows[0]?.v === keyId) return 'kept' as const;
     await c.query('truncate sync_groups cascade');
     await c.query(`update sync_meta set v = $1 where k = 'epoch'`, [randomBytes(16).toString('hex')]);
     await c.query(`insert into sync_meta (k, v) values ('key', $1) on conflict (k) do update set v = excluded.v`, [keyId]);
+    return 'dropped' as const;
   });
 }
 
@@ -102,7 +103,7 @@ export class PgGroupStore implements GroupStore {
          on conflict (group_id, device_id) do update set seq = excluded.seq, sealed = excluded.sealed`,
         [gid, did, seq, sealed],
       );
-      return { seq };
+      return { seq, added: Number(count.rows[0].mine) === 0 };
     });
   }
 

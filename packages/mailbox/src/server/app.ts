@@ -72,11 +72,18 @@ export function createApp(opts: MailboxOptions = {}) {
     ...(opts.busyPerMinute !== undefined && { busyPerMinute: opts.busyPerMinute }),
   };
   if (opts.groups && !opts.storageKey) throw new Error('a group store needs the relay storage key');
-  const groups: GroupStore = new AtRestGroupStore(opts.groups ?? new MemoryGroupStore(), opts.storageKey ?? randomBytes(32));
   const metrics = new Metrics();
+  // No ids, no values: one line, so an operator knows an old or foreign row was there
+  let warned = false;
+  const unreadable = () => {
+    metrics.unreadable++;
+    if (!warned) console.warn('relay: a stored box or key did not open (stored before the storage key, or under another); left out until its computer puts it back');
+    warned = true;
+  };
+  const groups: GroupStore = new AtRestGroupStore(opts.groups ?? new MemoryGroupStore(), opts.storageKey ?? randomBytes(32), unreadable);
   const downloads = new Downloads(now);
-  const maxDbBytes = () => opts.syncMaxDbBytes ?? cfg().syncMaxDbMb * 1024 * 1024;
   const cfg = opts.settings ?? (() => fixed);
+  const maxDbBytes = () => opts.syncMaxDbBytes ?? cfg().syncMaxDbMb * 1024 * 1024;
   const store = new KnockStore(now, opts.maxActive, () => cfg().dropMemoryMb * 1024 * 1024);
   const proofs = new SeenProofs(now);
   const levels = () => {
@@ -324,6 +331,6 @@ export function createApp(opts: MailboxOptions = {}) {
 
   app.get('/healthz', (c) => c.text('ok'));
   /** The operator's totals (Prometheus text), served by main.ts on a port only the cluster reaches */
-  const renderMetrics = async () => metrics.render({ dbBytes: await groups.sizeBytes(), maxDbBytes: maxDbBytes(), tracked: downloads.size });
+  const renderMetrics = async () => metrics.render({ dbBytes: await groups.sizeBytes().catch(() => null), maxDbBytes: maxDbBytes(), tracked: downloads.size });
   return { app, store, groups, renderMetrics };
 }

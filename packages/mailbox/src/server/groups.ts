@@ -23,7 +23,7 @@ export interface GroupStore {
    * over its size cap): only a computer replacing its own box, at most one BOX_PAD step bigger,
    * gets through; anything new or grown more is 'busy'.
    */
-  putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace?: boolean): Promise<{ seq: number } | 'moved' | 'full' | 'denied' | 'busy'>;
+  putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace?: boolean): Promise<{ seq: number; added: boolean } | 'moved' | 'full' | 'denied' | 'busy'>;
   /** Boxes changed after `since`, and every computer's id + seq. Refreshes last_seen. */
   list(gid: string, since: number, today: string): Promise<ListResult | Moved | null>;
   /** The group goes with its last box. */
@@ -78,12 +78,11 @@ export class MemoryGroupStore implements GroupStore {
     const old = g?.boxes.get(did);
     if (onlyReplace && (!old || sealed.length > old.sealed.length + BOX_PAD)) return 'busy' as const;
     if (!g) { g = { tokenHash, movedOn: null, lastSeen: today, seq: 0, boxes: new Map(), rekeys: new Map() }; this.groups.set(gid, g); }
-    if (!sameHash(g.tokenHash, tokenHash)) return 'denied' as const;
     if (g.movedOn) return 'moved' as const;
     if (!g.boxes.has(did) && g.boxes.size >= MAX_COMPUTERS) return 'full' as const;
     g.seq += 1; g.lastSeen = today;
     g.boxes.set(did, { id: did, seq: g.seq, sealed: Buffer.from(sealed) });
-    return { seq: g.seq };
+    return { seq: g.seq, added: !old };
   }
 
   async list(gid: string, since: number, today: string): Promise<ListResult | Moved | null> {

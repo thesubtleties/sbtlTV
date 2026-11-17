@@ -190,6 +190,7 @@ describe('sync routes: guards (lens 7)', () => {
     expect((await rekey({ 'not-a-device': sealed(REKEY_BYTES) })).status).toBe(400);
     expect((await rekey({ [newDeviceId()]: sealed(600) })).status).toBe(400);
     expect((await rekey({ [newDeviceId()]: sealed(REKEY_BYTES - 1) })).status).toBe(400);   // a key is exactly REKEY_BYTES
+    expect((await rekey({ [newDeviceId()]: sealed(REKEY_BYTES + 16) })).status).toBe(400);   // not a byte more either (under the 512-character cap)
     expect((await rekey({ [newDeviceId()]: Buffer.from('magnet:?xt=urn:btih:'.padEnd(REKEY_BYTES, 'a')).toString('base64') })).status).toBe(400);   // text
     expect((await (await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).json()).boxes).toHaveLength(1);
     expect((await rekey({}, setup({ syncPaused: true }).call)).status).toBe(429);
@@ -262,16 +263,21 @@ describe('sync routes: guards (lens 7)', () => {
     expect(r.status).toBe(429);
   });
 
-  it('over the database size cap, new boxes and groups are refused busy; a computer can still replace its own box (review C3, D2)', async () => {
-    const { call } = setup({ syncMaxDbBytes: 10 }); const g = group();
-    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(200);
+  it('over the database size cap, new boxes and groups are refused busy; a computer can still replace its own box, one step bigger at most; 10% over, everything waits (review C3, D2, R4)', async () => {
+    // One box is 16 KB + 28 bytes sealed at rest: a cap of 16,000 bytes is over with one box, under the hard stop (17,600)
+    const { call } = setup({ syncMaxDbBytes: 16_000 }); const g = group();
+    const put = (gr: ReturnType<typeof group>, did: string, n = BOX_PAD) => call('PUT', `/v1/groups/${gr.groupId}/boxes/${did}`, { token: gr.accessToken, body: { sealed: sealed(n) }, pow: true });
+    expect((await put(g, g.did)).status).toBe(200);
     const g2 = group();
-    expect((await call('PUT', `/v1/groups/${g2.groupId}/boxes/${g2.did}`, { token: g2.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(429);
-    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${newDeviceId()}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(429);
-    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(200);
-    // ...but not blow it up: one 16 KB step at most
-    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(64 * BOX_PAD) }, pow: true })).status).toBe(429);
-    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(2 * BOX_PAD) }, pow: true })).status).toBe(200);
+    expect((await put(g2, g2.did)).status).toBe(429);              // a new group
+    expect((await put(g, newDeviceId())).status).toBe(429);        // a new computer
+    expect((await put(g, g.did)).status).toBe(200);                // replacing its own box
+    expect((await put(g, g.did, 64 * BOX_PAD)).status).toBe(429);  // blown up
+    // a retired group the relay doesn't have is a new group too
+    const ack = randomBytes(32).toString('base64');
+    expect((await call('POST', `/v1/groups/${g2.groupId}/rekey`, { token: g2.accessToken, body: { keys: { [newDeviceId()]: { sealed: sealed(REKEY_BYTES), ack } } }, pow: true })).status).toBe(429);
+    expect((await put(g, g.did, 2 * BOX_PAD)).status).toBe(200);   // one step: allowed, now 10% over
+    expect((await put(g, g.did, 2 * BOX_PAD)).status).toBe(429);   // the hard stop: everything waits
   });
 
   it('sync uploads have their own proof-of-work level: busy sync does not slow "Get a code" (review C5)', async () => {
@@ -338,34 +344,18 @@ describe('sync routes: what counts as a download', () => {
     return r.status;
   };
 
-  it('a reply cut off before it was read does not count (a slow line, a sleeping laptop, a quit app)', async () => {
-    const { call } = limited(1, { listHoldMs: 30, listInflightBytes: 100_000 }); const g = group();
+  it('a download counts when its reply is admitted, before a byte goes out: reading nothing or stopping early dodges nothing', async () => {
+    const { call } = limited(2, { listInflightBytes: 1_000_000 }); const g = group();
     expect((await putBox(call, g, 4 * BOX_PAD)).status).toBe(200);
-    const slow = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
-    await new Promise((r) => setTimeout(r, 60));
-    await expect(slow.text()).rejects.toThrow();
-    expect(await list(call, g)).toBe(200);   // the cut-off one didn't count
+    const unread = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });   // never read
+    const early = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
+    const r = early.body!.getReader();
+    await r.read(); await r.cancel();   // the first part only
     expect(await list(call, g)).toBe(429);
+    await unread.body?.cancel();
   });
 
-  it('a reader that takes every byte counts even if it never finishes the reply; one cut off before the last part does not', async () => {
-    const { call } = limited(1, { listInflightBytes: 1_000_000 }); const g = group();
-    expect((await putBox(call, g, 4 * BOX_PAD)).status).toBe(200);   // ~87 KB: two parts
-    const cut = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
-    const r1 = cut.body!.getReader();
-    await r1.read();                 // the first part only
-    await r1.cancel();
-    expect(await list(call, g)).toBe(200);   // the cut-off one didn't count; this one does
-    expect((await putBox(call, g, 4 * BOX_PAD)).status).toBe(200);
-    const sly = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
-    const r2 = sly.body!.getReader();
-    let got = 0;
-    while (got < Number(sly.headers.get('content-length'))) got += (await r2.read()).value!.length;
-    await r2.cancel();               // every byte, but never reads the end
-    expect(await list(call, g)).toBe(429);
-  });
-
-  it('a reply refused for the byte budget does not count; one still being read counts once read', async () => {
+  it('a reply refused for the byte budget does not count; an admitted one does', async () => {
     const { call } = limited(2, { listInflightBytes: 100_000 }); const g = group();
     expect((await putBox(call, g, 4 * BOX_PAD)).status).toBe(200);
     const held = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
@@ -408,13 +398,37 @@ describe('sync routes: what counts as a download', () => {
     expect(served.boxes[0].sealed).toBe(box);
   });
 
+  it('a computer joining (its first box) starts the group\'s counts again: pairing over and over cannot use up a box nobody changed', async () => {
+    const { call } = limited(1); const g = group();
+    expect((await putBox(call, g)).status).toBe(200);
+    expect(await list(call, g)).toBe(200);
+    expect(await list(call, g)).toBe(429);
+    const joiner = newDeviceId();
+    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${joiner}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(200);
+    expect(await list(call, g)).toBe(200);   // the joiner's full read
+    // the joiner replacing its box is not a join: the first box's count stays
+    expect((await call('PUT', `/v1/groups/${g.groupId}/boxes/${joiner}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(200);
+    expect(await list(call, g)).toBe(429);
+  });
+
+  it('fetching a new key many times at once is limited like one at a time', async () => {
+    const { call } = limited(3); const g = group(); const other = newDeviceId();
+    await call('PUT', `/v1/groups/${g.groupId}/boxes/${other}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true });
+    const ack = randomBytes(32).toString('base64');
+    expect((await call('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: { sealed: sealed(REKEY_BYTES), ack } } }, pow: true })).status).toBe(204);
+    const all = await Promise.all(Array.from({ length: 50 }, () => call('GET', `/v1/groups/${g.groupId}/rekey/${other}`, { token: g.accessToken })));
+    expect(all.filter((r) => r.status === 200)).toHaveLength(3);
+  });
+
   it('counts nobody touched for a week are forgotten, and not before', async () => {
     const { call, advance } = limited(1); const g = group();
     expect((await putBox(call, g)).status).toBe(200);
     expect(await list(call, g)).toBe(200);
     advance(2 * 3_600_000);
     expect(await list(call, g)).toBe(429);   // a sweep ran, but the count is recent
-    advance(8 * 86_400_000);
+    advance(6 * 86_400_000);
+    expect(await list(call, g)).toBe(429);   // six days on: still kept (a refused list doesn't refresh it)
+    advance(2 * 86_400_000);
     expect(await list(call, g)).toBe(200);
   });
 
@@ -448,5 +462,56 @@ describe('relay totals', () => {
     expect(m).toContain('relay_uploads_refused_total{reason="unpadded"} 1');
     expect(m).toContain('relay_db_over_cap 1');
     expect(m).not.toContain(g.groupId);
+  });
+
+  it('count every refusal reason and limited downloads; under the cap shows 0', async () => {
+    const made = createApp({ powBits: 4, settings: () => ({ ...DEFAULTS, powBits: 4, minVersion: V, maxBoxDownloads: 20 }) });
+    expect(await made.renderMetrics()).toContain('relay_db_over_cap 0');
+    const g = group(); const other = newDeviceId();
+    const via = async (method: string, path: string, opts: { token?: string; body?: unknown; pow?: boolean } = {}) => {
+      const text = opts.body === undefined ? '' : JSON.stringify(opts.body);
+      const headers: Record<string, string> = { [VERSION_HEADER]: V };
+      if (opts.token) headers.authorization = `Bearer ${opts.token}`;
+      if (opts.pow) {
+        const ch = (await made.app.fetch(new Request('http://x/v1/hello', { headers: { [VERSION_HEADER]: V } }))).headers.get(CHALLENGE_HEADER)!;
+        headers[POW_HEADER] = `${ch}.${solvePow(powInput(path.split('?')[0], text, ch, V), powBitsFor(4, Buffer.byteLength(text)))}`;
+      }
+      return made.app.fetch(new Request(`http://x${path}`, { method, headers, body: text || undefined }));
+    };
+    expect((await via('PUT', `/v1/groups/${g.groupId}/boxes/${other}`, { token: g.accessToken, body: { sealed: sealed() }, pow: true })).status).toBe(200);
+    for (let i = 0; i < 20; i++) { const r = await via('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken }); expect(r.status).toBe(200); await r.text(); }
+    expect((await via('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(429);
+    expect(await made.renderMetrics()).toContain('relay_downloads_tracked 1');
+    expect((await via('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: withAck(Buffer.alloc(REKEY_BYTES, 0x61).toString('base64')) } }, pow: true })).status).toBe(400);
+    expect((await via('POST', `/v1/groups/${g.groupId}/rekey`, { token: g.accessToken, body: { keys: { [other]: withAck(sealed(REKEY_BYTES)) } }, pow: true })).status).toBe(204);
+    for (let i = 0; i < 20; i++) await via('GET', `/v1/groups/${g.groupId}/rekey/${other}`, { token: g.accessToken });
+    expect((await via('GET', `/v1/groups/${g.groupId}/rekey/${other}`, { token: g.accessToken })).status).toBe(429);
+    const m = await made.renderMetrics();
+    expect(m).toContain('relay_uploads_refused_total{reason="bad_rekey"} 1');
+    expect(m).toContain('relay_downloads_limited_total{kind="box"} 1');
+    expect(m).toContain('relay_downloads_limited_total{kind="rekey"} 1');
+    expect(m).toMatch(/relay_db_bytes [1-9]\d*/);
+  });
+
+  it('the database down leaves its two lines out; the page never fails', async () => {
+    class Down extends MemoryGroupStore { override async sizeBytes(): Promise<number> { throw new Error('connection refused'); } }
+    const { renderMetrics } = createApp({ groups: new Down(), storageKey: randomBytes(32) });
+    const m = await renderMetrics();
+    expect(m).not.toContain('relay_db_bytes');
+    expect(m).toContain('relay_downloads_tracked 0');
+  });
+
+  it('a box refused over the database cap is counted', async () => {
+    const { app, renderMetrics } = createApp({ powBits: 4, syncMaxDbBytes: 10 });
+    const put = async (g: ReturnType<typeof group>) => {
+      const path = `/v1/groups/${g.groupId}/boxes/${g.did}`;
+      const text = JSON.stringify({ sealed: sealed() });
+      const ch = (await app.fetch(new Request('http://x/v1/hello', { headers: { [VERSION_HEADER]: V } }))).headers.get(CHALLENGE_HEADER)!;
+      const nonce = solvePow(powInput(path, text, ch, V), powBitsFor(4, Buffer.byteLength(text)));
+      return app.fetch(new Request(`http://x${path}`, { method: 'PUT', body: text, headers: { [VERSION_HEADER]: V, authorization: `Bearer ${g.accessToken}`, 'content-type': 'application/json', [POW_HEADER]: `${ch}.${nonce}` } }));
+    };
+    expect((await put(group())).status).toBe(200);
+    expect((await put(group())).status).toBe(429);
+    expect(await renderMetrics()).toContain('relay_uploads_refused_total{reason="db_full"} 1');
   });
 });

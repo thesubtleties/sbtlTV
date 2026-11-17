@@ -8,8 +8,11 @@ export class Metrics {
   refused = { unsealed: 0, unpadded: 0, db_full: 0, bad_rekey: 0 };
   /** Downloads refused because that version (or key) was downloaded too many times */
   limited = { box: 0, rekey: 0 };
+  /** Reads of stored boxes or keys that didn't open (stored by an older relay, or under another key), left out */
+  unreadable = 0;
 
-  render(now: { dbBytes: number; maxDbBytes: number; tracked: number }): string {
+  /** dbBytes null: the database can't be asked right now (its two lines are left out, never an error) */
+  render(now: { dbBytes: number | null; maxDbBytes: number; tracked: number }): string {
     const lines = [
       '# HELP relay_uploads_refused_total Uploads the relay refused, by reason.',
       '# TYPE relay_uploads_refused_total counter',
@@ -17,13 +20,18 @@ export class Metrics {
       '# HELP relay_downloads_limited_total Downloads refused because that version was downloaded too many times.',
       '# TYPE relay_downloads_limited_total counter',
       ...Object.entries(this.limited).map(([k, v]) => `relay_downloads_limited_total{kind="${k}"} ${v}`),
-      '# HELP relay_db_bytes Size of the sync database.',
-      '# TYPE relay_db_bytes gauge',
-      `relay_db_bytes ${now.dbBytes}`,
-      '# HELP relay_db_over_cap 1 while the database is over its size cap (only existing boxes can be replaced).',
-      '# TYPE relay_db_over_cap gauge',
-      `relay_db_over_cap ${now.dbBytes > now.maxDbBytes ? 1 : 0}`,
-      '# HELP relay_downloads_tracked Box versions with a download count in memory.',
+      '# HELP relay_unreadable_total Reads of stored boxes or keys that did not open and were left out.',
+      '# TYPE relay_unreadable_total counter',
+      `relay_unreadable_total ${this.unreadable}`,
+      ...(now.dbBytes === null ? [] : [
+        '# HELP relay_db_bytes Size of the sync database.',
+        '# TYPE relay_db_bytes gauge',
+        `relay_db_bytes ${now.dbBytes}`,
+        '# HELP relay_db_over_cap 1 while the database is over its size cap (only existing boxes can be replaced).',
+        '# TYPE relay_db_over_cap gauge',
+        `relay_db_over_cap ${now.dbBytes > now.maxDbBytes ? 1 : 0}`,
+      ]),
+      '# HELP relay_downloads_tracked Box versions and new keys with a download count in memory.',
       '# TYPE relay_downloads_tracked gauge',
       `relay_downloads_tracked ${now.tracked}`,
     ];

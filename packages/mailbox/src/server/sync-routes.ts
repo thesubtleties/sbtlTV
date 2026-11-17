@@ -89,10 +89,12 @@ export function registerSyncRoutes(app: Hono, d: {
   });
 
   async function putBox(c: Context, th: Buffer): Promise<Response> {
-    // Over the size cap a computer can still replace its own box, growing it by one 16 KB step at
-    // most (sync keeps working for everyone already in, and boxes made small can't be grown to
-    // fill the disk); new boxes and groups wait
-    const full = (await d.groups.sizeBytes()) > d.maxDbBytes();
+    // Over the size cap a computer can still replace its own box, growing it by one 16 KB step per
+    // push at most (how real boxes grow; sync keeps working for everyone already in); new boxes and
+    // groups wait. 10% over the cap everything waits: the disk comes first (the alert fires long before)
+    const size = await d.groups.sizeBytes();
+    if (size > d.maxDbBytes() * 1.1) { d.metrics.refused.db_full++; return d.err(c, 429, 'busy'); }
+    const full = size > d.maxDbBytes();
     const text = await d.guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
     if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) return d.err(c, 400, 'bad-request');
@@ -107,9 +109,11 @@ export function registerSyncRoutes(app: Hono, d: {
     if (out === 'busy') { d.metrics.refused.db_full++; return d.err(c, 429, 'busy'); }
     if (out === 'denied') return d.err(c, 403, 'denied');
     if (out === 'moved' || out === 'full') return d.err(c, 409, out);
-    // A new version starts its count from nothing (seq can start again at 1 in a recreated group)
-    d.downloads.forget(boxKey(gid, did));
-    return c.json(out);
+    // A new version starts its count from nothing (seq can start again at 1 in a recreated group).
+    // A computer's first box: it joined, and every join re-reads all boxes, so the group starts
+    // again (pairing over and over can't use up a box nobody changed; costs an abuser a proven upload)
+    if (out.added) d.downloads.forgetAll(`${gid}/`); else d.downloads.forget(boxKey(gid, did));
+    return c.json({ seq: out.seq });
   }
 
   app.get('/v1/groups/:gid/boxes', async (c) => {
@@ -131,13 +135,17 @@ export function registerSyncRoutes(app: Hono, d: {
       d.metrics.limited.box++;
       return d.err(c, 429, 'busy');
     }
-    const versions = l.boxes.map((b) => ({ id: b.id, seq: b.seq }));
     let body: Buffer | null = Buffer.from(JSON.stringify({ seq: l.seq, epoch, computers: l.computers, boxes: l.boxes.map((b) => ({ id: b.id, seq: b.seq, sealed: b.sealed.toString('base64') })) }));
     const size = body.length;
     const kind = size <= SMALL_REPLY ? 'small' : 'large';
     const budget = kind === 'small' ? d.smallListBudgetBytes() : d.listBudgetBytes();
     if ((perGroup.get(gid) ?? 0) >= PER_GROUP || inFlight[kind] + size > budget) return d.err(c, 429, 'busy');
     inFlight[kind] += size;
+    // A download counts when its reply is admitted, before a byte goes out: the server hands the
+    // whole reply to the network's buffers at once, so the relay can't know how much a reader got,
+    // and stopping early must not dodge the count. A pull that times out counts too; reaching the
+    // limit that way takes failing pulls on a line under ~13 kbit/s
+    for (const b of l.boxes) d.downloads.add(boxKey(gid, b.id), b.seq);
     perGroup.set(gid, (perGroup.get(gid) ?? 0) + 1);
     let released = false;
     const release = () => {
@@ -160,10 +168,6 @@ export function registerSyncRoutes(app: Hono, d: {
         if (!body || at >= body.length) { clearTimeout(timer); ctl.close(); release(); return; }
         ctl.enqueue(new Uint8Array(body.subarray(at, at + SMALL_REPLY)));
         at += SMALL_REPLY;
-        // The last part is handed out: that's a download. One cut off before it (a slow line, a
-        // sleeping laptop, a quit app) doesn't count; one that has every byte always does, however
-        // the reader ends it
-        if (at >= body.length) for (const v of versions) d.downloads.add(boxKey(gid, v.id), v.seq);
       },
       cancel() { clearTimeout(timer); release(); },
     }, { highWaterMark: 0 });
@@ -187,8 +191,8 @@ export function registerSyncRoutes(app: Hono, d: {
     const gid = c.req.param('gid')!;
     const exists = await d.groups.group(gid);
     if (exists && !sameHash(exists.tokenHash, th)) return d.err(c, 403, 'denied');
-    // Creating one is a new group: the same switch as a first box
-    if (!exists && d.cfg().newGroupsPaused) return d.err(c, 429, 'busy');
+    // Creating one is a new group: the same switch, and the same database cap, as a first box
+    if (!exists && (d.cfg().newGroupsPaused || (await d.groups.sizeBytes()) > d.maxDbBytes())) return d.err(c, 429, 'busy');
     const text = await d.guardWrite(c); if (typeof text !== 'string') return text;
     const body = parse(text);
     const keys = body?.keys;
@@ -221,11 +225,12 @@ export function registerSyncRoutes(app: Hono, d: {
     if (!ids(c, 'gid', 'did')) return d.err(c, 400, 'bad-request');
     const auth = await authorise(c); if (auth !== 'ok') return auth;
     const gid = c.req.param('gid')!, did = c.req.param('did')!;
-    // A computer fetches its new key a few times at most (until it proves it opened it)
+    // A computer fetches its new key a few times at most (until it proves it opened it). Counted
+    // before the read, so fetches at once can't all pass the check
     if (d.downloads.count(rekeyKey(gid, did), 0) >= d.cfg().maxBoxDownloads) { d.metrics.limited.rekey++; return d.err(c, 429, 'busy'); }
+    d.downloads.add(rekeyKey(gid, did), 0);
     const sealed = await d.groups.getRekey(gid, did, today());
     if (!sealed) return d.err(c, 404, 'not-found');
-    d.downloads.add(rekeyKey(gid, did), 0);
     return c.json({ sealed: sealed.toString('base64') });
   });
 

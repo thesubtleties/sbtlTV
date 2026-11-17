@@ -24,7 +24,9 @@ describe('knock clients', () => {
     const { app } = createApp({ powBits: 4, minVersion: '0.17.0' });
     let refuseNext = true;
     const lines: string[] = [];
+    const drops: string[] = [];
     const f = async (r: Request) => {
+      if (r.method === 'PUT' && r.url.endsWith('/drop')) drops.push(await r.clone().text());
       if (refuseNext && r.method === 'PUT' && r.url.endsWith('/drop')) { refuseNext = false; return Response.json({ error: 'bad-request' }, { status: 400 }); }
       return app.fetch(r);
     };
@@ -41,6 +43,8 @@ describe('knock clients', () => {
     await until(() => receiver.state.step === 'received');
     expect((receiver.state as { payload: Buffer }).payload.equals(setup)).toBe(true);
     expect(lines).toEqual(['Relay: a send was refused once and went through sealed again']);
+    expect(drops).toHaveLength(2);
+    expect(drops[1]).not.toBe(drops[0]);   // sealed again: a new nonce, not the same bytes
   });
 
   it('send a payload end to end; both see the same words first', async () => {

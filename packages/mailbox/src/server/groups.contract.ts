@@ -17,7 +17,7 @@ export function groupStoreContract(name: string, make: () => Promise<GroupStore>
       const gid = hex(), did = hex(), th = h();
       expect(await s.group(gid)).toBeNull();
       const put = await s.putBox(gid, th, did, Buffer.from('a'), '2026-11-16');
-      expect(put).toEqual({ seq: 1 });
+      expect(put).toEqual({ seq: 1, added: true });
       expect((await s.group(gid))?.tokenHash.equals(th)).toBe(true);
       const l = await s.list(gid, 0, '2026-11-16');
       expect(l).toMatchObject({ seq: 1, computers: [{ id: did, seq: 1 }] });
@@ -161,7 +161,7 @@ export function groupStoreContract(name: string, make: () => Promise<GroupStore>
       expect(await s.putBox(gid, th, a, Buffer.from('a1'), '2026-11-16', true)).toBe('busy');
       expect(await s.group(gid)).toBeNull();
       await s.putBox(gid, th, a, Buffer.from('a1'), '2026-11-16');
-      expect(await s.putBox(gid, th, a, Buffer.from('a2'), '2026-11-16', true)).toEqual({ seq: 2 });
+      expect(await s.putBox(gid, th, a, Buffer.from('a2'), '2026-11-16', true)).toEqual({ seq: 2, added: false });
       expect(await s.putBox(gid, th, hex(), Buffer.from('b1'), '2026-11-16', true)).toBe('busy');
       // A wrong token learns nothing about the group's boxes: denied, not busy
       expect(await s.putBox(gid, h(), a, Buffer.from('x'), '2026-11-16', true)).toBe('denied');
@@ -169,7 +169,7 @@ export function groupStoreContract(name: string, make: () => Promise<GroupStore>
       // Grown by one step at most: a box made small can't be blown up past the cap
       const small = Buffer.alloc(100, 1);
       await s.putBox(gid, th, a, small, '2026-11-16', true);
-      expect(await s.putBox(gid, th, a, Buffer.alloc(100 + 16 * 1024, 2), '2026-11-16', true)).toEqual({ seq: 4 });
+      expect(await s.putBox(gid, th, a, Buffer.alloc(100 + 16 * 1024, 2), '2026-11-16', true)).toEqual({ seq: 4, added: false });
       expect(await s.putBox(gid, th, a, Buffer.alloc(100 + 16 * 1024 + 16 * 1024 + 1, 3), '2026-11-16', true)).toBe('busy');
     });
 

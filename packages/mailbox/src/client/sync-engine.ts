@@ -76,8 +76,9 @@ export class SyncEngine {
   private lastPullAt = -Infinity;
   /** Pulls asked for and not finished: a nudge doesn't add another behind a slow one */
   private pullsWaiting = 0;
-  /** Pulls in a row the relay answered busy (logged once at BUSY_LOG_AFTER) */
+  /** Pulls / pushes in a row the relay answered busy (logged once at BUSY_LOG_AFTER) */
   private busyPulls = 0;
+  private busyPushes = 0;
 
   constructor(private d: EngineDeps) {
     // The keys are opened later (ready()): on Linux and Windows the OS keyring isn't reachable
@@ -228,11 +229,15 @@ export class SyncEngine {
     if (sealed.length > MAX_BOX_BYTES) { this.d.log('Sync: this computer\'s box is over the size limit'); return; }
     try {
       await k.client.push(f.deviceId, sealed);
+      if (this.busyPushes >= BUSY_LOG_AFTER) this.d.log('Sync: the relay takes this computer\'s changes again');
+      this.busyPushes = 0;
       f.dirty = false;
       this.save();
       if (this.problem === 'update') { this.problem = null; this.emit(); this.d.onSnapshotNeeded(); }
     } catch (e) {
       this.firstDirty ??= this.now();   // try again with the next pull
+      // Busy for several pushes in a row (the relay is full, or paused): worth one line
+      if (e instanceof MailboxError && e.code === 'busy' && ++this.busyPushes === BUSY_LOG_AFTER) this.d.log(`Sync: the relay refused this computer's changes ${BUSY_LOG_AFTER} times in a row (busy)`);
       await this.failed(e);
     }
   }

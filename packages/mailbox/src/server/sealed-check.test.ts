@@ -57,6 +57,9 @@ describe('looksSealed', () => {
   it('a new key (124 random bytes) is never taken for text; text is', () => {
     for (let i = 0; i < 20_000; i++) expect(mostlyText(randomBytes(124))).toBe(false);
     expect(mostlyText(Buffer.from('magnet:?xt=urn:btih:'.padEnd(124, 'a')))).toBe(true);
+    // the line is 70%: text with a quarter of its bytes hidden is still text, 69% is not
+    expect(mostlyText(Buffer.concat([Buffer.alloc(93, 0x61), Buffer.alloc(31, 0x01)]))).toBe(true);
+    expect(mostlyText(Buffer.concat([Buffer.alloc(86, 0x61), Buffer.alloc(38, 0x01)]))).toBe(false);
   });
 
   it('refuses anything shorter than a nonce and tag; tiny uploads are not judged', () => {

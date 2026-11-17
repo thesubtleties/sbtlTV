@@ -34,7 +34,8 @@ export interface Settings {
   /**
    * Full downloads of one version of a box (or one new key) before the relay stops serving it,
    * until the box changes. Normal sync downloads each version about once per computer in the group
-   * (10 at most, its own maker included), plus one per computer joining. At least 20.
+   * (10 at most, its own maker included), plus retries and joins (a join starts the group's counts
+   * again). At least 25.
    */
   maxBoxDownloads: number;
   /** A minute with more proven writes than this raises the level one step */
@@ -84,7 +85,7 @@ const RULES: Record<keyof Settings, Rule> = {
   listMbInFlight: int(1, 100_000),
   smallListMbInFlight: int(1, 100_000),
   syncMaxDbMb: int(1, 1_000_000),
-  maxBoxDownloads: int(20, 1_000_000),
+  maxBoxDownloads: int(25, 1_000_000),
   busyPerMinute: int(1, 1_000_000),
   maxExtraBits: int(0, 8),
   quietPerMinute: int(0, 1_000_000),
