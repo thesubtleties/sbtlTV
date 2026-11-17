@@ -14,6 +14,11 @@ const TYPEFACES: { id: Appearance['typeface']; label: string; help: string }[] =
   { id: 'system', label: 'System', help: "Your system's interface font." },
 ];
 
+const HEADER_STYLES: { id: NonNullable<Appearance['header']>; label: string; help: string }[] = [
+  { id: 'simple', label: 'Simple', help: 'Categories as a row of tabs.' },
+  { id: 'floating', label: 'Floating', help: 'A floating bar; categories in a Genres panel.' },
+];
+
 function PaletteTile({ label, roles, selected, onSelect }: {
   label: string;
   roles: PaletteRoles;
@@ -42,6 +47,7 @@ export function AppearanceTab() {
   return (
     <SettingsTab className="appearance-tab">
       <AppearanceOptions />
+      <HeaderStyleOption />
     </SettingsTab>
   );
 }
@@ -129,5 +135,25 @@ export function AppearanceOptions() {
         />
       </OptionRow>
     </div>
+  );
+}
+
+/** Settings › Appearance only (first run keeps to colours and type). */
+export function HeaderStyleOption() {
+  const appearance = useUIStore((s) => s.settings.appearance) ?? DEFAULT_APPEARANCE;
+  const updateSettings = useUpdateSettings();
+  const header = appearance.header ?? 'simple';
+  return (
+    <OptionRow title="Movies & Series header" help={HEADER_STYLES.find((h) => h.id === header)?.help}>
+      <Segmented
+        value={header}
+        options={HEADER_STYLES.map(({ id, label }) => ({ id, label }))}
+        onChange={(next) => {
+          const merged = { ...appearance, header: next };
+          updateSettings({ appearance: merged });
+          void saveSettings({ appearance: merged });
+        }}
+      />
+    </OptionRow>
   );
 }
