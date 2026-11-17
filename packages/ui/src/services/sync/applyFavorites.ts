@@ -8,7 +8,7 @@ import type { FavoriteRecord } from '@sbtltv/core';
 import { db, type StoredFavorite } from '../../db';
 import { data } from '../../data/client';
 import { useUIStore } from '../../stores/uiStore';
-import { favoriteIds, favoriteKey, localId, matchFavorite, sameIds, sourceHost, withId, type ChannelLite, type FavoriteId } from './favorites';
+import { favoriteIds, favoriteKey, matchFavorite, sameIds, sourceHost, withId, type ChannelLite, type FavoriteId } from './favorites';
 
 export interface MatchContext {
   /** Enabled sources: the only ones a favorite may land on */
@@ -41,7 +41,9 @@ class Rows {
 async function place(rows: Rows, ids: FavoriteId[], name: string, streamId: string, added: Date, sources: MatchContext['allSources'], from?: string): Promise<void> {
   const id = `channel_${streamId}`;
   const here = rows.get(id);
-  let merged = here ? favoriteIds(here, sources) : (() => { const own = localId(streamId, sources); return own ? [own] : []; })();
+  // A favorite made here keeps its own id (other computers learned it when it was made); one that only
+  // came from other computers answers to their ids alone, so their removal takes it away here too
+  let merged = here ? favoriteIds(here, sources) : [];
   for (const i of ids) merged = withId(merged, i);
   if (from && from !== id) await rows.drop(from);
   for (const i of ids) { const w = waitingId(i); if (w !== id && w !== from && rows.get(w)) await rows.drop(w); }

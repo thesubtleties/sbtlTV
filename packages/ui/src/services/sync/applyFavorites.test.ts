@@ -53,7 +53,7 @@ describe('applyFavoriteRecords', () => {
     await applyFavoriteRecords([fav({ host: 'a.example', ch: '1', at: 9_000, removed: true })], load(ctx()));
     const rows = await db.favorites.toArray();
     expect(rows.map((r) => r.id)).toEqual(['channel_m1_9']);
-    expect(keys(rows[0].ids)).toEqual(['a.example:2', 'provider.example:9']);
+    expect(keys(rows[0].ids)).toEqual(['a.example:2']);
   });
 
   it('a removal drops the favorite it names, matched or not, local or synced, if it was added before', async () => {
@@ -87,6 +87,15 @@ describe('applyFavoriteRecords', () => {
     await db.favorites.put({ id: 'channel_m1_1234', type: 'channel', stream_id: 'm1_1234', name: 'CNN', added: new Date(1_000) });
     await applyFavoriteRecords([fav()], load(ctx({ sources: [] })));
     expect((await db.favorites.toArray()).map((f) => f.id)).toEqual(['channel_m1_1234']);
+  });
+});
+
+describe('a favorite that only came from another computer', () => {
+  it("answers to that computer's id alone: when it unfavorites, the favorite goes here too (real-app finding)", async () => {
+    await applyFavoriteRecords([fav({ host: 'localhost', ch: '77', name: 'US: CNN' })], load(ctx({ byGuide: [ch('m1_9', 'm1', 'CNN HD', 'CNN.us')] })));
+    expect(keys((await db.favorites.get('channel_m1_9'))?.ids)).toEqual(['localhost:77']);
+    await applyFavoriteRecords([fav({ host: 'localhost', ch: '77', at: 9_000, removed: true })], load(ctx()));
+    expect(await db.favorites.toArray()).toEqual([]);
   });
 });
 
