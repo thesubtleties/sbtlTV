@@ -39,10 +39,22 @@ export function makePool(connectionString: string): pg.Pool {
   return pool;
 }
 
-export async function migrate(pool: pg.Pool): Promise<void> {
+/**
+ * `keyId` = the id of the relay's storage key (at-rest.ts). Data stored under another key (or none,
+ * before it existed) can't be opened: it's dropped and the epoch changes, which computers read as
+ * "the relay lost its data" and put their boxes back.
+ */
+export async function migrate(pool: pg.Pool, keyId: string): Promise<void> {
   await pool.query(DDL);
   await pool.query(`insert into sync_meta (k, v) values ('schema', $1), ('epoch', $2) on conflict (k) do nothing`,
     [String(SCHEMA_VERSION), randomBytes(16).toString('hex')]);
+  await tx(pool, async (c) => {
+    const r = await c.query<{ v: string }>(`select v from sync_meta where k = 'key' for update`);
+    if (r.rows[0]?.v === keyId) return;
+    await c.query('truncate sync_groups cascade');
+    await c.query(`update sync_meta set v = $1 where k = 'epoch'`, [randomBytes(16).toString('hex')]);
+    await c.query(`insert into sync_meta (k, v) values ('key', $1) on conflict (k) do update set v = excluded.v`, [keyId]);
+  });
 }
 
 async function tx<T>(pool: pg.Pool, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
@@ -68,8 +80,9 @@ export class PgGroupStore implements GroupStore {
     return r.rows[0] ? { tokenHash: r.rows[0].token_hash, moved: r.rows[0].moved_on !== null } : null;
   }
 
-  putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string) {
+  putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace = false) {
     return tx(this.pool, async (c) => {
+      if (onlyReplace && !(await c.query('select 1 from sync_boxes where group_id = $1 and device_id = $2', [gid, did])).rowCount) return 'busy' as const;
       await c.query('insert into sync_groups (id, token_hash, last_seen) values ($1, $2, $3) on conflict (id) do nothing', [gid, tokenHash, today]);
       const g = (await c.query<{ token_hash: Buffer; moved_on: string | null }>('select token_hash, moved_on from sync_groups where id = $1 for update', [gid])).rows[0];
       if (!sameHash(g.token_hash, tokenHash)) return 'denied' as const;

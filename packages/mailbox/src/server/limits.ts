@@ -22,3 +22,46 @@ export class SeenProofs {
     return true;
   }
 }
+
+const HOUR = 3_600_000;
+const KEEP_HOURS = 7 * 24;
+
+/**
+ * Downloads of each version of a box (or of a computer's new key), so a group handed around can't
+ * serve as a download link. Normal sync downloads each version about once per computer in the
+ * group (the others, and its own maker once). Counts and the hour of the last download only, in
+ * memory: nothing about who asked. Kept until the box changes, is deleted, or nobody downloaded it
+ * for a week. A relay restart starts every count again.
+ */
+export class Downloads {
+  private seen = new Map<string, { seq: number; n: number; hour: number }>();
+  private lastSweep: number;
+  constructor(private now: () => number) { this.lastSweep = now(); }
+
+  /** Times this version was downloaded in full */
+  count(key: string, seq: number): number {
+    this.sweep();
+    const e = this.seen.get(key);
+    return e && e.seq === seq ? e.n : 0;
+  }
+
+  /** One full download. A late one of an older version leaves the newer count alone. */
+  add(key: string, seq: number): void {
+    this.sweep();
+    const e = this.seen.get(key);
+    if (e && e.seq > seq) return;
+    this.seen.set(key, { seq, n: e && e.seq === seq ? e.n + 1 : 1, hour: Math.floor(this.now() / HOUR) });
+  }
+
+  /** The box was replaced or deleted: its next version starts from nothing */
+  forget(key: string): void { this.seen.delete(key); }
+
+  get size(): number { return this.seen.size; }
+
+  private sweep(): void {
+    if (this.now() - this.lastSweep < HOUR) return;
+    this.lastSweep = this.now();
+    const oldest = Math.floor(this.now() / HOUR) - KEEP_HOURS;
+    for (const [k, e] of this.seen) if (e.hour < oldest) this.seen.delete(k);
+  }
+}

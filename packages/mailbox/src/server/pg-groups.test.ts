@@ -13,7 +13,7 @@ if (url) {
     const pool = new pg.Pool({ connectionString: url, max: 2 });
     pools.push(pool);
     await pool.query('drop table if exists sync_rekeys, sync_boxes, sync_groups, sync_meta');
-    await migrate(pool);
+    await migrate(pool, 'key-1');
     return new PgGroupStore(pool);
   });
   describe('epoch', () => {
@@ -21,11 +21,11 @@ if (url) {
       const pool = new pg.Pool({ connectionString: url, max: 2 });
       pools.push(pool);
       await pool.query('drop table if exists sync_rekeys, sync_boxes, sync_groups, sync_meta');
-      await migrate(pool);
+      await migrate(pool, 'key-1');
       const store = new PgGroupStore(pool);
       const first = await store.epoch();
       await pool.query('drop table if exists sync_rekeys, sync_boxes, sync_groups, sync_meta');
-      await migrate(pool);
+      await migrate(pool, 'key-1');
       expect(await store.epoch()).not.toBe(first);
     });
   });
@@ -34,11 +34,28 @@ if (url) {
       const pool = new pg.Pool({ connectionString: url, max: 2 });
       pools.push(pool);
       await pool.query('drop table if exists sync_rekeys, sync_boxes, sync_groups, sync_meta');
-      await migrate(pool);
+      await migrate(pool, 'key-1');
       const store = new PgGroupStore(pool);
       const first = await store.epoch();
-      await migrate(pool);
+      await migrate(pool, 'key-1');
       expect(await store.epoch()).toBe(first);
+    });
+  });
+  describe('storage key', () => {
+    it('a different key (or none before) drops the data and changes the database id; the same key keeps both', async () => {
+      const pool = new pg.Pool({ connectionString: url, max: 2 });
+      pools.push(pool);
+      await pool.query('drop table if exists sync_rekeys, sync_boxes, sync_groups, sync_meta');
+      await migrate(pool, 'key-1');
+      const store = new PgGroupStore(pool);
+      const first = await store.epoch();
+      await store.putBox('a'.repeat(32), Buffer.alloc(32, 1), 'b'.repeat(32), Buffer.from('x'), '2026-11-17');
+      await migrate(pool, 'key-1');
+      expect(await store.epoch()).toBe(first);
+      expect(await store.group('a'.repeat(32))).not.toBeNull();
+      await migrate(pool, 'key-2');
+      expect(await store.epoch()).not.toBe(first);
+      expect(await store.group('a'.repeat(32))).toBeNull();
     });
   });
 } else {

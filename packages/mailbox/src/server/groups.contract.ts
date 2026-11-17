@@ -156,6 +156,15 @@ export function groupStoreContract(name: string, make: () => Promise<GroupStore>
       expect(await s.group(gid)).not.toBeNull();
     });
 
+    it('over the size cap (onlyReplace) a computer can replace its own box; new boxes and groups are busy', async () => {
+      const gid = hex(), a = hex(), th = h();
+      expect(await s.putBox(gid, th, a, Buffer.from('a1'), '2026-11-16', true)).toBe('busy');
+      expect(await s.group(gid)).toBeNull();
+      await s.putBox(gid, th, a, Buffer.from('a1'), '2026-11-16');
+      expect(await s.putBox(gid, th, a, Buffer.from('a2'), '2026-11-16', true)).toEqual({ seq: 2 });
+      expect(await s.putBox(gid, th, hex(), Buffer.from('b1'), '2026-11-16', true)).toBe('busy');
+    });
+
     it('the epoch stays the same for one database', async () => {
       expect(await s.epoch()).toMatch(/^[0-9a-f]{32}$/);
       expect(await s.epoch()).toBe(await s.epoch());

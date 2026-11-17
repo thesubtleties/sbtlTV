@@ -18,8 +18,11 @@ export type Moved = { moved: true; waiting: number };
 export interface GroupStore {
   /** null = no such group */
   group(gid: string): Promise<{ tokenHash: Buffer; moved: boolean } | null>;
-  /** Creates the group (with this token hash) when it doesn't exist. */
-  putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string): Promise<{ seq: number } | 'moved' | 'full' | 'denied'>;
+  /**
+   * Creates the group (with this token hash) when it doesn't exist. onlyReplace (the database is
+   * over its size cap): only a computer replacing its own box gets through; anything new is 'busy'.
+   */
+  putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace?: boolean): Promise<{ seq: number } | 'moved' | 'full' | 'denied' | 'busy'>;
   /** Boxes changed after `since`, and every computer's id + seq. Refreshes last_seen. */
   list(gid: string, since: number, today: string): Promise<ListResult | Moved | null>;
   /** The group goes with its last box. */
@@ -67,8 +70,9 @@ export class MemoryGroupStore implements GroupStore {
     return g ? { tokenHash: g.tokenHash, moved: g.movedOn !== null } : null;
   }
 
-  async putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string) {
+  async putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace = false) {
     let g = this.groups.get(gid);
+    if (onlyReplace && !g?.boxes.has(did)) return 'busy' as const;
     if (!g) { g = { tokenHash, movedOn: null, lastSeen: today, seq: 0, boxes: new Map(), rekeys: new Map() }; this.groups.set(gid, g); }
     if (!sameHash(g.tokenHash, tokenHash)) return 'denied' as const;
     if (g.movedOn) return 'moved' as const;

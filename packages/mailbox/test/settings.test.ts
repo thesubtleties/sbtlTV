@@ -8,6 +8,13 @@ describe('mailbox settings', () => {
     expect(parseSettings('not an object')).toEqual({});
   });
 
+  it('the download limit per box version comes from MAX_BOX_DOWNLOADS or the file, and is at least 20', () => {
+    expect(settingsFromEnv({ MAX_BOX_DOWNLOADS: '50' })).toEqual({ maxBoxDownloads: 50 });
+    expect(parseSettings({ maxBoxDownloads: 40 })).toEqual({ maxBoxDownloads: 40 });
+    expect(parseSettings({ maxBoxDownloads: 19 })).toEqual({});
+    expect(DEFAULTS.maxBoxDownloads).toBe(30);
+  });
+
   it('reads the environment as a fallback', () => {
     expect(settingsFromEnv({ POW_BITS: '21', MAILBOX_PAUSED: '1', LARGE_DROP_MB_PER_HOUR: '50', MIN_APP_VERSION: '0.17.0' }))
       .toEqual({ powBits: 21, paused: true, largeDropMbPerHour: 50, minVersion: '0.17.0' });

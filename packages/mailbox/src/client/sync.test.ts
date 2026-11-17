@@ -1,7 +1,7 @@
 // packages/mailbox/src/client/sync.test.ts
 import { createHash, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { BOX_PAD, deriveGroup, newDeviceId } from '../protocol/index.js';
+import { BOX_PAD, REKEY_BYTES, deriveGroup, newDeviceId } from '../protocol/index.js';
 import { createApp } from '../server/app.js';
 import { MailboxError, Transport } from './transport.js';
 import { SyncClient } from './sync.js';
@@ -13,7 +13,7 @@ function client(app: ReturnType<typeof createApp>['app'], K: Buffer) {
 }
 
 /** Random bytes stand in for a sealed box (padded to 16 KB steps like the app's) */
-const box = () => randomBytes(BOX_PAD);
+const box = () => { const b = randomBytes(BOX_PAD); b[0] = 0; return b; };   // no archive signature starts with 0
 
 describe('SyncClient', () => {
   it('push, list since, leave', async () => {
@@ -35,7 +35,7 @@ describe('SyncClient', () => {
     const a = newDeviceId(), b = newDeviceId();
     await sync.push(a, box()); await sync.push(b, box());
     const proof = randomBytes(32);
-    await sync.rekey(new Map([[a, { sealed: randomBytes(140), ackHash: createHash('sha256').update(proof).digest() }]]));
+    await sync.rekey(new Map([[a, { sealed: randomBytes(REKEY_BYTES), ackHash: createHash('sha256').update(proof).digest() }]]));
     expect(await sync.list(0)).toEqual({ moved: true, waiting: 1 });
     expect(await sync.fetchRekey(a)).not.toBeNull();
     expect(await sync.list(0)).toEqual({ moved: true, waiting: 1 });   // fetching isn't picking up
