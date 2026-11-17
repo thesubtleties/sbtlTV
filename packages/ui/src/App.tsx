@@ -40,7 +40,7 @@ import { perfMeasure, perfStart } from './utils/perfMarks';
 import { ErrorCard } from './components/ErrorCard';
 import { sendSnapshot, setSyncActive } from './services/sync/outbox';
 import { applyRecords } from './services/sync/apply';
-import { FirstRun } from './components/FirstRun';
+import { FirstRun, OfferSync } from './components/FirstRun';
 import { firstRunMode, type FirstRunMode } from './utils/firstRun';
 
 // Auto-hide controls after this many milliseconds of inactivity
@@ -1198,6 +1198,7 @@ function App() {
       {firstRun === 'setup' && (
         <FirstRun onFinish={(to) => { setFirstRun('closed'); if (to === 'guide') setActiveView('guide'); }} />
       )}
+      {firstRun === 'offer-sync' && <OfferSync onFinish={() => setFirstRun('closed')} />}
 
       {/* Notification stack: the sticky update chip anchors the bottom; transient toasts stack above it */}
       <ToastContainer />

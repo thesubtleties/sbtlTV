@@ -235,3 +235,59 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
     </FirstRunFrame>
   );
 }
+
+/** After a setup received from the walkthrough (the app restarted): offer, once, to join the sender's sync. */
+export function OfferSyncFrame({ onJoin, onNotNow, children }: { onJoin: () => void; onNotNow: () => void; children?: ReactNode }) {
+  return (
+    <div className="first-run" role="dialog" aria-modal="true" aria-label="Keep your lists in sync">
+      <div className="first-run__dim" />
+      <div className="first-run__panel first-run__panel--short">
+        <header className="first-run__top">
+          <Logo className="first-run__logo" height={26} />
+        </header>
+        <div className="first-run__body">
+          {children ?? (
+            <>
+              <StepHead title="Also keep your lists in sync with the computer that sent this?" lede="Your watchlist and progress stay the same on both. End-to-end encrypted." />
+              <div className="first-run__choices">
+                <Choice main title="Join its sync" text="Shows a code. On the other computer: Settings › Sync & transfer › Add a computer…" onClick={onJoin} />
+              </div>
+            </>
+          )}
+        </div>
+        <footer className="first-run__foot">
+          <span className="first-run__spacer" />
+          <Button onClick={onNotNow}>{children ? 'Cancel' : 'Not now'}</Button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+export function OfferSync({ onFinish }: { onFinish: () => void }) {
+  const [joining, setJoining] = useState(false);
+  const done = () => { void markDone().then(onFinish); };
+  const im = useSetupImport(done);
+  const cancel = () => {
+    if (!joining) { done(); return; }
+    if (im.imp.step === 'join') im.declineJoin();
+    void window.mailbox?.cancel();
+    setJoining(false);
+  };
+  return (
+    <OfferSyncFrame onJoin={() => setJoining(true)} onNotNow={cancel}>
+      {joining
+        ? (
+          <ReceiveSection
+            im={im}
+            receiving
+            onReceiving={(open) => { if (!open && im.imp.step === 'idle') setJoining(false); }}
+            title="Join its sync"
+            description="On the other computer, open Settings › Sync & transfer › Add a computer… and type this code."
+            actions={<></>}
+          />
+        )
+        : undefined}
+    </OfferSyncFrame>
+  );
+}

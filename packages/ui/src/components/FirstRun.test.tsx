@@ -29,3 +29,15 @@ describe('FirstRunFrame', () => {
     expect(html.match(/first-run__dot--done/g)?.length).toBe(2);
   });
 });
+
+describe('OfferSync', () => {
+  it('after a received setup: one screen, join or not now, no Back', async () => {
+    const { OfferSyncFrame } = await import('./FirstRun');
+    const html = renderToStaticMarkup(createElement(OfferSyncFrame, { onJoin: () => {}, onNotNow: () => {} }));
+    expect(html).toContain('Also keep your lists in sync with the computer that sent this?');
+    expect(html).toContain('Join its sync');
+    expect(html).toContain('>Not now<');
+    expect(html).not.toContain('>Back<');
+    expect(html).not.toContain('first-run__dot');
+  });
+});

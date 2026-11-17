@@ -154,6 +154,15 @@
   color: var(--warning);
 }
 
+/* The one-screen sync offer */
+.first-run__panel--short {
+  height: min(420px, calc(100vh - 48px));
+}
+
+.first-run__panel--short .first-run__top {
+  display: flex;
+}
+
 /* Shared sections inside the panel: no Settings section borders at the top */
 .first-run__body .st-section + .st-section { margin-top: 18px; }
 
