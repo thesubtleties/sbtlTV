@@ -30,7 +30,7 @@ export interface JoinPayload { key: string; computers: { id: string; name: strin
  * small setup, so the relay can't tell "Add a computer" from "Send a setup" by size.
  */
 export function packJoin(j: JoinPayload): Buffer {
-  const pad = randomBytes(1100 + randomInt(0, 3400)).toString('base64');
+  const pad = randomBytes(1500 + randomInt(0, 3000)).toString('base64');
   return gzipSync(Buffer.from(JSON.stringify({ sbtlSync: 1, key: j.key, computers: j.computers, pad })));
 }
 
