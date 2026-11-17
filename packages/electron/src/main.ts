@@ -38,7 +38,12 @@ import { registerSync } from './mailbox/sync-ipc.js';
 import { fitAppearance, type AppearanceLike } from './sync-appearance.js';
 import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { makeZip } from './zip-writer.js';
+import { holdSingleInstance } from './single-instance.js';
 const { autoUpdater } = electronUpdater;
+
+// One copy per profile, decided before anything else runs (see single-instance.ts).
+// process.exit, not app.exit: nothing below may run in a copy that isn't going to.
+if (!holdSingleInstance({ argv: process.argv, requestLock: () => app.requestSingleInstanceLock() })) process.exit(0);
 
 // Before the keyring is opened (Chromium picks it when the app is ready): keep
 // using the keyring the passwords were saved with (see password-store.ts).
@@ -125,6 +130,16 @@ const MIN_WIDTH = 640;
 const MIN_HEIGHT = 620;
 
 let mainWindow: BrowserWindow | null = null;
+// Another launch on this profile: bring this window forward (once, while that copy keeps asking)
+let lastSecondInstance = 0;
+app.on('second-instance', () => {
+  if (Date.now() - lastSecondInstance < 15_000) return;
+  lastSecondInstance = Date.now();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
 // Kept for a window that loads after the data process has reported
 let dataStatus: 'fatal' | 'reset' | null = null;
 let dataHost: DataHost | null = null;
