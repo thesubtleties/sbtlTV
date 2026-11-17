@@ -548,7 +548,7 @@ function ChannelPanelImpl({
                     ) : (
                       <>
                         <p>Sync your sources to load channels</p>
-                        <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                        <p className="hint">Add a source in Settings, or receive a setup.</p>
                         {noSources && onReceiveSetup && (
                           <button type="button" className="st-btn st-btn--default" onClick={onReceiveSetup}>Receive a setup</button>
                         )}

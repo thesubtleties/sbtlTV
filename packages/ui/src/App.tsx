@@ -15,7 +15,7 @@ import { useToastStore } from './stores/toastStore';
 import { VideoCanvas } from './components/VideoCanvas';
 import { useChannelCount, useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
-import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode } from './stores/uiStore';
+import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode, useSettingsLoaded, useSourcesLoaded } from './stores/uiStore';
 import { data } from './data/client';
 import { resumePendingPlaylists } from './services/setup/pending';
 import type { StoredChannel, StoredSeries } from './db';
@@ -40,6 +40,8 @@ import { perfMeasure, perfStart } from './utils/perfMarks';
 import { ErrorCard } from './components/ErrorCard';
 import { sendSnapshot, setSyncActive } from './services/sync/outbox';
 import { applyRecords } from './services/sync/apply';
+import { FirstRun } from './components/FirstRun';
+import { firstRunMode, type FirstRunMode } from './utils/firstRun';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -308,6 +310,18 @@ function App() {
   const [rewindBump, setRewindBump] = useState(0);
   // Settings opened on a specific tab (the rewind tip), else its default.
   const [settingsTab, setSettingsTab] = useState<SettingsTabId | undefined>(undefined);
+  // First-run setup: decided once settings and sources are read, then held until it closes
+  // (saving the first source mid-way must not make it vanish)
+  const settingsLoaded = useSettingsLoaded();
+  const sourcesLoaded = useSourcesLoaded();
+  const sourceCount = useUIStore((s) => s.sources.length);
+  const firstRunMarker = useUIStore((s) => s.settings.firstRun);
+  const [firstRun, setFirstRun] = useState<FirstRunMode | 'closed'>(null);
+  const liveFirstRun = firstRunMode({ settingsLoaded, sourcesLoaded, sourceCount, marker: firstRunMarker });
+  useEffect(() => { if (firstRun === null && liveFirstRun) setFirstRun(liveFirstRun); }, [firstRun, liveFirstRun]);
+  const firstRunOpen = firstRun === 'setup' || firstRun === 'offer-sync';
+  const firstRunOpenRef = useRef(false);
+  firstRunOpenRef.current = firstRunOpen;
   const [settingsReceive, setSettingsReceive] = useState(false);
   // Stable, so the memoized guide doesn't re-render with every App render
   const openReceiveSetup = useCallback(() => { setSettingsTab('backup'); setSettingsReceive(true); setActiveView('settings'); }, []);
@@ -885,6 +899,8 @@ function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // The first-run setup owns the keyboard (Esc doesn't close it; nothing reaches the player behind it)
+      if (firstRunOpenRef.current) return;
       // Don't handle shortcuts when typing in inputs
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
         return;
@@ -1177,6 +1193,10 @@ function App() {
           onPlay={handlePlayVod}
           onClose={() => setActiveView('none')}
         />
+      )}
+
+      {firstRun === 'setup' && (
+        <FirstRun onFinish={(to) => { setFirstRun('closed'); if (to === 'guide') setActiveView('guide'); }} />
       )}
 
       {/* Notification stack: the sticky update chip anchors the bottom; transient toasts stack above it */}
