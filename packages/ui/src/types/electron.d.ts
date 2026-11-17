@@ -269,6 +269,8 @@ export interface SyncView {
 export interface SyncApi {
   ready: () => Promise<void>;
   view: () => Promise<SyncView>;
+  /** Sync can work here (a real keyring; not Linux basic_text) */
+  available: () => Promise<boolean>;
   record: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;
   /** These were written into the lists (after applyRecords): don't hand them over again */
   applied: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;

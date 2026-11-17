@@ -44,6 +44,7 @@ import { FirstRun, OfferSync } from './components/FirstRun';
 import { WhatsNew } from './components/WhatsNew';
 import { WHATS_NEW, type WhatsNewItem } from './whatsNewItems';
 import { latestList, whatsNewOnLaunch } from './utils/whatsNew';
+import { rememberSeenVersion, rememberThisVersion } from './utils/seenVersion';
 import { firstRunMode, heldFirstRun, type FirstRunMode } from './utils/firstRun';
 
 // Auto-hide controls after this many milliseconds of inactivity
@@ -327,12 +328,7 @@ function App() {
     setFirstRun(next);
     // A fresh install has nothing new to show: record this version now, so quitting the setup half way
     // (with a source already saved) doesn't look like an update on the next launch
-    if (liveFirstRun === 'setup' && !useUIStore.getState().settings.lastSeenVersion) {
-      void window.platform?.getVersion().then((version) => {
-        useUIStore.getState().updateSettings({ lastSeenVersion: version });
-        void saveSettings({ lastSeenVersion: version });
-      });
-    }
+    if (liveFirstRun === 'setup' && !useUIStore.getState().settings.lastSeenVersion) void rememberThisVersion();
   }, [firstRun, liveFirstRun]);
   const firstRunOpen = firstRun === 'setup' || firstRun === 'offer-sync';
   const firstRunOpenRef = useRef(false);
@@ -348,31 +344,26 @@ function App() {
       const r = whatsNewOnLaunch({ current: version, lastSeen, buildKind: kind, hasSources: sourceCount > 0, firstRun: liveFirstRun, items: WHATS_NEW });
       if (r && r !== 'record') setWhatsNew({ version, items: r.show });
       // Nothing to show for this release: remember it anyway, so a later update compares from here
-      else if (r === 'record') {
-        useUIStore.getState().updateSettings({ lastSeenVersion: version });
-        void saveSettings({ lastSeenVersion: version });
-      }
+      else if (r === 'record') rememberSeenVersion(version);
     }).catch(() => {});
   }, [settingsLoaded, sourcesLoaded, sourceCount, liveFirstRun]);
+  const whatsNewRef = useRef(whatsNew);
+  whatsNewRef.current = whatsNew;
   const closeWhatsNew = useCallback(() => {
-    setWhatsNew((open) => {
-      if (open && useUIStore.getState().settings.lastSeenVersion !== open.version) {
-        useUIStore.getState().updateSettings({ lastSeenVersion: open.version });
-        void saveSettings({ lastSeenVersion: open.version });
-      }
-      return null;
-    });
+    const open = whatsNewRef.current;
+    if (open) rememberSeenVersion(open.version);
+    setWhatsNew(null);
   }, []);
   const showWhatsNew = useCallback(() => {
     void window.platform?.getVersion().then((version) => {
       const items = latestList(WHATS_NEW, version);
       if (items) setWhatsNew({ version, items });
-    });
+    }, () => {});
   }, []);
   const [settingsReceive, setSettingsReceive] = useState(false);
   const [settingsAdd, setSettingsAdd] = useState(false);
-  // Bumped to open Settings afresh on a tab (What's new may be shown over an open Settings)
-  const [settingsKey, setSettingsKey] = useState(0);
+  // Bumped to send an already open Settings to a tab (What's new over Settings), keeping what it holds
+  const [settingsRequest, setSettingsRequest] = useState(0);
   // Stable, so the memoized guide doesn't re-render with every App render
   const openReceiveSetup = useCallback(() => { setSettingsTab('backup'); setSettingsReceive(true); setActiveView('settings'); }, []);
   // Leaving Settings by any route (Escape, another view) forgets the tab the tip opened it on.
@@ -1227,7 +1218,7 @@ function App() {
       />
 
       {/* Settings Panel */}
-      {activeView === 'settings' && <Settings key={settingsKey} initialTab={settingsTab} initialReceive={settingsReceive} initialAdd={settingsAdd} onShowWhatsNew={showWhatsNew} onClose={() => { setActiveView('none'); setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); }} />}
+      {activeView === 'settings' && <Settings openRequest={settingsRequest} initialTab={settingsTab} initialReceive={settingsReceive} initialAdd={settingsAdd} onShowWhatsNew={showWhatsNew} onClose={() => { setActiveView('none'); setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); }} />}
 
       {/* Movies Page */}
       {activeView === 'movies' && (
@@ -1252,13 +1243,15 @@ function App() {
       {whatsNew && !firstRunOpen && (
         <WhatsNew
           version={whatsNew.version}
-          items={whatsNew.items}
+          // The portable build has no Sync & transfer: no buttons that lead there
+          items={window.platform?.isPortable ? whatsNew.items.map(({ action: _, ...it }) => it) : whatsNew.items}
           onClose={closeWhatsNew}
           onAction={(to) => {
             closeWhatsNew();
             setSettingsTab('backup');
+            setSettingsReceive(false);
             setSettingsAdd(to === 'add-computer');
-            setSettingsKey((k) => k + 1);
+            setSettingsRequest((n) => n + 1);
             setActiveView('settings');
           }}
         />

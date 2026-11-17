@@ -329,6 +329,7 @@ const listen = (channel: string, cb: (data: unknown) => void) => {
 contextBridge.exposeInMainWorld('sync', {
   ready: () => ipcRenderer.invoke('sync:ready'),
   view: () => ipcRenderer.invoke('sync:view'),
+  available: () => ipcRenderer.invoke('sync:available'),
   record: (records: unknown[]) => ipcRenderer.invoke('sync:record', records),
   applied: (records: unknown[]) => ipcRenderer.invoke('sync:applied', records),
   pull: () => ipcRenderer.invoke('sync:pull'),

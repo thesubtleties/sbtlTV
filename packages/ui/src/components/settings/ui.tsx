@@ -44,16 +44,18 @@ export function OptionRow({ title, help, children }: { title: string; help?: Rea
   );
 }
 
-export function Segmented<T extends string>({ value, options, onChange, disabled, compact }: {
+export function Segmented<T extends string>({ value, options, onChange, disabled, compact, label }: {
   value: T;
   options: { id: T; label: string }[];
   onChange: (id: T) => void;
   disabled?: boolean;
   /** Narrow segments sized to their labels, for longer option lists */
   compact?: boolean;
+  /** Spoken name of the choice (screen readers) */
+  label?: string;
 }) {
   return (
-    <div className={`st-seg${compact ? ' st-seg--compact' : ''}${disabled ? ' st-seg--disabled' : ''}`} role="radiogroup">
+    <div className={`st-seg${compact ? ' st-seg--compact' : ''}${disabled ? ' st-seg--disabled' : ''}`} role="radiogroup" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.id}

@@ -37,6 +37,15 @@ export function useSetupImport(onJoined?: () => void) {
     if (r?.error) setJoinError(r.error); else { setImp({ step: 'idle' }); setJoinName(''); onJoined?.(); }
   };
   const declineJoin = () => { void window.mailbox?.cancel(); setImp({ step: 'idle' }); setJoinName(''); setJoinError(null); };
+  /** Leave whatever is under way (a code, a preview, a join offer); not while a join or an apply is running. */
+  const cancel = () => {
+    if (joining || imp.step === 'applying') return;
+    if (imp.step === 'join') { declineJoin(); return; }
+    if (imp.step !== 'idle') setImp({ step: 'idle' });
+    void window.mailbox?.cancel();
+  };
+  /** A join or an apply is running: leaving now would not stop it */
+  const busy = joining || imp.step === 'applying';
 
   async function pick() {
     if (!window.setup) return;
@@ -89,7 +98,7 @@ export function useSetupImport(onJoined?: () => void) {
 
   return {
     imp, setImp, passphrase, setPassphrase, unlocking, backupFirst, setBackupFirst,
-    pick, unlock, apply, restoreNow, openBackup,
+    pick, unlock, apply, restoreNow, openBackup, cancel, busy,
     joinName, setJoinName, joining, joinError, join, declineJoin, defaultName, syncing,
   };
 }

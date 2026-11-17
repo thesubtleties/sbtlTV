@@ -1,3 +1,5 @@
+import type { ImportState } from '../components/settings/useSetupImport';
+
 export type FirstRunMode = 'setup' | 'offer-sync' | null;
 export const STEPS = ['welcome', 'source', 'look', 'tmdb', 'subtitles', 'sync', 'done'] as const;
 export type StepId = (typeof STEPS)[number];
@@ -24,7 +26,7 @@ export const prevStep = (step: StepId): StepId => STEPS[Math.max(0, STEPS.indexO
 /** A received setup restarts the app; a received join (Sync carries no sources) still needs a TV source. */
 export const afterReceive = (kind: 'setup' | 'join'): 'restart' | StepId => (kind === 'setup' ? 'restart' : 'source');
 
-type ImportStep = 'idle' | 'passphrase' | 'preview' | 'join' | 'applying' | 'failed';
+type ImportStep = ImportState['step'];
 
 /** The receive view goes back once something received was declined or dismissed (back to idle from a preview, a join or a failure). */
 export const receiveViewCloses = (prev: ImportStep, next: ImportStep): boolean =>

@@ -5,7 +5,7 @@ import { useFavoriteChannels } from '../hooks/useFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
-import { useChannelSortOrder, useChannelColumnWidth, useSourceNeedsLogin, useUIStore } from '../stores/uiStore';
+import { useChannelSortOrder, useChannelColumnWidth, useChannelSyncing, useSourceNeedsLogin, useUIStore } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import { loadGuideSearchMode, saveGuideSearchMode, type GuideSearchMode } from '../utils/guideSearchMode';
@@ -45,6 +45,7 @@ function ChannelPanelImpl({
   onReceiveSetup,
 }: ChannelPanelProps) {
   const noSources = useUIStore((s) => s.sources.length === 0);
+  const channelsSyncing = useChannelSyncing();
   const channelSortOrder = useChannelSortOrder();
   const isFavoritesView = categoryId === '__favorites__';
   const regularChannels = useChannels(isFavoritesView ? null : categoryId, channelSortOrder);
@@ -542,17 +543,20 @@ function ChannelPanelImpl({
                   </>
                 ) : (
                   <>
-                    <h3>No Channels</h3>
+                    <h3>{channelsSyncing && !noSources ? 'Loading channels…' : 'No Channels'}</h3>
                     {waitingForLogin ? (
                       <p className="hint">A source needs its password before its channels can load: Settings → Sources</p>
-                    ) : (
+                    ) : channelsSyncing && !noSources ? (
+                      <p>Your source's channels are on their way.</p>
+                    ) : noSources ? (
                       <>
-                        <p>Sync your sources to load channels</p>
                         <p className="hint">Add a source in Settings, or receive a setup.</p>
-                        {noSources && onReceiveSetup && (
+                        {onReceiveSetup && (
                           <button type="button" className="st-btn st-btn--default" onClick={onReceiveSetup}>Receive a setup</button>
                         )}
                       </>
+                    ) : (
+                      <p className="hint">Nothing came from your sources. Check them in Settings › Sources.</p>
                     )}
                   </>
                 )}

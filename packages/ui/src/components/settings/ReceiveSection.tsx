@@ -21,13 +21,14 @@ const names = (list: string[]) => (list.length > 1 ? `${list.slice(0, -1).join('
  * Receive a setup or a sync join: Show my code, Import file…, then the passphrase, preview, join and
  * apply steps. onApplying runs before a setup is applied (and the app restarts).
  */
-export function ReceiveSection({ im, receiving, onReceiving, title = 'Receive', description = 'A setup, or to join your sync.', onApplying, actions, onPanelClose }: {
+export function ReceiveSection({ im, receiving, onReceiving, title = 'Receive', description = 'A setup, or to join your sync. Give the code to whoever is sending.', onApplying, actions, onPanelClose }: {
   im: SetupImport;
   receiving: boolean;
   onReceiving: (open: boolean) => void;
   title?: string;
   description?: ReactNode;
-  onApplying?: () => Promise<void>;
+  /** Runs before a setup is applied; `received` = it came by code (not a file or a backup) */
+  onApplying?: (received: boolean) => Promise<void>;
   /** Replaces the Show my code / Import file… buttons */
   actions?: ReactNode;
   /** The person closed the code panel (not: a setup or join arrived) */
@@ -35,7 +36,8 @@ export function ReceiveSection({ im, receiving, onReceiving, title = 'Receive', 
 }) {
   const sources = useUIStore((s) => s.sources);
   const { imp, setImp, passphrase, setPassphrase, unlocking, backupFirst, setBackupFirst, pick, unlock, restoreNow, joinName, setJoinName, joining, joinError, join, declineJoin, defaultName, syncing } = im;
-  const apply = (token: string, withBackup?: boolean) => im.apply(token, withBackup ?? backupFirst, onApplying);
+  const received = imp.step === 'preview' && !!imp.received;
+  const apply = (token: string, withBackup?: boolean) => im.apply(token, withBackup ?? backupFirst, onApplying ? () => onApplying(received) : undefined);
   return (
       <Section title={title} description={description}
         actions={actions ?? <>
@@ -58,17 +60,17 @@ export function ReceiveSection({ im, receiving, onReceiving, title = 'Receive', 
             <Button type="submit" variant="primary" disabled={unlocking}>{unlocking ? 'Opening…' : 'Open'}</Button>
           </form>
         )}
-        {imp.step === 'preview' && imp.received && sources.length === 0 && (
+        {imp.step === 'preview' && !imp.restoring && sources.length === 0 && (
           // A fresh install: nothing to replace, so no warning and no backup, just yes or no
           <div className="setup-preview">
-            <div className="setup-preview__summary"><Hint>Ready to set up: {setupSummary(imp.preview)}.</Hint></div>
+            <div className="setup-preview__summary" role="status"><Hint>Ready to set up: {setupSummary(imp.preview)}.</Hint></div>
             <div className="setup-preview__actions">
-              <Button variant="primary" onClick={() => void apply(imp.token, false)}>Set up sbtlTV</Button>
+              <Button variant="primary" data-autofocus onClick={() => void apply(imp.token, false)}>Set up sbtlTV</Button>
               <Button onClick={() => setImp({ step: 'idle' })}>Decline</Button>
             </div>
           </div>
         )}
-        {imp.step === 'preview' && !(imp.received && sources.length === 0) && (
+        {imp.step === 'preview' && !(!imp.restoring && sources.length === 0) && (
           <div className="setup-preview">
             <div className="setup-preview__summary">
               <Hint>
@@ -101,7 +103,7 @@ export function ReceiveSection({ im, receiving, onReceiving, title = 'Receive', 
             </div>
           </div>
         )}
-        {imp.step === 'applying' && <Hint>Working… sbtlTV restarts when done.</Hint>}
+        {imp.step === 'applying' && <div role="status"><Hint>Working… sbtlTV restarts when done.</Hint></div>}
         {imp.step === 'failed' && (
           <>
             <Hint tone="danger">{imp.error}</Hint>

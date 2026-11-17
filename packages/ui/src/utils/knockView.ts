@@ -33,7 +33,7 @@ export function knockLine(role: 'send' | 'receive' | 'join', s: KnockState): Kno
   switch (s.step) {
     case 'starting': return info(`Getting a code…${upTo(s.workUpTo)}`);
     case 'ringing': return info(`Connecting…${upTo(s.workUpTo)}`);
-    case 'code': return info('Tell this to the person setting you up. Works for 10 minutes.');
+    case 'code': return info('Works for 10 minutes.');
     case 'words': return info(giving ? "Same words on their screen? Then it's really them." : 'Same words on their screen? Only then tap Same words.');
     case 'sending': return info(`Sending…${upTo(s.workUpTo)}`);
     case 'sent': return info('Sent. Waiting for it to arrive.');

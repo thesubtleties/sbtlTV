@@ -1,13 +1,15 @@
 interface LogoProps {
+  'aria-hidden'?: boolean | 'true' | 'false';
   className?: string;
   width?: number | string;
   height?: number | string;
 }
 
-export function Logo({ className, width, height }: LogoProps) {
+export function Logo({ className, width, height, 'aria-hidden': ariaHidden }: LogoProps) {
   return (
     <svg
       className={className}
+      aria-hidden={ariaHidden}
       width={width}
       height={height}
       viewBox="231 0 563 544"

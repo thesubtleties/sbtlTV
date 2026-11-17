@@ -41,3 +41,17 @@ describe('ReceiveSection', () => {
     expect(render({ step: 'applying' })).toContain('sbtlTV restarts when done');
   });
 });
+
+describe('ReceiveSection: a file on a computer with no sources', () => {
+  it('gets the simple Set up / Decline too, not the red replace warning', () => {
+    const html = render({ step: 'preview', token: 't', preview: preview as never });
+    expect(html).toContain('>Set up sbtlTV<');
+    expect(html).not.toContain('Anything not in the file is cleared');
+  });
+  it('a restore keeps its own wording', () => {
+    sources = [];
+    const html = render({ step: 'preview', token: 't', preview: preview as never, restoring: true });
+    expect(html).toContain('Replace and restore');
+  });
+});
+

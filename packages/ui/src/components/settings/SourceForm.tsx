@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Source } from '../../types/electron';
 import { data } from '../../data/client';
@@ -57,6 +57,7 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
   const [error, setError] = useState<string | null>(null);
   // A save in progress (a big playlist import takes seconds): a second Continue/Enter must not add it twice
   const savingRef = useRef(false);
+  const fid = useId();
   // An error at the top of a form scrolled down (a short window) would go unseen
   const errorRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (error) errorRef.current?.scrollIntoView({ block: 'nearest' }); }, [error]);
@@ -182,8 +183,9 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
         {error && <div className="form-error" ref={errorRef} role="alert">{error}</div>}
 
         <div className="form-group">
-          <label>Name</label>
+          <label htmlFor={`${fid}-name`}>Name</label>
           <input
+                id={`${fid}-name`}
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -195,7 +197,7 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
         {!importedM3U && (
           <div className="form-group">
             <label>Type</label>
-            <Segmented
+            <Segmented label="Type"
               value={formData.type}
               options={[{ id: 'm3u', label: 'M3U playlist' }, { id: 'xtream', label: 'Xtream Codes' }]}
               onChange={(type) => setFormData({ ...formData, type })}
@@ -206,8 +208,9 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
         {/* URL field for Xtream sources */}
         {formData.type === 'xtream' && (
           <div className="form-group">
-            <label>Server address</label>
+            <label htmlFor={`${fid}-server`}>Server address</label>
             <input
+                id={`${fid}-server`}
               type="text"
               value={formData.url}
               onChange={(e) => setFormData({ ...formData, url: e.target.value })}
@@ -219,8 +222,9 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
         {/* M3U: URL or File import */}
         {formData.type === 'm3u' && !importedM3U && (
           <div className="form-group">
-            <label>Playlist address</label>
+            <label htmlFor={`${fid}-playlist`}>Playlist address</label>
             <input
+                id={`${fid}-playlist`}
               type="text"
               value={formData.url}
               onChange={(e) => setFormData({ ...formData, url: e.target.value })}
@@ -261,8 +265,9 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
         {formData.type === 'xtream' && (
           <>
             <div className="form-group">
-              <label>Username</label>
+              <label htmlFor={`${fid}-user`}>Username</label>
               <input
+                id={`${fid}-user`}
                 type="text"
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
@@ -270,8 +275,9 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
               />
             </div>
             <div className="form-group">
-              <label>Password</label>
+              <label htmlFor={`${fid}-pass`}>Password</label>
               <input
+                id={`${fid}-pass`}
                 type="password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -289,7 +295,7 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
         {/* EPG Settings */}
         <div className="form-group epg-settings">
           <label>Program guide</label>
-          <Segmented
+          <Segmented label="Program guide"
             value={formData.autoLoadEpg ? 'auto' : 'url'}
             options={[{ id: 'auto', label: 'From the source' }, { id: 'url', label: 'Own address' }]}
             onChange={(mode) => setFormData({ ...formData, autoLoadEpg: mode === 'auto' })}
@@ -305,8 +311,9 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
 
         {!formData.autoLoadEpg && (
           <div className="form-group">
-            <label>Guide address (XMLTV)</label>
+            <label htmlFor={`${fid}-epg`}>Guide address (XMLTV)</label>
             <input
+                id={`${fid}-epg`}
               type="text"
               value={formData.epgUrl}
               onChange={(e) => setFormData({ ...formData, epgUrl: e.target.value })}

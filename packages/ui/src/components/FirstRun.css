@@ -170,3 +170,15 @@
   .first-run__note { display: none; }
   .first-run__body { padding: 22px 20px 32px; }
 }
+
+/* Read by screen readers only ("Step 3 of 7") */
+.first-run__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.first-run__title:focus { outline: none; }

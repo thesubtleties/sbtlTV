@@ -23,7 +23,7 @@ function stubWindow(mailboxState: () => unknown = () => ({ data: { role: 'receiv
     },
     platform: { getVersion: async () => '0.17.0', isLinux: true },
     mailbox: { receive: async () => {}, state: async () => mailboxState(), cancel: async () => { calls.push('cancel'); } },
-    sync: { view: async () => ({ defaultName: 'Linux PC', status: 'off' }) },
+    sync: { view: async () => ({ defaultName: 'Linux PC', status: 'off' }), available: async () => true },
     setup: {
       apply: async () => { calls.push('apply'); return { success: true, data: { lists: null, backupName: null } }; },
       relaunch: async () => { calls.push('relaunch'); },
@@ -107,8 +107,33 @@ describe('OfferSync (DOM)', () => {
     await act(async () => { root.render(createElement(OfferSync, { onFinish })); });
     await click('Join its sync');
     await click('Cancel');
-    expect(host.textContent).toContain('Also keep your lists in sync');
+    expect(host.textContent).toContain('Keep this computer in sync');
     expect(onFinish).not.toHaveBeenCalled();
     expect(saved).toEqual([]);
+  });
+});
+
+describe('where Sync or receiving cannot work', () => {
+  const walkToSync = async () => {
+    await act(async () => { root.render(createElement(FirstRun, { onFinish: () => {} })); });
+    await settle();
+  };
+  it('the portable build offers no Receive a setup on Welcome', async () => {
+    stubWindow();
+    Object.assign(window, { platform: { getVersion: async () => '0.17.0', isPortable: true } });
+    await walkToSync();
+    expect(host.textContent).toContain('Set up sbtlTV');
+    expect(button('Receive a setup')).toBeUndefined();
+  });
+  it('without a keyring the sync offer finishes quietly instead of a Join that would fail', async () => {
+    stubWindow();
+    Object.assign(window, { sync: { view: async () => ({ defaultName: 'Linux PC', status: 'off' }), available: async () => false } });
+    const onFinish = vi.fn();
+    await act(async () => { root.render(createElement(OfferSync, { onFinish })); });
+    await settle();
+    await settle();
+    expect(button('Join its sync')).toBeUndefined();
+    expect(onFinish).toHaveBeenCalled();
+    expect(saved).toContainEqual({ firstRun: 'done', lastSeenVersion: '0.17.0' });
   });
 });
