@@ -17,14 +17,28 @@
   left: 0;
   right: 0;
   z-index: 50;
-  background: color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 0) * 100%), transparent);
-  backdrop-filter: blur(calc(var(--chrome-fade, 0) * 16px));
+  background: transparent;
 }
 
-/* The title bar: see-through over the art, the page colour once scrolled */
+/* The title bar is see-through too: what fills in behind both is one layer (below) */
 :root.hero-bleed .title-bar {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+/* One fill and one blur behind the title bar and the header together: two blurred layers meeting
+   show a line at the join. It fills in to the page colour as the hero scrolls away */
+.vod-page--bleed::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--bleed-chrome, 108px);
   background: color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 0) * 100%), transparent);
   backdrop-filter: blur(calc(var(--chrome-fade, 0) * 20px));
+  pointer-events: none;
+  z-index: 45;
 }
 
 /* A soft shade along the top keeps the window buttons, the logo and the pills readable on bright art;

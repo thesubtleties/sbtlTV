@@ -160,3 +160,7 @@
 :root[data-hstyle='capsule'] .h-category-strip--unified .h-category-strip__search:has(input:not(:placeholder-shown)) {
   width: 280px;
 }
+
+/* B floats for good: only the window-button bar fills in behind it; the capsule, back and search stay
+   glass over the art and over the rows as they scroll under */
+:root[data-hstyle='capsule'] .vod-page--bleed::after { height: 32px; }
