@@ -347,8 +347,8 @@ function App() {
       else if (r === 'record') rememberSeenVersion(version);
     }).catch(() => {});
   }, [settingsLoaded, sourcesLoaded, sourceCount, liveFirstRun]);
-  // A What's new button opened Settings: the drawer steps aside there and comes back after, still unseen
-  const [whatsNewParked, setWhatsNewParked] = useState(false);
+  // Opened from Settings › About: shown over Settings. Otherwise Settings covers it, and it comes back after, still unseen
+  const [whatsNewOverSettings, setWhatsNewOverSettings] = useState(false);
   const whatsNewRef = useRef(whatsNew);
   whatsNewRef.current = whatsNew;
   const closeWhatsNew = useCallback(() => {
@@ -359,7 +359,7 @@ function App() {
   const showWhatsNew = useCallback(() => {
     void window.platform?.getVersion().then((version) => {
       const items = latestList(WHATS_NEW, version);
-      if (items) setWhatsNew({ version, items });
+      if (items) { setWhatsNewOverSettings(true); setWhatsNew({ version, items }); }
     }, () => {});
   }, []);
   const [settingsReceive, setSettingsReceive] = useState(false);
@@ -369,7 +369,7 @@ function App() {
   // Stable, so the memoized guide doesn't re-render with every App render
   const openReceiveSetup = useCallback(() => { setSettingsTab('backup'); setSettingsReceive(true); setActiveView('settings'); }, []);
   // Leaving Settings by any route (Escape, another view) forgets the tab the tip opened it on.
-  useEffect(() => { if (activeView !== 'settings') { setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); setWhatsNewParked(false); } }, [activeView]);
+  useEffect(() => { if (activeView !== 'settings') { setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); setWhatsNewOverSettings(false); } }, [activeView]);
   useEffect(() => {
     playbackRef.current = { duration, volume, activeView, categoriesOpen };
   }, [duration, volume, activeView, categoriesOpen]);
@@ -1242,15 +1242,15 @@ function App() {
         <FirstRun onFinish={(to) => { setFirstRun('closed'); if (to === 'guide') setActiveView('guide'); }} />
       )}
       {firstRun === 'offer-sync' && <OfferSync onFinish={() => setFirstRun('closed')} />}
-      {whatsNew && !firstRunOpen && !(whatsNewParked && activeView === 'settings') && (
+      {whatsNew && !firstRunOpen && (activeView !== 'settings' || whatsNewOverSettings) && (
         <WhatsNew
           version={whatsNew.version}
           // The portable build has no Sync & transfer: no buttons that lead there
           items={window.platform?.isPortable ? whatsNew.items.map(({ action: _, ...it }) => it) : whatsNew.items}
           onClose={closeWhatsNew}
           onAction={(to) => {
-            // Not seen yet: it comes back when Settings closes, and only Done or Esc marks it seen
-            setWhatsNewParked(true);
+            // Not seen yet: Settings covers it, it comes back when Settings closes, and only Done or Esc marks it seen
+            setWhatsNewOverSettings(false);
             setSettingsTab('backup');
             setSettingsReceive(false);
             setSettingsAdd(to === 'add-computer');
