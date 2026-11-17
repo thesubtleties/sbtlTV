@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SyncRecord } from '@sbtltv/core';
 import { db } from '../../db';
 import { useUIStore } from '../../stores/uiStore';
-import { toggleFavoriteChannel } from '../../hooks/useFavorites';
+import { removeFavoriteRow, toggleFavoriteChannel } from '../../hooks/useFavorites';
+import { data } from '../../data/client';
 import { sendSnapshot, setSyncActive } from './outbox';
 
 vi.mock('../../data/client', () => ({
@@ -45,5 +46,35 @@ describe('favorites go out to the other computers', () => {
     ]);
     await sendSnapshot();
     expect(sent.filter((r) => r.k === 'fav').map((r) => (r as { host: string; ch: string }).host + ':' + (r as { ch: string }).ch).sort()).toEqual(['provider.example:77', 'x.example:9']);
+  });
+  it('the snapshot dates each favorite when it was made, so a later removal from another computer still wins', async () => {
+    await db.favorites.put({ id: 'channel_m1_77', type: 'channel', stream_id: 'm1_77', name: 'ESPN', added: new Date(1_234) });
+    await sendSnapshot();
+    expect(sent.filter((r) => r.k === 'fav').map((r) => r.at)).toEqual([1_234]);
+  });
+  it('Remove on a grayed favorite (not on this computer) sends the removal under its key', async () => {
+    const row = { id: 'channel_sync_x.example_9', type: 'channel' as const, name: 'Waiting', added: new Date(1), sync: { host: 'x.example', ch: '9' } };
+    await db.favorites.put(row);
+    await removeFavoriteRow(row);
+    expect(await db.favorites.get(row.id)).toBeUndefined();
+    expect(sent).toEqual([expect.objectContaining({ k: 'fav', host: 'x.example', ch: '9', removed: true })]);
+  });
+  it('the channel lookup failing: the favorite is still saved here, nothing is sent, nothing throws', async () => {
+    vi.mocked(data.query).mockRejectedValueOnce(new Error('data process gone'));
+    await expect(toggleFavoriteChannel('m1_77', 'ESPN')).resolves.toBeUndefined();
+    expect(await db.favorites.get('channel_m1_77')).toBeDefined();
+    expect(sent).toEqual([]);
+  });
+  it('a channel this computer no longer knows: saved here, nothing sent', async () => {
+    await toggleFavoriteChannel('m1_404', 'Gone');
+    expect(await db.favorites.get('channel_m1_404')).toBeDefined();
+    expect(sent).toEqual([]);
+  });
+  it('with Sync off nothing is sent and nothing is looked up', async () => {
+    setSyncActive(false);
+    vi.mocked(data.query).mockClear();
+    await toggleFavoriteChannel('m1_77', 'ESPN');
+    expect(sent).toEqual([]);
+    expect(data.query).not.toHaveBeenCalled();
   });
 });

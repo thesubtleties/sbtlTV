@@ -29,6 +29,7 @@ describe('applyFavoriteRecords', () => {
     const rows = await db.favorites.toArray();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ id: 'channel_m1_1234', name: 'US: CNN' });
+    expect(rows[0].sync).toEqual({ host: 'provider.example', ch: '1234', guide: 'CNN.us' });
   });
   it("a removal drops the favorite it names, matched or not, local or synced, if it was added before", async () => {
     await db.favorites.bulkPut([
@@ -43,6 +44,26 @@ describe('applyFavoriteRecords', () => {
     await applyFavoriteRecords([fav({ host: 'elsewhere.example' })], load(ctx({ byGuide: [ch('m1_8', 'm1', 'CNN SD', 'CNN.us', 3), ch('m1_9', 'm1', 'CNN HD', 'CNN.us', 7)] })));
     expect((await db.favorites.toArray()).map((f) => f.stream_id)).toEqual(['m1_9']);
   });
+  it('a removal reaches a favorite that landed on a different channel here: it answers to the key it came with (Review Focus 4)', async () => {
+    await db.favorites.put({ id: 'channel_m1_9', type: 'channel', stream_id: 'm1_9', name: 'CNN HD', added: new Date(1_000), sync: { host: 'elsewhere.example', ch: '1234', guide: 'CNN.us' } });
+    await applyFavoriteRecords([fav({ host: 'elsewhere.example', removed: true })], load(ctx()));
+    expect(await db.favorites.toArray()).toEqual([]);
+  });
+  it("a local favorite on a source that's turned off still answers to its removal", async () => {
+    await db.favorites.put({ id: 'channel_m1_1234', type: 'channel', stream_id: 'm1_1234', name: 'CNN', added: new Date(1_000) });
+    await applyFavoriteRecords([fav({ removed: true })], load(ctx({ sources: [] })));
+    expect(await db.favorites.toArray()).toEqual([]);
+  });
+  it("already a favorite here on a source that's turned off: no second, grayed row for it", async () => {
+    await db.favorites.put({ id: 'channel_m1_1234', type: 'channel', stream_id: 'm1_1234', name: 'CNN', added: new Date(1_000) });
+    await applyFavoriteRecords([fav()], load(ctx({ sources: [] })));
+    expect((await db.favorites.toArray()).map((f) => f.id)).toEqual(['channel_m1_1234']);
+  });
+  it('a favorite that already came with one key keeps it when another computer names the same channel differently', async () => {
+    await db.favorites.put({ id: 'channel_m1_1234', type: 'channel', stream_id: 'm1_1234', name: 'CNN', added: new Date(1_000), sync: { host: 'x.example', ch: '5' } });
+    await applyFavoriteRecords([fav()], load(ctx({ byId: new Map([['m1_1234', ch('m1_1234', 'm1', 'CNN')]]) })));
+    expect((await db.favorites.get('channel_m1_1234'))?.sync).toEqual({ host: 'x.example', ch: '5' });
+  });
 });
 
 describe('rematchFavorites', () => {
@@ -50,5 +71,12 @@ describe('rematchFavorites', () => {
     await applyFavoriteRecords([fav()], load(ctx()));
     await rematchFavorites(load(ctx({ byId: new Map([['m1_1234', ch('m1_1234', 'm1', 'CNN')]]) })));
     expect(await db.favorites.toArray()).toEqual([expect.objectContaining({ id: 'channel_m1_1234', stream_id: 'm1_1234', sync: { host: 'provider.example', ch: '1234', guide: 'CNN.us' } })]);
+  });
+  it('a favorite that found its channel keeps the time it was made: a removal made after that still drops it', async () => {
+    await applyFavoriteRecords([fav({ at: 5_000 })], load(ctx()));
+    await rematchFavorites(load(ctx({ byId: new Map([['m1_1234', ch('m1_1234', 'm1', 'CNN')]]) })));
+    expect(+(await db.favorites.get('channel_m1_1234'))!.added).toBe(5_000);
+    await applyFavoriteRecords([fav({ at: 6_000, removed: true })], load(ctx()));
+    expect(await db.favorites.toArray()).toEqual([]);
   });
 });

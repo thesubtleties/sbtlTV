@@ -457,6 +457,16 @@ describe('SyncEngine', () => {
     expect(b.got.applied.find((r) => r.k === 'fav' && r.ch === '5678')).toBeUndefined();
   });
 
+  it('turning Favorites back on hands over the favorites the others have again', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const fav = { k: 'fav' as const, host: 'provider.example', ch: '1234', name: 'CNN', at: w.now() };
+    a.e.record([fav]); await a.e.flush();
+    await b.e.pull(); await Promise.resolve();
+    b.e.setParts({ watchlist: true, progress: true, settings: false, favorites: false });
+    b.e.setParts({ watchlist: true, progress: true, settings: false, favorites: true });
+    expect(b.got.applied.filter((r) => r.k === 'fav')).toEqual([fav, fav]);
+  });
+
   it('a sync file saved before Favorites existed has it on', async () => {
     const w = world(); const { a } = await pair(w);
     const file = join(a.dirPath, 'sync-state.json');

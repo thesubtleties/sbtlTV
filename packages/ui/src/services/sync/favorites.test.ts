@@ -32,6 +32,12 @@ describe('matchFavorite', () => {
     expect(matchFavorite({ ...rec, name: 'cnn-hd' }, { sources, byId: new Map(), byGuide })).toBe('m2_9');
     expect(matchFavorite({ ...rec, name: 'Something else' }, { sources, byId: new Map(), byGuide })).toBe('m2_7');
   });
+  it('name ranking: exact, then same letters, then containing the name; a channel without a number comes after numbered ones', () => {
+    const m = (name: string, byGuide: ReturnType<typeof ch>[]) => matchFavorite({ ...rec, host: 'x.example', name }, { sources, byId: new Map(), byGuide });
+    expect(m('CNN HD', [ch('m2_1', 'm2', 'cnn hd', 'CNN.us', 1), ch('m2_2', 'm2', 'CNN HD', 'CNN.us', 9)])).toBe('m2_2');
+    expect(m('CNN', [ch('m2_1', 'm2', 'Other', 'CNN.us', 1), ch('m2_2', 'm2', 'US: CNN HD', 'CNN.us', 9)])).toBe('m2_2');
+    expect(m('Zzz', [ch('m2_1', 'm2', 'A', 'CNN.us', null), ch('m2_2', 'm2', 'B', 'CNN.us', 40)])).toBe('m2_2');
+  });
   it('a source not passed in (disabled) is never a match', () => {
     const byId = new Map([['m3_1234', ch('m3_1234', 'm3', 'CNN')]]);
     expect(matchFavorite(rec, { sources: [{ id: 'm3', url: 'http://elsewhere.example' }], byId, byGuide: [] })).toBe(null);

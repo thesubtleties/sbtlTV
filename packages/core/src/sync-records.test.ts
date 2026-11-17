@@ -131,6 +131,8 @@ describe('fav records', () => {
     for (const host of ['', 'http://a.b', 'user:pw@a.b', 'a.b/path', 'A'.repeat(300)]) expect(validateRecord({ ...fav, host })).toBeNull();
     for (const ch of ['', 'x'.repeat(200)]) expect(validateRecord({ ...fav, ch })).toBeNull();
     expect(validateRecord({ ...fav, guide: 'g'.repeat(300) })).toBeNull();
+    expect(validateRecord({ ...fav, guide: '' })).toBeNull();
+    expect(validateRecord({ ...fav, name: 'n'.repeat(501) })).toBeNull();
   });
   it('an unknown kind is ignored, not an error (older builds meeting newer records)', () => {
     expect(validateRecord({ k: 'zz', at: 5 })).toBeNull();
