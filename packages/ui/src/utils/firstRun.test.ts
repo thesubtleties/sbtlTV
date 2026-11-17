@@ -41,3 +41,32 @@ describe('steps', () => {
     expect(afterReceive('join')).toBe('source');
   });
 });
+
+import { receiveViewCloses, stepAfterJoin, wrapFocus } from './firstRun';
+
+describe('receive view', () => {
+  it('closes when a received setup or join is declined, not while one is arriving or applying', () => {
+    expect(receiveViewCloses('preview', 'idle')).toBe(true);
+    expect(receiveViewCloses('join', 'idle')).toBe(true);
+    expect(receiveViewCloses('failed', 'idle')).toBe(true);
+    expect(receiveViewCloses('idle', 'preview')).toBe(false);
+    expect(receiveViewCloses('preview', 'applying')).toBe(false);
+    expect(receiveViewCloses('idle', 'idle')).toBe(false);
+  });
+  it('a join from Welcome goes to the source, or on to the look when a source is saved; from the sync step to the end', () => {
+    expect(stepAfterJoin('welcome', false)).toBe('source');
+    expect(stepAfterJoin('welcome', true)).toBe('look');
+    expect(stepAfterJoin('sync', true)).toBe('done');
+    expect(stepAfterJoin('sync', false)).toBe('done');
+  });
+});
+
+describe('wrapFocus', () => {
+  it('Tab past the last control comes back to the first, Shift+Tab before the first goes to the last', () => {
+    expect(wrapFocus(3, 2, false)).toBe(0);
+    expect(wrapFocus(3, 0, true)).toBe(2);
+    expect(wrapFocus(3, 1, false)).toBe(null);
+    expect(wrapFocus(3, -1, false)).toBe(0);
+    expect(wrapFocus(0, -1, false)).toBe(null);
+  });
+});

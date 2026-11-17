@@ -41,3 +41,10 @@ describe('OfferSync', () => {
     expect(html).not.toContain('first-run__dot');
   });
 });
+
+describe('FirstRunFrame while applying', () => {
+  it('Back is disabled while a received setup is being applied', () => {
+    const html = renderToStaticMarkup(createElement(FirstRunFrame, { step: 'welcome', receiving: true, backDisabled: true, onBack: () => {}, onNext: () => {}, onSkip: () => {}, onLetMeIn: () => {}, nextLabel: 'Continue' }));
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Back</);
+  });
+});

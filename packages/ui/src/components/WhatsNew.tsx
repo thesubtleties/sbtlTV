@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { WhatsNewItem } from '../whatsNewItems';
 import { Logo } from './Logo';
 import { Button } from './settings/ui';
@@ -11,6 +11,9 @@ export function WhatsNew({ version, items, onAction, onClose }: {
   onAction: (to: 'add-computer' | 'open-transfer') => void;
   onClose: () => void;
 }) {
+  const done = useRef<HTMLButtonElement>(null);
+  // Focus moves into the drawer, so the keyboard and screen readers start here
+  useEffect(() => { done.current?.focus({ preventScroll: true }); }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
     window.addEventListener('keydown', onKey, true);
@@ -36,7 +39,7 @@ export function WhatsNew({ version, items, onAction, onClose }: {
       </ul>
       <footer className="whats-new__foot">
         <span className="whats-new__notes">Full notes in Settings › About</span>
-        <Button variant="primary" onClick={onClose}>Done</Button>
+        <Button ref={done} variant="primary" onClick={onClose}>Done</Button>
       </footer>
     </aside>
   );

@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Source } from '../types/electron';
 import { useUIStore } from '../stores/uiStore';
 import { saveSettings } from '../utils/saveSettings';
-import { afterReceive, isOptional, nextStep, prevStep, STEPS, type StepId } from '../utils/firstRun';
+import { isOptional, nextStep, prevStep, receiveViewCloses, stepAfterJoin, STEPS, type StepId } from '../utils/firstRun';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Logo } from './Logo';
 import { Button, Hint } from './settings/ui';
 import { SourceForm } from './settings/SourceForm';
@@ -16,10 +17,12 @@ import './FirstRun.css';
 const SOURCE_FORM_ID = 'first-run-source';
 
 /** The panel: logo, step dots and the Settings note on top; Back, Skip and Continue below. */
-export function FirstRunFrame({ step, receiving, onBack, onNext, onSkip, onLetMeIn, nextLabel, nextDisabled, nextFormId, children }: {
+export function FirstRunFrame({ step, receiving, backDisabled, onBack, onNext, onSkip, onLetMeIn, nextLabel, nextDisabled, nextFormId, children }: {
   step: StepId;
   /** Showing the receive panel: Back only */
   receiving?: boolean;
+  /** A received setup is being applied: no going back */
+  backDisabled?: boolean;
   onBack: () => void;
   onNext: () => void;
   onSkip: () => void;
@@ -32,10 +35,12 @@ export function FirstRunFrame({ step, receiving, onBack, onNext, onSkip, onLetMe
 }) {
   const i = STEPS.indexOf(step);
   const first = i === 0 && !receiving;
+  const panel = useRef<HTMLDivElement>(null);
+  useFocusTrap(panel, `${step}-${receiving ? 'r' : ''}`);
   return (
     <div className="first-run" role="dialog" aria-modal="true" aria-label="Set up sbtlTV">
       <div className="first-run__dim" />
-      <div className="first-run__panel">
+      <div className="first-run__panel" ref={panel} tabIndex={-1}>
         <header className="first-run__top">
           <Logo className="first-run__logo" height={26} />
           <div className="first-run__dots" aria-hidden="true">
@@ -47,7 +52,7 @@ export function FirstRunFrame({ step, receiving, onBack, onNext, onSkip, onLetMe
         <footer className="first-run__foot">
           {first
             ? <button type="button" className="first-run__link" onClick={onLetMeIn}>I know what I'm doing, just let me in</button>
-            : <Button onClick={onBack}>Back</Button>}
+            : <Button onClick={onBack} disabled={backDisabled}>Back</Button>}
           <span className="first-run__spacer" />
           {!receiving && isOptional(step) && <button type="button" className="first-run__link" onClick={onSkip}>Skip</button>}
           {!first && !receiving && (
@@ -115,9 +120,15 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
     const from = receiveFrom;
     setReceiveFrom(null);
     setJoined(true);
-    const to = afterReceive('join');
-    setStep(from === 'sync' || savedSource ? 'done' : (to as StepId));
+    setStep(stepAfterJoin(from ?? 'welcome', !!savedSource));
   });
+
+  // Declining (or dismissing) what arrived goes back to where the receive view was opened
+  const lastImpStep = useRef(im.imp.step);
+  useEffect(() => {
+    if (receiveViewCloses(lastImpStep.current, im.imp.step)) { setCodeOpen(false); setReceiveFrom(null); }
+    lastImpStep.current = im.imp.step;
+  }, [im.imp.step]);
 
   const finish = (to: 'guide' | 'none') => { void markDone().then(() => onFinish(to)); };
   const closeReceive = () => {
@@ -229,6 +240,7 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
     <FirstRunFrame
       step={step}
       receiving={!!receiveFrom}
+      backDisabled={im.imp.step === 'applying'}
       onBack={() => { if (receiveFrom) closeReceive(); else { setEditingSaved(false); setStep(prevStep(step)); } }}
       onNext={() => { if (step === 'done') finish('guide'); else setStep(nextStep(step)); }}
       onSkip={() => setStep(nextStep(step))}
@@ -245,10 +257,12 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
 
 /** After a setup received from the walkthrough (the app restarted): offer, once, to join the sender's sync. */
 export function OfferSyncFrame({ onJoin, onNotNow, children }: { onJoin: () => void; onNotNow: () => void; children?: ReactNode }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useFocusTrap(panel, children ? 'joining' : 'offer');
   return (
     <div className="first-run" role="dialog" aria-modal="true" aria-label="Keep your lists in sync">
       <div className="first-run__dim" />
-      <div className="first-run__panel first-run__panel--short">
+      <div className="first-run__panel first-run__panel--short" ref={panel} tabIndex={-1}>
         <header className="first-run__top">
           <Logo className="first-run__logo" height={26} />
         </header>
@@ -279,6 +293,7 @@ export function OfferSync({ onFinish }: { onFinish: () => void }) {
   const cancel = () => {
     if (!joining) { done(); return; }
     if (im.imp.step === 'join') im.declineJoin();
+    else if (im.imp.step !== 'idle' && im.imp.step !== 'applying') im.setImp({ step: 'idle' });
     void window.mailbox?.cancel();
     setCodeOpen(false);
     setJoining(false);

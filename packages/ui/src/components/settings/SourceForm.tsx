@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Source } from '../../types/electron';
 import { data } from '../../data/client';
@@ -57,6 +57,9 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
   const [error, setError] = useState<string | null>(null);
   // A save in progress (a big playlist import takes seconds): a second Continue/Enter must not add it twice
   const savingRef = useRef(false);
+  // An error at the top of a form scrolled down (a short window) would go unseen
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (error) errorRef.current?.scrollIntoView({ block: 'nearest' }); }, [error]);
   const editingId = editing?.id ?? null;
   const toast = useToast();
   const updateSettings = useUpdateSettings();
@@ -176,7 +179,7 @@ export function SourceForm({ editing, layout, isEncryptionAvailable, formId, onD
       <form id={formId} className={`source-form${layout === 'inline' ? ' source-form--inline' : ''}`} onSubmit={handleSubmit}>
         {layout === 'overlay' && <h3>{editingId ? 'Edit source' : 'Add source'}</h3>}
 
-        {error && <div className="form-error">{error}</div>}
+        {error && <div className="form-error" ref={errorRef} role="alert">{error}</div>}
 
         <div className="form-group">
           <label>Name</label>

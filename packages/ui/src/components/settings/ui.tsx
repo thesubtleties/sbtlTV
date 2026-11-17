@@ -3,7 +3,7 @@
  * rows with a title column whose help explains the current choice, and
  * segmented controls instead of switches and dropdowns.
  */
-import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode, Ref } from 'react';
 import './ui.css';
 
 export function SettingsTab({ children, className }: { children: ReactNode; className?: string }) {
@@ -119,6 +119,7 @@ export function Slider({ value, min, max, step, onChange, format, label }: {
 
 export function Button({ variant = 'default', className, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'default' | 'primary' | 'danger';
+  ref?: Ref<HTMLButtonElement>;
 }) {
   return <button type="button" {...props} className={`st-btn st-btn--${variant}${className ? ` ${className}` : ''}`} />;
 }
