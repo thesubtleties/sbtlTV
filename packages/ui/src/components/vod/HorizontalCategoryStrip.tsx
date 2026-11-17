@@ -11,6 +11,7 @@
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import './HorizontalCategoryStrip.css';
+import './HeaderStyles.css';
 
 interface Category {
   id: string;

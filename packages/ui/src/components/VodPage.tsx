@@ -20,6 +20,7 @@ import { clearMovieTitle } from '../hooks/useWatchProgress';
 import type { MissingTitle } from '../services/sync/missing';
 import { MissingRow } from './vod/MissingCard';
 import './VodPage.css';
+import { useHeroBleed } from '../hooks/useHeroBleed';
 
 // Animation timing (must match .vod-page transition in VodPage.css: 0.35s)
 const SLIDE_DURATION_MS = 350;
@@ -482,8 +483,14 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // Determine animation mode: page-level (no detail) vs detail-level (has detail)
   const hasDetail = !!selectedItem;
   const shouldPageBeCollapsed = (isEntering || isPageCollapsed) && !hasDetail;
+  // The home's hero runs up under the title bar and this header (HeaderStyles.css)
+  const pageRef = useRef<HTMLDivElement>(null);
+  const bleed = selectedCategoryId === null;
+  const { onScroll: bleedScroll } = useHeroBleed(bleed, pageRef, scrollPosition);
+
   const pageClasses = [
     'vod-page',
+    bleed ? 'vod-page--bleed' : '',
     // Animate whole page when entering/exiting without detail
     shouldPageBeCollapsed ? 'vod-page--collapsed' : '',
     // Hide page content when detail is animating out
@@ -494,7 +501,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={pageClasses}>
+    <div className={pageClasses} ref={pageRef}>
       {/* Unified header: back + categories + search */}
       <HorizontalCategoryStrip
         categories={groupedCategories.map(g => ({ id: g.groupKey, name: g.name }))}
@@ -549,6 +556,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
               // Only track scroll on home view
               if (selectedCategoryId === null) {
                 setScrollPosition((e.target as HTMLElement).scrollTop);
+                bleedScroll((e.target as HTMLElement).scrollTop);
               }
             }}
           />
