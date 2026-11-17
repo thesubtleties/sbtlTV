@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Source } from '../types/electron';
 import { useUIStore } from '../stores/uiStore';
 import { saveSettings } from '../utils/saveSettings';
-import { isOptional, nextStep, prevStep, receiveViewCloses, stepAfterJoin, STEPS, type StepId } from '../utils/firstRun';
+import { isOptional, keyUnsaved, nextStep, prevStep, receiveViewCloses, stepAfterJoin, STEPS, type StepId } from '../utils/firstRun';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Logo } from './Logo';
 import { Button, Hint } from './settings/ui';
@@ -139,7 +139,6 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
     setReceiveFrom(null);
   };
 
-  const keyUnsaved = (key: string, valid: boolean | null) => key.trim() !== '' && valid !== true;
   const showForm = step === 'source' && (!savedSource || editingSaved);
 
   let body: ReactNode;

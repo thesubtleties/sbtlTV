@@ -10,6 +10,12 @@ export function firstRunMode(s: { settingsLoaded: boolean; sourcesLoaded: boolea
   return s.sourceCount === 0 ? 'setup' : null;
 }
 
+/** The panel is decided once and then held until it closes: saving the first source mid-way must not make it vanish. */
+export const heldFirstRun = (held: FirstRunMode | 'closed', live: FirstRunMode): FirstRunMode | 'closed' => held ?? live;
+
+/** A typed key that isn't checked and saved yet holds Continue (Skip still works). */
+export const keyUnsaved = (key: string, valid: boolean | null): boolean => key.trim() !== '' && valid !== true;
+
 const OPTIONAL = new Set<StepId>(['tmdb', 'subtitles', 'sync']);
 export const isOptional = (step: StepId): boolean => OPTIONAL.has(step);
 export const nextStep = (step: StepId): StepId => STEPS[Math.min(STEPS.length - 1, STEPS.indexOf(step) + 1)];

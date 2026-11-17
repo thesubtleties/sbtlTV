@@ -16,4 +16,9 @@ test('the last seen version is kept only when it looks like a version', () => {
   assert.equal(normalizeSeenVersion('latest'), undefined);
   assert.equal(normalizeSeenVersion(17), undefined);
   assert.equal(normalizeSeenVersion('1'.repeat(80)), undefined);
+  // Version-shaped but too long: only the length check stops it
+  assert.equal(normalizeSeenVersion(`0.17.0-${'a'.repeat(34)}`), undefined);
+  assert.equal(normalizeSeenVersion(`0.17.0-${'a'.repeat(33)}`), `0.17.0-${'a'.repeat(33)}`);
+  assert.equal(normalizeSeenVersion('0.17'), undefined);
+  assert.equal(normalizeSeenVersion(' 0.17.0'), undefined);
 });

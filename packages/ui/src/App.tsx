@@ -43,8 +43,8 @@ import { applyRecords } from './services/sync/apply';
 import { FirstRun, OfferSync } from './components/FirstRun';
 import { WhatsNew } from './components/WhatsNew';
 import { WHATS_NEW, type WhatsNewItem } from './whatsNewItems';
-import { baseVersion, whatsNewToShow } from './utils/whatsNew';
-import { firstRunMode, type FirstRunMode } from './utils/firstRun';
+import { baseVersion, whatsNewOnLaunch } from './utils/whatsNew';
+import { firstRunMode, heldFirstRun, type FirstRunMode } from './utils/firstRun';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -322,8 +322,9 @@ function App() {
   const [firstRun, setFirstRun] = useState<FirstRunMode | 'closed'>(null);
   const liveFirstRun = firstRunMode({ settingsLoaded, sourcesLoaded, sourceCount, marker: firstRunMarker });
   useEffect(() => {
-    if (firstRun !== null || !liveFirstRun) return;
-    setFirstRun(liveFirstRun);
+    const next = heldFirstRun(firstRun, liveFirstRun);
+    if (next === firstRun) return;
+    setFirstRun(next);
     // A fresh install has nothing new to show: record this version now, so quitting the setup half way
     // (with a source already saved) doesn't look like an update on the next launch
     if (liveFirstRun === 'setup' && !useUIStore.getState().settings.lastSeenVersion) {
@@ -344,10 +345,10 @@ function App() {
     whatsNewChecked.current = true;
     const lastSeen = useUIStore.getState().settings.lastSeenVersion;
     void Promise.all([window.platform.getVersion(), window.platform.getBuildKind()]).then(([version, kind]) => {
-      const items = whatsNewToShow({ current: version, lastSeen, buildKind: kind, hasSources: sourceCount > 0, firstRun: liveFirstRun, items: WHATS_NEW });
-      if (items) setWhatsNew({ version, items });
+      const r = whatsNewOnLaunch({ current: version, lastSeen, buildKind: kind, hasSources: sourceCount > 0, firstRun: liveFirstRun, items: WHATS_NEW });
+      if (r && r !== 'record') setWhatsNew({ version, items: r.show });
       // Nothing to show for this release: remember it anyway, so a later update compares from here
-      else if (kind === 'release' && liveFirstRun === null && lastSeen !== version) {
+      else if (r === 'record') {
         useUIStore.getState().updateSettings({ lastSeenVersion: version });
         void saveSettings({ lastSeenVersion: version });
       }

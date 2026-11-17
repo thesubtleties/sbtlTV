@@ -70,3 +70,39 @@ describe('wrapFocus', () => {
     expect(wrapFocus(0, -1, false)).toBe(null);
   });
 });
+
+import { heldFirstRun, keyUnsaved } from './firstRun';
+
+describe('receive view (more)', () => {
+  it('declining at the passphrase closes it; an apply that ends (restart or failure) does not', () => {
+    expect(receiveViewCloses('passphrase', 'idle')).toBe(true);
+    expect(receiveViewCloses('applying', 'idle')).toBe(false);
+    expect(receiveViewCloses('applying', 'failed')).toBe(false);
+  });
+});
+
+describe('heldFirstRun', () => {
+  it('opens when settings and sources first say so', () => {
+    expect(heldFirstRun(null, null)).toBe(null);
+    expect(heldFirstRun(null, 'setup')).toBe('setup');
+    expect(heldFirstRun(null, 'offer-sync')).toBe('offer-sync');
+  });
+  it('stays open after the first source is saved (live becomes null)', () => {
+    expect(heldFirstRun('setup', null)).toBe('setup');
+  });
+  it('stays closed once closed, even with no sources', () => {
+    expect(heldFirstRun('closed', 'setup')).toBe('closed');
+  });
+});
+
+describe('keyUnsaved', () => {
+  it('an empty key never holds Continue', () => {
+    expect(keyUnsaved('', null)).toBe(false);
+    expect(keyUnsaved('   ', false)).toBe(false);
+  });
+  it('a typed key holds Continue until it checks out, also while unchecked', () => {
+    expect(keyUnsaved('abc', null)).toBe(true);
+    expect(keyUnsaved('abc', false)).toBe(true);
+    expect(keyUnsaved('abc', true)).toBe(false);
+  });
+});

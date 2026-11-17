@@ -45,3 +45,33 @@ describe('whatsNewToShow', () => {
     expect(whatsNewToShow({ ...s, current: '0.17.1', lastSeen: '0.17.0' })).toBe(null);
   });
 });
+
+import { whatsNewOnLaunch } from './whatsNew';
+import { WHATS_NEW } from '../whatsNewItems';
+
+describe('whatsNewOnLaunch', () => {
+  it('shows the list after an update', () => {
+    expect(whatsNewOnLaunch(s)).toEqual({ show: [item] });
+  });
+  it('a release with nothing to show records the version, so the next update compares from here', () => {
+    expect(whatsNewOnLaunch({ ...s, current: '0.17.1', lastSeen: '0.17.0' })).toBe('record');
+    expect(whatsNewOnLaunch({ ...s, current: '0.17.0', lastSeen: '0.17.0-beta.2' })).toBe('record');
+  });
+  it('records nothing when already up to date, on test or local builds, or while the first run is open', () => {
+    expect(whatsNewOnLaunch({ ...s, lastSeen: '0.17.0' })).toBe(null);
+    expect(whatsNewOnLaunch({ ...s, current: '0.17.1', buildKind: 'test' })).toBe(null);
+    expect(whatsNewOnLaunch({ ...s, current: '0.17.1', buildKind: 'local' })).toBe(null);
+    expect(whatsNewOnLaunch({ ...s, current: '0.17.1', firstRun: 'setup' })).toBe(null);
+    expect(whatsNewOnLaunch({ ...s, current: '0.17.1', firstRun: 'offer-sync' })).toBe(null);
+  });
+});
+
+describe('WHATS_NEW', () => {
+  it('is keyed by release versions (a beta key would never be looked up) and every list has items', () => {
+    for (const [v, list] of Object.entries(WHATS_NEW)) {
+      expect(v).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(list.length).toBeGreaterThan(0);
+      expect(new Set(list.map((i) => i.id)).size).toBe(list.length);
+    }
+  });
+});

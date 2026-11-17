@@ -41,3 +41,13 @@ export function whatsNewToShow(s: {
   const list = s.items[baseVersion(s.current)];
   return list && list.length > 0 ? list : null;
 }
+
+/**
+ * What a launch does with What's new: show the list, or (a release with nothing to show, outside the
+ * first run) just record the version so the next update compares from here.
+ */
+export function whatsNewOnLaunch(s: Parameters<typeof whatsNewToShow>[0]): { show: WhatsNewItem[] } | 'record' | null {
+  const items = whatsNewToShow(s);
+  if (items) return { show: items };
+  return s.buildKind === 'release' && s.firstRun === null && s.lastSeen !== s.current ? 'record' : null;
+}

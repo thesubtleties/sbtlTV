@@ -13,3 +13,9 @@ test('a branch build is a test build; no build info is local', () => {
   assert.equal(buildKind({}), 'test');
   assert.equal(buildKind('local'), 'local');
 });
+
+test('only a whole version tag counts: anything else that mentions a version is a test build', () => {
+  for (const ref of ['0.17.0', 'v0.17', 'v0.17.0.1', 'refs/tags/v0.17.0', 'release/v0.17.0', 'v0.17.0-', 'v0.17.0 ']) {
+    assert.equal(buildKind({ ref }), 'test', ref);
+  }
+});
