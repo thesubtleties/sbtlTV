@@ -53,6 +53,8 @@ export function registerSync(deps: {
   });
 
   ipcMain.handle('sync:view', () => engine.view());
+  // Whether Sync can work on this computer (a real keyring): the first-run setup asks before offering it
+  ipcMain.handle('sync:available', () => sealer.available());
   // The page is listening: start (or, after a reload, pull again). Records handed over before
   // this would be marked applied but never reach the page.
   ipcMain.handle('sync:ready', () => { engine.start(); });

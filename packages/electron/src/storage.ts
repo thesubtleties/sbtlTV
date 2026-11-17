@@ -9,6 +9,7 @@ import os from 'node:os';
 import { isKeyringSealed } from './secret-fallback.js';
 import { keptOnImport, type SetupSource } from './setup-body.js';
 import type { KeyProtector } from './setup-file.js';
+import { normalizeFirstRun, normalizeSeenVersion } from './settings-markers.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -68,6 +69,8 @@ export interface AppSettings {
   subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
   rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
   rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
+  firstRun?: 'offer-sync' | 'done';  // First-run setup: offer sync once after a received setup, or finished (machine setting)
+  lastSeenVersion?: string;          // Version whose What's new was shown (machine setting)
 }
 
 export type { LinuxPlayerMode };
@@ -124,6 +127,8 @@ interface StoredSettings {
   subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
   rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
   rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
+  firstRun?: 'offer-sync' | 'done';  // First-run setup: offer sync once after a received setup, or finished (machine setting)
+  lastSeenVersion?: string;          // Version whose What's new was shown (machine setting)
   alwaysOnTop?: boolean;  // Windows/macOS: keep the window above others (title bar pin)
 }
 
@@ -293,6 +298,8 @@ export function getSettings(): AppSettings {
   result.subtitles = normalizeSubtitleSettings(stored.subtitles);
   result.rewindLiveBytes = normalizeRewindBytes(stored.rewindLiveBytes, os.totalmem());
   result.rewindTipShown = stored.rewindTipShown === true;
+  result.firstRun = normalizeFirstRun(stored.firstRun);
+  result.lastSeenVersion = normalizeSeenVersion(stored.lastSeenVersion);
   return result;
 }
 
@@ -330,6 +337,8 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   if (settings.subtitles !== undefined) updated.subtitles = normalizeSubtitleSettings({ ...current.subtitles, ...settings.subtitles });
   if (settings.rewindLiveBytes !== undefined) updated.rewindLiveBytes = normalizeRewindBytes(settings.rewindLiveBytes, os.totalmem());
   if (settings.rewindTipShown !== undefined) updated.rewindTipShown = settings.rewindTipShown === true;
+  if (settings.firstRun !== undefined) updated.firstRun = normalizeFirstRun(settings.firstRun);
+  if (settings.lastSeenVersion !== undefined) updated.lastSeenVersion = normalizeSeenVersion(settings.lastSeenVersion);
   if (settings.lastSourceId !== undefined) updated.lastSourceId = settings.lastSourceId;
   if (settings.tmdbApiKey !== undefined) {
     updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;

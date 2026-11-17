@@ -52,8 +52,14 @@ test('only the travelling settings are exported', () => {
 });
 
 test('an import keeps machine settings and internal markers, nothing it replaces', () => {
-  const stored = { theme: 'dark', channelSortOrder: 'number', linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, encryptedTmdbApiKey: 'x' };
-  assert.deepEqual(keptOnImport(stored), { linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5 });
+  const stored = { theme: 'dark', channelSortOrder: 'number', linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, firstRun: 'offer-sync', lastSeenVersion: '0.16.0', encryptedTmdbApiKey: 'x' };
+  assert.deepEqual(keptOnImport(stored), { linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, firstRun: 'offer-sync', lastSeenVersion: '0.16.0' });
+});
+
+test('the first-run and What\'s new markers never travel: not exported, and a setup carrying them is refused', () => {
+  assert.deepEqual(settingsForExport({ channelSortOrder: 'number', firstRun: 'done', lastSeenVersion: '0.17.0' } as never), { channelSortOrder: 'number' });
+  assert.throws(() => validateSetupBody({ ...good(), settings: { firstRun: 'done' } }), /invalid: settings.firstRun/);
+  assert.throws(() => validateSetupBody({ ...good(), settings: { lastSeenVersion: '99.0.0' } }), /invalid: settings.lastSeenVersion/);
 });
 
 test('the preview says what is inside without secrets', () => {

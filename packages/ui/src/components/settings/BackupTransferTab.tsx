@@ -1,16 +1,14 @@
 import './BackupTransferTab.css';
 import { useEffect, useState } from 'react';
-import type { SetupPart, SetupPreview } from '../../types/electron';
+import type { SetupPart } from '../../types/electron';
 import { useUIStore } from '../../stores/uiStore';
-import { readLists, replaceLists, type ListPart } from '../../services/setup/lists';
+import { readLists, type ListPart } from '../../services/setup/lists';
 import { rebuildFilePlaylists } from '../../services/setup/filePlaylists';
-import { setupSummary } from '../../services/setup/summary';
-import { receivedNote } from '../../utils/receivedNote';
-import { Button, Hint, OnOff, OptionRow, Section, SettingsTab, TextField } from './ui';
+import { Button, Hint, OnOff, OptionRow, Section, SettingsTab } from './ui';
 import { SendSetupPanel } from './SendSetupPanel';
 import { SyncSection } from './SyncSection';
-import { nameIfBlank } from '../../utils/computerName';
-import { ReceiveSetupPanel } from './ReceiveSetupPanel';
+import { ReceiveSection } from './ReceiveSection';
+import { useSetupImport } from './useSetupImport';
 
 const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: boolean }[] = [
   { id: 'sources', title: 'Sources', defaultOn: true },
@@ -22,38 +20,18 @@ const EXPORT_PARTS: { id: SetupPart; title: string; help?: string; defaultOn: bo
   { id: 'progress', title: 'Watch progress', defaultOn: false },
 ];
 const LIST_PARTS: ListPart[] = ['favorites', 'watchlist', 'progress'];
-const PLATFORMS: Record<string, string> = { linux: 'Linux', darwin: 'macOS', win32: 'Windows' };
-const platformName = (p: string) => PLATFORMS[p] ?? p;
-function exportedOn(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : `, ${d.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
-}
-
-type ImportState =
-  | { step: 'idle' }
-  | { step: 'passphrase'; token: string; error?: string }
-  | { step: 'preview'; token: string; preview: SetupPreview; restoring?: boolean; received?: boolean }
-  | { step: 'join'; computers: string[] }
-  | { step: 'applying' }
-  | { step: 'failed'; error: string; backupName: string | null };
-
-/** "Mac", "Mac and Linux PC", "Mac, Linux PC and Windows PC" */
-const names = (list: string[]) => (list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}` : list[0] ?? '');
-
 /** The last export, kept by Settings while it is open (switching tabs keeps it; closing Settings clears it). */
 export interface LastExport { passphrase: string; filePath: string }
 
-export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoReceiveUsed }: { lastExport: LastExport | null; onExported: (e: LastExport) => void; autoReceive?: boolean; onAutoReceiveUsed?: () => void }) {
+export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoReceiveUsed, autoAdd, onAutoAddUsed }: { lastExport: LastExport | null; onExported: (e: LastExport) => void; autoReceive?: boolean; onAutoReceiveUsed?: () => void; autoAdd?: boolean; onAutoAddUsed?: () => void }) {
   const sources = useUIStore((s) => s.sources);
   const [parts, setParts] = useState(() => new Set(EXPORT_PARTS.filter((p) => p.defaultOn).map((p) => p.id)));
   const [exporting, setExporting] = useState(false);
   const exported = lastExport;
   const [exportError, setExportError] = useState<string | null>(null);
-  const [imp, setImp] = useState<ImportState>({ step: 'idle' });
-  const [passphrase, setPassphrase] = useState('');
+  const im = useSetupImport();
+  const { imp } = im;
   const [copied, setCopied] = useState(false);
-  const [unlocking, setUnlocking] = useState(false);
-  const [backupFirst, setBackupFirst] = useState(true);
   const [backups, setBackups] = useState<{ name: string; label: string }[]>([]);
   // Transfer: one of export or send open at a time (an export just made stays open). Receive: the code panel.
   const [transfer, setTransfer] = useState<'none' | 'export' | 'send'>(lastExport ? 'export' : 'none');
@@ -61,23 +39,12 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
   // "Receive a setup" opens the code once; coming back to this tab later doesn't start another
   useEffect(() => { if (autoReceive) onAutoReceiveUsed?.(); }, [autoReceive, onAutoReceiveUsed]);
   const [adding, setAdding] = useState(false);
-  const [joinName, setJoinName] = useState('');
-  const [joining, setJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
-  const [defaultName, setDefaultName] = useState('');
-  const [syncing, setSyncing] = useState(false);
-  useEffect(() => { void window.sync?.view().then((v) => { setDefaultName(v.defaultName); setSyncing(v.status === 'active'); }); }, [imp.step]);
   // One knock at a time: opening Send, Receive or Add a computer closes the others
   const openSend = () => { setReceiving(false); setAdding(false); setTransfer(transfer === 'send' ? 'none' : 'send'); };
   const openReceive = () => { if (!receiving && transfer === 'send') setTransfer('none'); setAdding(false); setReceiving(!receiving); };
   const openAdding = (open: boolean) => { if (open) { setReceiving(false); if (transfer === 'send') setTransfer('none'); } setAdding(open); };
-  const join = async () => {
-    setJoining(true); setJoinError(null);
-    const r = await window.mailbox?.join(joinName);
-    setJoining(false);
-    if (r?.error) setJoinError(r.error); else { setImp({ step: 'idle' }); setJoinName(''); }
-  };
-  const declineJoin = () => { void window.mailbox?.cancel(); setImp({ step: 'idle' }); setJoinName(''); setJoinError(null); };
+  // "Add a computer…" from What's new opens the panel once (also when this tab is already showing)
+  useEffect(() => { if (autoAdd) { openAdding(true); onAutoAddUsed?.(); } }, [autoAdd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { void window.setup?.backups().then((r) => setBackups(r.data)); }, []);
 
@@ -105,53 +72,6 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
     }
   }
 
-  async function pick() {
-    if (!window.setup) return;
-    const r = await window.setup.pick();
-    if ('error' in r) return setImp({ step: 'failed', error: r.error, backupName: null });
-    if (!r.success) return;
-    if (r.data.needsPassphrase) { setPassphrase(''); setImp({ step: 'passphrase', token: r.data.token }); return; }
-    const u = await window.setup.unlock(r.data.token, '');
-    if ('error' in u) setImp({ step: 'failed', error: u.error, backupName: null });
-    else if (u.success) setImp({ step: 'preview', token: r.data.token, preview: u.data });
-  }
-
-  async function unlock(token: string) {
-    setUnlocking(true);
-    const u = await window.setup!.unlock(token, passphrase).finally(() => setUnlocking(false));
-    if ('error' in u) setImp({ step: 'passphrase', token, error: u.error });
-    else if (u.success) setImp({ step: 'preview', token, preview: u.data });
-  }
-
-  async function openBackup(name: string) {
-    const r = await window.setup!.openBackup(name);
-    if ('error' in r) setImp({ step: 'failed', error: r.error, backupName: null });
-    else if (r.success) setImp({ step: 'preview', token: r.data.token, preview: r.data.preview, restoring: true });
-  }
-
-  async function apply(token: string, withBackup = backupFirst) {
-    setImp({ step: 'applying' });
-    let backupName: string | null = null;
-    try {
-      const currentLists = withBackup ? await readLists(LIST_PARTS, true) : {};
-      const currentPlaylists = withBackup ? await rebuildFilePlaylists(sources) : {};
-      const r = await window.setup!.apply(token, { backupFirst: withBackup, currentLists, currentPlaylists });
-      if ('error' in r) return setImp({ step: 'failed', error: r.error, backupName: 'backupName' in r ? r.backupName : null });
-      if (!r.success) return setImp({ step: 'idle' });
-      backupName = r.data.backupName;
-      if (r.data.lists) await replaceLists(r.data.lists);   // null: a received setup leaves the lists alone
-      await window.setup!.relaunch();
-    } catch (error) {
-      setImp({ step: 'failed', error: error instanceof Error ? error.message : String(error), backupName });
-    }
-  }
-
-  // After a failed import: put the backup back in one step (no new backup of the half-imported state).
-  async function restoreNow(name: string) {
-    const r = await window.setup!.openBackup(name);
-    if ('error' in r) return setImp({ step: 'failed', error: r.error, backupName: null });
-    if (r.success) await apply(r.data.token, false);
-  }
 
   // Export crashed a Windows portable install (not reproducible here); export and import stay in the installed version
   if (window.platform?.isPortable) {
@@ -186,7 +106,7 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
               </ol>
             </div>
           </div>
-          <Hint>Only use a code from someone you know. Different words mean someone else answered: stop there. The setup is end-to-end encrypted on the sbtlTV relay, so even we can't read it, and it's deleted once picked up. Adding a computer to Sync works the same way.</Hint>
+          <Hint>Only use a code from someone you know. Different words mean someone else answered: stop there. Setups and Sync are both end-to-end encrypted on the sbtlTV relay: even we can't read them. A setup is deleted once it's picked up; Sync stays while you use it.</Hint>
         </div>
       </details>
 
@@ -226,90 +146,14 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
         </>}
       </Section>
 
-      <Section title="Receive" description="A setup, or to join your sync."
-        actions={<>
-          <Button onClick={openReceive} aria-expanded={receiving} disabled={imp.step === 'applying'}>Show my code</Button>
-          <Button onClick={() => void pick()} disabled={imp.step === 'applying'}>Import file…</Button>
-        </>}>
-        {receiving && imp.step !== 'preview' && (
-          <ReceiveSetupPanel
-            onReceived={(token, preview) => { setReceiving(false); setImp({ step: 'preview', token, preview, received: true }); }}
-            onJoin={(computers) => { setReceiving(false); setImp({ step: 'join', computers }); }}
-            onClose={() => setReceiving(false)}
-          />
-        )}
-        {imp.step === 'passphrase' && (
-          <form onSubmit={(e) => { e.preventDefault(); void unlock(imp.token); }}>
-            <OptionRow title="Passphrase" help="The five words from the export.">
-              <TextField autoFocus aria-label="Passphrase" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} placeholder="word-word-word-word-word" />
-            </OptionRow>
-            {imp.error && <Hint tone="danger">{imp.error}</Hint>}
-            <Button type="submit" variant="primary" disabled={unlocking}>{unlocking ? 'Opening…' : 'Open'}</Button>
-          </form>
-        )}
-        {imp.step === 'preview' && imp.received && sources.length === 0 && (
-          // A fresh install: nothing to replace, so no warning and no backup, just yes or no
-          <div className="setup-preview">
-            <div className="setup-preview__summary"><Hint>Ready to set up: {setupSummary(imp.preview)}.</Hint></div>
-            <div className="setup-preview__actions">
-              <Button variant="primary" onClick={() => void apply(imp.token, false)}>Set up sbtlTV</Button>
-              <Button onClick={() => setImp({ step: 'idle' })}>Decline</Button>
-            </div>
-          </div>
-        )}
-        {imp.step === 'preview' && !(imp.received && sources.length === 0) && (
-          <div className="setup-preview">
-            <div className="setup-preview__summary">
-              <Hint>
-                From sbtlTV {imp.preview.app} on {platformName(imp.preview.platform)}{exportedOn(imp.preview.exportedAt)}: {setupSummary(imp.preview)}.
-              </Hint>
-              <Hint tone="warn">{imp.received ? receivedNote(imp.preview) : 'Replaces your sources, settings, API keys, favorites, watchlist and watch progress. Anything not in the file is cleared.'}</Hint>
-            </div>
-            <OptionRow title="Back up my setup first" help="Kept on this computer. Restore it here if needed."><OnOff value={backupFirst} onChange={setBackupFirst} /></OptionRow>
-            <div className="setup-preview__actions">
-              <Button variant="danger" onClick={() => void apply(imp.token)}>{imp.restoring ? 'Replace and restore' : imp.received ? 'Replace' : 'Replace and import'}</Button>
-              <Button onClick={() => setImp({ step: 'idle' })}>{imp.received ? 'Decline' : 'Cancel'}</Button>
-            </div>
-          </div>
-        )}
-        {imp.step === 'join' && (
-          <div className="setup-preview">
-            <div className="setup-preview__summary">
-              <Hint>Join sync with {names(imp.computers)}? Your watchlist and progress will be shared with them.</Hint>
-              {syncing && <Hint tone="warn">This computer leaves its current sync.</Hint>}
-            </div>
-            <OptionRow title="Name this computer" help={`Leave blank for “${nameIfBlank(defaultName, imp.computers)}”.`}>
-              <form onSubmit={(e) => { e.preventDefault(); if (!joining) void join(); }}>
-                <TextField autoFocus aria-label="Name this computer" placeholder={nameIfBlank(defaultName, imp.computers)} maxLength={40} value={joinName} onChange={(e) => setJoinName(e.target.value)} />
-              </form>
-            </OptionRow>
-            {joinError && <Hint tone="danger">{joinError}</Hint>}
-            <div className="setup-preview__actions">
-              <Button variant="primary" disabled={joining} onClick={() => void join()}>{joining ? 'Joining…' : 'Join'}</Button>
-              <Button onClick={declineJoin}>Decline</Button>
-            </div>
-          </div>
-        )}
-        {imp.step === 'applying' && <Hint>Working… sbtlTV restarts when done.</Hint>}
-        {imp.step === 'failed' && (
-          <>
-            <Hint tone="danger">{imp.error}</Hint>
-            {imp.backupName && (
-              <>
-                <Hint tone="warn">The import didn't finish. Restore your previous setup?</Hint>
-                <Button variant="primary" onClick={() => void restoreNow(imp.backupName!)}>Restore</Button>
-              </>
-            )}
-          </>
-        )}
-      </Section>
+      <ReceiveSection im={im} receiving={receiving} onReceiving={(open) => { if (open !== receiving) openReceive(); }} />
 
 
       {backups.length > 0 && (
         <Section title="Restore previous setup" description="Made before each import (with Back up first on). The last three stay on this computer.">
           {backups.map((b) => (
             <OptionRow key={b.name} title={b.label}>
-              <Button onClick={() => void openBackup(b.name)} disabled={imp.step === 'applying'}>Restore…</Button>
+              <Button onClick={() => void im.openBackup(b.name)} disabled={imp.step === 'applying'}>Restore…</Button>
             </OptionRow>
           ))}
         </Section>

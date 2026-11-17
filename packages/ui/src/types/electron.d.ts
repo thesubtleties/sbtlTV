@@ -269,6 +269,8 @@ export interface SyncView {
 export interface SyncApi {
   ready: () => Promise<void>;
   view: () => Promise<SyncView>;
+  /** Sync can work here (a real keyring; not Linux basic_text) */
+  available: () => Promise<boolean>;
   record: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;
   /** These were written into the lists (after applyRecords): don't hand them over again */
   applied: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;
@@ -344,6 +346,8 @@ export interface AppSettings {
   subtitles?: SubtitleSettings;  // Caption defaults (live / movies & series) and subtitle look
   rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
   rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
+  firstRun?: 'offer-sync' | 'done';  // First-run setup: offer sync once after a received setup, or finished (machine setting)
+  lastSeenVersion?: string;          // Version whose What's new was shown (machine setting)
 }
 
 export interface Source {
@@ -395,6 +399,8 @@ export interface PlatformApi {
   isLinuxNonAppImage: boolean;
   supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
+  /** release, test (branch) or local build: What's new shows only in releases */
+  getBuildKind: () => Promise<'release' | 'test' | 'local'>;
   /** The largest Rewind live TV size this computer allows, in bytes (0 = not enough memory) */
   rewindCapBytes: () => Promise<number>;
 }

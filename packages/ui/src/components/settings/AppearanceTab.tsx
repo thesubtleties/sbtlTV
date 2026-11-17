@@ -39,6 +39,15 @@ function PaletteTile({ label, roles, selected, onSelect }: {
 }
 
 export function AppearanceTab() {
+  return (
+    <SettingsTab className="appearance-tab">
+      <AppearanceOptions />
+    </SettingsTab>
+  );
+}
+
+/** Colors, accent and typeface; shared by Settings › Appearance and the first-run setup. */
+export function AppearanceOptions() {
   const appearance = useUIStore((s) => s.settings.appearance) ?? DEFAULT_APPEARANCE;
   const updateSettings = useUpdateSettings();
   const desktop = useDesktopColors();
@@ -55,7 +64,7 @@ export function AppearanceTab() {
   const caelestiaMissing = appearance.palette === 'caelestia' && desktop && !desktop.caelestia;
 
   return (
-    <SettingsTab className="appearance-tab">
+    <div className="appearance-options">
       <OptionRow
         title="Colors"
         help={
@@ -119,6 +128,6 @@ export function AppearanceTab() {
           onChange={(typeface) => save({ typeface })}
         />
       </OptionRow>
-    </SettingsTab>
+    </div>
   );
 }

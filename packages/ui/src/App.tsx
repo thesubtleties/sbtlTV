@@ -15,7 +15,7 @@ import { useToastStore } from './stores/toastStore';
 import { VideoCanvas } from './components/VideoCanvas';
 import { useChannelCount, useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
-import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode } from './stores/uiStore';
+import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode, useSettingsLoaded, useSourcesLoaded } from './stores/uiStore';
 import { data } from './data/client';
 import { resumePendingPlaylists } from './services/setup/pending';
 import type { StoredChannel, StoredSeries } from './db';
@@ -40,6 +40,12 @@ import { perfMeasure, perfStart } from './utils/perfMarks';
 import { ErrorCard } from './components/ErrorCard';
 import { sendSnapshot, setSyncActive } from './services/sync/outbox';
 import { applyRecords } from './services/sync/apply';
+import { FirstRun, OfferSync } from './components/FirstRun';
+import { WhatsNew } from './components/WhatsNew';
+import { WHATS_NEW, type WhatsNewItem } from './whatsNewItems';
+import { latestList, whatsNewOnLaunch } from './utils/whatsNew';
+import { rememberSeenVersion, rememberThisVersion } from './utils/seenVersion';
+import { firstRunMode, heldFirstRun, type FirstRunMode } from './utils/firstRun';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -308,11 +314,62 @@ function App() {
   const [rewindBump, setRewindBump] = useState(0);
   // Settings opened on a specific tab (the rewind tip), else its default.
   const [settingsTab, setSettingsTab] = useState<SettingsTabId | undefined>(undefined);
+  // First-run setup: decided once settings and sources are read, then held until it closes
+  // (saving the first source mid-way must not make it vanish)
+  const settingsLoaded = useSettingsLoaded();
+  const sourcesLoaded = useSourcesLoaded();
+  const sourceCount = useUIStore((s) => s.sources.length);
+  const firstRunMarker = useUIStore((s) => s.settings.firstRun);
+  const [firstRun, setFirstRun] = useState<FirstRunMode | 'closed'>(null);
+  const liveFirstRun = firstRunMode({ settingsLoaded, sourcesLoaded, sourceCount, marker: firstRunMarker });
+  useEffect(() => {
+    const next = heldFirstRun(firstRun, liveFirstRun);
+    if (next === firstRun) return;
+    setFirstRun(next);
+    // A fresh install has nothing new to show: record this version now, so quitting the setup half way
+    // (with a source already saved) doesn't look like an update on the next launch
+    if (liveFirstRun === 'setup' && !useUIStore.getState().settings.lastSeenVersion) void rememberThisVersion();
+  }, [firstRun, liveFirstRun]);
+  const firstRunOpen = firstRun === 'setup' || firstRun === 'offer-sync';
+  const firstRunOpenRef = useRef(false);
+  firstRunOpenRef.current = firstRunOpen;
+  // What's new: once per release after an update, decided when settings, sources and the first run are known
+  const [whatsNew, setWhatsNew] = useState<{ version: string; items: WhatsNewItem[] } | null>(null);
+  const whatsNewChecked = useRef(false);
+  useEffect(() => {
+    if (whatsNewChecked.current || !settingsLoaded || !sourcesLoaded || !window.platform) return;
+    whatsNewChecked.current = true;
+    const lastSeen = useUIStore.getState().settings.lastSeenVersion;
+    void Promise.all([window.platform.getVersion(), window.platform.getBuildKind()]).then(([version, kind]) => {
+      const r = whatsNewOnLaunch({ current: version, lastSeen, buildKind: kind, hasSources: sourceCount > 0, firstRun: liveFirstRun, items: WHATS_NEW });
+      if (r && r !== 'record') setWhatsNew({ version, items: r.show });
+      // Nothing to show for this release: remember it anyway, so a later update compares from here
+      else if (r === 'record') rememberSeenVersion(version);
+    }).catch(() => {});
+  }, [settingsLoaded, sourcesLoaded, sourceCount, liveFirstRun]);
+  // Opened from Settings › About: shown over Settings. Otherwise Settings covers it, and it comes back after, still unseen
+  const [whatsNewOverSettings, setWhatsNewOverSettings] = useState(false);
+  const whatsNewRef = useRef(whatsNew);
+  whatsNewRef.current = whatsNew;
+  const closeWhatsNew = useCallback(() => {
+    const open = whatsNewRef.current;
+    if (open) rememberSeenVersion(open.version);
+    setWhatsNew(null);
+  }, []);
+  const showWhatsNew = useCallback(() => {
+    void window.platform?.getVersion().then((version) => {
+      const items = latestList(WHATS_NEW, version);
+      if (items) { setWhatsNewOverSettings(true); setWhatsNew({ version, items }); }
+    }, () => {});
+  }, []);
   const [settingsReceive, setSettingsReceive] = useState(false);
+  const [settingsAdd, setSettingsAdd] = useState(false);
+  // Bumped to send an already open Settings to a tab (What's new over Settings), keeping what it holds
+  const [settingsRequest, setSettingsRequest] = useState(0);
   // Stable, so the memoized guide doesn't re-render with every App render
   const openReceiveSetup = useCallback(() => { setSettingsTab('backup'); setSettingsReceive(true); setActiveView('settings'); }, []);
   // Leaving Settings by any route (Escape, another view) forgets the tab the tip opened it on.
-  useEffect(() => { if (activeView !== 'settings') { setSettingsTab(undefined); setSettingsReceive(false); } }, [activeView]);
+  useEffect(() => { if (activeView !== 'settings') { setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); setWhatsNewOverSettings(false); } }, [activeView]);
   useEffect(() => {
     playbackRef.current = { duration, volume, activeView, categoriesOpen };
   }, [duration, volume, activeView, categoriesOpen]);
@@ -885,6 +942,8 @@ function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // The first-run setup owns the keyboard (Esc doesn't close it; nothing reaches the player behind it)
+      if (firstRunOpenRef.current) return;
       // Don't handle shortcuts when typing in inputs
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
         return;
@@ -1161,7 +1220,7 @@ function App() {
       />
 
       {/* Settings Panel */}
-      {activeView === 'settings' && <Settings initialTab={settingsTab} initialReceive={settingsReceive} onClose={() => { setActiveView('none'); setSettingsTab(undefined); setSettingsReceive(false); }} />}
+      {activeView === 'settings' && <Settings openRequest={settingsRequest} initialTab={settingsTab} initialReceive={settingsReceive} initialAdd={settingsAdd} onShowWhatsNew={showWhatsNew} onClose={() => { setActiveView('none'); setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); }} />}
 
       {/* Movies Page */}
       {activeView === 'movies' && (
@@ -1176,6 +1235,28 @@ function App() {
         <SeriesPage
           onPlay={handlePlayVod}
           onClose={() => setActiveView('none')}
+        />
+      )}
+
+      {firstRun === 'setup' && (
+        <FirstRun onFinish={(to) => { setFirstRun('closed'); if (to === 'guide') setActiveView('guide'); }} />
+      )}
+      {firstRun === 'offer-sync' && <OfferSync onFinish={() => setFirstRun('closed')} />}
+      {whatsNew && !firstRunOpen && (activeView !== 'settings' || whatsNewOverSettings) && (
+        <WhatsNew
+          version={whatsNew.version}
+          // The portable build has no Sync & transfer: no buttons that lead there
+          items={window.platform?.isPortable ? whatsNew.items.map(({ action: _, ...it }) => it) : whatsNew.items}
+          onClose={closeWhatsNew}
+          onAction={(to) => {
+            // Not seen yet: Settings covers it, it comes back when Settings closes, and only Done or Esc marks it seen
+            setWhatsNewOverSettings(false);
+            setSettingsTab('backup');
+            setSettingsReceive(false);
+            setSettingsAdd(to === 'add-computer');
+            setSettingsRequest((n) => n + 1);
+            setActiveView('settings');
+          }}
         />
       )}
 

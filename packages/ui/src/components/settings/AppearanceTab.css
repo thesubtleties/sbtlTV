@@ -1,6 +1,8 @@
 /* Appearance tab: palette tiles (rows and controls come from ui.css). */
 
-.appearance-tab {
+.appearance-options {
+  display: flex;
+  flex-direction: column;
   gap: 26px;
 }
 

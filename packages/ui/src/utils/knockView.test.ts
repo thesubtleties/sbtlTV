@@ -4,7 +4,7 @@ import { knockLine } from './knockView';
 describe('knockLine', () => {
   it('receive steps', () => {
     expect(knockLine('receive', { step: 'starting' }).text).toBe('Getting a code…');
-    expect(knockLine('receive', { step: 'code', code: '7KQ4M2XD', expiresAt: 0 }).text).toBe('Tell this to the person setting you up. Works for 10 minutes.');
+    expect(knockLine('receive', { step: 'code', code: '7KQ4M2XD', expiresAt: 0 }).text).toBe('Works for 10 minutes.');
     expect(knockLine('receive', { step: 'words', words: ['a', 'b', 'c'] }).text).toBe('Same words on their screen? Only then tap Same words.');
     expect(knockLine('receive', { step: 'failed', reason: 'expired' })).toEqual({ text: 'The code ran out. Start again for a new one.', tone: 'error', canRetry: true });
   });
