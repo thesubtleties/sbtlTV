@@ -5,9 +5,10 @@
  * and records nothing about who asked.
  */
 import type { Context, Hono } from 'hono';
-import { MAX_BOX_BYTES, MAX_COMPUTERS, tokenHash, type ErrorCode } from '../protocol/index.js';
+import { BOX_PAD, MAX_BOX_BYTES, MAX_COMPUTERS, tokenHash, type ErrorCode } from '../protocol/index.js';
 import { sameHash, utcDay, type GroupStore, type RekeyEntry } from './groups.js';
 import type { Settings } from './settings.js';
+import { looksSealed } from './sealed-check.js';
 
 type Err = (c: Context, status: 400 | 403 | 404 | 409 | 413 | 426 | 428 | 429, error: ErrorCode) => Response;
 const HEX32 = /^[0-9a-f]{32}$/;
@@ -86,6 +87,8 @@ export function registerSyncRoutes(app: Hono, d: {
     if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) return d.err(c, 400, 'bad-request');
     const sealed = Buffer.from(body.sealed, 'base64');
     if (sealed.length > MAX_BOX_BYTES) return d.err(c, 413, 'too-big');
+    // The app pads every box to 16 KB steps and seals it: anything else isn't one of ours
+    if (sealed.length % BOX_PAD !== 0 || !looksSealed(sealed)) return d.err(c, 400, 'bad-request');
     const gid = c.req.param('gid')!;
     if (d.cfg().newGroupsPaused && !(await d.groups.group(gid))) return d.err(c, 429, 'busy');
     const out = await d.groups.putBox(gid, th, c.req.param('did')!, sealed, today());

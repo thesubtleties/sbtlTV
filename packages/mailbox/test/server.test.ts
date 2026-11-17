@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/server/app';
 import { DEFAULTS } from '../src/server/settings';
@@ -22,7 +23,12 @@ function setup() {
   };
   return { clock, call, app };
 }
-const b64 = (n: number, fill = 1) => Buffer.alloc(n, fill).toString('base64');
+/** n bytes that look sealed (random-looking, the same for the same fill), as base64 */
+const b64 = (n: number, fill = 1) => {
+  const out = Buffer.alloc(n);
+  for (let i = 0; i * 32 < n; i++) createHash('sha256').update(`${fill}|${i}`).digest().copy(out, i * 32);
+  return out.toString('base64');
+};
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Call = (method: string, path: string, body?: unknown, opts?: any) => Promise<{ status: number; json: any }>;
 /** The giver's two steps: claim the code (get the commitment), then send its key. */
@@ -77,7 +83,7 @@ describe('mailbox server', () => {
     const k2 = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
     const ring = await ringWithKey(call, k2.json.code, b64(32), { pow: true });
     await call('POST', `/v1/knock/${k2.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
-    await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10) }, { pow: true });
+    await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(100) }, { pow: true });
     expect(DROP_TTL_MS).toBe(10 * 60 * 1000);
     clock.advance(DROP_TTL_MS + 1);
     expect((await call('GET', `/v1/knock/${k2.json.id}/drop`)).status).toBe(404);
@@ -91,9 +97,13 @@ describe('mailbox server', () => {
     const k = await call('POST', '/v1/knock', { commitment: b64(32) }, { pow: true });
     expect((await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) })).status).toBe(404); // not rung yet
     const ring = await ringWithKey(call, k.json.code, b64(32), { pow: true });
-    expect((await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10) }, { pow: true })).status).toBe(404); // not revealed
+    expect((await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(100) }, { pow: true })).status).toBe(404); // not revealed
     await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
     expect((await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(2 * 1024 * 1024 + 1) }, { pow: true })).json).toEqual({ error: 'too-big' });
+    // Readable content is refused: the relay only holds what looks sealed
+    const plain = Buffer.from('readable text, not sealed '.repeat(400)).toString('base64');
+    expect((await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: plain }, { pow: true })).json).toEqual({ error: 'bad-request' });
+    expect((await call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10_000) }, { pow: true })).status).toBe(204);
   });
 
   it('a proof is used once', async () => {
@@ -187,8 +197,8 @@ describe('mailbox server', () => {
     const ring = await ringWithKey(call, k.json.code, b64(32));
     await call('POST', `/v1/knock/${k.json.id}/reveal`, { receiverKey: b64(32), r: b64(16) });
     const [a, b] = await Promise.all([
-      call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10, 1) }, { pow: true }),
-      call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(10, 2) }, { pow: true }),
+      call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(100, 1) }, { pow: true }),
+      call('PUT', `/v1/ring/${ring.json.ticket}/drop`, { sealed: b64(100, 2) }, { pow: true }),
     ]);
     expect([a.status, b.status].sort()).toEqual([204, 429]);   // one upload at a time per knock
   });

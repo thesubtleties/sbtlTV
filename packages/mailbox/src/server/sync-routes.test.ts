@@ -1,7 +1,7 @@
 // packages/mailbox/src/server/sync-routes.test.ts
 import { createHash, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { CHALLENGE_HEADER, POW_HEADER, VERSION_HEADER, deriveGroup, newDeviceId, powBitsFor, powInput, solvePow } from '../protocol/index.js';
+import { BOX_PAD, CHALLENGE_HEADER, sealBox, POW_HEADER, VERSION_HEADER, deriveGroup, newDeviceId, powBitsFor, powInput, solvePow } from '../protocol/index.js';
 import { createApp } from './app.js';
 import { MemoryGroupStore } from './groups.js';
 
@@ -28,7 +28,8 @@ function setup(over: Parameters<typeof createApp>[0] = {}) {
 const group = () => { const g = deriveGroup(randomBytes(32)); return { ...g, did: newDeviceId() }; };
 /** A rekey entry: the sealed key and the hash of a pick-up proof */
 const withAck = (sealedKey: string) => ({ sealed: sealedKey, ack: randomBytes(32).toString('base64') });
-const sealed = (n = 64) => randomBytes(n).toString('base64');
+/** Random bytes stand in for a sealed box (the app pads boxes to 16 KB steps) */
+const sealed = (n = BOX_PAD) => randomBytes(n).toString('base64');
 
 describe('sync routes', () => {
   it('first box creates the group; list returns it; since filters', async () => {
@@ -64,6 +65,16 @@ describe('sync routes', () => {
     expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=-1`, { token: g.accessToken })).status).toBe(400);
     const r = await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: 'not base64!' }, pow: true });
     expect(r.status).toBe(400);
+  });
+
+  it('refuses boxes that are not padded and sealed like the app\'s; a real one is stored', async () => {
+    const { call } = setup(); const g = group();
+    const put = (bytes: Buffer) => call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: bytes.toString('base64') }, pow: true });
+    expect((await put(Buffer.from('readable text, not sealed '.repeat(630).padEnd(BOX_PAD)))).status).toBe(400);
+    expect((await put(randomBytes(BOX_PAD + 1))).status).toBe(400);    // not in 16 KB steps
+    expect((await put(Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), randomBytes(BOX_PAD - 4)]))).status).toBe(400);   // a zip
+    expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(404);   // nothing stored
+    expect((await put(sealBox(g.encKey, g.groupId, g.did, Buffer.from('{"v":1}')))).status).toBe(200);
   });
 
   it('a box over the limit is too big', async () => {
@@ -195,8 +206,8 @@ describe('sync routes: guards (lens 7)', () => {
 
   it('large list replies share a byte budget held until they are sent; small ones are always served (review C1, security)', async () => {
     const { call } = setup({ listInflightBytes: 100_000 }); const g = group();
-    await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(70_000) }, pow: true });
-    const first = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });   // ~93 KB, not read yet
+    await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(4 * BOX_PAD) }, pow: true });
+    const first = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });   // ~87 KB, not read yet
     expect(first.status).toBe(200);
     expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken })).status).toBe(429);   // budget held by the unread reply
     expect((await call('GET', `/v1/groups/${g.groupId}/boxes?since=1`, { token: g.accessToken })).status).toBe(200);   // a small "anything new?" still works
@@ -216,7 +227,7 @@ describe('sync routes: guards (lens 7)', () => {
   });
 
   it('small replies have their own budget, held until sent (security)', async () => {
-    const { call } = setup({ smallListInflightBytes: 400 }); const g = group(), g2 = group();
+    const { call } = setup({ smallListInflightBytes: 30_000 }); const g = group(), g2 = group();
     await put(call, g); await put(call, g2);
     const first = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
     expect((await call('GET', `/v1/groups/${g2.groupId}/boxes?since=0`, { token: g2.accessToken })).status).toBe(429);
@@ -226,7 +237,7 @@ describe('sync routes: guards (lens 7)', () => {
 
   it('a reply not read in time is aborted, and only then is its budget given back (security)', async () => {
     const { call } = setup({ listInflightBytes: 100_000, listHoldMs: 30 }); const g = group();
-    await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(70_000) }, pow: true });
+    await call('PUT', `/v1/groups/${g.groupId}/boxes/${g.did}`, { token: g.accessToken, body: { sealed: sealed(4 * BOX_PAD) }, pow: true });
     const slow = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
     await new Promise((r) => setTimeout(r, 60));
     await expect(slow.text()).rejects.toThrow();   // the memory went with it
@@ -234,7 +245,7 @@ describe('sync routes: guards (lens 7)', () => {
   });
 
   it('a small reply not read within 15 seconds is aborted (slow readers cannot hold the small budget for long) (security)', async () => {
-    const { call } = setup({ smallListInflightBytes: 400, smallListHoldMs: 30 }); const g = group(), g2 = group();
+    const { call } = setup({ smallListInflightBytes: 30_000, smallListHoldMs: 30 }); const g = group(), g2 = group();
     await put(call, g); await put(call, g2);
     const slow = await call('GET', `/v1/groups/${g.groupId}/boxes?since=0`, { token: g.accessToken });
     await new Promise((r) => setTimeout(r, 60));

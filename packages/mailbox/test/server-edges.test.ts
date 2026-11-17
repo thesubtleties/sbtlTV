@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createApp, type MailboxOptions } from '../src/server/app';
 import { DEFAULTS, type Settings } from '../src/server/settings';
@@ -6,7 +7,12 @@ import { challengeOf, proof } from './support';
 
 const BITS = 4;
 const V = '0.17.0';
-const b64 = (n: number, fill = 1) => Buffer.alloc(n, fill).toString('base64');
+/** n bytes that look sealed (random-looking, the same for the same fill), as base64 */
+const b64 = (n: number, fill = 1) => {
+  const out = Buffer.alloc(n);
+  for (let i = 0; i * 32 < n; i++) createHash('sha256').update(`${fill}|${i}`).digest().copy(out, i * 32);
+  return out.toString('base64');
+};
 
 function server(opts: MailboxOptions = {}) {
   let t = 1_800_000_000_000;
@@ -73,7 +79,7 @@ describe('mailbox server: expiry, sweeping and memory', () => {
   it('a received drop is unreachable by the receiver id; the giver sees gone; a late cancel changes nothing', async () => {
     const { call, ready } = server();
     const k = await ready();
-    await call('PUT', `/v1/ring/${k.ticket}/drop`, { sealed: b64(10) }, { pow: true });
+    await call('PUT', `/v1/ring/${k.ticket}/drop`, { sealed: b64(100) }, { pow: true });
     await call('GET', `/v1/knock/${k.id}/drop`);
     await call('POST', `/v1/knock/${k.id}/receipt`, { ok: true });
     expect((await call('GET', `/v1/knock/${k.id}`)).status).toBe(404);

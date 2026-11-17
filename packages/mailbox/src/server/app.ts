@@ -11,6 +11,7 @@ import {
 } from '../protocol/index.js';
 import { KnockStore } from './store.js';
 import { SeenProofs } from './limits.js';
+import { looksSealed } from './sealed-check.js';
 import { PowGovernor } from './governor.js';
 import { DEFAULTS, type Settings } from './settings.js';
 import { MemoryGroupStore, type GroupStore } from './groups.js';
@@ -275,6 +276,7 @@ export function createApp(opts: MailboxOptions = {}) {
       const body = parse(text);
       if (!body || typeof body.sealed !== 'string' || !B64.test(body.sealed)) { giveBack(); return err(c, 400, 'bad-request'); }
       if (Buffer.byteLength(body.sealed, 'base64') > MAX_DROP_BYTES) { giveBack(); return err(c, 413, 'too-big'); }
+      if (!looksSealed(Buffer.from(body.sealed, 'base64'))) { giveBack(); return err(c, 400, 'bad-request'); }
       const stored = store.drop(k, body.sealed);
       if (stored === 'gone') { giveBack(); return err(c, 404, 'not-found'); }
       if (stored === 'busy') { giveBack(); return err(c, 429, 'busy'); }
