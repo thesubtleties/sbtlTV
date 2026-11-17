@@ -140,8 +140,8 @@
 /* The sbtl logo stays in its own colours (white, and the dim grey in the background); other palettes use their accent */
 :root[data-palette='sbtl'] .title-bar-logo { color: var(--text); }
 :root[data-palette='sbtl'] .placeholder__logo { color: var(--faint); }
-/* sbtl light: the logo in its button colour (the slate blue), full strength */
-:root[data-palette='sbtl-light'] .placeholder__logo { color: var(--accent); }
+/* sbtl light: the logo in its button colour (the slate blue), at 85% */
+:root[data-palette='sbtl-light'] .placeholder__logo { color: color-mix(in srgb, var(--accent) 85%, transparent); }
 
 /* Sync status indicator - sits below logo with fixed height to prevent shifting */
 .sync-status {
