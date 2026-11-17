@@ -807,7 +807,7 @@ function App() {
       window.sync.onView((v) => setSyncActive(v.status === 'active')),
       window.sync.onSnapshot(() => { void sendSnapshot(); }),
       // Confirmed only once written: a failed write comes back on the next pull
-      window.sync.onApply((records) => { void applyRecords(records).then(() => window.sync?.applied(records)).catch((e) => debugLog(`Sync: applying failed: ${e instanceof Error ? e.name : 'error'}`, 'sync')); }),
+      window.sync.onApply((records) => { void applyRecords(records).then((done) => window.sync?.applied(done)).catch((e) => debugLog(`Sync: applying failed: ${e instanceof Error ? e.name : 'error'}`, 'sync')); }),
       window.sync.onSettingsReplaced(async () => {
         const r = await window.storage?.getSettings();
         if (r?.data) useUIStore.getState().hydrateSettings(r.data);

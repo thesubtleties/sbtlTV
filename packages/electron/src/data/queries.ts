@@ -119,10 +119,26 @@ export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
       return withCategoryIds(db, (rows as ChannelWire[]).map(fixChannel), 'channel');
     }
     case 'channelsByGuideIds': {
-      // Synced favorites from another computer: this computer's channels with the same guide id
-      const rows = stmt(db, `select ${CHANNEL_COLS} from channels where ${SRC} and epg_channel_id != '' and epg_channel_id in (select value from json_each($guides)) order by channel_num is null, channel_num, name collate nocase`)
-        .all({ $sources: j(req.sourceIds), $guides: j(req.guideIds) });
-      return withCategoryIds(db, (rows as ChannelWire[]).map(fixChannel), 'channel');
+      // Synced favorites from another computer: this computer's channels with that guide id, either the
+      // channel the guide matched (epg_links: XMLTV, EPGenius) or the provider's own tvg-id
+      const rows = stmt(db, `select ${CHANNEL_COLS}, (select json_group_array(l.epg_channel_id) from epg_links l where l.stream_id = channels.stream_id) as guide_links
+        from channels where ${SRC} and (
+          (epg_channel_id != '' and epg_channel_id in (select value from json_each($guides)))
+          or stream_id in (select stream_id from epg_links where epg_channel_id in (select value from json_each($guides))))
+        order by channel_num is null, channel_num, name collate nocase`).all({ $sources: j(req.sourceIds), $guides: j(req.guideIds) }) as (ChannelWire & { guide_links: string })[];
+      const links = new Map(rows.map((r) => [r.stream_id, JSON.parse(r.guide_links) as string[]]));
+      const plain = rows.map(({ guide_links: _, ...r }) => r) as ChannelWire[];
+      const channels = withCategoryIds(db, plain.map(fixChannel), 'channel') as { stream_id: string }[];
+      return channels.map((c) => Object.assign(c, { guide_ids: links.get(c.stream_id) ?? [] }));
+    }
+    case 'favoriteGuides': {
+      // The guide id a favorite is sent with: the guide's match when there is one (most confident first), else the tvg-id
+      const rows = stmt(db, `select stream_id, coalesce(
+          (select l.epg_channel_id from epg_links l where l.stream_id = channels.stream_id
+            order by case l.confidence when 'high' then 0 when 'medium' then 1 else 2 end, l.epg_source, l.epg_channel_id limit 1),
+          nullif(epg_channel_id, ''), '') as guide
+        from channels where stream_id in (select value from json_each(?))`).all(j(req.streamIds));
+      return rows;
     }
     case 'channelCount':
       return (stmt(db, `select count(*) as c from channels where ${SRC}`).get({ $sources: j(req.sourceIds) }) as { c: number }).c;

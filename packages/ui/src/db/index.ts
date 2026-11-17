@@ -28,8 +28,11 @@ export interface StoredFavorite {
   name?: string;           // Display name snapshot
   added: Date;
   sort_order?: number;
-  /** A channel favorite that came through Sync: the identity it answers to (another computer's provider and channel). No stream_id = not on this computer yet. */
-  sync?: { host: string; ch: string; guide?: string };
+  /**
+   * Channel favorites with Sync: every id this favorite answers to (its own, saved when it was made, and the
+   * ones it has on the user's other computers). No stream_id = from another computer, not on this one yet.
+   */
+  ids?: { host: string; ch: string; guide?: string }[];
 }
 
 // Watchlist item (want-to-watch VOD)

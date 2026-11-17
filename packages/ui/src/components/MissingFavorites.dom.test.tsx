@@ -21,7 +21,7 @@ const row = (id: string, over = {}) => ({ id, type: 'channel' as const, name: id
 describe('grayed favorites (DOM)', () => {
   it('Remove hands back the row it sits on', async () => {
     const onRemove = vi.fn();
-    const rows = [row('ESPN', { sync: { host: 'h', ch: '1' } }), row('HBO', { sync: { host: 'h', ch: '2' } })];
+    const rows = [row('ESPN', { ids: [{ host: 'h', ch: '1' }] }), row('HBO', { ids: [{ host: 'h', ch: '2' }] })];
     await act(async () => { root.render(createElement(MissingFavoriteRows, { rows, onRemove })); });
     const buttons = [...host.querySelectorAll('button')];
     await act(async () => { buttons[1].click(); });
@@ -29,7 +29,7 @@ describe('grayed favorites (DOM)', () => {
   });
 
   it('the Guide shows none until the setting says Gray out', async () => {
-    await db.favorites.bulkPut([row('ESPN', { sync: { host: 'h', ch: '1' } }), row('m1', { stream_id: 'm1_1' })]);
+    await db.favorites.bulkPut([row('ESPN', { ids: [{ host: 'h', ch: '1' }] }), row('m1', { stream_id: 'm1_1' })]);
     const seen: string[][] = [];
     const Probe = () => { seen.push(useWaitingFavorites().map((f) => f.id)); return null; };
     await act(async () => { root.render(createElement(Probe)); });

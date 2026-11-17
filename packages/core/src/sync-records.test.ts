@@ -128,13 +128,26 @@ describe('fav records', () => {
     expect(validateRecord({ k: 'fav', host: 'file', ch: 'abc', name: 'X', at: 5, removed: true, url: 'http://x' })).toEqual({ k: 'fav', host: 'file', ch: 'abc', name: 'X', at: 5, removed: true });
   });
   it('rejects bad hosts and ids (no logins, schemes or paths)', () => {
-    for (const host of ['', 'http://a.b', 'user:pw@a.b', 'a.b/path', 'A'.repeat(300)]) expect(validateRecord({ ...fav, host })).toBeNull();
+    for (const host of ['', 'http://a.b', 'user:pw@a.b', 'a.b/path', 'A'.repeat(300), 'a b']) expect(validateRecord({ ...fav, host })).toBeNull();
     for (const ch of ['', 'x'.repeat(200)]) expect(validateRecord({ ...fav, ch })).toBeNull();
-    expect(validateRecord({ ...fav, guide: 'g'.repeat(300) })).toBeNull();
-    expect(validateRecord({ ...fav, guide: '' })).toBeNull();
-    expect(validateRecord({ ...fav, name: 'n'.repeat(501) })).toBeNull();
+    expect(validateRecord({ ...fav, guide: '' })).not.toHaveProperty('guide');
+    expect((validateRecord({ ...fav, name: 'n'.repeat(501) }) as { name: string }).name).toHaveLength(500);
   });
   it('an unknown kind is ignored, not an error (older builds meeting newer records)', () => {
     expect(validateRecord({ k: 'zz', at: 5 })).toBeNull();
+  });
+});
+
+describe('fav records: real-world hosts and long fields', () => {
+  const fav = { k: 'fav', host: 'provider.example', ch: '1234', name: 'CNN', at: 5 };
+  it('IPv6 servers and names with underscores are kept (they were dropped)', () => {
+    expect(validateRecord({ ...fav, host: '[fd00::5]' })).toMatchObject({ host: '[fd00::5]' });
+    expect(validateRecord({ ...fav, host: 'my_nas.local' })).toMatchObject({ host: 'my_nas.local' });
+  });
+  it('an over-long guide id is left out and an over-long name trimmed, instead of losing the favorite', () => {
+    const r = validateRecord({ ...fav, guide: 'g'.repeat(300), name: 'n'.repeat(600) })!;
+    expect(r).not.toBeNull();
+    expect('guide' in r).toBe(false);
+    expect((r as { name: string }).name).toHaveLength(500);
   });
 });

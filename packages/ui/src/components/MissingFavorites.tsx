@@ -3,9 +3,7 @@
 import type { StoredFavorite } from '../db';
 import './MissingFavorites.css';
 
-export function waitingFavorites(rows: StoredFavorite[], setting: 'hide' | 'gray'): StoredFavorite[] {
-  return setting === 'gray' ? rows.filter((f) => f.sync && !f.stream_id) : [];
-}
+export { waitingFavorites } from '../services/sync/favorites';
 
 export function MissingFavoriteRows({ rows, onRemove }: { rows: StoredFavorite[]; onRemove: (row: StoredFavorite) => void }) {
   if (!rows.length) return null;

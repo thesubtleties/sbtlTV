@@ -11,12 +11,12 @@ function toWire(rows: object[]): unknown[] {
 
 // What a row from a file may hold, per table: a file from someone else must not
 // put a value the app trusts (a sub_delay string, a NaN position) into Dexie.
-type Kind = 'string' | 'number' | 'boolean';
+type Kind = 'string' | 'number' | 'boolean' | 'favoriteIds';
 type Spec = { required: Record<string, Kind | readonly string[]>; optional: Record<string, Kind> };
 const SPECS: Record<ListPart, Spec> = {
   favorites: {
     required: { id: 'string', type: ['channel', 'movie', 'series'] },
-    optional: { stream_id: 'string', tmdb_id: 'number', name: 'string', sort_order: 'number' },
+    optional: { stream_id: 'string', tmdb_id: 'number', name: 'string', sort_order: 'number', ids: 'favoriteIds' },
   },
   watchlist: {
     required: { id: 'string', type: ['movie', 'series'], name: 'string' },
@@ -36,6 +36,13 @@ function fits(v: unknown, kind: Kind | readonly string[]): boolean {
   if (Array.isArray(kind)) return typeof v === 'string' && kind.includes(v);
   if (kind === 'number') return typeof v === 'number' && Number.isFinite(v);
   if (kind === 'string') return typeof v === 'string' && v.length <= 2000;
+  // A synced favorite's ids (Sync): server name, channel id, optional guide id; at most 64
+  if (kind === 'favoriteIds') {
+    const str = (x: unknown, max: number) => typeof x === 'string' && x.length >= 1 && x.length <= max;
+    return Array.isArray(v) && v.length >= 1 && v.length <= 64 && v.every((i) => !!i && typeof i === 'object'
+      && str((i as Record<string, unknown>).host, 253) && str((i as Record<string, unknown>).ch, 128)
+      && ((i as Record<string, unknown>).guide === undefined || str((i as Record<string, unknown>).guide, 200)));
+  }
   return typeof v === kind;
 }
 
@@ -50,7 +57,13 @@ function revive<T>(rows: unknown[] | undefined, part: ListPart, dateField: strin
       if (!fits(raw[k], kind)) return [];
       row[k] = raw[k];
     }
-    for (const [k, kind] of Object.entries(spec.optional)) if (fits(raw[k], kind)) row[k] = raw[k];
+    for (const [k, kind] of Object.entries(spec.optional)) {
+      if (!fits(raw[k], kind)) continue;
+      // Rebuilt from known fields only (nothing else from the file rides along)
+      row[k] = kind === 'favoriteIds'
+        ? (raw[k] as Record<string, string>[]).map((i) => ({ host: i.host, ch: i.ch, ...(i.guide ? { guide: i.guide } : {}) }))
+        : raw[k];
+    }
     const d = new Date(raw[dateField] as string);
     row[dateField] = Number.isNaN(d.getTime()) ? new Date() : d;
     return [row as T];

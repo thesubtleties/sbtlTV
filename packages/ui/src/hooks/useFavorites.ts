@@ -2,10 +2,10 @@ import { useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type StoredFavorite } from '../db';
 import { useUIStore } from '../stores/uiStore';
-import { waitingFavorites } from '../components/MissingFavorites';
 import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
-import { favoritesOut } from '../services/sync/outbox';
+import { favoriteAdded, favoriteRemoved, guidesFor } from '../services/sync/outbox';
+import { localId, waitingFavorites } from '../services/sync/favorites';
 
 function favId(streamId: string): string {
   return `channel_${streamId}`;
@@ -25,18 +25,20 @@ export async function toggleFavoriteChannel(streamId: string, name: string): Pro
   const existing = await db.favorites.get(id);
   if (existing) {
     await db.favorites.delete(id);
-    await favoritesOut([existing], Date.now(), true);
-  } else {
-    const row = { id, type: 'channel' as const, stream_id: streamId, name, added: new Date() };
-    await db.favorites.put(row);
-    await favoritesOut([row], +row.added);
+    favoriteRemoved(existing);
+    return;
   }
+  // Its own id is saved now, so editing the provider's address later doesn't change which favorite it is
+  const own = localId(streamId, useUIStore.getState().sources, (await guidesFor([streamId])).get(streamId));
+  const row: StoredFavorite = { id, type: 'channel', stream_id: streamId, name, added: new Date(), ...(own ? { ids: [own] } : {}) };
+  await db.favorites.put(row);
+  favoriteAdded(row);
 }
 
 /** Remove a favorite row as it is (one waiting for its channel too); the other computers follow. */
 export async function removeFavoriteRow(row: StoredFavorite): Promise<void> {
   await db.favorites.delete(row.id);
-  await favoritesOut([row], Date.now(), true);
+  favoriteRemoved(row);
 }
 
 /** Synced favorites this computer doesn't have, when Settings › Sync & transfer says to show them. */

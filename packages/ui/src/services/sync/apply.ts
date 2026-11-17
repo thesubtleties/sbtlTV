@@ -8,15 +8,19 @@ import { db, type StoredWatchProgress } from '../../db';
 import { data } from '../../data/client';
 import { episodeProgressId, movieProgressId } from '../continue-watching/series-key';
 import { applyFavoriteRecords } from './applyFavorites';
+import { debugLog } from '../../utils/debugLog';
 
 type Lookup = (tmdbIds: number[]) => Promise<{ stream_id: string; tmdb_id?: number }[]>;
 const libraryLookup: Lookup = (tmdbIds) => data.query({ type: 'movies', by: { kind: 'tmdbIds', tmdbIds }, sourceIds: [] });
 
 const pct = (pos: number, dur: number) => (dur > 0 ? Math.round((pos / dur) * 100) : 0);
 
-export async function applyRecords(records: SyncRecord[], lookup: Lookup = libraryLookup): Promise<void> {
+/** Writes the records; returns the ones written (favorites that failed are left out, so they come again). */
+export async function applyRecords(records: SyncRecord[], lookup: Lookup = libraryLookup): Promise<SyncRecord[]> {
   const favorites = records.filter((r): r is FavoriteRecord => r.k === 'fav');
-  if (favorites.length) await applyFavoriteRecords(favorites);
+  // Favorites can't hold back the watchlist and progress: a failure here is logged, and they aren't confirmed, so they come again
+  let favoritesFailed = false;
+  if (favorites.length) await applyFavoriteRecords(favorites).catch((e: unknown) => { favoritesFailed = true; debugLog(`Sync: favorites not applied (${e instanceof Error ? e.name : 'error'})`, 'sync'); });
   const movieNeeds = records.filter((r) => r.k === 'pm' && !r.removed).map((r) => (r as Extract<SyncRecord, { k: 'pm' }>).tmdb);
   const library = new Map<number, string>();
   if (movieNeeds.length) {
@@ -58,4 +62,5 @@ export async function applyRecords(records: SyncRecord[], lookup: Lookup = libra
       }
     }
   });
+  return favoritesFailed ? records.filter((r) => r.k !== 'fav') : records;
 }

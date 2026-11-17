@@ -41,3 +41,15 @@ describe('applyRecords routes favorites', () => {
     expect((await db.favorites.toArray()).map((f) => f.id)).toEqual(['channel_sync_provider.example_1234']);
   });
 });
+
+describe('applyRecords keeps favorites from holding back the rest', () => {
+  it("a favorites failure: the watchlist still lands, and the favorites aren't confirmed (they come again)", async () => {
+    useUIStore.getState().hydrateSources([source('m1', 'http://provider.example')]);
+    (globalThis as unknown as { window: unknown }).window = {};   // debugLog's renderer bridge
+    query.mockRejectedValueOnce(new Error('data process gone'));
+    const wl = { k: 'wl' as const, type: 'movie' as const, tmdb: 603, name: 'The Matrix', at: 5_000 };
+    const done = await applyRecords([{ k: 'fav', host: 'provider.example', ch: '1234', name: 'CNN', at: 5_000 }, wl], async () => []);
+    expect(await db.watchlist.get('movie_603')).toBeDefined();
+    expect(done).toEqual([wl]);
+  });
+});

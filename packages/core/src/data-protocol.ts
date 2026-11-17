@@ -47,6 +47,7 @@ export type DataRequest =
   | { id: number; type: 'channels'; categoryId: string | null; sourceIds: string[]; sort: 'alphabetical' | 'number' }
   | { id: number; type: 'channelsByIds'; streamIds: string[] }
   | { id: number; type: 'channelsByGuideIds'; guideIds: string[]; sourceIds: string[] }   // synced favorites; [] = all sources
+  | { id: number; type: 'favoriteGuides'; streamIds: string[] }   // each channel's guide id for a synced favorite
   | { id: number; type: 'channelCount'; sourceIds: string[] }
   | { id: number; type: 'channelSearch'; query: string; sourceIds: string[]; limit: number }
   | { id: number; type: 'guideSearch'; query: string; sourceIds: string[]; nowMs: number; hideAdult: boolean }
@@ -92,7 +93,9 @@ export type SeriesSelector =
 // ---- Replies ----
 export type ReplyFor<R extends DataRequest> =
   R extends { type: 'categories' } ? CategoryRow[] :
-  R extends { type: 'channels' | 'channelsByIds' | 'channelsByGuideIds' | 'channelSearch' } ? ChannelRow[] :
+  R extends { type: 'channelsByGuideIds' } ? (ChannelRow & { guide_ids: string[] })[] :
+  R extends { type: 'favoriteGuides' } ? { stream_id: string; guide: string }[] :
+  R extends { type: 'channels' | 'channelsByIds' | 'channelSearch' } ? ChannelRow[] :
   R extends { type: 'channelCount' } ? number :
   R extends { type: 'guideSearch' } ? GuideSearchResult :
   R extends { type: 'programsInRange' } ? ProgramRow[] :

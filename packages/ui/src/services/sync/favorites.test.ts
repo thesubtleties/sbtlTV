@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { channelPart, favoriteRecord, matchFavorite, sourceHost } from './favorites';
 
-const ch = (stream_id: string, source_id: string, name: string, epg = '', num: number | null = null) => ({ stream_id, source_id, name, channel_num: num, epg_channel_id: epg });
+const ch = (stream_id: string, source_id: string, name: string, epg = '', num: number | null = null) => ({ stream_id, source_id, name, channel_num: num, guides: epg ? [epg] : [] });
 
 describe('favorite identity', () => {
   it('host is the server name only', () => {
@@ -30,13 +30,16 @@ describe('matchFavorite', () => {
     const byGuide = [ch('m2_8', 'm2', 'CNN SD', 'CNN.us', 3), ch('m2_9', 'm2', 'CNN HD', 'CNN.us', 7), ch('m2_7', 'm2', 'CNN Backup', 'CNN.us', 1)];
     expect(matchFavorite(rec, { sources, byId: new Map(), byGuide })).toBe('m2_9');
     expect(matchFavorite({ ...rec, name: 'cnn-hd' }, { sources, byId: new Map(), byGuide })).toBe('m2_9');
-    expect(matchFavorite({ ...rec, name: 'Something else' }, { sources, byId: new Map(), byGuide })).toBe('m2_7');
+    // Several channels share the guide id and none is named like it: no guess ("PPV Fight Night" on "Event 0")
+    expect(matchFavorite({ ...rec, name: 'Something else' }, { sources, byId: new Map(), byGuide })).toBe(null);
+    // The only channel with that guide id: taken whatever its name
+    expect(matchFavorite({ ...rec, name: 'Something else' }, { sources, byId: new Map(), byGuide: [byGuide[0]] })).toBe('m2_8');
   });
   it('name ranking: exact, then same letters, then containing the name; a channel without a number comes after numbered ones', () => {
     const m = (name: string, byGuide: ReturnType<typeof ch>[]) => matchFavorite({ ...rec, host: 'x.example', name }, { sources, byId: new Map(), byGuide });
     expect(m('CNN HD', [ch('m2_1', 'm2', 'cnn hd', 'CNN.us', 1), ch('m2_2', 'm2', 'CNN HD', 'CNN.us', 9)])).toBe('m2_2');
     expect(m('CNN', [ch('m2_1', 'm2', 'Other', 'CNN.us', 1), ch('m2_2', 'm2', 'US: CNN HD', 'CNN.us', 9)])).toBe('m2_2');
-    expect(m('Zzz', [ch('m2_1', 'm2', 'A', 'CNN.us', null), ch('m2_2', 'm2', 'B', 'CNN.us', 40)])).toBe('m2_2');
+    expect(m('News', [ch('m2_1', 'm2', 'News A', 'CNN.us', null), ch('m2_2', 'm2', 'News B', 'CNN.us', 40)])).toBe('m2_2');
   });
   it('a source not passed in (disabled) is never a match', () => {
     const byId = new Map([['m3_1234', ch('m3_1234', 'm3', 'CNN')]]);
@@ -48,20 +51,36 @@ describe('matchFavorite', () => {
   });
 });
 
-import { favoriteIdentity } from './favorites';
+import { favoriteIds, localId, waitingFavorites, withId } from './favorites';
 
-describe('favoriteIdentity (what goes out)', () => {
+describe('the ids a favorite answers to', () => {
   const sources = [{ id: 'm1', url: 'http://provider.example' }];
-  it('a favorite that came through Sync keeps the key it came with, even on a different local channel (Review Focus 4)', () => {
-    const row = { stream_id: 'm2_9', sync: { host: 'provider.example', ch: '1234', guide: 'CNN.us' } };
-    expect(favoriteIdentity(row, { sources, channel: { source_id: 'm2', epg_channel_id: 'CNN.us' } })).toEqual({ host: 'provider.example', ch: '1234', guide: 'CNN.us' });
+  it('its saved ids, even on a different local channel (Review Focus 4); else its own channel\'s', () => {
+    expect(favoriteIds({ stream_id: 'm2_9', ids: [{ host: 'provider.example', ch: '1234' }] }, sources)).toEqual([{ host: 'provider.example', ch: '1234' }]);
+    expect(favoriteIds({ stream_id: 'm1_77' }, sources)).toEqual([{ host: 'provider.example', ch: '77' }]);
+    expect(favoriteIds({ stream_id: 'zz_77' }, sources)).toEqual([]);
   });
-  it("a local favorite: its source's server, the channel id without the prefix, and its guide id", () => {
-    expect(favoriteIdentity({ stream_id: 'm1_77' }, { sources, channel: { source_id: 'm1', epg_channel_id: 'ESPN.us' } })).toEqual({ host: 'provider.example', ch: '77', guide: 'ESPN.us' });
-    expect(favoriteIdentity({ stream_id: 'm1_77' }, { sources, channel: { source_id: 'm1', epg_channel_id: '' } })).toEqual({ host: 'provider.example', ch: '77' });
+  it('its own id from the source in its channel id, with the guide id when known', () => {
+    expect(localId('m1_77', sources, 'ESPN.us')).toEqual({ host: 'provider.example', ch: '77', guide: 'ESPN.us' });
+    expect(localId('m9_77', sources)).toBe(null);
   });
-  it('unknown channel or source: nothing to send', () => {
-    expect(favoriteIdentity({ stream_id: 'm1_77' }, { sources })).toBe(null);
-    expect(favoriteIdentity({ stream_id: 'zz_77' }, { sources, channel: { source_id: 'zz', epg_channel_id: '' } })).toBe(null);
+  it('adding an id keeps one per key, the newest', () => {
+    expect(withId([{ host: 'a', ch: '1', guide: 'x' }, { host: 'b', ch: '2' }], { host: 'a', ch: '1', guide: 'y' })).toEqual([{ host: 'b', ch: '2' }, { host: 'a', ch: '1', guide: 'y' }]);
+  });
+  it('only favorites from other computers with no channel here are shown grayed, and only with Gray out', () => {
+    const rows = [{ ids: [{ host: 'h', ch: '1' }] }, { stream_id: 'm1_2', ids: [{ host: 'h', ch: '2' }] }, { stream_id: 'm1_3' }];
+    expect(waitingFavorites(rows, 'gray')).toEqual([rows[0]]);
+    expect(waitingFavorites(rows, 'hide')).toEqual([]);
+  });
+});
+
+describe('server names', () => {
+  it('"www." is dropped and IPv6 addresses keep their brackets', () => {
+    expect(sourceHost({ url: 'https://www.Provider.example/x' })).toBe('provider.example');
+    expect(sourceHost({ url: 'http://[fd00::5]:8080/' })).toBe('[fd00::5]');
+  });
+  it('names in any script compare by their letters', () => {
+    const c = (id: string, name: string) => ({ stream_id: id, source_id: 'm2', name, channel_num: null, guides: ['ru.1'] });
+    expect(matchFavorite({ host: 'x', ch: '1', guide: 'ru.1', name: 'Первый канал HD' }, { sources: [{ id: 'm2', url: 'http://o.example' }], byId: new Map(), byGuide: [c('m2_1', 'Россия'), c('m2_2', 'ПЕРВЫЙ КАНАЛ')] })).toBe('m2_2');
   });
 });

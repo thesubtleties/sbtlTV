@@ -29,7 +29,7 @@ export function isSameJob(a: SyncJob, b: SyncJob): boolean {
 // Plain string sets, not derived from the DataRequest union: a new request
 // variant must be added here (and to validateRequest) or it is refused at runtime.
 const CONTROL = new Set(['syncNow', 'syncEpisodes', 'rematchEpg', 'updateVodDetails', 'importPlaylist', 'clearAll']);
-const READS = new Set(['categories', 'channels', 'channelsByIds', 'channelsByGuideIds', 'channelCount', 'channelSearch', 'guideSearch', 'programsInRange', 'currentProgram', 'syncStatus', 'movies', 'series', 'episodes', 'vodCategories', 'vodCounts', 'playlistRows']);
+const READS = new Set(['categories', 'channels', 'channelsByIds', 'channelsByGuideIds', 'favoriteGuides', 'channelCount', 'channelSearch', 'guideSearch', 'programsInRange', 'currentProgram', 'syncStatus', 'movies', 'series', 'episodes', 'vodCategories', 'vodCounts', 'playlistRows']);
 
 // Answers one renderer message: reads run against the read connection, control
 // requests are acknowledged and queued for the worker. Anything that is not a
@@ -69,6 +69,7 @@ export function validateRequest(req: DataRequest): DataRequest {
     case 'channels': list(r.sourceIds, 'sourceIds', 'string'); if (r.categoryId !== null) text(r.categoryId, 'categoryId'); if (r.sort !== 'alphabetical' && r.sort !== 'number') bad('sort'); break;
     case 'channelsByIds': list(r.streamIds, 'streamIds', 'string'); break;
     case 'channelsByGuideIds': list(r.guideIds, 'guideIds', 'string'); list(r.sourceIds, 'sourceIds', 'string'); break;
+    case 'favoriteGuides': list(r.streamIds, 'streamIds', 'string'); break;
     case 'channelSearch': list(r.sourceIds, 'sourceIds', 'string'); text(r.query, 'query'); num(r.limit, 'limit'); if ((r.limit as number) < 1) bad('limit must be positive'); r.limit = Math.min(r.limit as number, MAX_LIMIT); break;
     case 'guideSearch': list(r.sourceIds, 'sourceIds', 'string'); text(r.query, 'query'); if ((r.query as string).length > MAX_SEARCH) bad(`query is longer than ${MAX_SEARCH}`); num(r.nowMs, 'nowMs'); if (typeof r.hideAdult !== 'boolean') bad('hideAdult must be a boolean'); break;
     case 'programsInRange': list(r.streamIds, 'streamIds', 'string'); num(r.windowStartMs, 'windowStartMs'); num(r.windowEndMs, 'windowEndMs'); break;
