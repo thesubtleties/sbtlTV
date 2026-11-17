@@ -165,6 +165,31 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
 
   return (
     <SettingsTab>
+      <details className="setup-how-drawer">
+        <summary className="setup-how-drawer__summary">How sending works</summary>
+        <div className="setup-how-drawer__body">
+          <div className="setup-how">
+            <div>
+              <div className="setup-how__title">To receive</div>
+              <ol className="setup-how__steps">
+                <li>Show my code, and tell it to the person sending.</li>
+                <li>They type it in. You both see three words.</li>
+                <li>Same words? Tap Same words. Nothing changes until you accept it.</li>
+              </ol>
+            </div>
+            <div>
+              <div className="setup-how__title">To send</div>
+              <ol className="setup-how__steps">
+                <li>Ask for their code. They find it under Live TV › Receive a setup, or here.</li>
+                <li>Pick what to send, type the code, Connect.</li>
+                <li>Check you both see the same three words, then send.</li>
+              </ol>
+            </div>
+          </div>
+          <Hint>Only use a code from someone you know. Different words mean someone else answered: stop there. The setup is end-to-end encrypted on the sbtlTV relay, so even we can't read it, and it's deleted once picked up. Adding a computer to Sync works the same way.</Hint>
+        </div>
+      </details>
+
       <SyncSection adding={adding} onAdding={openAdding} />
 
       <Section title="Transfer setup" description="To another computer, or someone else's."
@@ -279,27 +304,6 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
         )}
       </Section>
 
-      <Section title="How sending works">
-        <div className="setup-how">
-          <div>
-            <div className="setup-how__title">To receive</div>
-            <ol className="setup-how__steps">
-              <li>Show my code, and tell it to the person sending.</li>
-              <li>They type it in. You both see three words.</li>
-              <li>Same words? Tap Same words. Nothing changes until you accept it.</li>
-            </ol>
-          </div>
-          <div>
-            <div className="setup-how__title">To send</div>
-            <ol className="setup-how__steps">
-              <li>Ask for their code. They find it under Live TV › Receive a setup, or here.</li>
-              <li>Pick what to send, type the code, Connect.</li>
-              <li>Check you both see the same three words, then send.</li>
-            </ol>
-          </div>
-        </div>
-        <Hint>Only use a code from someone you know. Different words mean someone else answered: stop there. The setup is end-to-end encrypted on the sbtlTV relay, so even we can't read it, and it's deleted once picked up. Adding a computer to Sync works the same way.</Hint>
-      </Section>
 
       {backups.length > 0 && (
         <Section title="Restore previous setup" description="Made before each import (with Back up first on). The last three stay on this computer.">

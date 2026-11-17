@@ -98,3 +98,58 @@
 .setup-how__steps li + li {
   margin-top: 4px;
 }
+
+/* How sending works: closed by default at the top of the tab */
+.setup-how-drawer {
+  margin-bottom: 22px;
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-card);
+}
+
+.setup-how-drawer__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.setup-how-drawer__summary::-webkit-details-marker {
+  display: none;
+}
+
+.setup-how-drawer__summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--text-3);
+  border-bottom: 1.5px solid var(--text-3);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.setup-how-drawer[open] > .setup-how-drawer__summary::before {
+  transform: rotate(45deg);
+}
+
+.setup-how-drawer__summary:hover {
+  color: var(--accent);
+}
+
+.setup-how-drawer__summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+.setup-how-drawer__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 14px 14px;
+}
