@@ -67,3 +67,78 @@
   min-height: calc(400px + var(--bleed-chrome, 108px));
   max-height: calc(600px + var(--bleed-chrome, 108px));
 }
+
+/* ---------- Both styles ---------- */
+/* Nothing in the header or the Genres panel is selectable by dragging (the search field still is) */
+.h-category-strip--unified,
+.h-category-strip__sheet { user-select: none; -webkit-user-select: none; }
+.h-category-strip--unified input { user-select: text; -webkit-user-select: text; }
+
+/* Label colour: light over the hero art, the theme's text once the bars have filled in (and always on grids, where
+   --chrome-fade is unset) */
+.h-category-strip--unified {
+  --hdr-label: color-mix(in srgb, var(--fg) calc(var(--chrome-fade, 1) * 100%), #fff);
+  --hdr-shadow: rgb(0 0 0 / calc((1 - var(--chrome-fade, 1)) * 0.75));
+}
+
+/* ---------- Simple: categories as text tabs ---------- */
+:root[data-vod-header='simple'] .h-category-strip--unified { gap: 20px; }
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__back {
+  background: transparent;
+  padding: 6px;
+  color: var(--hdr-label);
+  filter: drop-shadow(0 1px 3px var(--hdr-shadow));
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__back:hover { background: var(--fill-2); }
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll { gap: 4px; }
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill {
+  position: relative;
+  background: transparent;
+  border-color: transparent;
+  color: color-mix(in srgb, var(--hdr-label) 72%, transparent);
+  font-weight: 500;
+  padding: 6px 12px;
+  text-shadow: 0 1px 4px var(--hdr-shadow);
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill:hover { color: var(--hdr-label); background: transparent; }
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill.active {
+  color: var(--hdr-label);
+  background: transparent;
+  font-weight: 700;
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill.active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* The row's edge fades are painted in the page colour: see-through over the art, as today once the bar is solid */
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before {
+  background: linear-gradient(to right, color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 1) * 100%), transparent), transparent);
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after {
+  background: linear-gradient(to left, color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 1) * 100%), transparent), transparent);
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__arrow { color: var(--hdr-label); }
+/* Search: a round button that widens when used */
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search {
+  width: 40px;
+  min-width: 40px;
+  padding: 0 11px;
+  border-radius: 999px;
+  overflow: hidden;
+  cursor: pointer;
+  color: var(--hdr-label);
+  background-color: color-mix(in srgb, var(--bg) 45%, transparent);
+  border-color: var(--edge);
+  backdrop-filter: blur(12px);
+  transition: width 0.25s ease;
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search:focus-within,
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search:has(input:not(:placeholder-shown)) {
+  width: 280px;
+}
