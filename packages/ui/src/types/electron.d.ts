@@ -344,6 +344,8 @@ export interface AppSettings {
   subtitles?: SubtitleSettings;  // Caption defaults (live / movies & series) and subtitle look
   rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
   rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
+  firstRun?: 'offer-sync' | 'done';  // First-run setup: offer sync once after a received setup, or finished (machine setting)
+  lastSeenVersion?: string;          // Version whose What's new was shown (machine setting)
 }
 
 export interface Source {

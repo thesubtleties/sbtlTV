@@ -52,8 +52,8 @@ test('only the travelling settings are exported', () => {
 });
 
 test('an import keeps machine settings and internal markers, nothing it replaces', () => {
-  const stored = { theme: 'dark', channelSortOrder: 'number', linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, encryptedTmdbApiKey: 'x' };
-  assert.deepEqual(keptOnImport(stored), { linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5 });
+  const stored = { theme: 'dark', channelSortOrder: 'number', linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, firstRun: 'offer-sync', lastSeenVersion: '0.16.0', encryptedTmdbApiKey: 'x' };
+  assert.deepEqual(keptOnImport(stored), { linuxPlayerMode: 'compatibility', debugLoggingEnabled: true, betaUpdates: true, sportsDefaultSettled: true, rewindLiveBytes: 5, firstRun: 'offer-sync', lastSeenVersion: '0.16.0' });
 });
 
 test('the preview says what is inside without secrets', () => {
