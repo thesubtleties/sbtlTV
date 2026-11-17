@@ -108,7 +108,7 @@ export function registerMailbox(deps: {
         if (s !== sender) return;
         if (st.step === 'received') deps.log('Relay: send picked up');
         else if (st.step === 'failed') deps.log(`Relay: send ended (${st.reason})`);
-      });
+      }, { log: deps.log });
       sender = s;
       void s.ring(String(code));
       return { success: true };
@@ -141,7 +141,7 @@ ipcMain.handle('mailbox:sendJoin', async (_e, code: string) => {
       if (s !== sender) return;
       if (st.step === 'received') { joinSending = false; deps.log('Relay: join picked up'); deps.sync.giverSent(); }
       else if (st.step === 'failed') { joinSending = false; deps.sync.abandonPending(); deps.log(`Relay: join ended (${st.reason})`); }
-    });
+    }, { log: deps.log });
     sender = s;
     void s.ring(String(code));
     return { success: true };

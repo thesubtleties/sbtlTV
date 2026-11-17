@@ -35,6 +35,7 @@ const PUSH_DELAY_MS = 5_000;
 const PUSH_MAX_WAIT_MS = 5 * 60_000;
 const PULL_EVERY_MS = 10 * 60_000;
 const NUDGE_GAP_MS = 5_000;
+const BUSY_LOG_AFTER = 3;
 const PENDING_MS = 15 * 60_000;
 const PENDING_POLL_MS = 10_000;
 const MAX_OWN_RECORDS = 20_000;
@@ -73,6 +74,10 @@ export class SyncEngine {
   private pendingTimer: ReturnType<typeof setInterval> | null = null;
   private firstDirty: number | null = null;
   private lastPullAt = -Infinity;
+  /** Pulls asked for and not finished: a nudge doesn't add another behind a slow one */
+  private pullsWaiting = 0;
+  /** Pulls in a row the relay answered busy (logged once at BUSY_LOG_AFTER) */
+  private busyPulls = 0;
 
   constructor(private d: EngineDeps) {
     // The keys are opened later (ready()): on Linux and Windows the OS keyring isn't reachable
@@ -150,7 +155,7 @@ export class SyncEngine {
   }
 
   nudge(): void {
-    if (this.now() - this.lastPullAt < NUDGE_GAP_MS) return;
+    if (this.pullsWaiting > 0 || this.now() - this.lastPullAt < NUDGE_GAP_MS) return;
     void this.pull();
   }
 
@@ -243,7 +248,10 @@ export class SyncEngine {
     this.d.log('Sync: unexpected error');
   }
 
-  pull(): Promise<void> { return this.run(() => this.pullNow()); }
+  pull(): Promise<void> {
+    this.pullsWaiting++;
+    return this.run(() => this.pullNow()).finally(() => { this.pullsWaiting--; });
+  }
 
   private async pullNow(): Promise<void> {
     this.ready();
@@ -251,7 +259,16 @@ export class SyncEngine {
     if (!f || !k || this.problem === 'keyring' || (f.status !== 'active' && f.status !== 'pending')) return;
     this.lastPullAt = this.now();
     let l: Awaited<ReturnType<SyncClient['list']>>;
-    try { l = await k.client.list(f.since); } catch (e) { await this.failed(e); return; }
+    try {
+      l = await k.client.list(f.since);
+    } catch (e) {
+      // Busy is normal for a moment; for several pulls in a row it's worth one line
+      if (e instanceof MailboxError && e.code === 'busy' && ++this.busyPulls === BUSY_LOG_AFTER) this.d.log(`Sync: the relay was busy ${BUSY_LOG_AFTER} pulls in a row`);
+      await this.failed(e);
+      return;
+    }
+    if (this.busyPulls >= BUSY_LOG_AFTER) this.d.log('Sync: the relay answers again');
+    this.busyPulls = 0;
     if (this.problem === 'update') { this.problem = null; this.d.onSnapshotNeeded(); }   // changes made meanwhile
     const now = this.now();
     if (l === null) {
