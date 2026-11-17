@@ -425,6 +425,25 @@ describe('SyncEngine', () => {
     expect(aState().others[bId].records).toContainEqual(expect.objectContaining({ removed: true }));
   });
 
+  it('a computer whose count went back (a second copy on its profile, a restored state file) is still heard', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const file = join(b.dirPath, 'sync-state.json');
+    const earlier = readFileSync(file, 'utf8');
+    // Another copy of b keeps sending for a while: the others remember its higher count
+    for (let i = 0; i < 3; i++) { w.advance(1000); b.e.record([wl(w.now())]); await b.e.flush(); }
+    await a.e.pull();
+    // b starts again from the state it had before
+    b.e.stop();
+    writeFileSync(file, earlier);
+    const b2 = w.make('Linux PC', true, b.dirPath);
+    b2.e.start(); await b2.e.pull();
+    w.advance(1000);
+    const later = { k: 'wl', type: 'movie', tmdb: 1830, name: 'Lord of War', at: w.now() } as const;
+    b2.e.record([later]); await b2.e.flush();
+    await a.e.pull();
+    expect(a.got.applied).toContainEqual(later);
+  });
+
   it("a computer carries the changes it received, so they outlive the computer that made them (I3)", async () => {
     const w = world(); const { a, b } = await pair(w);
     const t0 = w.now();

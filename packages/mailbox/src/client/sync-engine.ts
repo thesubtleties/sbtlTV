@@ -199,7 +199,10 @@ export class SyncEngine {
     if (this.pushTimer) { clearTimeout(this.pushTimer); this.pushTimer = null; }
     this.firstDirty = null;
     if (!f || !k || this.problem === 'keyring' || f.status !== 'active') return;
-    f.counter += 1;
+    // Rises with every box, and with the clock: a copy that starts from an older state (a second
+    // copy on this profile, a restored file) still sends a higher count than its last box, so the
+    // others don't drop it as a replay. A replayed old box stays lower either way.
+    f.counter = Math.max(f.counter + 1, this.now());
     let records = f.own.filter((r) => f.parts[recordPart(r)]);
     const seal = () => sealBox(k.encKey, k.groupId, f.deviceId, Buffer.from(JSON.stringify({ v: 1, counter: f.counter, name: f.name, pub: f.pub, records })));
     let sealed = seal();
