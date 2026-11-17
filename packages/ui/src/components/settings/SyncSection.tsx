@@ -28,6 +28,7 @@ export function SyncSection({ adding, onAdding }: { adding: boolean; onAdding: (
   const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const missing = useUIStore((s) => s.settings.syncMissingTitles ?? 'gray');
+  const missingChannels = useUIStore((s) => s.settings.syncMissingChannels ?? 'hide');
   const updateSettings = useUIStore((s) => s.updateSettings);
   const [, tick] = useState(0);
 
@@ -67,6 +68,7 @@ export function SyncSection({ adding, onAdding }: { adding: boolean; onAdding: (
           <Hint>{view.lastSync ? `Last synced ${ago(view.lastSync)}.` : 'Not synced yet.'}</Hint>
           <OptionRow title="Watchlist"><OnOff value={view.parts.watchlist} onChange={(v) => setPart('watchlist', v)} /></OptionRow>
           <OptionRow title="Watch progress" help="Resume points and finished marks"><OnOff value={view.parts.progress} onChange={(v) => setPart('progress', v)} /></OptionRow>
+          <OptionRow title="Favorites" help="Channel favorites, matched to this computer's channels"><OnOff value={view.parts.favorites} onChange={(v) => setPart('favorites', v)} /></OptionRow>
           <OptionRow title="Settings" help="Look, subtitles and players. Turning it on takes your other computers' settings.">
             <OnOff value={view.parts.settings} onChange={(v) => setPart('settings', v)} />
           </OptionRow>
@@ -75,6 +77,13 @@ export function SyncSection({ adding, onAdding }: { adding: boolean; onAdding: (
               value={missing}
               options={[{ id: 'gray', label: 'Gray out' }, { id: 'hide', label: 'Hide' }]}
               onChange={(v) => { updateSettings({ syncMissingTitles: v }); void saveSettings({ syncMissingTitles: v }); }}
+            />
+          </OptionRow>
+          <OptionRow title="Channels this computer doesn't have" help="Favorites from your other computers, in the Guide's Favorites.">
+            <Segmented
+              value={missingChannels}
+              options={[{ id: 'hide', label: 'Hide' }, { id: 'gray', label: 'Gray out' }]}
+              onChange={(v) => { updateSettings({ syncMissingChannels: v }); void saveSettings({ syncMissingChannels: v }); }}
             />
           </OptionRow>
           <div className="sync-computers" role="list" aria-label="Computers">

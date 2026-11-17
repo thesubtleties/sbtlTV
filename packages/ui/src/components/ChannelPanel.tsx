@@ -1,7 +1,8 @@
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
-import { useFavoriteChannels } from '../hooks/useFavorites';
+import { removeFavoriteRow, useFavoriteChannels, useWaitingFavorites } from '../hooks/useFavorites';
+import { MissingFavoriteRows } from './MissingFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
@@ -50,6 +51,7 @@ function ChannelPanelImpl({
   const isFavoritesView = categoryId === '__favorites__';
   const regularChannels = useChannels(isFavoritesView ? null : categoryId, channelSortOrder);
   const favoriteChannels = useFavoriteChannels();
+  const waiting = useWaitingFavorites();
   const channels = isFavoritesView ? favoriteChannels : regularChannels;
   const categories = useCategories();
   const waitingForLogin = useSourceNeedsLogin();
@@ -521,6 +523,8 @@ function ChannelPanelImpl({
             />
           )}
           components={{
+            // Favorites from other computers that this one doesn't have (grayed, with Gray out on)
+            Footer: isFavoritesView && waiting.length ? () => <MissingFavoriteRows rows={waiting} onRemove={(row) => void removeFavoriteRow(row)} /> : undefined,
             EmptyPlaceholder: () => (
               <div className="guide-empty">
                 <div className="guide-empty-icon">

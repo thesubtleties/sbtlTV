@@ -1,6 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { db, type StoredFavorite } from '../db';
+import { useUIStore } from '../stores/uiStore';
+import { waitingFavorites } from '../components/MissingFavorites';
 import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
 import { favoritesOut } from '../services/sync/outbox';
@@ -29,6 +31,19 @@ export async function toggleFavoriteChannel(streamId: string, name: string): Pro
     await db.favorites.put(row);
     await favoritesOut([row], +row.added);
   }
+}
+
+/** Remove a favorite row as it is (one waiting for its channel too); the other computers follow. */
+export async function removeFavoriteRow(row: StoredFavorite): Promise<void> {
+  await db.favorites.delete(row.id);
+  await favoritesOut([row], Date.now(), true);
+}
+
+/** Synced favorites this computer doesn't have, when Settings › Sync & transfer says to show them. */
+export function useWaitingFavorites(): StoredFavorite[] {
+  const setting = useUIStore((s) => s.settings.syncMissingChannels ?? 'hide');
+  const rows = useLiveQuery(() => db.favorites.where('type').equals('channel').toArray(), []);
+  return useMemo(() => waitingFavorites(rows ?? [], setting), [rows, setting]);
 }
 
 export function useToggleFavoriteChannel() {

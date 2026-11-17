@@ -1,0 +1,28 @@
+.missing-favorites {
+  display: flex;
+  flex-direction: column;
+}
+
+.missing-favorites__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line-faint);
+  opacity: 0.55;
+}
+
+.missing-favorites__row:hover,
+.missing-favorites__row:focus-within { opacity: 0.85; }
+
+.missing-favorites__name {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.missing-favorites__note {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-3);
+}
