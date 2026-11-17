@@ -23,7 +23,7 @@ const LIST_PARTS: ListPart[] = ['favorites', 'watchlist', 'progress'];
 /** The last export, kept by Settings while it is open (switching tabs keeps it; closing Settings clears it). */
 export interface LastExport { passphrase: string; filePath: string }
 
-export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoReceiveUsed }: { lastExport: LastExport | null; onExported: (e: LastExport) => void; autoReceive?: boolean; onAutoReceiveUsed?: () => void }) {
+export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoReceiveUsed, autoAdd, onAutoAddUsed }: { lastExport: LastExport | null; onExported: (e: LastExport) => void; autoReceive?: boolean; onAutoReceiveUsed?: () => void; autoAdd?: boolean; onAutoAddUsed?: () => void }) {
   const sources = useUIStore((s) => s.sources);
   const [parts, setParts] = useState(() => new Set(EXPORT_PARTS.filter((p) => p.defaultOn).map((p) => p.id)));
   const [exporting, setExporting] = useState(false);
@@ -38,7 +38,9 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
   const [receiving, setReceiving] = useState(!!autoReceive);
   // "Receive a setup" opens the code once; coming back to this tab later doesn't start another
   useEffect(() => { if (autoReceive) onAutoReceiveUsed?.(); }, [autoReceive, onAutoReceiveUsed]);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(!!autoAdd && !autoReceive);
+  // "Add a computer…" from What's new opens the panel once
+  useEffect(() => { if (autoAdd) onAutoAddUsed?.(); }, [autoAdd, onAutoAddUsed]);
   // One knock at a time: opening Send, Receive or Add a computer closes the others
   const openSend = () => { setReceiving(false); setAdding(false); setTransfer(transfer === 'send' ? 'none' : 'send'); };
   const openReceive = () => { if (!receiving && transfer === 'send') setTransfer('none'); setAdding(false); setReceiving(!receiving); };

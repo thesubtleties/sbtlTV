@@ -41,6 +41,9 @@ import { ErrorCard } from './components/ErrorCard';
 import { sendSnapshot, setSyncActive } from './services/sync/outbox';
 import { applyRecords } from './services/sync/apply';
 import { FirstRun, OfferSync } from './components/FirstRun';
+import { WhatsNew } from './components/WhatsNew';
+import { WHATS_NEW, type WhatsNewItem } from './whatsNewItems';
+import { baseVersion, whatsNewToShow } from './utils/whatsNew';
 import { firstRunMode, type FirstRunMode } from './utils/firstRun';
 
 // Auto-hide controls after this many milliseconds of inactivity
@@ -322,11 +325,44 @@ function App() {
   const firstRunOpen = firstRun === 'setup' || firstRun === 'offer-sync';
   const firstRunOpenRef = useRef(false);
   firstRunOpenRef.current = firstRunOpen;
+  // What's new: once per release after an update, decided when settings, sources and the first run are known
+  const [whatsNew, setWhatsNew] = useState<{ version: string; items: WhatsNewItem[] } | null>(null);
+  const whatsNewChecked = useRef(false);
+  useEffect(() => {
+    if (whatsNewChecked.current || !settingsLoaded || !sourcesLoaded || !window.platform) return;
+    whatsNewChecked.current = true;
+    const lastSeen = useUIStore.getState().settings.lastSeenVersion;
+    void Promise.all([window.platform.getVersion(), window.platform.getBuildKind()]).then(([version, kind]) => {
+      const items = whatsNewToShow({ current: version, lastSeen, buildKind: kind, hasSources: sourceCount > 0, firstRun: liveFirstRun, items: WHATS_NEW });
+      if (items) setWhatsNew({ version, items });
+      // Nothing to show for this release: remember it anyway, so a later update compares from here
+      else if (kind === 'release' && liveFirstRun === null && lastSeen !== version) {
+        useUIStore.getState().updateSettings({ lastSeenVersion: version });
+        void saveSettings({ lastSeenVersion: version });
+      }
+    }).catch(() => {});
+  }, [settingsLoaded, sourcesLoaded, sourceCount, liveFirstRun]);
+  const closeWhatsNew = useCallback(() => {
+    setWhatsNew((open) => {
+      if (open && useUIStore.getState().settings.lastSeenVersion !== open.version) {
+        useUIStore.getState().updateSettings({ lastSeenVersion: open.version });
+        void saveSettings({ lastSeenVersion: open.version });
+      }
+      return null;
+    });
+  }, []);
+  const showWhatsNew = useCallback(() => {
+    void window.platform?.getVersion().then((version) => {
+      const items = WHATS_NEW[baseVersion(version)];
+      if (items?.length) setWhatsNew({ version, items });
+    });
+  }, []);
   const [settingsReceive, setSettingsReceive] = useState(false);
+  const [settingsAdd, setSettingsAdd] = useState(false);
   // Stable, so the memoized guide doesn't re-render with every App render
   const openReceiveSetup = useCallback(() => { setSettingsTab('backup'); setSettingsReceive(true); setActiveView('settings'); }, []);
   // Leaving Settings by any route (Escape, another view) forgets the tab the tip opened it on.
-  useEffect(() => { if (activeView !== 'settings') { setSettingsTab(undefined); setSettingsReceive(false); } }, [activeView]);
+  useEffect(() => { if (activeView !== 'settings') { setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); } }, [activeView]);
   useEffect(() => {
     playbackRef.current = { duration, volume, activeView, categoriesOpen };
   }, [duration, volume, activeView, categoriesOpen]);
@@ -1177,7 +1213,7 @@ function App() {
       />
 
       {/* Settings Panel */}
-      {activeView === 'settings' && <Settings initialTab={settingsTab} initialReceive={settingsReceive} onClose={() => { setActiveView('none'); setSettingsTab(undefined); setSettingsReceive(false); }} />}
+      {activeView === 'settings' && <Settings initialTab={settingsTab} initialReceive={settingsReceive} initialAdd={settingsAdd} onShowWhatsNew={showWhatsNew} onClose={() => { setActiveView('none'); setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); }} />}
 
       {/* Movies Page */}
       {activeView === 'movies' && (
@@ -1199,6 +1235,19 @@ function App() {
         <FirstRun onFinish={(to) => { setFirstRun('closed'); if (to === 'guide') setActiveView('guide'); }} />
       )}
       {firstRun === 'offer-sync' && <OfferSync onFinish={() => setFirstRun('closed')} />}
+      {whatsNew && !firstRunOpen && (
+        <WhatsNew
+          version={whatsNew.version}
+          items={whatsNew.items}
+          onClose={closeWhatsNew}
+          onAction={(to) => {
+            closeWhatsNew();
+            setSettingsTab('backup');
+            setSettingsAdd(to === 'add-computer');
+            setActiveView('settings');
+          }}
+        />
+      )}
 
       {/* Notification stack: the sticky update chip anchors the bottom; transient toasts stack above it */}
       <ToastContainer />

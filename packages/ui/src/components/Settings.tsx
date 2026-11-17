@@ -29,14 +29,20 @@ interface SettingsProps {
   initialTab?: SettingsTabId;
   /** Open Sync & transfer with the code already showing (Receive a setup on the empty Live TV screen) */
   initialReceive?: boolean;
+  /** Open Sync & transfer with Add a computer open (What's new) */
+  initialAdd?: boolean;
+  /** Settings › About › What's new */
+  onShowWhatsNew?: () => void;
 }
 
-export function Settings({ onClose, initialTab, initialReceive }: SettingsProps) {
+export function Settings({ onClose, initialTab, initialReceive, initialAdd, onShowWhatsNew }: SettingsProps) {
   // The last setup export's passphrase: kept while Settings is open, gone when it closes.
   const [lastExport, setLastExport] = useState<LastExport | null>(null);
   // Receive a setup (empty Live TV screen): the code opens once, not on every return to the tab
   const [receivePending, setReceivePending] = useState(!!initialReceive && initialTab === 'backup');
   const receiveUsed = useCallback(() => setReceivePending(false), []);
+  const [addPending, setAddPending] = useState(!!initialAdd && initialTab === 'backup');
+  const addUsed = useCallback(() => setAddPending(false), []);
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'sources');
   const contentRef = useRef<HTMLDivElement>(null);
   // Each tab starts at the top, not wherever the previous tab was scrolled to
@@ -304,7 +310,7 @@ export function Settings({ onClose, initialTab, initialReceive }: SettingsProps)
           />
         );
       case 'backup':
-        return <BackupTransferTab lastExport={lastExport} onExported={setLastExport} autoReceive={receivePending} onAutoReceiveUsed={receiveUsed} />;
+        return <BackupTransferTab lastExport={lastExport} onExported={setLastExport} autoReceive={receivePending} onAutoReceiveUsed={receiveUsed} autoAdd={addPending} onAutoAddUsed={addUsed} />;
       case 'privacy':
         return (
           <PrivacyTab
@@ -350,6 +356,7 @@ export function Settings({ onClose, initialTab, initialReceive }: SettingsProps)
           <AboutTab
             autoUpdateEnabled={autoUpdateEnabled}
             onAutoUpdateChange={setAutoUpdateEnabled}
+            onShowWhatsNew={onShowWhatsNew}
           />
         );
       default:
