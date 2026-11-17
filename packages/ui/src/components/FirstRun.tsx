@@ -254,7 +254,7 @@ export function FirstRun({ onFinish }: { onFinish: (to: 'guide' | 'none') => voi
       case 'sync':
         return (
           <>
-            <StepHead title="Have sbtlTV on another computer?" lede="Optional. Keep your watchlist and progress the same on both. End-to-end encrypted." />
+            <StepHead title="Have sbtlTV on another computer?" lede="Optional. Keep your watchlist, progress and favorite channels the same on both. End-to-end encrypted." />
             {joined
               ? <Hint tone="ok">This computer is in your sync.</Hint>
               : support.sync === false
@@ -340,7 +340,7 @@ export function OfferSyncFrame({ joining, busy, onJoin, onNotNow, children }: {
         <div className="first-run__body">
           {joining ? children : (
             <>
-              <StepHead title="Keep this computer in sync with your other one?" lede="Your watchlist and progress stay the same on both. Only for your own computers. End-to-end encrypted." />
+              <StepHead title="Keep this computer in sync with your other one?" lede="Your watchlist, progress and favorite channels stay the same on both. Only for your own computers. End-to-end encrypted." />
               <div className="first-run__choices">
                 <Choice main title="Join its sync" text="Shows a code. On the other computer: Settings › Sync & transfer › Add a computer…" onClick={onJoin} />
               </div>

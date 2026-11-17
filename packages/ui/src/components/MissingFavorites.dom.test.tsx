@@ -29,6 +29,7 @@ describe('grayed favorites (DOM)', () => {
   });
 
   it('the Guide shows none until the setting says Gray out', async () => {
+    Object.assign(window, { sync: { view: async () => ({ status: 'active' }), onView: () => () => {} } });
     await db.favorites.bulkPut([row('ESPN', { ids: [{ host: 'h', ch: '1' }] }), row('m1', { stream_id: 'm1_1' })]);
     const seen: string[][] = [];
     const Probe = () => { seen.push(useWaitingFavorites().map((f) => f.id)); return null; };
@@ -38,5 +39,25 @@ describe('grayed favorites (DOM)', () => {
     await act(async () => { useUIStore.getState().updateSettings({ syncMissingChannels: 'gray' }); });
     await settle();
     expect(seen[seen.length - 1]).toEqual(['ESPN']);
+  });
+
+  it('none while this computer is not syncing, even with Gray out', async () => {
+    Object.assign(window, { sync: { view: async () => ({ status: 'off' }), onView: () => () => {} } });
+    useUIStore.getState().updateSettings({ syncMissingChannels: 'gray' });
+    await db.favorites.put(row('ESPN', { ids: [{ host: 'h', ch: '1' }] }));
+    const seen: string[][] = [];
+    const Probe = () => { seen.push(useWaitingFavorites().map((f) => f.id)); return null; };
+    await act(async () => { root.render(createElement(Probe)); });
+    await settle();
+    expect(seen[seen.length - 1]).toEqual([]);
+  });
+  it('after Remove, keyboard focus moves to the next Remove, not the page (lens 5 I1)', async () => {
+    const rows = [row('ESPN', { ids: [{ host: 'h', ch: '1' }] }), row('HBO', { ids: [{ host: 'h', ch: '2' }] })];
+    let shown = rows;
+    const render = () => root.render(createElement(MissingFavoriteRows, { rows: shown, onRemove: async (r: { id: string }) => { shown = shown.filter((x) => x.id !== r.id); render(); } }));
+    await act(async () => { render(); });
+    await act(async () => { (host.querySelector('button') as HTMLButtonElement).click(); });
+    await settle();
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Remove HBO from favorites');
   });
 });

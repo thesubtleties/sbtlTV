@@ -74,12 +74,14 @@ export function Segmented<T extends string>({ value, options, onChange, disabled
 }
 
 /** An on/off setting, as a two-way segmented control. */
-export function OnOff({ value, onChange, offLabel = 'Off', onLabel = 'On', disabled }: {
+export function OnOff({ value, onChange, offLabel = 'Off', onLabel = 'On', disabled, label }: {
   value: boolean;
   onChange: (value: boolean) => void;
   offLabel?: string;
   onLabel?: string;
   disabled?: boolean;
+  /** Spoken name of the switch (screen readers) */
+  label?: string;
 }) {
   return (
     <Segmented
@@ -87,6 +89,7 @@ export function OnOff({ value, onChange, offLabel = 'Off', onLabel = 'On', disab
       options={[{ id: 'off', label: offLabel }, { id: 'on', label: onLabel }]}
       onChange={(id) => onChange(id === 'on')}
       disabled={disabled}
+      label={label}
     />
   );
 }

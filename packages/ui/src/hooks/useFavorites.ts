@@ -4,6 +4,7 @@ import { db, type StoredFavorite } from '../db';
 import { useUIStore } from '../stores/uiStore';
 import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
+import { useSyncActive } from './useSyncActive';
 import { favoriteAdded, favoriteRemoved, guidesFor } from '../services/sync/outbox';
 import { localId, waitingFavorites } from '../services/sync/favorites';
 
@@ -44,8 +45,10 @@ export async function removeFavoriteRow(row: StoredFavorite): Promise<void> {
 /** Synced favorites this computer doesn't have, when Settings › Sync & transfer says to show them. */
 export function useWaitingFavorites(): StoredFavorite[] {
   const setting = useUIStore((s) => s.settings.syncMissingChannels ?? 'hide');
+  const syncing = useSyncActive();
   const rows = useLiveQuery(() => db.favorites.where('type').equals('channel').toArray(), []);
-  return useMemo(() => waitingFavorites(rows ?? [], setting), [rows, setting]);
+  // Only while this computer syncs (like titles it doesn't have)
+  return useMemo(() => (syncing ? waitingFavorites(rows ?? [], setting) : []), [rows, setting, syncing]);
 }
 
 export function useToggleFavoriteChannel() {
@@ -73,7 +76,9 @@ export function useFavoriteChannels() {
   }, [channels, streamIds, enabledIds]);
 }
 
+/** Favorites in the Guide: this computer's, and the grayed ones from other computers when shown. */
 export function useFavoriteChannelCount(): number {
   const channels = useFavoriteChannels();
-  return channels.length;
+  const waiting = useWaitingFavorites();
+  return channels.length + waiting.length;
 }

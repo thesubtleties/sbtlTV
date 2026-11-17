@@ -88,7 +88,7 @@ export function ReceiveSection({ im, receiving, onReceiving, title = 'Receive', 
         {imp.step === 'join' && (
           <div className="setup-preview">
             <div className="setup-preview__summary">
-              <Hint>Join sync with {names(imp.computers)}? Your watchlist and progress will be shared with them.</Hint>
+              <Hint>Join sync with {names(imp.computers)}? Your watchlist, progress and favorite channels will be shared with them.</Hint>
               {syncing && <Hint tone="warn">This computer leaves its current sync.</Hint>}
             </div>
             <OptionRow title="Name this computer" help={`Leave blank for “${nameIfBlank(defaultName, imp.computers)}”.`}>
