@@ -186,7 +186,7 @@ export function BackupTransferTab({ lastExport, onExported, autoReceive, onAutoR
               </ol>
             </div>
           </div>
-          <Hint>Only use a code from someone you know. Different words mean someone else answered: stop there. The setup is end-to-end encrypted on the sbtlTV relay, so even we can't read it, and it's deleted once picked up. Adding a computer to Sync works the same way.</Hint>
+          <Hint>Only use a code from someone you know. Different words mean someone else answered: stop there. Setups and Sync are both end-to-end encrypted on the sbtlTV relay: even we can't read them. A setup is deleted once it's picked up; Sync stays while you use it.</Hint>
         </div>
       </details>
 
