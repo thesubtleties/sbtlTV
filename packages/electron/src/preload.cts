@@ -167,6 +167,8 @@ export interface PlatformApi {
   isLinuxNonAppImage: boolean;
   supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
+  /** release, test (branch) or local build: What's new shows only in releases */
+  getBuildKind: () => Promise<'release' | 'test' | 'local'>;
   /** The largest Rewind live TV size this computer allows, in bytes (0 = not enough memory) */
   rewindCapBytes: () => Promise<number>;
 }
@@ -407,6 +409,7 @@ contextBridge.exposeInMainWorld('platform', {
   isLinuxNonAppImage,
   supportsAutoUpdate: !isPortable && !isLinuxNonAppImage,
   getVersion: () => ipcRenderer.invoke('get-app-version'),
+  getBuildKind: () => ipcRenderer.invoke('get-build-kind'),
   rewindCapBytes: () => ipcRenderer.invoke('rewind-cap-bytes'),
 } satisfies PlatformApi);
 

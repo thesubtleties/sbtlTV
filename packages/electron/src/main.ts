@@ -39,6 +39,7 @@ import { fitAppearance, type AppearanceLike } from './sync-appearance.js';
 import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type ReportInputs } from './bug-report.js';
 import { makeZip } from './zip-writer.js';
 import { holdSingleInstance } from './single-instance.js';
+import { buildKind } from './build-kind.js';
 const { autoUpdater } = electronUpdater;
 
 // One copy per profile, decided before anything else runs (see single-instance.ts).
@@ -2730,6 +2731,7 @@ ipcMain.handle('appearance-get-desktop-colors', () => readDesktopColors());
 
 // App version
 ipcMain.handle('get-app-version', () => app.getVersion());
+ipcMain.handle('get-build-kind', () => buildKind(readBuildInfo()));
 ipcMain.handle('rewind-cap-bytes', () => rewindCapBytes(os.totalmem()));
 
 // Auto-updater IPC handlers
