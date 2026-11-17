@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef, useReducer } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useReducer } from 'react';
 import { detailNav, isBackKey, seriesSeasonKey } from '../utils/detailNav';
 import { Virtuoso } from 'react-virtuoso';
 import { HeroSection } from './vod/HeroSection';
@@ -188,6 +188,18 @@ interface VodPageProps {
   type: VodType;
   onPlay?: (info: VodPlayInfo) => void;
   onClose?: () => void;
+}
+
+/** The page's classes: bleed (the home's hero under the bars) and floating (the Floating header) first. */
+export function vodPageClasses(o: { collapsed: boolean; contentHidden: boolean; detailOpen: boolean; bleed: boolean; floating: boolean }): string {
+  return [
+    'vod-page',
+    o.bleed ? 'vod-page--bleed' : '',
+    o.floating ? 'vod-page--floating' : '',
+    o.collapsed ? 'vod-page--collapsed' : '',
+    o.contentHidden ? 'vod-page--content-hidden' : '',
+    o.detailOpen ? 'vod-page--detail-open' : '',
+  ].filter(Boolean).join(' ');
 }
 
 export function VodPage({ type, onPlay, onClose }: VodPageProps) {
@@ -487,18 +499,30 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const pageRef = useRef<HTMLDivElement>(null);
   const bleed = selectedCategoryId === null;
   const { onScroll: bleedScroll } = useHeroBleed(bleed, pageRef, scrollPosition);
+  // Floating header: it floats on every view, so content starts below it (--strip-h, kept current as it resizes)
+  const floating = useUIStore((s) => s.settings.appearance?.header === 'floating');
+  useLayoutEffect(() => {
+    const page = pageRef.current;
+    const strip = page?.querySelector<HTMLElement>('.h-category-strip');
+    if (!page || !strip) return;
+    const measure = () => page.style.setProperty('--strip-h', `${strip.offsetHeight}px`);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(strip);
+    return () => ro.disconnect();
+  }, [floating]);
 
-  const pageClasses = [
-    'vod-page',
-    bleed ? 'vod-page--bleed' : '',
+  const pageClasses = vodPageClasses({
     // Animate whole page when entering/exiting without detail
-    shouldPageBeCollapsed ? 'vod-page--collapsed' : '',
+    collapsed: shouldPageBeCollapsed,
     // Hide page content when detail is animating out
-    !pageContentVisible ? 'vod-page--content-hidden' : '',
+    contentHidden: !pageContentVisible,
     // A detail covers the page: stop drawing what's under it (drawn again while the detail slides
     // away for the player, so the home shows behind it rather than a blank page)
-    hasDetail && !isPageCollapsed ? 'vod-page--detail-open' : '',
-  ].filter(Boolean).join(' ');
+    detailOpen: hasDetail && !isPageCollapsed,
+    bleed,
+    floating,
+  });
 
   return (
     <div className={pageClasses} ref={pageRef}>

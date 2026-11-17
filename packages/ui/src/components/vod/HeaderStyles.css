@@ -320,3 +320,31 @@
   :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__indicator,
   :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search { transition-duration: 1ms; }
 }
+
+/* ---------- Floating everywhere: on every Movies/Series view the header floats; content starts below it and scrolls
+   under it; only the window-button band behind it is solid (on the home it fills in with --chrome-fade instead) ---------- */
+:root[data-vod-header='floating'] .vod-page--floating { top: 0; }
+:root[data-vod-header='floating'] .vod-page--floating > .h-category-strip {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: transparent;
+}
+:root[data-vod-header='floating'] .vod-page--floating:not(.vod-page--bleed)::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: var(--bg);
+  pointer-events: none;
+  z-index: 45;
+}
+:root[data-vod-header='floating'] .vod-page--floating:not(.vod-page--bleed) .vod-browse {
+  padding-top: calc(32px + var(--strip-h, 76px));
+}
+/* On the home only the window-button band fills in (the capsule keeps floating over the rows) */
+:root[data-vod-header='floating'] .vod-page--bleed::after { height: 32px; }
