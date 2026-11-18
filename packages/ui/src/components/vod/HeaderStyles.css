@@ -1,7 +1,7 @@
 /*
  * Movies & Series header styles (Settings › Appearance › Movies & Series header) and the full-bleed hero they sit on.
  * <html data-vod-header="simple|floating"> picks the style (useCssVariableSync); VodPage's useHeroBleed sets
- * <html class="hero-bleed"> and, once the bars are half filled, "chrome-solid"; the title bar's --bar-t; the fill layer's opacity (0 at the top
+ * <html class="hero-bleed">; --bar-t (how far the bars have filled) on the title bar and the header; the fill and shade layers' opacity (0 at the top
  * of the home, 1 once the hero has passed under the bars); and the page's --bleed-chrome (title bar + header height).
  * Colours come from the palette roles only. Per scroll frame only the fill/shade layers' opacity and the title bar's --bar-t change.
  */
@@ -63,25 +63,20 @@
   right: 0;
   height: calc(var(--bleed-chrome, 108px) + 72px);
   background: linear-gradient(to bottom, rgb(0 0 0 / 0.65), rgb(0 0 0 / 0.35) 55%, transparent);
-  /* Over the fill. Simple: whole while the labels are light, gone when they switch to the theme's colour
-     (chrome-solid), so light labels never sit on a half-filled light bar. Floating: useHeroBleed fades it with the
-     scroll (inline opacity) */
+  /* Over the fill; useHeroBleed fades it out with the scroll (inline opacity) */
   opacity: 1;
-  transition: opacity 200ms ease;
   pointer-events: none;
   z-index: 46;
 }
-:root.chrome-solid[data-vod-header='simple'] .vod-page--bleed > .vod-page__chrome-shade { opacity: 0; }
-:root[data-vod-header='floating'] .vod-page--bleed > .vod-page__chrome-shade { transition: none; }
 
 /* Over the art the window buttons and logo are white with a shadow; they follow the scroll to their own colour as the
    bars fill in (--bar-t, 0 to 1, set per frame by useHeroBleed on the title bar alone). Unset (the first frame on open)
-   reads as 0, so the title bar is clear at once. The blend runs through the middle third of the fill (--bar-mix):
+   reads as 0, so the title bar is clear at once. The blend runs through the middle fifth of the fill (--bar-mix):
    on light palettes white-to-dark crosses a dark-to-light bar, and a straight blend sat grey on grey around halfway.
-   The shadow holds through the crossing */
+   The shadow goes with the white (held at full through the crossing it smudged the grey) */
 .title-bar {
-  --bar-mix: clamp(0, (var(--bar-t, 0) - 0.35) / 0.3, 1);
-  --bar-shadow: rgb(0 0 0 / calc(0.6 * clamp(0, (0.65 - var(--bar-t, 0)) / 0.15, 1)));
+  --bar-mix: clamp(0, (var(--bar-t, 0) - 0.4) / 0.2, 1);
+  --bar-shadow: rgb(0 0 0 / calc(0.6 * (1 - var(--bar-mix))));
 }
 :root:is(.hero-bleed, .detail-bleed) .window-controls button:not(.is-on):not(:hover) {
   color: color-mix(in srgb, var(--text) calc(var(--bar-mix) * 100%), #fff);
@@ -113,18 +108,24 @@
 .h-category-strip__sheet { user-select: none; -webkit-user-select: none; }
 .h-category-strip--unified input { user-select: text; -webkit-user-select: text; }
 
-/* Label colour: light with a shadow over the hero art, the theme's text once the bars are half filled (chrome-solid,
-   set by useHeroBleed) and always off the home. A switch, not a blend: a blend passes through grey on light palettes */
+/* Label colour: the theme's text, and over the home's art (Simple) white with a shadow, following the scroll to the
+   theme's colours as the bars fill in: the same --bar-t and middle-fifth blend as the title bar's logo (set on the
+   header by useHeroBleed, so only the header restyles) */
 .h-category-strip--unified {
   --hdr-label: var(--fg);
   --hdr-shadow: transparent;
   --hdr-mark: var(--accent);
 }
-:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified {
-  --hdr-label: #fff;
-  --hdr-shadow: rgb(0 0 0 / 0.75);
-  --hdr-mark: #fff;   /* underline and focus ring: the accent can be too dark on the shade (sbtl light's slate) */
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified {
+  --bar-mix: clamp(0, (var(--bar-t, 0) - 0.4) / 0.2, 1);
+  --hdr-label: color-mix(in srgb, var(--fg) calc(var(--bar-mix) * 100%), #fff);
+  --hdr-shadow: rgb(0 0 0 / calc(0.75 * (1 - var(--bar-mix))));
+  /* Underline and focus ring: white over the shade (the accent can be too dark there: sbtl light's slate) */
+  --hdr-mark: color-mix(in srgb, var(--accent) calc(var(--bar-mix) * 100%), #fff);
 }
+/* Following the scroll frame by frame: an easing on top would trail behind it (and restart every frame) */
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill,
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__back { transition: none; }
 .h-category-strip--unified .h-category-strip__pill,
 .h-category-strip--unified .h-category-strip__back,
 .h-category-strip--unified .h-category-strip__search { transition: color 150ms ease, text-shadow 150ms ease, filter 150ms ease; }
@@ -175,22 +176,25 @@
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after {
   background: linear-gradient(to left, var(--bg), transparent);
 }
-:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search {
-  background-color: rgb(0 0 0 / 0.35);   /* dark glass over the art on every palette, like the labels */
-  border-color: rgb(255 255 255 / 0.2);
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search {
+  /* Dark glass over the art on every palette, like the labels, turning to the usual glass with the scroll */
+  background-color: color-mix(in srgb, color-mix(in srgb, var(--bg) 45%, transparent) calc(var(--bar-mix) * 100%), rgb(0 0 0 / 0.35));
+  border-color: color-mix(in srgb, var(--edge) calc(var(--bar-mix) * 100%), rgb(255 255 255 / 0.2));
+  transition: width 0.25s ease;
 }
-/* Over the art the row's edges fade to see-through (a mask), instead of painting a patch of the page colour */
-:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-left {
+/* On the home the row's edges fade to see-through (a mask) instead of painting a patch of the page colour: over the
+   art that shows the art, and once filled it shows the fill, the same colour the patch would be */
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-left {
   mask-image: linear-gradient(to right, transparent, #000 32px);
 }
-:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-right {
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-right {
   mask-image: linear-gradient(to left, transparent, #000 32px);
 }
-:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-left.fade-right {
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-left.fade-right {
   mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
 }
-:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before,
-:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after { display: none; }
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before,
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after { display: none; }
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__arrow { color: var(--hdr-label); }
 /* Search: a round button that widens when used */
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search {

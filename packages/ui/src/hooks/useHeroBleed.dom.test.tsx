@@ -66,48 +66,25 @@ describe('useHeroBleed', () => {
       flushSync(() => root.render(createElement(Sized, { on: false, startTop: 0 })));   // a category picked within the frame
     });
     await frame();
-    expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
+    expect((host.querySelector('.h-category-strip') as HTMLElement).style.getPropertyValue('--bar-t')).toBe('');
     await act(async () => root.unmount()); host.remove();
   });
 
-  it('marks the bars solid once they are half filled, and clears it on leaving (labels switch colour there, not by blending)', async () => {
-    let scroll: (top: number) => void = () => {};
-    function Page({ on }: { on: boolean }) {
-      const ref = useRef<HTMLDivElement>(null);
-      scroll = useHeroBleed(on, ref, 0).onScroll;
-      return createElement('div', { ref }, createElement('div', { className: 'hero' }), createElement('div', { className: 'h-category-strip' }));
+  it('nothing switches at a set point: the shade (both styles) and the header follow the scroll, cleared on leaving', async () => {
+    const host = document.createElement('div'); document.body.append(host);
+    const root = createRoot(host);
+    for (const style of ['simple', 'floating']) {
+      document.documentElement.dataset.vodHeader = style;
+      await act(async () => root.render(createElement(Sized, { on: true, startTop: 150 })));
+      await frame();
+      const shade = host.querySelector('.vod-page__chrome-shade') as HTMLElement;
+      const strip = host.querySelector('.h-category-strip') as HTMLElement;
+      expect(shade.style.opacity).toBe('0.75');   // 150 / (700 - 100) = 0.25 filled
+      expect(strip.style.getPropertyValue('--bar-t')).toBe('0.25');
+      expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
+      await act(async () => root.render(createElement(Sized, { on: false, startTop: 0 })));
+      expect(strip.style.getPropertyValue('--bar-t')).toBe('');
     }
-    const host = document.createElement('div'); document.body.append(host);
-    const root = createRoot(host);
-    await act(async () => root.render(createElement(Page, { on: true })));
-    const hero = host.querySelector('.hero') as HTMLElement;
-    Object.defineProperty(hero, 'offsetHeight', { value: 632 });
-    scroll(100);
-    expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
-    scroll(400);
-    expect(document.documentElement.classList.contains('chrome-solid')).toBe(true);
-    scroll(0);
-    expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
-    scroll(500);
-    await act(async () => root.render(createElement(Page, { on: false })));
-    expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
-    await act(async () => root.unmount());
-    host.remove();
-  });
-
-  it('Floating: the top shade fades out with the scroll; Simple leaves it to the halfway switch (CSS)', async () => {
-    const host = document.createElement('div'); document.body.append(host);
-    const root = createRoot(host);
-    document.documentElement.dataset.vodHeader = 'floating';
-    await act(async () => root.render(createElement(Sized, { on: true, startTop: 150 })));
-    await frame();
-    const shade = host.querySelector('.vod-page__chrome-shade') as HTMLElement;
-    expect(shade.style.opacity).toBe('0.75');   // 150 / (700 - 100) = 0.25 filled
-    document.documentElement.dataset.vodHeader = 'simple';
-    await act(async () => root.render(createElement(Sized, { on: false, startTop: 0 })));
-    await act(async () => root.render(createElement(Sized, { on: true, startTop: 150 })));
-    await frame();
-    expect(shade.style.opacity).toBe('');
     await act(async () => root.unmount()); host.remove();
     delete document.documentElement.dataset.vodHeader;
   });
@@ -137,7 +114,7 @@ describe('useHeroBleed', () => {
     await act(async () => root.render(createElement(Grab)));
     scroll(300);
     expect(bar.style.getPropertyValue('--bar-t')).toBe('');
-    expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
+    expect((host.querySelector('.h-category-strip') as HTMLElement).style.getPropertyValue('--bar-t')).toBe('');
     await act(async () => root.unmount()); host.remove(); bar.remove();
   });
 });
