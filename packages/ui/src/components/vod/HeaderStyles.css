@@ -452,18 +452,20 @@
   .h-category-strip__sheet-item:focus-visible { transform: none !important; }
 }
 
-/* The top area stays out of the motion: while the page slides in (or away) the header, the shade and the fill aren't
-   drawn (each was redrawn on every frame of the slide), and the title bar keeps its usual look (useHeroBleed waits).
-   Once the page lands they fade in together, the title bar fading to clear with them */
-.vod-page--sliding > .h-category-strip,
-.vod-page--sliding > .vod-page__chrome-shade,
+/* The nav stays out of the motion: while the page slides in (or away) the header isn't drawn (its glass was redrawn on
+   every frame of the slide) and the title bar keeps its usual look (useHeroBleed waits); the shade slides with the
+   page. Once the page lands the nav settles in: a slow fade with a small drift down, on Caelestia's emphasized
+   decelerate (quick start, very soft finish), and the title bar fades to clear with it */
 .vod-page--sliding > .vod-page__chrome-fill,
+.vod-page--sliding > .h-category-strip,
 .vod-page--collapsed > .h-category-strip { visibility: hidden; }
-.vod-page:not(.vod-page--sliding) > .h-category-strip,
-.vod-page:not(.vod-page--sliding) > .vod-page__chrome-shade { animation: vod-top-in 200ms ease; }
-@keyframes vod-top-in { from { opacity: 0; } to { opacity: 1; } }
-.title-bar { transition: opacity 0.2s, background-color 0.2s ease; }
+.vod-page:not(.vod-page--sliding) > .h-category-strip {
+  /* An even fade (no pop), and a small drift down that lands softly (Caelestia's emphasized decelerate) */
+  animation: vod-nav-fade 460ms cubic-bezier(0.4, 0, 0.2, 1) both, vod-nav-drift 560ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+}
+@keyframes vod-nav-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes vod-nav-drift { from { transform: translateY(-8px); } to { transform: none; } }
+.title-bar { transition: opacity 0.2s, background-color 520ms cubic-bezier(0.05, 0.7, 0.1, 1); }
 @media (prefers-reduced-motion: reduce) {
-  .vod-page:not(.vod-page--sliding) > .h-category-strip,
-  .vod-page:not(.vod-page--sliding) > .vod-page__chrome-shade { animation: none; }
+  .vod-page:not(.vod-page--sliding) > .h-category-strip { animation: vod-nav-fade 200ms ease both; }
 }
