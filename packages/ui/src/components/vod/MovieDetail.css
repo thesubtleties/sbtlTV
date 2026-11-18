@@ -1,6 +1,6 @@
 .movie-detail {
   position: fixed;
-  top: 32px; /* Below frameless title bar */
+  top: 0; /* Under the title bar: the backdrop runs up behind it (DetailHeader.css) */
   left: 0;
   right: 0;
   bottom: 0;
@@ -39,7 +39,8 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 60%;
+  /* As tall below the title bar as before the detail moved up under it */
+  height: calc(32px + (100% - 32px) * 0.6);
   z-index: 0;
 }
 
@@ -65,7 +66,8 @@
 .movie-detail__header {
   position: relative;
   z-index: 10;
-  padding: 16px 24px;
+  /* 32px more on top for the title bar over it, so the buttons stay where they were */
+  padding: 48px 24px 16px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;

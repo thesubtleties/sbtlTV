@@ -123,4 +123,21 @@ describe('useHeroBleed', () => {
     expect(bar.style.getPropertyValue('--bar-t')).toBe('');
     await act(async () => root.unmount()); host.remove(); bar.remove();
   });
+
+  it('a home scroll while inactive (a detail covers it) leaves the title bar alone', async () => {
+    const bar = document.createElement('div'); bar.className = 'title-bar'; document.body.append(bar);
+    let scroll: (t: number) => void = () => {};
+    function Grab() {
+      const ref = useRef<HTMLDivElement>(null);
+      scroll = useHeroBleed(false, ref, 0).onScroll;
+      return createElement('div', { ref }, createElement('div', { className: 'hero' }), createElement('div', { className: 'h-category-strip' }));
+    }
+    const host = document.createElement('div'); document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(createElement(Grab)));
+    scroll(300);
+    expect(bar.style.getPropertyValue('--bar-t')).toBe('');
+    expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
+    await act(async () => root.unmount()); host.remove(); bar.remove();
+  });
 });

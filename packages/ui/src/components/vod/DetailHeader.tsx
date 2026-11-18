@@ -46,3 +46,13 @@ export function DetailHeader({ className, onHome, onBack, onCollapse }: DetailHe
     </header>
   );
 }
+
+/** The fill and shade behind the clear title bar over a detail's backdrop (DetailHeader.css; opacity set by useDetailBleed). */
+export function DetailBleed() {
+  return (
+    <div className="detail-bleed-layers" aria-hidden="true">
+      <div className="detail-bleed__fill" />
+      <div className="detail-bleed__shade" />
+    </div>
+  );
+}

@@ -3,3 +3,31 @@
   display: flex;
   gap: 8px;
 }
+
+/* Behind the title bar over a detail: a shade so its white logo and buttons read on bright art, and a fill that comes
+   in as the backdrop scrolls away (opacity per frame from useDetailBleed; the title bar itself is see-through while
+   <html class="detail-bleed">, HeaderStyles.css). Sticky at the top of the detail's scroll, taking no room */
+.detail-bleed-layers {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+.detail-bleed__fill,
+.detail-bleed__shade {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+.detail-bleed__fill {
+  height: 32px;
+  background: var(--bg);
+  opacity: 0;
+}
+/* Dark on every palette: movie art is what it sits on */
+.detail-bleed__shade {
+  height: 80px;
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.55), rgb(0 0 0 / 0.3) 40%, transparent);
+}

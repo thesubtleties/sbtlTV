@@ -20,8 +20,9 @@
   background: transparent;
 }
 
-/* The title bar is see-through too: one layer below fills in behind both */
-:root.hero-bleed .title-bar {
+/* The title bar is see-through too (also over a movie or series detail's backdrop, DetailHeader.css): one layer below
+   fills in behind both */
+:root:is(.hero-bleed, .detail-bleed) .title-bar {
   background: transparent;
   backdrop-filter: none;
 }
@@ -82,11 +83,11 @@
   --bar-mix: clamp(0, (var(--bar-t, 0) - 0.35) / 0.3, 1);
   --bar-shadow: rgb(0 0 0 / calc(0.6 * clamp(0, (0.65 - var(--bar-t, 0)) / 0.15, 1)));
 }
-:root.hero-bleed .window-controls button:not(.is-on):not(:hover) {
+:root:is(.hero-bleed, .detail-bleed) .window-controls button:not(.is-on):not(:hover) {
   color: color-mix(in srgb, var(--text) calc(var(--bar-mix) * 100%), #fff);
   filter: drop-shadow(0 1px 2px var(--bar-shadow));
 }
-:root.hero-bleed .title-bar-logo {
+:root:is(.hero-bleed, .detail-bleed) .title-bar-logo {
   color: color-mix(in srgb, var(--logo-color) calc(var(--bar-mix) * 100%), #fff);
   filter: drop-shadow(0 1px 2px var(--bar-shadow));
 }
