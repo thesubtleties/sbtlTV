@@ -46,14 +46,13 @@ function PaletteTile({ label, roles, selected, onSelect }: {
 export function AppearanceTab() {
   return (
     <SettingsTab className="appearance-tab">
-      <AppearanceOptions />
-      <HeaderStyleOption />
+      <AppearanceOptions withHeaderStyle />
     </SettingsTab>
   );
 }
 
-/** Colors, accent and typeface; shared by Settings › Appearance and the first-run setup. */
-export function AppearanceOptions() {
+/** Colors, accent and typeface; shared by Settings › Appearance and the first-run setup (which leaves out the header style). */
+export function AppearanceOptions({ withHeaderStyle = false }: { withHeaderStyle?: boolean }) {
   const appearance = useUIStore((s) => s.settings.appearance) ?? DEFAULT_APPEARANCE;
   const updateSettings = useUpdateSettings();
   const desktop = useDesktopColors();
@@ -134,6 +133,7 @@ export function AppearanceOptions() {
           onChange={(typeface) => save({ typeface })}
         />
       </OptionRow>
+      {withHeaderStyle && <HeaderStyleOption />}
     </div>
   );
 }
