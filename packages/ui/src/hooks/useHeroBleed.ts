@@ -10,7 +10,8 @@ const SOLID_AT = 0.5;
 
 /**
  * The Movies / Series home: the hero runs up under the title bar and the header; what's behind them fills in to the
- * page colour as it scrolls away (HeaderStyles.css). Sets the root class + --chrome-fade, and the page's
+ * page colour as it scrolls away (HeaderStyles.css). The fill is its own layer (.vod-page__chrome-fill) driven by
+ * opacity, so a scroll repaints only it; the root gets a class only (hero-bleed, and chrome-solid at half). The page's
  * --bleed-chrome (title bar + header height); removes them when inactive or unmounted.
  */
 export function useHeroBleed(active: boolean, pageRef: RefObject<HTMLElement | null>, startTop: number) {
@@ -22,7 +23,8 @@ export function useHeroBleed(active: boolean, pageRef: RefObject<HTMLElement | n
     const chrome = TITLE_BAR + strip.offsetHeight;
     page.style.setProperty('--bleed-chrome', `${chrome}px`);
     const fade = chromeFade(scrollTop, hero.offsetHeight, chrome);
-    document.documentElement.style.setProperty('--chrome-fade', fade.toFixed(3));
+    const fill = page.querySelector<HTMLElement>('.vod-page__chrome-fill');
+    if (fill) fill.style.opacity = String(Math.round(fade * 1000) / 1000);
     // Labels and window buttons switch from light-over-art to the theme's colour here rather than blending with the
     // fill (a blend passes through grey on light palettes)
     document.documentElement.classList.toggle('chrome-solid', fade >= SOLID_AT);
@@ -31,7 +33,7 @@ export function useHeroBleed(active: boolean, pageRef: RefObject<HTMLElement | n
     const root = document.documentElement;
     root.classList.toggle('hero-bleed', active);
     const frame = active ? requestAnimationFrame(() => onScroll(startTop)) : 0;
-    return () => { cancelAnimationFrame(frame); root.classList.remove('hero-bleed', 'chrome-solid'); root.style.removeProperty('--chrome-fade'); };
+    return () => { cancelAnimationFrame(frame); root.classList.remove('hero-bleed', 'chrome-solid'); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the starting scroll only
   }, [active, onScroll]);
   return { onScroll };

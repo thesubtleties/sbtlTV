@@ -42,7 +42,7 @@ describe('useHeroBleed', () => {
     const ref = useRef<HTMLDivElement>(null);
     useHeroBleed(on, ref, startTop);
     const sized = (h: number) => (el: HTMLElement | null) => { if (el) Object.defineProperty(el, 'offsetHeight', { configurable: true, value: h }); };
-    return createElement('div', { ref }, createElement('div', { className: 'hero', ref: sized(700) }), createElement('div', { className: 'h-category-strip', ref: sized(68) }));
+    return createElement('div', { ref }, createElement('div', { className: 'vod-page__chrome-fill' }), createElement('div', { className: 'hero', ref: sized(700) }), createElement('div', { className: 'h-category-strip', ref: sized(68) }));
   }
 
   it('on the next frame: --bleed-chrome is the title bar + header, the fade starts from the restored scroll', async () => {
@@ -51,7 +51,10 @@ describe('useHeroBleed', () => {
     await act(async () => root.render(createElement(Sized, { on: true, startTop: 300 })));
     await frame();
     expect((host.firstElementChild as HTMLElement).style.getPropertyValue('--bleed-chrome')).toBe('100px');
-    expect(document.documentElement.style.getPropertyValue('--chrome-fade')).toBe('0.500');
+    // The fill is its own layer, driven by opacity: nothing on the root changes per scroll (a root variable would
+    // make the whole app's styles recalculate every frame)
+    expect((host.querySelector('.vod-page__chrome-fill') as HTMLElement).style.opacity).toBe('0.5');
+    expect(document.documentElement.style.getPropertyValue('--chrome-fade')).toBe('');
     await act(async () => root.unmount()); host.remove();
   });
 
@@ -63,7 +66,7 @@ describe('useHeroBleed', () => {
       flushSync(() => root.render(createElement(Sized, { on: false, startTop: 0 })));   // a category picked within the frame
     });
     await frame();
-    expect(document.documentElement.style.getPropertyValue('--chrome-fade')).toBe('');
+    expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
     await act(async () => root.unmount()); host.remove();
   });
 

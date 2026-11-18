@@ -1,8 +1,9 @@
 /*
  * Movies & Series header styles (Settings › Appearance › Movies & Series header) and the full-bleed hero they sit on.
  * <html data-vod-header="simple|floating"> picks the style (useCssVariableSync); VodPage's useHeroBleed sets
- * <html class="hero-bleed">, --chrome-fade (0 at the top of the home, 1 once the hero has passed under the bars) and
- * the page's --bleed-chrome (title bar + header height). Colours come from the palette roles only.
+ * <html class="hero-bleed"> and, once the bars are half filled, "chrome-solid"; the fill layer's opacity (0 at the top
+ * of the home, 1 once the hero has passed under the bars); and the page's --bleed-chrome (title bar + header height).
+ * Colours come from the palette roles only. Nothing here changes per scroll frame except that one layer's opacity.
  */
 
 /* ---------- Full bleed (both styles): the home's hero runs up to the window's top edge ---------- */
@@ -26,24 +27,30 @@
 }
 
 /* One fill and one blur behind the title bar and the header together (two blurred layers meeting show a line at the
-   join). It fills in to the page colour as the hero scrolls away */
-.vod-page--bleed::after {
-  content: '';
+   join). It fills in to the page colour as the hero scrolls away: its opacity is all that changes per frame */
+.vod-page__chrome-fill { display: none; }
+.vod-page--bleed > .vod-page__chrome-fill {
+  display: block;
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: var(--bleed-chrome, 108px);
-  background: color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 0) * 100%), transparent);
-  backdrop-filter: blur(calc(var(--chrome-fade, 0) * 20px));
+  background: var(--bg);
+  backdrop-filter: blur(20px);
+  opacity: 0;
   pointer-events: none;
   z-index: 45;
+  will-change: opacity;
 }
+.vod-page--bleed.vod-page--detail-open > .vod-page__chrome-fill,
+.vod-page--bleed.vod-page--content-hidden > .vod-page__chrome-fill,
+.vod-page--bleed.vod-page--collapsed > .vod-page__chrome-fill { display: none; }
 
 /* Nothing of the home's bleed over a detail, or while the page slides away for the player */
-.vod-page--bleed.vod-page--detail-open::before, .vod-page--bleed.vod-page--detail-open::after,
-.vod-page--bleed.vod-page--content-hidden::before, .vod-page--bleed.vod-page--content-hidden::after,
-.vod-page--bleed.vod-page--collapsed::before, .vod-page--bleed.vod-page--collapsed::after { display: none; }
+.vod-page--bleed.vod-page--detail-open::before,
+.vod-page--bleed.vod-page--content-hidden::before,
+.vod-page--bleed.vod-page--collapsed::before { display: none; }
 
 /* A soft shade along the top keeps the window buttons, logo and header readable on bright art; it goes as the bars
    fill in. Dark on every palette: movie art is what it sits on */
@@ -143,10 +150,14 @@
 }
 /* The row's edge fades are painted in the page colour: see-through over the art, as today once the bar is solid */
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before {
-  background: linear-gradient(to right, color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 1) * 100%), transparent), transparent);
+  background: linear-gradient(to right, var(--bg), transparent);
 }
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after {
-  background: linear-gradient(to left, color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 1) * 100%), transparent), transparent);
+  background: linear-gradient(to left, var(--bg), transparent);
+}
+:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search {
+  background-color: rgb(0 0 0 / 0.35);   /* dark glass over the art on every palette, like the labels */
+  border-color: rgb(255 255 255 / 0.2);
 }
 :root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before,
 :root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after { display: none; }
@@ -162,9 +173,8 @@
   overflow: hidden;
   cursor: pointer;
   color: var(--hdr-label);
-  /* Dark glass over the art (on every palette, like the labels), the theme's own once the bar has filled in */
-  background-color: color-mix(in srgb, color-mix(in srgb, var(--bg) 45%, transparent) calc(var(--chrome-fade, 1) * 100%), rgb(0 0 0 / 0.35));
-  border-color: color-mix(in srgb, var(--edge) calc(var(--chrome-fade, 1) * 100%), rgb(255 255 255 / 0.2));
+  background-color: color-mix(in srgb, var(--bg) 45%, transparent);
+  border-color: var(--edge);
   backdrop-filter: blur(12px);
   transition: width 0.25s ease;
 }
@@ -354,7 +364,7 @@
 }
 
 /* ---------- Floating everywhere: on every Movies/Series view the header floats; content starts below it and scrolls
-   under it; only the window-button band behind it is solid (on the home it fills in with --chrome-fade instead) ---------- */
+   under it; only the window-button band behind it is solid (on the home the fill layer does it instead) ---------- */
 :root[data-vod-header='floating'] .vod-page--floating { top: 0; }
 :root[data-vod-header='floating'] .vod-page--floating > .h-category-strip {
   position: absolute;
@@ -382,7 +392,7 @@
   height: calc(32px + var(--strip-h, 76px));
 }
 /* On the home only the window-button band fills in (the capsule keeps floating over the rows) */
-:root[data-vod-header='floating'] .vod-page--bleed::after { height: 32px; }
+:root[data-vod-header='floating'] .vod-page--bleed > .vod-page__chrome-fill { height: 32px; }
 
 /* The floating header's row lets clicks and the wheel through to the cards under it, except on its controls */
 :root[data-vod-header='floating'] .vod-page--floating > .h-category-strip { pointer-events: none; }
