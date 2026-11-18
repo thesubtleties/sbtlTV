@@ -8,8 +8,9 @@ import { useUIStore } from '../../stores/uiStore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root; let host: HTMLElement;
+const SETTINGS = { ...useUIStore.getState().settings };
 beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
-afterEach(() => { act(() => root.unmount()); host.remove(); });
+afterEach(() => { act(() => root.unmount()); host.remove(); useUIStore.setState({ settings: { ...SETTINGS } }); });
 
 function renderStrip(props: Partial<HorizontalCategoryStripProps> = {}) {
   return act(async () => root.render(createElement(HorizontalCategoryStrip, {
@@ -47,6 +48,13 @@ describe('Movies & Series header', () => {
     expect(host.querySelector('[role=menu]')).not.toBeNull();
     await act(async () => setHeader('simple'));
     expect(host.querySelector('[role=menu]')).toBeNull();   // GenresMenu is keyed by the style: a remount closes it
+  });
+
+  it('no highlight when nothing shown is active', async () => {
+    await renderStrip({ selectedId: 'gone' });
+    expect((host.querySelector('.h-category-strip__nav') as HTMLElement).style.getPropertyValue('--ind-o')).toBe('0');
+    await renderStrip();
+    expect((host.querySelector('.h-category-strip__nav') as HTMLElement).style.getPropertyValue('--ind-o')).toBe('1');
   });
 
   it('a long category name in the Genres button keeps its full name as a tooltip', async () => {

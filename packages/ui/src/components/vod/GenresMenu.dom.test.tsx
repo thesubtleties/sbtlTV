@@ -15,7 +15,7 @@ async function mount(selectedId: string | null = null) {
   const containerRef = createRef<HTMLDivElement>();
   await act(async () => root.render(createElement('div', { ref: containerRef }, createElement(GenresMenu, { categories: cats, selectedId, onSelect: (id: string) => picked.push(id), containerRef }))));
 }
-beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); picked = []; host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
+beforeEach(() => { vi.useFakeTimers(); picked = []; host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); });
 
 describe('GenresMenu', () => {
@@ -52,5 +52,44 @@ describe('GenresMenu', () => {
     expect(button().getAttribute('aria-expanded')).toBe('true');
     await act(async () => document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
     expect(button().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('ArrowLeft goes back; ArrowUp on the first row stays put; Space picks', async () => {
+    await mount('c2'); await open();
+    await key('ArrowLeft'); expect(focused()).toBe('Genre 1');
+    await key('ArrowUp'); expect(focused()).toBe('Genre 0');   // 1 - 4 is before the start: the first item
+    await key(' '); expect(picked).toEqual(['c0']);
+  });
+
+  it('the panel stays drawn while it shrinks away, then goes; reopening mid-close keeps it open', async () => {
+    await mount(); await open(); await key('Escape');
+    expect(host.querySelector('.h-category-strip__sheet--closing')).not.toBeNull();
+    expect(button().getAttribute('aria-expanded')).toBe('false');
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    await open();   // back open before the 320 ms close finished
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(host.querySelector('[role=menu]')).not.toBeNull();
+    expect(host.querySelector('.h-category-strip__sheet--closing')).toBeNull();
+  });
+
+  it('clicking Genres again closes it', async () => {
+    await mount(); await open(); await open();
+    expect(button().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('marks the open category on the button and in the panel; only the focused item is in the Tab order', async () => {
+    await mount('c3'); await open();
+    expect(button().classList.contains('active')).toBe(true);
+    expect([...host.querySelectorAll('.h-category-strip__sheet-item.active')].map((b) => b.textContent)).toEqual(['Genre 3']);
+    expect([...host.querySelectorAll('[role=menuitem]')].filter((b) => b.getAttribute('tabindex') === '0').map((b) => b.textContent)).toEqual(['Genre 3']);
+    await mount(); expect(button().classList.contains('active')).toBe(false);
+  });
+
+  it('stops listening for outside clicks once closed', async () => {
+    const add = vi.spyOn(document, 'addEventListener'); const remove = vi.spyOn(document, 'removeEventListener');
+    await mount(); await open(); await key('Escape');
+    const count = (spy: typeof add) => spy.mock.calls.filter(([type]) => type === 'pointerdown').length;
+    expect(count(add)).toBe(1); expect(count(remove)).toBe(1);
+    add.mockRestore(); remove.mockRestore();
   });
 });

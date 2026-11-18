@@ -25,8 +25,8 @@ export function useHeroBleed(active: boolean, pageRef: RefObject<HTMLElement | n
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle('hero-bleed', active);
-    if (active) requestAnimationFrame(() => onScroll(startTop));
-    return () => { root.classList.remove('hero-bleed'); root.style.removeProperty('--chrome-fade'); };
+    const frame = active ? requestAnimationFrame(() => onScroll(startTop)) : 0;
+    return () => { cancelAnimationFrame(frame); root.classList.remove('hero-bleed'); root.style.removeProperty('--chrome-fade'); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the starting scroll only
   }, [active, onScroll]);
   return { onScroll };

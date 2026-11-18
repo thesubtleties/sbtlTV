@@ -7,12 +7,13 @@ import { useUIStore } from '../../stores/uiStore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root; let host: HTMLElement; let saved: unknown[];
+const SETTINGS = { ...useUIStore.getState().settings };
 beforeEach(() => {
   saved = [];
   Object.assign(window, { storage: { updateSettings: async (s: unknown) => { saved.push(s); return {}; } }, platform: { isLinux: true } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); });
+afterEach(() => { act(() => root.unmount()); host.remove(); useUIStore.setState({ settings: { ...SETTINGS } }); });
 
 describe('Movies & Series header setting', () => {
   it('shows Simple by default and saves Floating with the rest of the look', async () => {
