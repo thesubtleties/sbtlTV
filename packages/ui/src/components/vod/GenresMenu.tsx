@@ -45,6 +45,12 @@ export function GenresMenu({ categories, selectedId, onSelect, containerRef }: G
     return () => document.removeEventListener('pointerdown', away);
   }, [open, close, containerRef]);
   useEffect(() => { if (open) itemRefs.current[focus]?.focus(); }, [open, focus]);
+  // The view changed underneath (Home or All picked in the capsule): the panel goes
+  const shownFor = useRef(selectedId);
+  useEffect(() => {
+    if (shownFor.current !== selectedId) close(false);
+    shownFor.current = selectedId;
+  }, [selectedId, close]);
 
   const toggle = () => {
     if (open) { close(false); return; }
@@ -56,9 +62,12 @@ export function GenresMenu({ categories, selectedId, onSelect, containerRef }: G
     const move: Record<string, number> = {
       ArrowRight: focus + 1, ArrowLeft: focus - 1, ArrowDown: focus + GENRE_COLUMNS, ArrowUp: focus - GENRE_COLUMNS, Home: 0, End: last,
     };
-    if (e.key in move) { e.preventDefault(); setFocus(Math.min(last, Math.max(0, move[e.key]))); return; }
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); itemRefs.current[focus]?.click(); return; }
-    if (e.key === 'Escape') { e.preventDefault(); close(true); return; }
+    // Keys the panel handles stop here: the app's own shortcuts would otherwise run too (Escape closes Movies,
+    // Space pauses, arrows seek). Tab moves on as usual
+    const handled = (fn: () => void) => { e.preventDefault(); e.stopPropagation(); fn(); };
+    if (e.key in move) return handled(() => setFocus(Math.min(last, Math.max(0, move[e.key]))));
+    if (e.key === 'Enter' || e.key === ' ') return handled(() => itemRefs.current[focus]?.click());
+    if (e.key === 'Escape') return handled(() => close(true));
     if (e.key === 'Tab') close(false);
   };
 
@@ -80,6 +89,7 @@ export function GenresMenu({ categories, selectedId, onSelect, containerRef }: G
           className={`h-category-strip__sheet ${state === 'closing' ? 'h-category-strip__sheet--closing' : ''}`}
           role="menu"
           aria-label="Genres"
+          inert={state === 'closing' || undefined}
           onKeyDown={onKey}
         >
           {categories.map((cat, i) => (
@@ -91,7 +101,7 @@ export function GenresMenu({ categories, selectedId, onSelect, containerRef }: G
               tabIndex={i === focus ? 0 : -1}
               style={{ '--i': i } as CSSProperties}
               className={`h-category-strip__sheet-item ${selectedId === cat.id ? 'active' : ''}`}
-              onClick={() => { onSelect(cat.id); close(false); }}
+              onClick={() => { onSelect(cat.id); close(true); }}
             >
               {cat.displayName}
             </button>

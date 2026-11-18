@@ -92,4 +92,34 @@ describe('GenresMenu', () => {
     expect(count(add)).toBe(1); expect(count(remove)).toBe(1);
     add.mockRestore(); remove.mockRestore();
   });
+
+  it('keys the panel handles never reach the app (Escape would close Movies, Space would pause)', async () => {
+    const reached: string[] = [];
+    const onWindow = (e: KeyboardEvent) => reached.push(e.key);
+    window.addEventListener('keydown', onWindow);
+    await mount(); await open();
+    await key('ArrowDown'); await key('Home'); await key('Escape');   // moving, then closing
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    await open(); await key(' ');                                       // picking
+    window.removeEventListener('keydown', onWindow);
+    expect(reached).toEqual([]);
+  });
+
+  it('picking a genre puts focus back on the Genres button', async () => {
+    await mount(); await open(); await key('ArrowRight'); await key('Enter');
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(document.activeElement).toBe(button());
+  });
+
+  it('the panel closes when the view changes underneath it (Home or All picked)', async () => {
+    await mount('c2'); await open();
+    await mount(null);
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(host.querySelector('[role=menu]')).toBeNull();
+  });
+
+  it('a closing panel takes no clicks or focus', async () => {
+    await mount(); await open(); await key('Escape');
+    expect(host.querySelector('[role=menu]')?.hasAttribute('inert')).toBe(true);
+  });
 });
