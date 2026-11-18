@@ -6,7 +6,8 @@
  */
 
 /* ---------- Full bleed (both styles): the home's hero runs up to the window's top edge ---------- */
-.vod-page--bleed { top: 0; }
+/* Two classes: VodPage.css's .vod-page { top: 32px } loads after this file and would win a tie */
+.vod-page.vod-page--bleed { top: 0; }
 
 /* The header floats over the hero instead of pushing it down */
 .vod-page--bleed > .h-category-strip {
@@ -133,8 +134,9 @@
   overflow: hidden;
   cursor: pointer;
   color: var(--hdr-label);
-  background-color: color-mix(in srgb, var(--bg) 45%, transparent);
-  border-color: var(--edge);
+  /* Dark glass over the art (on every palette, like the labels), the theme's own once the bar has filled in */
+  background-color: color-mix(in srgb, color-mix(in srgb, var(--bg) 45%, transparent) calc(var(--chrome-fade, 1) * 100%), rgb(0 0 0 / 0.35));
+  border-color: color-mix(in srgb, var(--edge) calc(var(--chrome-fade, 1) * 100%), rgb(255 255 255 / 0.2));
   backdrop-filter: blur(12px);
   transition: width 0.25s ease;
 }
