@@ -261,6 +261,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   // Resolve selected groupKey back to category IDs for VodBrowse
   const selectedGroup = groupedCategories.find(g => g.groupKey === selectedCategoryId);
+  // One array per category list, not per render: the strip re-measures its capsule whenever this changes
+  const stripCategories = useMemo(() => groupedCategories.map(g => ({ id: g.groupKey, name: g.name })), [groupedCategories]);
   const selectedCategoryIds = selectedGroup?.categoryIds ?? null;
 
   // Build carousel rows for virtualization
@@ -498,7 +500,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // The home's hero runs up under the title bar and this header (HeaderStyles.css)
   const pageRef = useRef<HTMLDivElement>(null);
   const bleed = selectedCategoryId === null;
-  const { onScroll: bleedScroll } = useHeroBleed(bleed, pageRef, scrollPosition);
+  // The see-through bars are for the home itself: not while a detail covers it or the page is slid away for the
+  // player (it stays mounted there, indefinitely if the stream fails), where the title bar is as everywhere else
+  const { onScroll: bleedScroll } = useHeroBleed(bleed && !hasDetail && !shouldPageBeCollapsed, pageRef, scrollPosition);
   // Floating header: it floats on every view, so content starts below it (--strip-h, kept current as it resizes)
   const floating = useUIStore((s) => s.settings.appearance?.header === 'floating');
   useLayoutEffect(() => {
@@ -528,7 +532,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     <div className={pageClasses} ref={pageRef}>
       {/* Unified header: back + categories + search */}
       <HorizontalCategoryStrip
-        categories={groupedCategories.map(g => ({ id: g.groupKey, name: g.name }))}
+        categories={stripCategories}
         selectedId={selectedCategoryId}
         onSelect={handleCategorySelect}
         type={type}
