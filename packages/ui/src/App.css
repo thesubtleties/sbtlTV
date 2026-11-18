@@ -21,6 +21,8 @@
 
 /* Custom title bar for frameless window */
 .title-bar {
+  /* The logo's colour; a variable so the Movies/Series home can mix it with white as it scrolls (HeaderStyles.css) */
+  --logo-color: var(--accent);
   position: absolute;
   top: 0;
   left: 0;
@@ -52,7 +54,7 @@
   height: 24px;
   width: auto;
   opacity: 0.8;
-  color: var(--accent);
+  color: var(--logo-color);
 }
 
 .window-controls {
@@ -138,13 +140,13 @@
 }
 
 /* The sbtl logo stays in its own colours (white, and the dim grey in the background); other palettes use their accent */
-:root[data-palette='sbtl'] .title-bar-logo { color: var(--text); }
+:root[data-palette='sbtl'] .title-bar { --logo-color: var(--text); }
 :root[data-palette='sbtl'] .placeholder__logo { color: var(--faint); }
 /* sbtl light: the logo in its button colour (the slate blue), at 85% */
 :root[data-palette='sbtl-light'] .placeholder__logo { color: color-mix(in srgb, var(--accent) 85%, transparent); }
 /* Mocha: its bright green only on the background logo (dim); the small logos stay in its text colour */
 :root[data-palette='mocha'] .placeholder__logo { color: color-mix(in srgb, var(--accent) 20%, transparent); }
-:root[data-palette='mocha'] .title-bar-logo { color: var(--text); }
+:root[data-palette='mocha'] .title-bar { --logo-color: var(--text); }
 
 /* Sync status indicator - sits below logo with fixed height to prevent shifting */
 .sync-status {

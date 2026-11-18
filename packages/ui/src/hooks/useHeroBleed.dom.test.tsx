@@ -111,4 +111,16 @@ describe('useHeroBleed', () => {
     await act(async () => root.unmount()); host.remove();
     delete document.documentElement.dataset.vodHeader;
   });
+
+  it('the title bar gets how far the bars have filled (--bar-t), so its logo and buttons follow the scroll; gone on leaving', async () => {
+    const bar = document.createElement('div'); bar.className = 'title-bar'; document.body.append(bar);
+    const host = document.createElement('div'); document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(createElement(Sized, { on: true, startTop: 150 })));
+    await frame();
+    expect(bar.style.getPropertyValue('--bar-t')).toBe('0.25');   // 150 / (700 - 100)
+    await act(async () => root.render(createElement(Sized, { on: false, startTop: 0 })));
+    expect(bar.style.getPropertyValue('--bar-t')).toBe('');
+    await act(async () => root.unmount()); host.remove(); bar.remove();
+  });
 });

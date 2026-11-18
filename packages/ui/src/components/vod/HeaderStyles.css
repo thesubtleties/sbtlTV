@@ -1,9 +1,9 @@
 /*
  * Movies & Series header styles (Settings › Appearance › Movies & Series header) and the full-bleed hero they sit on.
  * <html data-vod-header="simple|floating"> picks the style (useCssVariableSync); VodPage's useHeroBleed sets
- * <html class="hero-bleed"> and, once the bars are half filled, "chrome-solid"; the fill layer's opacity (0 at the top
+ * <html class="hero-bleed"> and, once the bars are half filled, "chrome-solid"; the title bar's --bar-t; the fill layer's opacity (0 at the top
  * of the home, 1 once the hero has passed under the bars); and the page's --bleed-chrome (title bar + header height).
- * Colours come from the palette roles only. Nothing here changes per scroll frame except that one layer's opacity.
+ * Colours come from the palette roles only. Per scroll frame only the fill/shade layers' opacity and the title bar's --bar-t change.
  */
 
 /* ---------- Full bleed (both styles): the home's hero runs up to the window's top edge ---------- */
@@ -73,13 +73,23 @@
 :root.chrome-solid[data-vod-header='simple'] .vod-page--bleed > .vod-page__chrome-shade { opacity: 0; }
 :root[data-vod-header='floating'] .vod-page--bleed > .vod-page__chrome-shade { transition: none; }
 
-/* Over the art the window buttons and logo are light with a shadow, easing to the theme's text as the bars fill in */
-:root.hero-bleed:not(.chrome-solid) .window-controls button:not(.is-on):not(:hover),
-:root.hero-bleed:not(.chrome-solid) .title-bar-logo {
-  color: #fff;
-  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.6));
+/* Over the art the window buttons and logo are white with a shadow; they follow the scroll to their own colour as the
+   bars fill in (--bar-t, 0 to 1, set per frame by useHeroBleed on the title bar alone). Unset (the first frame on open)
+   reads as 0, so the title bar is clear at once. The blend runs through the middle third of the fill (--bar-mix):
+   on light palettes white-to-dark crosses a dark-to-light bar, and a straight blend sat grey on grey around halfway.
+   The shadow holds through the crossing */
+.title-bar {
+  --bar-mix: clamp(0, (var(--bar-t, 0) - 0.35) / 0.3, 1);
+  --bar-shadow: rgb(0 0 0 / calc(0.6 * clamp(0, (0.65 - var(--bar-t, 0)) / 0.15, 1)));
 }
-
+:root.hero-bleed .window-controls button:not(.is-on):not(:hover) {
+  color: color-mix(in srgb, var(--text) calc(var(--bar-mix) * 100%), #fff);
+  filter: drop-shadow(0 1px 2px var(--bar-shadow));
+}
+:root.hero-bleed .title-bar-logo {
+  color: color-mix(in srgb, var(--logo-color) calc(var(--bar-mix) * 100%), #fff);
+  filter: drop-shadow(0 1px 2px var(--bar-shadow));
+}
 
 /* No scrollbar on the home (wheel, trackpad and keys still scroll): its gutters, kept on both sides for the
    scrollbar, would leave a strip down each edge the art can't reach. Grids (All, a category) keep theirs */
