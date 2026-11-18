@@ -25,6 +25,10 @@ export function useHeroBleed(active: boolean, pageRef: RefObject<HTMLElement | n
     const fade = chromeFade(scrollTop, hero.offsetHeight, chrome);
     const fill = page.querySelector<HTMLElement>('.vod-page__chrome-fill');
     if (fill) fill.style.opacity = String(Math.round(fade * 1000) / 1000);
+    // The top shade: Floating's controls sit on their own glass, so it simply fades out with the scroll. Simple's
+    // labels are light until the halfway switch, so there CSS keeps it whole until then
+    const shade = page.querySelector<HTMLElement>('.vod-page__chrome-shade');
+    if (shade) shade.style.opacity = document.documentElement.dataset.vodHeader === 'floating' ? String(Math.round((1 - fade) * 1000) / 1000) : '';
     // Labels and window buttons switch from light-over-art to the theme's colour here rather than blending with the
     // fill (a blend passes through grey on light palettes)
     document.documentElement.classList.toggle('chrome-solid', fade >= SOLID_AT);

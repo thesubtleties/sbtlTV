@@ -532,6 +532,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     <div className={pageClasses} ref={pageRef}>
       {/* The home's fill behind the title bar and header (HeaderStyles.css; opacity set by useHeroBleed) */}
       <div className="vod-page__chrome-fill" aria-hidden="true" />
+      <div className="vod-page__chrome-shade" aria-hidden="true" />
       {/* Unified header: back + categories + search */}
       <HorizontalCategoryStrip
         categories={stripCategories}

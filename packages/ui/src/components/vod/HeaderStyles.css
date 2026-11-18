@@ -47,28 +47,31 @@
 .vod-page--bleed.vod-page--collapsed > .vod-page__chrome-fill { display: none; }
 
 /* Nothing of the home's bleed over a detail, or while the page slides away for the player */
-.vod-page--bleed.vod-page--detail-open::before,
-.vod-page--bleed.vod-page--content-hidden::before,
-.vod-page--bleed.vod-page--collapsed::before { display: none; }
+.vod-page--bleed.vod-page--detail-open > .vod-page__chrome-shade,
+.vod-page--bleed.vod-page--content-hidden > .vod-page__chrome-shade,
+.vod-page--bleed.vod-page--collapsed > .vod-page__chrome-shade { display: none; }
 
 /* A soft shade along the top keeps the window buttons, logo and header readable on bright art; it goes as the bars
    fill in. Dark on every palette: movie art is what it sits on */
-.vod-page--bleed::before {
-  content: '';
+.vod-page__chrome-shade { display: none; }
+.vod-page--bleed > .vod-page__chrome-shade {
+  display: block;
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: calc(var(--bleed-chrome, 108px) + 72px);
   background: linear-gradient(to bottom, rgb(0 0 0 / 0.65), rgb(0 0 0 / 0.35) 55%, transparent);
-  /* Over the fill and at full strength while the labels are light; it goes when they switch to the theme's colour
-     (chrome-solid), so light labels never sit on a half-filled light bar */
+  /* Over the fill. Simple: whole while the labels are light, gone when they switch to the theme's colour
+     (chrome-solid), so light labels never sit on a half-filled light bar. Floating: useHeroBleed fades it with the
+     scroll (inline opacity) */
   opacity: 1;
-  transition: opacity 150ms ease;
+  transition: opacity 200ms ease;
   pointer-events: none;
   z-index: 46;
 }
-:root.chrome-solid .vod-page--bleed::before { opacity: 0; }
+:root.chrome-solid[data-vod-header='simple'] .vod-page--bleed > .vod-page__chrome-shade { opacity: 0; }
+:root[data-vod-header='floating'] .vod-page--bleed > .vod-page__chrome-shade { transition: none; }
 
 /* Over the art the window buttons and logo are light with a shadow, easing to the theme's text as the bars fill in */
 :root.hero-bleed:not(.chrome-solid) .window-controls button:not(.is-on):not(:hover),

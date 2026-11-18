@@ -42,7 +42,7 @@ describe('useHeroBleed', () => {
     const ref = useRef<HTMLDivElement>(null);
     useHeroBleed(on, ref, startTop);
     const sized = (h: number) => (el: HTMLElement | null) => { if (el) Object.defineProperty(el, 'offsetHeight', { configurable: true, value: h }); };
-    return createElement('div', { ref }, createElement('div', { className: 'vod-page__chrome-fill' }), createElement('div', { className: 'hero', ref: sized(700) }), createElement('div', { className: 'h-category-strip', ref: sized(68) }));
+    return createElement('div', { ref }, createElement('div', { className: 'vod-page__chrome-fill' }), createElement('div', { className: 'vod-page__chrome-shade' }), createElement('div', { className: 'hero', ref: sized(700) }), createElement('div', { className: 'h-category-strip', ref: sized(68) }));
   }
 
   it('on the next frame: --bleed-chrome is the title bar + header, the fade starts from the restored scroll', async () => {
@@ -93,5 +93,22 @@ describe('useHeroBleed', () => {
     expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
     await act(async () => root.unmount());
     host.remove();
+  });
+
+  it('Floating: the top shade fades out with the scroll; Simple leaves it to the halfway switch (CSS)', async () => {
+    const host = document.createElement('div'); document.body.append(host);
+    const root = createRoot(host);
+    document.documentElement.dataset.vodHeader = 'floating';
+    await act(async () => root.render(createElement(Sized, { on: true, startTop: 150 })));
+    await frame();
+    const shade = host.querySelector('.vod-page__chrome-shade') as HTMLElement;
+    expect(shade.style.opacity).toBe('0.75');   // 150 / (700 - 100) = 0.25 filled
+    document.documentElement.dataset.vodHeader = 'simple';
+    await act(async () => root.render(createElement(Sized, { on: false, startTop: 0 })));
+    await act(async () => root.render(createElement(Sized, { on: true, startTop: 150 })));
+    await frame();
+    expect(shade.style.opacity).toBe('');
+    await act(async () => root.unmount()); host.remove();
+    delete document.documentElement.dataset.vodHeader;
   });
 });
