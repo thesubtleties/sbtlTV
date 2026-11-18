@@ -191,11 +191,12 @@ interface VodPageProps {
 }
 
 /** The page's classes: bleed (the home's hero under the bars) and floating (the Floating header) first. */
-export function vodPageClasses(o: { collapsed: boolean; contentHidden: boolean; detailOpen: boolean; bleed: boolean; floating: boolean }): string {
+export function vodPageClasses(o: { collapsed: boolean; contentHidden: boolean; detailOpen: boolean; bleed: boolean; floating: boolean; sliding: boolean }): string {
   return [
     'vod-page',
     o.bleed ? 'vod-page--bleed' : '',
     o.floating ? 'vod-page--floating' : '',
+    o.sliding ? 'vod-page--sliding' : '',
     o.collapsed ? 'vod-page--collapsed' : '',
     o.contentHidden ? 'vod-page--content-hidden' : '',
     o.detailOpen ? 'vod-page--detail-open' : '',
@@ -516,6 +517,14 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     return () => ro.disconnect();
   }, [floating]);
 
+  // The header's glass blurs only once the page has slid in (HeaderStyles.css): each blur re-blurs the moving page on
+  // every frame of the slide, which halved its frame rate on a first open
+  const [sliding, setSliding] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setSliding(false), SLIDE_DELAY_MS + SLIDE_DURATION_MS);
+    return () => clearTimeout(t);
+  }, []);
+
   const pageClasses = vodPageClasses({
     // Animate whole page when entering/exiting without detail
     collapsed: shouldPageBeCollapsed,
@@ -526,6 +535,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     detailOpen: hasDetail && !isPageCollapsed,
     bleed,
     floating,
+    sliding,
   });
 
   return (
