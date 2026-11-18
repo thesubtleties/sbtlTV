@@ -20,6 +20,14 @@ function renderStrip(props: Partial<HorizontalCategoryStripProps> = {}) {
 }
 
 describe('Movies & Series header', () => {
+  it('Home stays put: it sits outside the scrolling row (All and the categories scroll)', async () => {
+    await renderStrip();
+    const home = [...host.querySelectorAll('.h-category-strip__pill')].find((b) => b.textContent === 'Home')!;
+    expect(home.closest('.h-category-strip__scroll')).toBeNull();
+    const scrolled = [...host.querySelectorAll('.h-category-strip__scroll .h-category-strip__pill')].map((b) => b.textContent);
+    expect(scrolled).toEqual(['All', 'Arabic Animation Series', 'Comedy', 'Drama']);
+  });
+
   it('Simple: Home is the active tab on the home; every category is a tab', async () => {
     await renderStrip();
     expect(host.querySelector('.h-category-strip__pill.active')?.textContent).toBe('Home');

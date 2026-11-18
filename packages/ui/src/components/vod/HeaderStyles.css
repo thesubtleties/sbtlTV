@@ -168,6 +168,16 @@
   background-color: rgb(0 0 0 / 0.35);   /* dark glass over the art on every palette, like the labels */
   border-color: rgb(255 255 255 / 0.2);
 }
+/* Over the art the row's edges fade to see-through (a mask), instead of painting a patch of the page colour */
+:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-left {
+  mask-image: linear-gradient(to right, transparent, #000 32px);
+}
+:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-right {
+  mask-image: linear-gradient(to left, transparent, #000 32px);
+}
+:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-left.fade-right {
+  mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+}
 :root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before,
 :root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after { display: none; }
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__arrow { color: var(--hdr-label); }
@@ -224,7 +234,7 @@
 }
 /* Only Home and All stay in the capsule; the categories live in the Genres panel */
 :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__arrow,
-:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__pill:nth-child(n + 3) { display: none; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll .h-category-strip__pill:nth-child(n + 2) { display: none; }
 :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll-wrapper { flex: none; }
 :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before,
 :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after { display: none; }

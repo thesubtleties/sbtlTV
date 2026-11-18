@@ -240,6 +240,15 @@ export function HorizontalCategoryStrip({
 
       <div className="h-category-strip__nav" ref={navRef}>
       <span className="h-category-strip__indicator" aria-hidden="true" />
+      {/* Home stays put, outside the scrolling row */}
+      {showUnifiedHeader && (
+        <button
+          className={`h-category-strip__pill h-category-strip__pill--home ${selectedId === null ? 'active' : ''}`}
+          onClick={() => onSelect(null)}
+        >
+          Home
+        </button>
+      )}
       {/* Left arrow */}
       <button
         className={`h-category-strip__arrow h-category-strip__arrow--left ${canScrollLeft ? 'visible' : ''}`}
@@ -252,16 +261,6 @@ export function HorizontalCategoryStrip({
       {/* Scroll container */}
       <div className={`h-category-strip__scroll-wrapper ${canScrollLeft ? 'fade-left' : ''} ${canScrollRight ? 'fade-right' : ''}`}>
         <div ref={scrollRef} className="h-category-strip__scroll">
-          {/* Home pill - only in unified header mode */}
-          {showUnifiedHeader && (
-            <button
-              className={`h-category-strip__pill ${selectedId === null ? 'active' : ''}`}
-              onClick={() => onSelect(null)}
-            >
-              Home
-            </button>
-          )}
-
           {/* All button */}
           <button
             className={`h-category-strip__pill ${selectedId === 'all' ? 'active' : ''}`}
