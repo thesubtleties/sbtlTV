@@ -452,8 +452,18 @@
   .h-category-strip__sheet-item:focus-visible { transform: none !important; }
 }
 
-/* The glass blurs only once the page is in place: while it slides in (or away, collapsed) a blur re-blurs the moving
-   page every frame, which halved the slide's frame rate on a first open. The glass is mostly opaque, so the blur
-   coming on afterwards is subtle */
-.vod-page--sliding .h-category-strip--unified *,
-.vod-page--collapsed .h-category-strip--unified * { backdrop-filter: none !important; }
+/* The top area stays out of the motion: while the page slides in (or away) the header, the shade and the fill aren't
+   drawn (each was redrawn on every frame of the slide), and the title bar keeps its usual look (useHeroBleed waits).
+   Once the page lands they fade in together, the title bar fading to clear with them */
+.vod-page--sliding > .h-category-strip,
+.vod-page--sliding > .vod-page__chrome-shade,
+.vod-page--sliding > .vod-page__chrome-fill,
+.vod-page--collapsed > .h-category-strip { visibility: hidden; }
+.vod-page:not(.vod-page--sliding) > .h-category-strip,
+.vod-page:not(.vod-page--sliding) > .vod-page__chrome-shade { animation: vod-top-in 200ms ease; }
+@keyframes vod-top-in { from { opacity: 0; } to { opacity: 1; } }
+.title-bar { transition: opacity 0.2s, background-color 0.2s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .vod-page:not(.vod-page--sliding) > .h-category-strip,
+  .vod-page:not(.vod-page--sliding) > .vod-page__chrome-shade { animation: none; }
+}
