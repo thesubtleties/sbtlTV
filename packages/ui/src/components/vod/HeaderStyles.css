@@ -80,6 +80,14 @@
 .window-controls button,
 .title-bar-logo { transition: color 150ms ease, filter 150ms ease; }
 
+/* No scrollbar on the home (wheel, trackpad and keys still scroll): its gutters, kept on both sides for the
+   scrollbar, would leave a strip down each edge the art can't reach. Grids (All, a category) keep theirs */
+.vod-page--bleed .vod-page__home {
+  scrollbar-width: none;
+  scrollbar-gutter: auto;
+}
+.vod-page--bleed .vod-page__home::-webkit-scrollbar { display: none; }
+
 /* The hero grows by the bars' height, so the art starts at pixel 0 and its title keeps its place */
 .vod-page--bleed .hero {
   height: calc(55vh + var(--bleed-chrome, 108px));
