@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
 export const GENRE_COLUMNS = 4;
 
@@ -99,7 +99,6 @@ export function GenresMenu({ categories, selectedId, onSelect, containerRef }: G
               type="button"
               role="menuitem"
               tabIndex={i === focus ? 0 : -1}
-              style={{ '--i': i } as CSSProperties}
               className={`h-category-strip__sheet-item ${selectedId === cat.id ? 'active' : ''}`}
               onClick={() => { onSelect(cat.id); close(true); }}
             >
