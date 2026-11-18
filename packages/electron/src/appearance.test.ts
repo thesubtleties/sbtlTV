@@ -14,3 +14,8 @@ test('the header choice travels with the rest of the look between computers', ()
   const out = fitAppearance({ palette: 'nord', typeface: 'fira', accent: 'palette', header: 'floating' }, { palette: 'sbtl' }, { caelestia: false, accent: false });
   assert.equal(out.header, 'floating');
 });
+
+test("an older app's look (no header in it) keeps this computer's header choice", () => {
+  const out = fitAppearance({ palette: 'nord', typeface: 'fira', accent: 'palette' }, { palette: 'sbtl', header: 'floating' }, { caelestia: false, accent: false });
+  assert.equal((out as { header?: string }).header, 'floating');
+});
