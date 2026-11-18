@@ -66,4 +66,29 @@ describe('useHeroBleed', () => {
     expect(document.documentElement.style.getPropertyValue('--chrome-fade')).toBe('');
     await act(async () => root.unmount()); host.remove();
   });
+
+  it('marks the bars solid once they are half filled, and clears it on leaving (labels switch colour there, not by blending)', async () => {
+    let scroll: (top: number) => void = () => {};
+    function Page({ on }: { on: boolean }) {
+      const ref = useRef<HTMLDivElement>(null);
+      scroll = useHeroBleed(on, ref, 0).onScroll;
+      return createElement('div', { ref }, createElement('div', { className: 'hero' }), createElement('div', { className: 'h-category-strip' }));
+    }
+    const host = document.createElement('div'); document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(createElement(Page, { on: true })));
+    const hero = host.querySelector('.hero') as HTMLElement;
+    Object.defineProperty(hero, 'offsetHeight', { value: 632 });
+    scroll(100);
+    expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
+    scroll(400);
+    expect(document.documentElement.classList.contains('chrome-solid')).toBe(true);
+    scroll(0);
+    expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
+    scroll(500);
+    await act(async () => root.render(createElement(Page, { on: false })));
+    expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
+    await act(async () => root.unmount());
+    host.remove();
+  });
 });

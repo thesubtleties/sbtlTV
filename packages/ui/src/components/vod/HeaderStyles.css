@@ -40,6 +40,11 @@
   z-index: 45;
 }
 
+/* Nothing of the home's bleed over a detail, or while the page slides away for the player */
+.vod-page--bleed.vod-page--detail-open::before, .vod-page--bleed.vod-page--detail-open::after,
+.vod-page--bleed.vod-page--content-hidden::before, .vod-page--bleed.vod-page--content-hidden::after,
+.vod-page--bleed.vod-page--collapsed::before, .vod-page--bleed.vod-page--collapsed::after { display: none; }
+
 /* A soft shade along the top keeps the window buttons, logo and header readable on bright art; it goes as the bars
    fill in. Dark on every palette: movie art is what it sits on */
 .vod-page--bleed::before {
@@ -50,17 +55,23 @@
   right: 0;
   height: calc(var(--bleed-chrome, 108px) + 72px);
   background: linear-gradient(to bottom, rgb(0 0 0 / 0.65), rgb(0 0 0 / 0.35) 55%, transparent);
-  opacity: calc(1 - var(--chrome-fade, 0));
+  /* Over the fill and at full strength while the labels are light; it goes when they switch to the theme's colour
+     (chrome-solid), so light labels never sit on a half-filled light bar */
+  opacity: 1;
+  transition: opacity 150ms ease;
   pointer-events: none;
-  z-index: 40;
+  z-index: 46;
 }
+:root.chrome-solid .vod-page--bleed::before { opacity: 0; }
 
 /* Over the art the window buttons and logo are light with a shadow, easing to the theme's text as the bars fill in */
-:root.hero-bleed .window-controls button:not(.is-on),
-:root.hero-bleed .title-bar-logo {
-  color: color-mix(in srgb, var(--fg) calc(var(--chrome-fade, 0) * 100%), #fff);
-  filter: drop-shadow(0 1px 2px rgb(0 0 0 / calc((1 - var(--chrome-fade, 0)) * 0.6)));
+:root.hero-bleed:not(.chrome-solid) .window-controls button:not(.is-on):not(:hover),
+:root.hero-bleed:not(.chrome-solid) .title-bar-logo {
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.6));
 }
+.window-controls button,
+.title-bar-logo { transition: color 150ms ease, filter 150ms ease; }
 
 /* The hero grows by the bars' height, so the art starts at pixel 0 and its title keeps its place */
 .vod-page--bleed .hero {
@@ -75,12 +86,25 @@
 .h-category-strip__sheet { user-select: none; -webkit-user-select: none; }
 .h-category-strip--unified input { user-select: text; -webkit-user-select: text; }
 
-/* Label colour: light over the hero art, the theme's text once the bars have filled in (and always on grids, where
-   --chrome-fade is unset) */
+/* Label colour: light with a shadow over the hero art, the theme's text once the bars are half filled (chrome-solid,
+   set by useHeroBleed) and always off the home. A switch, not a blend: a blend passes through grey on light palettes */
 .h-category-strip--unified {
-  --hdr-label: color-mix(in srgb, var(--fg) calc(var(--chrome-fade, 1) * 100%), #fff);
-  --hdr-shadow: rgb(0 0 0 / calc((1 - var(--chrome-fade, 1)) * 0.75));
+  --hdr-label: var(--fg);
+  --hdr-shadow: transparent;
+  --hdr-mark: var(--accent);
 }
+:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified {
+  --hdr-label: #fff;
+  --hdr-shadow: rgb(0 0 0 / 0.75);
+  --hdr-mark: #fff;   /* underline and focus ring: the accent can be too dark on the shade (sbtl light's slate) */
+}
+.h-category-strip--unified .h-category-strip__pill,
+.h-category-strip--unified .h-category-strip__back,
+.h-category-strip--unified .h-category-strip__search { transition: color 150ms ease, text-shadow 150ms ease, filter 150ms ease; }
+.h-category-strip--unified .h-category-strip__search svg { color: var(--hdr-label); }
+.h-category-strip--unified .h-category-strip__search input { color: var(--hdr-label); }
+.h-category-strip--unified .h-category-strip__search:focus-within { border-color: var(--hdr-mark); }
+.h-category-strip--unified button:focus-visible { outline: 2px solid var(--hdr-mark); outline-offset: 2px; }
 
 /* ---------- Simple: categories as text tabs ---------- */
 :root[data-vod-header='simple'] .h-category-strip--unified { gap: 20px; }
@@ -115,7 +139,7 @@
   bottom: 0;
   height: 2px;
   border-radius: 2px;
-  background: var(--accent);
+  background: var(--hdr-mark);
 }
 /* The row's edge fades are painted in the page colour: see-through over the art, as today once the bar is solid */
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before {
@@ -124,11 +148,15 @@
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after {
   background: linear-gradient(to left, color-mix(in srgb, var(--bg) calc(var(--chrome-fade, 1) * 100%), transparent), transparent);
 }
+:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before,
+:root.hero-bleed:not(.chrome-solid)[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after { display: none; }
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__arrow { color: var(--hdr-label); }
 /* Search: a round button that widens when used */
 :root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search {
   width: 40px;
   min-width: 40px;
+  height: 40px;
+  box-sizing: border-box;
   padding: 0 11px;
   border-radius: 999px;
   overflow: hidden;
@@ -157,7 +185,7 @@
   --ease-spatial-fast: cubic-bezier(0.42, 1.67, 0.21, 0.9);
   --ease-effects: cubic-bezier(0.34, 0.8, 0.34, 1);        /* fades and colour */
   --ease-out: cubic-bezier(0.3, 0, 0.8, 0.15);             /* leaving */
-  --glass: color-mix(in srgb, var(--bg) 55%, transparent);
+  --glass: color-mix(in srgb, var(--bg) 72%, transparent);
 }
 :root[data-vod-header='floating'] .h-category-strip--unified { justify-content: space-between; }
 :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__nav {
@@ -257,7 +285,6 @@
   background: color-mix(in srgb, var(--card) 88%, transparent);
   border: 1px solid var(--edge);
   backdrop-filter: blur(24px) saturate(1.4);
-  box-shadow: 0 20px 60px rgb(0 0 0 / 0.45);
   z-index: -1;
   clip-path: inset(0 0 0 0 round 24px);
   animation: hs-sheet-grow 520ms var(--ease-spatial) both;
@@ -285,7 +312,7 @@
   transition: background-color 180ms var(--ease-effects), color 180ms var(--ease-effects), transform 220ms var(--ease-spatial-fast);
 }
 :root[data-vod-header='floating'] .h-category-strip__sheet-item:hover,
-:root[data-vod-header='floating'] .h-category-strip__sheet-item:focus-visible { background: var(--fill-3); transform: translateX(3px); outline: none; }
+:root[data-vod-header='floating'] .h-category-strip__sheet-item:focus-visible { background: var(--fill-3); transform: translateX(3px); outline: 2px solid var(--accent); outline-offset: -2px; }
 :root[data-vod-header='floating'] .h-category-strip__sheet-item.active { color: var(--accent); font-weight: 700; }
 :root[data-vod-header='floating'] .h-category-strip__sheet--closing .h-category-strip__sheet-item { animation: hs-item-out 140ms var(--ease-out) both; animation-delay: 0ms; }
 @keyframes hs-item-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
@@ -304,6 +331,8 @@
   border-radius: 999px;
   width: 44px;
   min-width: 44px;
+  height: 44px;
+  box-sizing: border-box;
   padding: 0 12px;
   overflow: hidden;
   cursor: pointer;
@@ -347,6 +376,55 @@
 }
 :root[data-vod-header='floating'] .vod-page--floating:not(.vod-page--bleed) .vod-browse {
   padding-top: calc(32px + var(--strip-h, 76px));
+  box-sizing: border-box;   /* the grid keeps the window's height (else it runs past the bottom and the page scrolls) */
 }
 /* On the home only the window-button band fills in (the capsule keeps floating over the rows) */
 :root[data-vod-header='floating'] .vod-page--bleed::after { height: 32px; }
+
+/* The floating header's row lets clicks and the wheel through to the cards under it, except on its controls */
+:root[data-vod-header='floating'] .vod-page--floating > .h-category-strip { pointer-events: none; }
+:root[data-vod-header='floating'] .vod-page--floating > .h-category-strip > * { pointer-events: auto; }
+
+/* Narrow windows: the capsule sits left, after back (centred it would cover the open search field), and the Genres
+   panel grows out of it to the right instead of to both sides */
+@media (max-width: 1000px) {
+  :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__nav {
+    left: 92px;
+    transform: none;
+  }
+  :root[data-vod-header='floating'] .h-category-strip__sheet {
+    left: 0;
+    transform: none;
+    width: min(760px, calc(100vw - 140px));
+    grid-template-columns: repeat(3, 1fr);
+    animation-name: hs-sheet-grow-right;
+  }
+  :root[data-vod-header='floating'] .h-category-strip__sheet--closing { animation-name: hs-sheet-shrink-right; }
+  :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search:focus-within,
+  :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search:has(input:not(:placeholder-shown)) {
+    width: min(280px, calc(100vw - 420px));
+  }
+}
+@keyframes hs-sheet-grow-right {
+  from { clip-path: inset(0 calc(100% - var(--cap-w, 240px)) calc(100% - var(--cap-h, 48px)) 0 round 999px); }
+  to { clip-path: inset(0 0 0 0 round 24px); }
+}
+@keyframes hs-sheet-shrink-right {
+  from { clip-path: inset(0 0 0 0 round 24px); }
+  to { clip-path: inset(0 calc(100% - var(--cap-w, 240px)) calc(100% - var(--cap-h, 48px)) 0 round 999px); }
+}
+
+/* Reduced motion: the rest of the movement goes too */
+@media (prefers-reduced-motion: reduce) {
+  .h-category-strip--unified .h-category-strip__search,
+  .h-category-strip--unified .h-category-strip__genres-btn svg,
+  .h-category-strip--unified .h-category-strip__pill,
+  .h-category-strip--unified .h-category-strip__genres-btn,
+  .h-category-strip__sheet-item,
+  .window-controls button,
+  .title-bar-logo { transition-duration: 1ms !important; }
+  .h-category-strip--unified .h-category-strip__pill:active,
+  .h-category-strip--unified .h-category-strip__genres-btn:active,
+  .h-category-strip__sheet-item:hover,
+  .h-category-strip__sheet-item:focus-visible { transform: none !important; }
+}
