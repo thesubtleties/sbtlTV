@@ -1,29 +1,30 @@
-# sbtlTV 0.16.0
+# sbtlTV 0.17.0 beta 1
 
-Hand-picked rows on the Movies and Series homes, smoother rows, and detail pages that open filled in.
+Sync between your own computers, sending a setup with a code, More like this, and a new look for Movies and Series. If something feels off, save a bug report (Settings > Debug) and attach it to an issue.
 
 ## Added
 
-- **Selected lists** - themed rows on the Movies and Series homes, after Trending and Popular, marked with a feather. Picked by us, matched to your own library: only titles you have, in the list's order, and a row with fewer than 6 matches stays hidden. Adult titles are always left out.
-- **Where the lists come from** - sbtlTV checks sbtltv.com for the list file at most once a day. The file is signed and checked against a key built into the app before anything is shown. The request carries no account or library details. Turn it off in Settings > Movies & Series > Selected lists: off means no request, and the saved copy is deleted.
-- **Detail pages open filled in** - resting on a card for a moment loads what its page needs: details and backdrop from TMDB (with your TMDB key), and a series' episode list from your provider. Passing over a row loads nothing.
-- **Episode lists stay current** - a series' list refreshes in the background when it is more than a day old, while the stored one shows. Before, a list was fetched once and never again.
+- **Sync** - keep your watchlist, watch progress and favorite channels in step on your own computers, and, if you choose, look, subtitle and player settings. No account: Settings > Sync & transfer > Add a computer, type the code the other computer shows, check that both show the same three words. End-to-end encrypted through the sbtlTV relay, so even we can't read it. Titles match by TMDB and favorites by provider or guide id, so it works across different providers; what one computer doesn't have shows grayed, or hidden. Off until you turn it on.
+- **Send a setup** - set up another computer, or someone else's, from yours with a short code and three matching words: providers (with or without logins), and settings and keys if you choose, including ones typed in just for that send. Deleted from the relay on pickup, or after 10 minutes.
+- **First-run setup** - a fresh install walks through adding a source, a look, posters and details, and subtitles, or receives a setup from another computer.
+- **What's new** - after an update, a short list of what changed, once.
+- **More like this** - similar titles from your own library on every movie and series page (with a TMDB key). Opening one stacks: Back returns to the title before.
+- **Movies & Series header** - Simple (text tabs) or Floating (a glass capsule, with a Genres panel), in Settings > Appearance. The home's art runs edge to edge under the bars, and they fill in as you scroll.
+- **Full-bleed detail pages** - a movie or series page's backdrop runs up under the title bar, which clears over it and fills in as you scroll.
+- **Loading screen** - from Play to the first frames: the title's art blurred, the sbtl letters, the title and episode. Cancel or Escape take you back. No more glimpse of the home on the way to the player.
 
 ## Improved
 
-- **Rows scroll smoothly sideways** and can hold any number of titles (only the visible cards are drawn). Arrow keys move a focused row by most of its width.
-- **One TMDB request per title** instead of two when a detail page opens.
-- **A series opened for the first time says Loading episodes**, not "No episodes found", while the list arrives.
-
-## Fixed
-
-- **A refresh can't wipe a good episode list.** If your provider sends an empty list or doesn't answer, the stored list stays, with a small warning by the season picker naming the source, and a button to try again.
+- **Scrollbars on Linux and Windows** are drawn over the page and shown while you scroll, as on macOS, so art reaches the window's edge.
+- **The Genres panel fits shorter windows** (a MacBook Air's) without scrolling.
+- **A failed play** brings back the page you pressed Play on, with the error and Try again. Before, the error could sit hidden under the Movies page, so nothing seemed to happen.
 
 ## Privacy
 
-- Settings > Privacy lists sbtltv.com, and now says your provider, TMDB and (with RPDB backdrops on) RPDB also see the titles you point at, not just the ones you open.
+- The sbtlTV relay is contacted only while you send or receive a setup, or use Sync. It holds sealed data it can't open, refuses anything that isn't sealed, keeps no request logs and no backups. Settings > Privacy lists it with what it sees.
 
 ## Known issues
 
-- **Going back to 0.15 or earlier:** older versions can't read this version's data file, so they start a fresh one and sync again. Sources, settings, favorites and progress aren't in that file; playlists imported from a file are, and need importing again.
+- **Sync and Send a setup need this version (or newer) on both computers.**
+- **Going back to 0.16** resets the Movies & Series header to Simple.
 - **Widescreen SD channels still play small on macOS.**
