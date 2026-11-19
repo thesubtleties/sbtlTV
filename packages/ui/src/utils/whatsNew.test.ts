@@ -98,3 +98,17 @@ describe('versions without their own list', () => {
     for (const key of Object.keys(WHATS_NEW)) expect(key).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
+
+describe('the real 0.17.0 list', () => {
+  const real = { current: '0.17.0', lastSeen: '0.16.0', buildKind: 'release', hasSources: true, firstRun: null, items: WHATS_NEW } as const;
+  const ids = (r: ReturnType<typeof whatsNewToShow>) => (r ?? []).map((i) => i.id);
+  it('an update from 0.16 to 0.17.0 shows Sync and the rest of the release', () => {
+    expect(ids(whatsNewToShow(real))).toEqual(['sync', 'send', 'more-like-this', 'vod-header', 'loading-screen']);
+    // From 0.16.0 before the version marker existed (no lastSeen, has sources): the same list
+    expect(ids(whatsNewToShow({ ...real, lastSeen: undefined }))).toEqual(['sync', 'send', 'more-like-this', 'vod-header', 'loading-screen']);
+  });
+  it('a beta shows the same list; once seen on a beta, 0.17.0 does not show it again', () => {
+    expect(ids(whatsNewToShow({ ...real, current: '0.17.0-beta.2' }))).toContain('sync');
+    expect(whatsNewToShow({ ...real, lastSeen: '0.17.0-beta.1' })).toBe(null);
+  });
+});
