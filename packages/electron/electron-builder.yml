@@ -58,7 +58,7 @@ win:
     - target: portable
       arch:
         - x64
-  icon: assets/sbtltv-logo-white.png
+  icon: assets/icon/icon.png   # glass-dome tile; source assets/icon/icon.svg (scripts/render-app-icons.sh)
   extraResources:
     - from: mpv-bundle
       to: mpv
@@ -83,7 +83,7 @@ mac:
     - target: zip
       arch:
         - arm64
-  icon: assets/sbtltv-logo-white.png
+  icon: assets/icon/icon-mac.png   # on Apple's icon grid; source assets/icon/icon-mac.svg
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   category: public.app-category.entertainment
   minimumSystemVersion: '13.0'
@@ -111,7 +111,7 @@ linux:
     - target: deb
       arch:
         - x64
-  icon: assets/512x512.png
+  icon: assets/icon/icon-512.png
   category: AudioVideo
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
   extraResources:

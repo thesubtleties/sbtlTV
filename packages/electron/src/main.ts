@@ -496,7 +496,8 @@ async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
     transparent: isWindows, // Only Windows needs transparency (external mpv renders behind)
     frame: false,
     resizable: true, // Explicit for Electron 40
-    icon: path.join(__dirname, '../assets/sbtltv-logo-white.png'),
+    // The glass-dome tile: reads on light and dark taskbars (the white logo alone vanished on a light one, #159)
+    icon: path.join(__dirname, '../assets/icon/icon-512.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
