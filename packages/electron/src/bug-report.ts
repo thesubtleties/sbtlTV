@@ -57,7 +57,7 @@ const REPORT_SETTINGS = {
   theme: 'copy', lastSourceId: 'sourceId', tmdbApiKey: 'secret', vodRefreshHours: 'copy', epgRefreshHours: 'copy',
   movieGenresEnabled: 'copy', seriesGenresEnabled: 'copy', posterDbApiKey: 'secret', subdlApiKey: 'secret', rpdbBackdropsEnabled: 'copy',
   allowLanSources: 'copy', debugLoggingEnabled: 'copy', channelSortOrder: 'copy', categorySortOrder: 'copy',
-  autoUpdateEnabled: 'copy', betaUpdates: 'copy', categoryBarWidth: 'copy', channelColumnWidth: 'copy', guideOpacity: 'copy',
+  autoUpdateEnabled: 'copy', betaUpdates: 'copy', systemMediaControls: 'copy', categoryBarWidth: 'copy', channelColumnWidth: 'copy', guideOpacity: 'copy',
   liveSourceOrder: 'sourceIds', vodSourceOrder: 'sourceIds', sportsMatchupEnabled: 'copy', guideMorphEnabled: 'copy', guideSearchHideAdult: 'copy',
   autoplayNextEpisode: 'copy', linuxPlayerMode: 'copy', linuxPerformanceMode: 'copy', appearance: 'copy', subtitles: 'copy',
   rewindLiveBytes: 'copy', rewindTipShown: 'copy', firstRun: 'copy', lastSeenVersion: 'copy', selectedListsEnabled: 'copy', syncMissingTitles: 'copy', syncMissingChannels: 'copy',

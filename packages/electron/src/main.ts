@@ -40,6 +40,7 @@ import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type Rep
 import { makeZip } from './zip-writer.js';
 import { holdSingleInstance } from './single-instance.js';
 import { buildKind } from './build-kind.js';
+import { listsOption } from './mpv-options.js';
 import { saveOnWindowClose } from './window-close.js';
 const { autoUpdater } = electronUpdater;
 
@@ -694,6 +695,18 @@ function findMpvBinary(): string | null {
 }
 
 // Get mpv version as [major, minor] tuple, or null if can't detect
+/** Whether this mpv binary knows an option (asked once per binary; mpv won't start on an unknown one). */
+const mpvOptionLists = new Map<string, string>();
+function mpvHasOption(mpvPath: string, name: string): boolean {
+  let list = mpvOptionLists.get(mpvPath);
+  if (list === undefined) {
+    try { list = execFileSync(mpvPath, ['--list-options'], { encoding: 'utf-8', timeout: 5000, maxBuffer: 8 * 1024 * 1024 }); }
+    catch { list = ''; }
+    mpvOptionLists.set(mpvPath, list);
+  }
+  return listsOption(list, name);
+}
+
 function getMpvVersion(mpvPath: string): [number, number] | null {
   try {
     const output = execFileSync(mpvPath, ['--version'], { encoding: 'utf-8' });
@@ -804,6 +817,9 @@ async function initMpv(): Promise<void> {
       ...SUBTITLE_BASE_OPTIONS.map(([name, value]) => `--${name}=${value}`),
       `--sub-fonts-dir=${subtitleFontsPath()}`,
     ];
+    // Windows: mpv registers itself with the system media controls as "Unknown app" with the file name (#81).
+    // sbtlTV reports what's playing itself (or nothing, with the Privacy switch off), so mpv's own entry is off
+    if (process.platform === 'win32' && mpvHasOption(mpvBinary, 'media-controls')) mpvArgs.push('--media-controls=no');
 
     // Get native window handle for --wid embedding
     const nativeHandle = mainWindow.getNativeWindowHandle();

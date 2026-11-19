@@ -1,5 +1,5 @@
 import { watchDataStatus } from './utils/dataStatus';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { MpvStatus } from './types/electron';
 import { Settings } from './components/Settings';
 import { Sidebar, type View } from './components/Sidebar';
@@ -13,7 +13,9 @@ import { Logo } from './components/Logo';
 import { ToastContainer } from './components/toast/ToastContainer';
 import { useToastStore } from './stores/toastStore';
 import { VideoCanvas } from './components/VideoCanvas';
-import { useChannelCount, useSelectedCategory } from './hooks/useChannels';
+import { useChannelCount, useCurrentProgram, useSelectedCategory } from './hooks/useChannels';
+import { useSystemMediaControls } from './hooks/useSystemMediaControls';
+import { mediaSessionInfo } from './utils/mediaSessionInfo';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
 import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode, useSettingsLoaded, useSourcesLoaded } from './stores/uiStore';
 import { data } from './data/client';
@@ -714,6 +716,30 @@ function App() {
     // Brief delay before accepting mpv updates again
     setTimeout(() => { seekingRef.current = false; }, 200);
   };
+
+  // What's playing, in the system's media controls (Settings › Privacy switch, on by default)
+  const systemMediaControls = useUIStore((s) => s.settings.systemMediaControls !== false);
+  const isVodPlaying = currentChannel?.stream_id === 'vod';
+  const liveProgram = useCurrentProgram(currentChannel && !isVodPlaying ? currentChannel.stream_id : null);
+  const nowPlayingInfo = useMemo(() => {
+    if (!currentChannel) return null;
+    if (isVodPlaying) return vodInfo ? mediaSessionInfo({ vod: vodInfo }) : null;
+    return mediaSessionInfo({ live: { channel: currentChannel.name, logo: currentChannel.stream_icon, program: liveProgram?.title ?? null } });
+  }, [currentChannel, isVodPlaying, vodInfo, liveProgram?.title]);
+  useSystemMediaControls({
+    enabled: systemMediaControls,
+    info: nowPlayingInfo,
+    playing,
+    seekable: isVodPlaying && duration > 0,
+    duration,
+    getPosition: () => usePlaybackStore.getState().position,
+    actions: {
+      play: () => { if (!playingRef.current) void handleTogglePlay(); },
+      pause: () => { if (playingRef.current) void handleTogglePlay(); },
+      stop: () => void handleStop(),
+      seek: (seconds) => void handleSeek(seconds),
+    },
+  });
 
   // Stable callbacks for the memoized guide; the ref always calls the latest handler.
   const handlePlayChannelRef = useRef<(channel: StoredChannel) => void>(() => {});
