@@ -146,9 +146,9 @@ Enable logging in Settings → Debug for troubleshooting. Logs are saved to your
 
 ### Data Location
 
-- **Windows**: `%APPDATA%/sbtlTV`
-- **macOS**: `~/Library/Application Support/sbtlTV`
-- **Linux**: `~/.config/sbtlTV`
+- **Windows**: `%APPDATA%\@sbtltv\electron`
+- **macOS**: `~/Library/Application Support/@sbtltv/electron`
+- **Linux**: `~/.config/@sbtltv/electron`
 
 ## Sync
 
