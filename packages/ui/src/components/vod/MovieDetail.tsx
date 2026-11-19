@@ -28,7 +28,7 @@ export interface MovieDetailProps {
   onClose: () => void;
   onCollapse?: () => void;
   isCollapsed?: boolean;
-  onPlay?: (movie: StoredMovie, plot?: string | null) => void;
+  onPlay?: (movie: StoredMovie, plot?: string | null, art?: string) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
   onSelectRelated?: (item: MediaItem) => void; // a title picked in More like this
   onBack?: () => void; // one title back; only when opened from More like this
@@ -59,13 +59,15 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
   const watchProgress = (progressByTmdb ?? progressByStream)?.progress ?? 0;
   const hasMultipleSources = playSources.length > 1;
 
+  // The backdrop shown here goes to the loading screen too (blurred behind it)
+  const playArt = tmdbBackdropUrl || movie.stream_icon || undefined;
   const handlePlay = useCallback(() => {
-    onPlay?.(movie, lazyPlot || movie.plot);
-  }, [movie, onPlay, lazyPlot]);
+    onPlay?.(movie, lazyPlot || movie.plot, playArt);
+  }, [movie, onPlay, lazyPlot, playArt]);
 
   const handlePlayFromSource = useCallback((url: string) => {
-    onPlay?.({ ...movie, direct_url: url }, lazyPlot || movie.plot);
-  }, [movie, onPlay, lazyPlot]);
+    onPlay?.({ ...movie, direct_url: url }, lazyPlot || movie.plot, playArt);
+  }, [movie, onPlay, lazyPlot, playArt]);
 
   // Load RPDB settings for poster
   const { apiKey: rpdbApiKey } = useRpdbSettings();

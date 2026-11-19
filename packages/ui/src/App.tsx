@@ -38,6 +38,7 @@ import { resumeSettled } from './hooks/resumeSettle';
 import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
 import { perfMeasure, perfStart } from './utils/perfMarks';
 import { ErrorCard } from './components/ErrorCard';
+import { VodLoading, playbackStarted } from './components/VodLoading';
 import { sendSnapshot, setSyncActive } from './services/sync/outbox';
 import { applyRecords } from './services/sync/apply';
 import { FirstRun, OfferSync } from './components/FirstRun';
@@ -272,6 +273,39 @@ function App() {
   const autoplayEnabled = useAutoplayNextEpisode();
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const loadTokenRef = useRef(0);
+  // Stopped or cancelled on purpose: mpv reports the open it was in the middle of as failed ("Opening failed or was
+  // aborted"). Not a problem to show; the next play clears it
+  const stoppedOnPurposeRef = useRef(false);
+  // The movie/episode loading screen: from Play until the first frames play (VodLoading.tsx). The ref is what the
+  // status handler reads: loaded = the file opened (it may still buffer), last = the previous position since then
+  const [vodLoading, setVodLoading] = useState<VodPlayInfo | null>(null);
+  const vodLoadingRef = useRef<{ active: boolean; loaded: boolean; last: number | null; fallback: number; from: View }>({ active: false, loaded: false, last: null, fallback: 0, from: 'none' });
+  const endVodLoading = useCallback(() => {
+    clearTimeout(vodLoadingRef.current.fallback);
+    vodLoadingRef.current = { ...vodLoadingRef.current, active: false, loaded: false, last: null, fallback: 0 };
+    setVodLoading(null);
+  }, []);
+  // Frames are playing: the loading screen and the Movies/Series page under it go together, straight to the video
+  const finishVodLoading = useCallback(() => {
+    endVodLoading();
+    setActiveView('none');
+  }, [endVodLoading]);
+  const showVodLoading = useCallback((info: VodPlayInfo) => {
+    clearTimeout(vodLoadingRef.current.fallback);
+    // Where Play was pressed: a Retry (or the call after the page's slide) keeps the first answer
+    const from = vodLoadingRef.current.active ? vodLoadingRef.current.from : playbackRef.current.activeView;
+    vodLoadingRef.current = { active: true, loaded: false, last: null, fallback: 0, from };
+    setVodLoading(info);
+  }, []);
+  // A failed or cancelled play started on the Movies/Series page goes back to it: the page, or its detail, slides back
+  // up (it slid away for the player). Played from elsewhere (Up Next between episodes), nothing reopens
+  const returnToVodPage = useCallback((info: VodPlayInfo) => {
+    const view: View = info.type === 'movie' ? 'movies' : 'series';
+    if (vodLoadingRef.current.from !== view) return;
+    setActiveView(view);
+    const ui = useUIStore.getState();
+    (info.type === 'movie' ? ui.setMoviesPageCollapsed : ui.setSeriesPageCollapsed)(false);
+  }, []);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [guideSearchNonce, setGuideSearchNonce] = useState(0);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
@@ -435,6 +469,12 @@ function App() {
       if (status.duration !== undefined) {
         setDuration(status.duration);
       }
+      // The loading screen goes once frames are playing, not when the file opens (it can buffer for seconds more)
+      const loading = vodLoadingRef.current;
+      if (loading.active && loading.loaded && status.position !== undefined) {
+        if (playbackStarted(loading.last, status.position)) finishVodLoading();
+        else loading.last = status.position;
+      }
 
       // Paused: save now (the 15 s tick could be minutes away, and sync pushes after a save)
       if (status.playing === false && playingRef.current) {
@@ -482,6 +522,13 @@ function App() {
     // ("Playback error: loading failed"). All of them are in the debug log.
     window.mpv.onError((err) => {
       console.error('mpv error:', err);
+      if (stoppedOnPurposeRef.current) return;
+      // Failed before its first frames (the file opened, then the stream died): back to where Play was pressed
+      if (vodLoadingRef.current.active) {
+        const last = lastPlayRef.current;
+        if (last?.kind === 'vod') returnToVodPage(last.info);
+        endVodLoading();
+      }
       setError((current) => current ?? err);
     });
 
@@ -560,6 +607,8 @@ function App() {
       return;
     }
     setError(null);
+    stoppedOnPurposeRef.current = false;
+    endVodLoading();
     lastPlayRef.current = { kind: 'live', channel };
     const requestId = ++playRequestSeqRef.current;
     playRequestRef.current = { id: requestId, vodInfo: null, subtitleDelay: null };
@@ -619,6 +668,16 @@ function App() {
     if (window.mpv) await window.mpv.setVolume(next);
   };
 
+  // Cancel on the loading screen (or Escape): stop the load, back to where Play was pressed. Once the file has opened
+  // the movie is already the current one (still buffering), so it's a Stop
+  const handleStopRef = useRef<() => Promise<void>>(async () => {});
+  const cancelVodLoading = useCallback(() => {
+    const info = vodInfoRef.current ?? (lastPlayRef.current?.kind === 'vod' ? lastPlayRef.current.info : null);
+    if (vodLoadingRef.current.loaded) void handleStopRef.current();
+    else { loadTokenRef.current++; stoppedOnPurposeRef.current = true; void window.mpv?.stop(); }
+    if (info) returnToVodPage(info);
+    endVodLoading();
+  }, [endVodLoading, returnToVodPage]);
   const handleStop = async () => {
     debugLog('handleStop called');
     if (!window.mpv) return;
@@ -631,6 +690,8 @@ function App() {
     setUpNext(null);
     upNextFiredForRef.current = null;
     loadTokenRef.current++;
+    endVodLoading();
+    stoppedOnPurposeRef.current = true;
     await window.mpv.stop();
     debugLog('handleStop: mpv.stop() completed');
     setPlaying(false);
@@ -639,6 +700,7 @@ function App() {
     lastPlayRef.current = null;
     useSubtitleStore.getState().clear();
   };
+  handleStopRef.current = handleStop;
 
   const handleSeek = async (seconds: number) => {
     if (!window.mpv) return;
@@ -673,6 +735,8 @@ function App() {
       return;
     }
     setError(null);
+    stoppedOnPurposeRef.current = false;
+    showVodLoading(info);   // already up when Play was pressed on the Movies/Series page; a retry brings it back
     lastPlayRef.current = { kind: 'vod', info };
     // Look up the resume position and saved subtitle delay before loading. If the
     // progress store cannot be read, play from the start rather than not at all.
@@ -697,11 +761,13 @@ function App() {
     const requestId = ++playRequestSeqRef.current;
     playRequestRef.current = { id: requestId, vodInfo: info, subtitleDelay: delayCandidate };
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv, requestId, resumePos || undefined);
+    if (myToken !== loadTokenRef.current) return; // superseded by a newer load, or cancelled
     if (!result.success) {
       debugLog(`  FAILED: ${result.error}`);
+      returnToVodPage(info);
+      endVodLoading();
       setError(result.error ?? 'Failed to load stream');
     } else {
-      if (myToken !== loadTokenRef.current) return; // superseded by a newer load
       debugLog(`  SUCCESS: playing${resumePos ? ` (resumed @ ${resumePos}s)` : ''}`);
       // Create a pseudo-channel for the now playing bar
       const workingUrl = result.url;
@@ -730,8 +796,16 @@ function App() {
       setPosition(0);   // reset position UI immediately; mpv status refines it (resume seeks on duration)
       setDuration(0);
       setPlaying(true);
-      // Close VOD pages when playing
-      setActiveView('none');
+      // Close VOD pages when playing. Under the loading screen, once frames play: closed now, the player could show
+      // through the screen's fade-in on a fast open. A slow provider can keep a file opening for 20 s and more, and
+      // Cancel is always there; the 60 s safety is only so a screen never stays over a video that plays without
+      // reporting its position
+      if (vodLoadingRef.current.active) {
+        vodLoadingRef.current.loaded = true;
+        vodLoadingRef.current.fallback = window.setTimeout(() => { if (vodLoadingRef.current.active) finishVodLoading(); }, 60000);
+      } else {
+        setActiveView('none');
+      }
     }
   }, []);
 
@@ -1226,6 +1300,7 @@ function App() {
       {activeView === 'movies' && (
         <MoviesPage
           onPlay={handlePlayVod}
+          onPlayStart={showVodLoading}
           onClose={() => setActiveView('none')}
         />
       )}
@@ -1234,8 +1309,13 @@ function App() {
       {activeView === 'series' && (
         <SeriesPage
           onPlay={handlePlayVod}
+          onPlayStart={showVodLoading}
           onClose={() => setActiveView('none')}
         />
+      )}
+
+      {vodLoading && (
+        <VodLoading title={vodLoading.title} detail={vodLoading.episodeInfo} art={vodLoading.art} onCancel={cancelVodLoading} />
       )}
 
       {firstRun === 'setup' && (

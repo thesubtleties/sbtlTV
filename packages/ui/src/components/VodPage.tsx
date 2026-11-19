@@ -21,6 +21,7 @@ import type { MissingTitle } from '../services/sync/missing';
 import { MissingRow } from './vod/MissingCard';
 import './VodPage.css';
 import { useHeroBleed } from '../hooks/useHeroBleed';
+import { getTmdbImageUrl, TMDB_BACKDROP_SIZES } from '../services/tmdb';
 
 // Animation timing (must match .vod-page transition in VodPage.css: 0.35s)
 const SLIDE_DURATION_MS = 350;
@@ -184,9 +185,17 @@ function useVodPageAnimation(
   return { isEntering, pageContentVisible, handleCollapsePage, handlePageBack };
 }
 
+/** The art behind the loading screen for a title played from here: its backdrop when known, else its poster. */
+export function playArt(item: MediaItem): string | undefined {
+  if (item.backdrop_path) return getTmdbImageUrl(item.backdrop_path, TMDB_BACKDROP_SIZES.large) ?? undefined;
+  return ('stream_id' in item ? item.stream_icon : item.cover) || undefined;
+}
+
 interface VodPageProps {
   type: VodType;
   onPlay?: (info: VodPlayInfo) => void;
+  /** Play was pressed: the loading screen comes up now, over the page where it stands (no slide), and onPlay follows */
+  onPlayStart?: (info: VodPlayInfo) => void;
   onClose?: () => void;
 }
 
@@ -212,7 +221,7 @@ export function vodPageClasses(o: { collapsed: boolean; contentHidden: boolean; 
   ].filter(Boolean).join(' ');
 }
 
-export function VodPage({ type, onPlay, onClose }: VodPageProps) {
+export function VodPage({ type, onPlay, onPlayStart, onClose }: VodPageProps) {
   // Navigation state from store (persists per media type across tab switches)
   const {
     selectedCategoryId, setSelectedCategoryId,
@@ -378,6 +387,13 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   const handlePlay = useCallback((info: VodPlayInfo) => {
     if (onPlay) {
+      // With the loading screen: it fades in over the page where it stands, and the load starts now. Sliding the page
+      // (or its detail) away under it would show the home through the fade
+      if (onPlayStart) {
+        onPlayStart(info);
+        onPlay(info);
+        return;
+      }
       // Trigger slide-down animation
       setPageCollapsed(true);
       // Delay playback until animation completes
@@ -385,7 +401,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         onPlay(info);
       }, SLIDE_DURATION_MS);
     }
-  }, [onPlay, setPageCollapsed]);
+  }, [onPlay, onPlayStart, setPageCollapsed]);
 
   // Handle hero play button - movies play directly, series open detail
   const handleHeroPlay = useCallback((item: MediaItem) => {
@@ -400,6 +416,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         streamId: movie.stream_id,
         tmdbId: movie.tmdb_id,
         sourceId: movie.source_id,
+        art: playArt(movie),
       });
     } else {
       openDetail(item);
@@ -412,10 +429,11 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       handlePlay({
         url: m.direct_url, title: m.title || m.name, year: m.year || m.release_date?.slice(0, 4),
         plot: m.plot, type: 'movie', streamId: m.stream_id, tmdbId: m.tmdb_id, sourceId: m.source_id,
+        art: playArt(m),
       });
     } else if (it.playInfo) {
       // series: play the resume episode directly (like movies) — resumes via getResumePosition
-      handlePlay(it.playInfo);
+      handlePlay({ ...it.playInfo, art: it.playInfo.art ?? playArt(it.media) });
     } else {
       // fallback: open detail if we couldn't resolve the resume episode
       openDetail(it.media);
@@ -622,7 +640,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
           onBack={nav.trail.length ? goBack : undefined}
           onCollapse={handleCollapsePage}
           isCollapsed={isEntering || isPageCollapsed}
-          onPlay={(movie, plot) => handlePlay({
+          onPlay={(movie, plot, art) => handlePlay({
             url: movie.direct_url,
             title: movie.title || movie.name,
             year: movie.year || movie.release_date?.slice(0, 4),
@@ -631,6 +649,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             streamId: movie.stream_id,
             tmdbId: movie.tmdb_id,
             sourceId: movie.source_id,
+            art,
           })}
           apiKey={tmdbApiKey}
         />

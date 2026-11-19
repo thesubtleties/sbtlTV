@@ -1,0 +1,35 @@
+/* The sbtl letters popping one after another: the update toast and the movie/episode loading screen */
+.sbtl-loader {
+  overflow: visible; /* each letter grows past the svg's box at the top of its pop; clipped, its edges were cut off */
+}
+.sbtl-loader path {
+  transform-box: fill-box; /* scale each letter about its own box, not the svg origin */
+  transform-origin: center;
+  animation: sbtl-pop 1.4s ease-in-out infinite;
+}
+/* 4 direct <path> children of SbtlMark's <svg> = the letters s, b, t, l */
+.sbtl-loader path:nth-of-type(1) { animation-delay: 0s; }
+.sbtl-loader path:nth-of-type(2) { animation-delay: 0.15s; }
+.sbtl-loader path:nth-of-type(3) { animation-delay: 0.3s; }
+.sbtl-loader path:nth-of-type(4) { animation-delay: 0.45s; }
+
+/* Calmer, for a wait that can run ten seconds or more */
+.sbtl-loader--slow path { animation-duration: 1.8s; }
+.sbtl-loader--slow path:nth-of-type(2) { animation-delay: 0.2s; }
+.sbtl-loader--slow path:nth-of-type(3) { animation-delay: 0.4s; }
+.sbtl-loader--slow path:nth-of-type(4) { animation-delay: 0.6s; }
+
+@keyframes sbtl-pop {
+  0%, 40%, 100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  20% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sbtl-loader path { animation: none; }
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { heroBleedActive, vodPageClasses } from './VodPage';
+import { heroBleedActive, playArt, vodPageClasses } from './VodPage';
+import type { StoredMovie, StoredSeries } from '../db';
 
 describe('vodPageClasses', () => {
   it('floats on every view in the Floating style, bleeds only on the home', () => {
@@ -20,5 +21,14 @@ describe('heroBleedActive', () => {
   });
   it('back on while a detail slides away for the player: the home shows behind it, with its own title bar look', () => {
     expect(heroBleedActive({ ...base, hasDetail: true, isPageCollapsed: true })).toBe(true);
+  });
+});
+
+describe('playArt', () => {
+  it('the backdrop when known, else the poster (a movie\'s icon, a series\' cover), else nothing', () => {
+    expect(playArt({ stream_id: '1', backdrop_path: '/b.jpg', stream_icon: 'http://p/i.jpg' } as unknown as StoredMovie)).toMatch(/\/b\.jpg$/);
+    expect(playArt({ stream_id: '1', stream_icon: 'http://p/i.jpg' } as unknown as StoredMovie)).toBe('http://p/i.jpg');
+    expect(playArt({ series_id: '2', cover: 'http://p/c.jpg' } as unknown as StoredSeries)).toBe('http://p/c.jpg');
+    expect(playArt({ stream_id: '1', stream_icon: '' } as unknown as StoredMovie)).toBeUndefined();
   });
 });
