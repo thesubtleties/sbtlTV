@@ -53,4 +53,5 @@ export interface VodPlayInfo {
   seasonNum?: number;     // Episode season number
   episodeNum?: number;    // Episode number
   seriesStreamId?: string; // series_id of the parent series (seriesKey fallback when no tmdb)
+  art?: string;           // The title's backdrop (or poster): blurred behind the loading screen
 }

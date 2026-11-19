@@ -131,9 +131,10 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
         seasonNum: episode.season_num,
         episodeNum: episode.episode_num,
         seriesStreamId: series.series_id,
+        art: tmdbBackdropUrl || series.cover || undefined,   // the backdrop shown here, blurred behind the loading screen
       });
     },
-    [series, onPlayEpisode, lazyPlot]
+    [series, onPlayEpisode, lazyPlot, tmdbBackdropUrl]
   );
 
   // Load RPDB settings for poster
