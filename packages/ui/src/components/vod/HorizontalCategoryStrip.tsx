@@ -9,8 +9,12 @@
  * - Mouse wheel horizontal scroll support
  */
 
-import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import { useUIStore } from '../../stores/uiStore';
+import { GenresMenu } from './GenresMenu';
+import { highlightTarget } from './capsuleHighlight';
 import './HorizontalCategoryStrip.css';
+import './HeaderStyles.css';
 
 interface Category {
   id: string;
@@ -93,6 +97,11 @@ export function HorizontalCategoryStrip({
   onSearchSubmit,
 }: HorizontalCategoryStripProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Floating style: the navigation sits in one capsule (navRef) with a highlight that glides to the active item and
+  // the Genres panel growing out of it. A style switch remounts GenresMenu, which closes the panel
+  const navRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const headerStyle = useUIStore((s) => s.settings.appearance?.header ?? 'simple');
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
@@ -172,6 +181,28 @@ export function HorizontalCategoryStrip({
     }
   }, [onSearchSubmit]);
 
+  // The highlight's place and the capsule's size (the panel grows from it), kept current as the capsule resizes
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const place = () => {
+      const box = nav.getBoundingClientRect();
+      const target = highlightTarget(nav);
+      if (target) {
+        const r = target.getBoundingClientRect();
+        nav.style.setProperty('--ind-x', `${r.left - box.left}px`);
+        nav.style.setProperty('--ind-w', `${r.width}px`);
+      }
+      nav.style.setProperty('--ind-o', target ? '1' : '0');
+      nav.style.setProperty('--cap-w', `${box.width}px`);
+      nav.style.setProperty('--cap-h', `${box.height}px`);
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(nav);
+    return () => ro.disconnect();
+  }, [selectedId, categories, headerStyle]);
+
   // Determine if we're showing the unified header (has back button)
   const showUnifiedHeader = !!onBack;
 
@@ -207,6 +238,17 @@ export function HorizontalCategoryStrip({
         </button>
       )}
 
+      <div className="h-category-strip__nav" ref={navRef}>
+      <span className="h-category-strip__indicator" aria-hidden="true" />
+      {/* Home stays put, outside the scrolling row */}
+      {showUnifiedHeader && (
+        <button
+          className={`h-category-strip__pill h-category-strip__pill--home ${selectedId === null ? 'active' : ''}`}
+          onClick={() => onSelect(null)}
+        >
+          Home
+        </button>
+      )}
       {/* Left arrow */}
       <button
         className={`h-category-strip__arrow h-category-strip__arrow--left ${canScrollLeft ? 'visible' : ''}`}
@@ -219,16 +261,6 @@ export function HorizontalCategoryStrip({
       {/* Scroll container */}
       <div className={`h-category-strip__scroll-wrapper ${canScrollLeft ? 'fade-left' : ''} ${canScrollRight ? 'fade-right' : ''}`}>
         <div ref={scrollRef} className="h-category-strip__scroll">
-          {/* Home pill - only in unified header mode */}
-          {showUnifiedHeader && (
-            <button
-              className={`h-category-strip__pill ${selectedId === null ? 'active' : ''}`}
-              onClick={() => onSelect(null)}
-            >
-              Home
-            </button>
-          )}
-
           {/* All button */}
           <button
             className={`h-category-strip__pill ${selectedId === 'all' ? 'active' : ''}`}
@@ -259,11 +291,17 @@ export function HorizontalCategoryStrip({
         <ChevronRight />
       </button>
 
-      {/* Search input - only in unified header */}
+      {showUnifiedHeader && (
+        <GenresMenu key={headerStyle} categories={processedCategories} selectedId={selectedId} onSelect={onSelect} containerRef={navRef} />
+      )}
+      </div>
+
+      {/* Search input - only in unified header. The whole circle opens it */}
       {showUnifiedHeader && onSearchChange && (
-        <div className="h-category-strip__search">
+        <div className="h-category-strip__search" onClick={() => searchRef.current?.focus()}>
           <SearchIcon />
           <input
+            ref={searchRef}
             type="text"
             placeholder={type === 'series' ? 'Search series...' : 'Search movies...'}
             value={searchQuery}

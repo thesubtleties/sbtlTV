@@ -20,6 +20,33 @@ function pair() {
 const codeOf = (s: ReceiveState) => (s as { code: string }).code;
 
 describe('knock clients', () => {
+  it('a setup big enough for the relay to judge goes through; one refused by chance is sealed again once', async () => {
+    const { app } = createApp({ powBits: 4, minVersion: '0.17.0' });
+    let refuseNext = true;
+    const lines: string[] = [];
+    const drops: string[] = [];
+    const f = async (r: Request) => {
+      if (r.method === 'PUT' && r.url.endsWith('/drop')) drops.push(await r.clone().text());
+      if (refuseNext && r.method === 'PUT' && r.url.endsWith('/drop')) { refuseNext = false; return Response.json({ error: 'bad-request' }, { status: 400 }); }
+      return app.fetch(r);
+    };
+    const receiver = new Receiver(transport(f), WORDS, () => {}, { pollMs: 5 });
+    const sender = new Sender(transport(f), WORDS, () => {}, { pollMs: 5, log: (l) => lines.push(l) });
+    void receiver.start();
+    await until(() => receiver.state.step === 'code');
+    void sender.ring(codeOf(receiver.state).toLowerCase());
+    await until(() => sender.state.step === 'words' && receiver.state.step === 'words');
+    receiver.confirmWords();
+    const setup = Buffer.from(JSON.stringify({ sources: Array.from({ length: 400 }, (_, i) => ({ name: `Source ${i}`, url: 'http://example.test/' })) }));
+    expect(setup.length).toBeGreaterThan(16 * 1024);
+    void sender.confirm(setup);
+    await until(() => receiver.state.step === 'received');
+    expect((receiver.state as { payload: Buffer }).payload.equals(setup)).toBe(true);
+    expect(lines).toEqual(['Relay: a send was refused once and went through sealed again']);
+    expect(drops).toHaveLength(2);
+    expect(drops[1]).not.toBe(drops[0]);   // sealed again: a new nonce, not the same bytes
+  });
+
   it('send a payload end to end; both see the same words first', async () => {
     const { receiver, sender, rx, tx } = pair();
     void receiver.start();

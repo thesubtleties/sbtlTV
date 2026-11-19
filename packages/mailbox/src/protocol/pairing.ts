@@ -65,6 +65,9 @@ export function keyPairFromPrivate(der: Buffer): KeyPair {
   return { privateKey, publicRaw: Buffer.from(pub.subarray(pub.length - 32)) };
 }
 
+/** AES-256-GCM: 12-byte nonce in front, 16-byte tag at the end */
+export const SEAL_OVERHEAD = 12 + 16;
+
 export function seal(key: Buffer, plaintext: Buffer, aad: Buffer): Buffer {
   const nonce = randomBytes(12);
   const c = createCipheriv('aes-256-gcm', key, nonce);
@@ -74,7 +77,7 @@ export function seal(key: Buffer, plaintext: Buffer, aad: Buffer): Buffer {
 }
 
 export function open(key: Buffer, sealed: Buffer, aad: Buffer): Buffer {
-  if (sealed.length < 28) throw new Error('sealed too short');
+  if (sealed.length < SEAL_OVERHEAD) throw new Error('sealed too short');
   const d = createDecipheriv('aes-256-gcm', key, sealed.subarray(0, 12));
   d.setAAD(aad);
   d.setAuthTag(sealed.subarray(sealed.length - 16));

@@ -185,6 +185,7 @@ export interface Appearance {
   palette: PaletteId;
   typeface: Typeface;
   accent: 'palette' | 'system';  // 'system' takes the OS accent where there is one
+  header?: 'simple' | 'floating';  // Movies & Series header (default 'simple')
 }
 
 /** Colors the desktop provides (Settings > Appearance). */

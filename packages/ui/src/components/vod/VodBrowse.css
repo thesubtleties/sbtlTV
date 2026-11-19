@@ -62,6 +62,9 @@
      column's hover lift and glow. Virtuoso measures inside the padding, so
      the columns are the same as with the full 75px margin. */
   padding-left: 24px;
+  /* Virtuoso's inner wrapper is the padded width but starts after the padding, so it runs 24px past the right edge:
+     an empty strip that only gave a stray horizontal scrollbar */
+  overflow-x: hidden;
 }
 
 .vod-browse__grid-list {

@@ -4,7 +4,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
-import { GROUP_IDLE_DAYS, MAX_COMPUTERS } from '../protocol/index.js';
+import { BOX_PAD, GROUP_IDLE_DAYS, MAX_COMPUTERS } from '../protocol/index.js';
 import { createHash } from 'node:crypto';
 import { dayMinus, sameHash, type GroupStore, type ListResult, type Moved, type RekeyEntry } from './groups.js';
 
@@ -39,10 +39,23 @@ export function makePool(connectionString: string): pg.Pool {
   return pool;
 }
 
-export async function migrate(pool: pg.Pool): Promise<void> {
+/**
+ * `keyId` = the id of the relay's storage key (at-rest.ts). Data stored under another key (or none,
+ * before it existed) can't be opened: it's dropped and the epoch changes, which computers read as
+ * "the relay lost its data" and put their boxes back.
+ */
+export async function migrate(pool: pg.Pool, keyId: string): Promise<'kept' | 'dropped'> {
   await pool.query(DDL);
   await pool.query(`insert into sync_meta (k, v) values ('schema', $1), ('epoch', $2) on conflict (k) do nothing`,
     [String(SCHEMA_VERSION), randomBytes(16).toString('hex')]);
+  return tx(pool, async (c) => {
+    const r = await c.query<{ v: string }>(`select v from sync_meta where k = 'key' for update`);
+    if (r.rows[0]?.v === keyId) return 'kept' as const;
+    await c.query('truncate sync_groups cascade');
+    await c.query(`update sync_meta set v = $1 where k = 'epoch'`, [randomBytes(16).toString('hex')]);
+    await c.query(`insert into sync_meta (k, v) values ('key', $1) on conflict (k) do update set v = excluded.v`, [keyId]);
+    return 'dropped' as const;
+  });
 }
 
 async function tx<T>(pool: pg.Pool, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
@@ -68,8 +81,15 @@ export class PgGroupStore implements GroupStore {
     return r.rows[0] ? { tokenHash: r.rows[0].token_hash, moved: r.rows[0].moved_on !== null } : null;
   }
 
-  putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string) {
+  putBox(gid: string, tokenHash: Buffer, did: string, sealed: Buffer, today: string, onlyReplace = false) {
     return tx(this.pool, async (c) => {
+      if (onlyReplace) {
+        // The token first: without it nothing about the group's boxes shows (not even whether one exists)
+        const g = (await c.query<{ token_hash: Buffer }>('select token_hash from sync_groups where id = $1', [gid])).rows[0];
+        if (g && !sameHash(g.token_hash, tokenHash)) return 'denied' as const;
+        const old = (await c.query<{ n: number }>('select octet_length(sealed) as n from sync_boxes where group_id = $1 and device_id = $2', [gid, did])).rows[0];
+        if (!old || sealed.length > Number(old.n) + BOX_PAD) return 'busy' as const;
+      }
       await c.query('insert into sync_groups (id, token_hash, last_seen) values ($1, $2, $3) on conflict (id) do nothing', [gid, tokenHash, today]);
       const g = (await c.query<{ token_hash: Buffer; moved_on: string | null }>('select token_hash, moved_on from sync_groups where id = $1 for update', [gid])).rows[0];
       if (!sameHash(g.token_hash, tokenHash)) return 'denied' as const;
@@ -83,7 +103,7 @@ export class PgGroupStore implements GroupStore {
          on conflict (group_id, device_id) do update set seq = excluded.seq, sealed = excluded.sealed`,
         [gid, did, seq, sealed],
       );
-      return { seq };
+      return { seq, added: Number(count.rows[0].mine) === 0 };
     });
   }
 
