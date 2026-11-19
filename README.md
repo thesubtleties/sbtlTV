@@ -13,6 +13,14 @@ A desktop IPTV player built with Electron and mpv.
 
 sbtlTV aims to be a dead-simple, low-latency player that looks good and stays out of your way: quick channel changes, a real program guide, a proper Movies and Series library, and the small comforts that make IPTV feel like TV - resume where you left off, captions, themes, and streams that reconnect on their own. It is updated regularly; if you run into a problem or have an idea, [open an issue](../../issues).
 
+## Recommended
+
+sbtlTV is opinionated, and it's at its best with a couple of outside services. All optional; your keys are stored encrypted on your computer.
+
+- **A TMDB key (free, and the one to get).** If you use Movies & Series (an Xtream login), add your own key from [themoviedb.org](https://www.themoviedb.org/settings/api) in Settings › TMDB. It brings live genre rows, cast and director, backdrops and descriptions where your provider has none, and More like this on every title. Without it the library works, but plainer.
+- **RPDB (paid, the cherry on top).** [RatingPosterDB](https://ratingposterdb.com/) puts ratings on your posters and has reasonable plans, including lifetime ones. A real quality-of-life upgrade, here or in any media player. Settings › Poster DB.
+- **SubDL (free tier).** Subtitles for movies and episodes that have none in your language, from [subdl.com](https://subdl.com/), with a generous free tier. Settings › Movies & Series › Subtitles. OpenSubtitles support is coming in a future update.
+
 ## Features
 
 - **Live TV with EPG** - Browse channels by category with a full program guide
