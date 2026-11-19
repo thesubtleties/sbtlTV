@@ -434,6 +434,16 @@
 :root[data-vod-header='floating'] .vod-page--floating > .h-category-strip { pointer-events: none; }
 :root[data-vod-header='floating'] .vod-page--floating > .h-category-strip > * { pointer-events: auto; }
 
+/* Shorter windows (a MacBook Air's): tighter rows, so the whole list fits without scrolling (the panel is capped at 60%
+   of the window's height). Tall screens keep the roomier rows */
+@media (max-height: 940px) {
+  :root[data-vod-header='floating'] .h-category-strip__sheet { gap: 2px; padding-bottom: 10px; }
+  :root[data-vod-header='floating'] .h-category-strip__sheet-item { padding: 6px 12px; }
+}
+@media (max-height: 700px) {
+  :root[data-vod-header='floating'] .h-category-strip__sheet-item { padding: 4px 12px; font-size: 0.9rem; }
+}
+
 /* Narrow windows: the capsule sits left, after back (centred it would cover the open search field), and the Genres
    panel grows out of it to the right instead of to both sides */
 @media (max-width: 1000px) {
