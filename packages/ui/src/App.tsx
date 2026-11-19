@@ -41,6 +41,7 @@ import { ErrorCard } from './components/ErrorCard';
 import { VodLoading, playbackStarted } from './components/VodLoading';
 import { sendSnapshot, setSyncActive } from './services/sync/outbox';
 import { applyRecords } from './services/sync/apply';
+import { useRematchFavorites } from './hooks/useRematchFavorites';
 import { FirstRun, OfferSync } from './components/FirstRun';
 import { WhatsNew } from './components/WhatsNew';
 import { WHATS_NEW, type WhatsNewItem } from './whatsNewItems';
@@ -353,6 +354,8 @@ function App() {
   const settingsLoaded = useSettingsLoaded();
   const sourcesLoaded = useSourcesLoaded();
   const sourceCount = useUIStore((s) => s.sources.length);
+  // Synced favorites waiting for a channel: matched again when this computer's channels change
+  useRematchFavorites();
   const firstRunMarker = useUIStore((s) => s.settings.firstRun);
   const [firstRun, setFirstRun] = useState<FirstRunMode | 'closed'>(null);
   const liveFirstRun = firstRunMode({ settingsLoaded, sourcesLoaded, sourceCount, marker: firstRunMarker });
@@ -877,7 +880,7 @@ function App() {
       window.sync.onView((v) => setSyncActive(v.status === 'active')),
       window.sync.onSnapshot(() => { void sendSnapshot(); }),
       // Confirmed only once written: a failed write comes back on the next pull
-      window.sync.onApply((records) => { void applyRecords(records).then(() => window.sync?.applied(records)).catch((e) => debugLog(`Sync: applying failed: ${e instanceof Error ? e.name : 'error'}`, 'sync')); }),
+      window.sync.onApply((records) => { void applyRecords(records).then((done) => window.sync?.applied(done)).catch((e) => debugLog(`Sync: applying failed: ${e instanceof Error ? e.name : 'error'}`, 'sync')); }),
       window.sync.onSettingsReplaced(async () => {
         const r = await window.storage?.getSettings();
         if (r?.data) useUIStore.getState().hydrateSettings(r.data);

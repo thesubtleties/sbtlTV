@@ -1,8 +1,12 @@
 import { useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { db, type StoredFavorite } from '../db';
+import { useUIStore } from '../stores/uiStore';
 import { useDataQuery } from '../data/useDataQuery';
 import { useEnabledSourceIds } from './useSourceFiltering';
+import { useSyncActive } from './useSyncActive';
+import { favoriteAdded, favoriteRemoved, guidesFor } from '../services/sync/outbox';
+import { localId, waitingFavorites } from '../services/sync/favorites';
 
 function favId(streamId: string): string {
   return `channel_${streamId}`;
@@ -16,22 +20,39 @@ export function useIsFavoriteChannel(streamId: string | undefined): boolean {
   return fav !== undefined && fav !== null;
 }
 
+/** Favorite or unfavorite a channel; with Sync on, the other computers follow. */
+export async function toggleFavoriteChannel(streamId: string, name: string): Promise<void> {
+  const id = favId(streamId);
+  const existing = await db.favorites.get(id);
+  if (existing) {
+    await db.favorites.delete(id);
+    favoriteRemoved(existing);
+    return;
+  }
+  // Its own id is saved now, so editing the provider's address later doesn't change which favorite it is
+  const own = localId(streamId, useUIStore.getState().sources, (await guidesFor([streamId])).get(streamId));
+  const row: StoredFavorite = { id, type: 'channel', stream_id: streamId, name, added: new Date(), ...(own ? { ids: [own] } : {}) };
+  await db.favorites.put(row);
+  favoriteAdded(row);
+}
+
+/** Remove a favorite row as it is (one waiting for its channel too); the other computers follow. */
+export async function removeFavoriteRow(row: StoredFavorite): Promise<void> {
+  await db.favorites.delete(row.id);
+  favoriteRemoved(row);
+}
+
+/** Synced favorites this computer doesn't have, when Settings › Sync & transfer says to show them. */
+export function useWaitingFavorites(): StoredFavorite[] {
+  const setting = useUIStore((s) => s.settings.syncMissingChannels ?? 'hide');
+  const syncing = useSyncActive();
+  const rows = useLiveQuery(() => db.favorites.where('type').equals('channel').toArray(), []);
+  // Only while this computer syncs (like titles it doesn't have)
+  return useMemo(() => (syncing ? waitingFavorites(rows ?? [], setting) : []), [rows, setting, syncing]);
+}
+
 export function useToggleFavoriteChannel() {
-  return useCallback(async (streamId: string, name: string) => {
-    const id = favId(streamId);
-    const existing = await db.favorites.get(id);
-    if (existing) {
-      await db.favorites.delete(id);
-    } else {
-      await db.favorites.put({
-        id,
-        type: 'channel',
-        stream_id: streamId,
-        name,
-        added: new Date(),
-      });
-    }
-  }, []);
+  return useCallback((streamId: string, name: string) => toggleFavoriteChannel(streamId, name), []);
 }
 
 // Favorites stay on Dexie; the channel rows they point at come from the data
@@ -55,7 +76,9 @@ export function useFavoriteChannels() {
   }, [channels, streamIds, enabledIds]);
 }
 
+/** Favorites in the Guide: this computer's, and the grayed ones from other computers when shown. */
 export function useFavoriteChannelCount(): number {
   const channels = useFavoriteChannels();
-  return channels.length;
+  const waiting = useWaitingFavorites();
+  return channels.length + waiting.length;
 }

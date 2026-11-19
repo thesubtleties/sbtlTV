@@ -28,6 +28,7 @@ export function SyncSection({ adding, onAdding }: { adding: boolean; onAdding: (
   const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const missing = useUIStore((s) => s.settings.syncMissingTitles ?? 'gray');
+  const missingChannels = useUIStore((s) => s.settings.syncMissingChannels ?? 'hide');
   const updateSettings = useUIStore((s) => s.updateSettings);
   const [, tick] = useState(0);
 
@@ -49,7 +50,7 @@ export function SyncSection({ adding, onAdding }: { adding: boolean; onAdding: (
   return (
     <Section
       title="Sync"
-      description="Keep your watchlist and progress in step on your own computers. End-to-end encrypted: even we can't read it."
+      description="Keep your watchlist, progress and favorite channels in step on your own computers. End-to-end encrypted: even we can't read it."
       actions={<Button onClick={() => onAdding(!adding)} aria-expanded={adding} disabled={view.status === 'keyring' || view.status === 'update'}>Add a computer…</Button>}
     >
       {adding && <AddComputerPanel onClose={() => onAdding(false)} />}
@@ -65,16 +66,26 @@ export function SyncSection({ adding, onAdding }: { adding: boolean; onAdding: (
       {on && (
         <>
           <Hint>{view.lastSync ? `Last synced ${ago(view.lastSync)}.` : 'Not synced yet.'}</Hint>
-          <OptionRow title="Watchlist"><OnOff value={view.parts.watchlist} onChange={(v) => setPart('watchlist', v)} /></OptionRow>
-          <OptionRow title="Watch progress" help="Resume points and finished marks"><OnOff value={view.parts.progress} onChange={(v) => setPart('progress', v)} /></OptionRow>
+          <OptionRow title="Watchlist"><OnOff label="Watchlist" value={view.parts.watchlist} onChange={(v) => setPart('watchlist', v)} /></OptionRow>
+          <OptionRow title="Watch progress" help="Resume points and finished marks"><OnOff label="Watch progress" value={view.parts.progress} onChange={(v) => setPart('progress', v)} /></OptionRow>
+          <OptionRow title="Favorites" help="Channel favorites, where this computer has the channel."><OnOff label="Favorites" value={view.parts.favorites} onChange={(v) => setPart('favorites', v)} /></OptionRow>
           <OptionRow title="Settings" help="Look, subtitles and players. Turning it on takes your other computers' settings.">
-            <OnOff value={view.parts.settings} onChange={(v) => setPart('settings', v)} />
+            <OnOff label="Settings" value={view.parts.settings} onChange={(v) => setPart('settings', v)} />
           </OptionRow>
           <OptionRow title="Titles this computer doesn't have" help="In Continue Watching and your watchlist.">
             <Segmented
               value={missing}
+              label="Titles this computer doesn't have"
               options={[{ id: 'gray', label: 'Gray out' }, { id: 'hide', label: 'Hide' }]}
               onChange={(v) => { updateSettings({ syncMissingTitles: v }); void saveSettings({ syncMissingTitles: v }); }}
+            />
+          </OptionRow>
+          <OptionRow title="Channels this computer doesn't have" help="Favorites from your other computers with no match here. Gray out lists them last in the Guide's Favorites.">
+            <Segmented
+              value={missingChannels}
+              label="Channels this computer doesn't have"
+              options={[{ id: 'gray', label: 'Gray out' }, { id: 'hide', label: 'Hide' }]}
+              onChange={(v) => { updateSettings({ syncMissingChannels: v }); void saveSettings({ syncMissingChannels: v }); }}
             />
           </OptionRow>
           <div className="sync-computers" role="list" aria-label="Computers">

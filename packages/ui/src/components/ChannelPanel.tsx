@@ -1,7 +1,8 @@
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
-import { useFavoriteChannels } from '../hooks/useFavorites';
+import { removeFavoriteRow, useFavoriteChannels, useWaitingFavorites } from '../hooks/useFavorites';
+import { GuideMissingFavorites, type MissingFavoritesContext } from './MissingFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
@@ -50,6 +51,7 @@ function ChannelPanelImpl({
   const isFavoritesView = categoryId === '__favorites__';
   const regularChannels = useChannels(isFavoritesView ? null : categoryId, channelSortOrder);
   const favoriteChannels = useFavoriteChannels();
+  const waiting = useWaitingFavorites();
   const channels = isFavoritesView ? favoriteChannels : regularChannels;
   const categories = useCategories();
   const waitingForLogin = useSourceNeedsLogin();
@@ -87,6 +89,12 @@ function ChannelPanelImpl({
     if (jump) return jump.rows;
     return searchMode === 'filter' ? filterChannelsByName(channels, searchQuery) : channels;
   }, [channels, jump, searchMode, searchQuery]);
+  // Favorites from other computers not on this one (grayed, last in Favorites), narrowed by the same filter
+  const shownWaiting = useMemo(() => {
+    if (!isFavoritesView || jump) return [];
+    return searchMode === 'filter' ? filterChannelsByName(waiting, searchQuery) : waiting;
+  }, [isFavoritesView, jump, searchMode, searchQuery, waiting]);
+  const missingContext = useMemo<MissingFavoritesContext>(() => ({ rows: shownWaiting, onRemove: (row) => removeFavoriteRow(row) }), [shownWaiting]);
 
   // Channel column width is a persisted setting; the EFFECTIVE width yields a bit on narrow
   // windows so the EPG grid never drops below 200px. The ref lets the mount-once ResizeObserver
@@ -520,8 +528,11 @@ function ChannelPanelImpl({
               onPlay={onPlayChannel}
             />
           )}
+          context={missingContext}
           components={{
-            EmptyPlaceholder: () => (
+            // A component defined once (not inline), so its Remove buttons keep focus across Guide renders
+            Footer: GuideMissingFavorites,
+            EmptyPlaceholder: () => shownWaiting.length ? null : (
               <div className="guide-empty">
                 <div className="guide-empty-icon">
                   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">

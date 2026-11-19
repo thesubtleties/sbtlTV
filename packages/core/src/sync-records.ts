@@ -12,7 +12,9 @@ export interface WatchlistRecord extends Base { k: 'wl'; type: 'movie' | 'series
 export interface MovieProgressRecord extends Base { k: 'pm'; tmdb: number; name: string; pos: number; dur: number; done: boolean }
 export interface EpisodeProgressRecord extends Base { k: 'pe'; series: number; s: number; e: number; name: string; pos: number; dur: number; done: boolean }
 export interface SettingRecord { k: 'set'; key: SyncedSettingKey; value: unknown; at: number }
-export type SyncRecord = WatchlistRecord | MovieProgressRecord | EpisodeProgressRecord | SettingRecord;
+/** A channel favorite: the provider's server name (never a login, port or path) and its channel id, plus the guide id to find it elsewhere */
+export interface FavoriteRecord extends Base { k: 'fav'; host: string; ch: string; guide?: string; name: string }
+export type SyncRecord = WatchlistRecord | MovieProgressRecord | EpisodeProgressRecord | SettingRecord | FavoriteRecord;
 
 export function recordKey(r: SyncRecord): string {
   switch (r.k) {
@@ -20,11 +22,12 @@ export function recordKey(r: SyncRecord): string {
     case 'pm': return `pm:${r.tmdb}`;
     case 'pe': return `pe:${r.series}:${r.s}:${r.e}`;
     case 'set': return `set:${r.key}`;
+    case 'fav': return `fav:${r.host}:${r.ch}`;
   }
 }
 
-export function recordPart(r: SyncRecord): 'watchlist' | 'progress' | 'settings' {
-  return r.k === 'wl' ? 'watchlist' : r.k === 'set' ? 'settings' : 'progress';
+export function recordPart(r: SyncRecord): 'watchlist' | 'progress' | 'settings' | 'favorites' {
+  return r.k === 'wl' ? 'watchlist' : r.k === 'set' ? 'settings' : r.k === 'fav' ? 'favorites' : 'progress';
 }
 
 /** Same answer on every computer: later wins; on a tie a removal wins, then the larger JSON text. */
@@ -56,6 +59,10 @@ const small = (v: unknown): v is number => typeof v === 'number' && Number.isInt
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e7;
 const time = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0 && v < 1e14;
 const name = (v: unknown): v is string => typeof v === 'string' && v.length <= 500;
+/** A server name as URL.hostname gives it, lowercase: a DNS name (underscores happen on home networks) or a bracketed IPv6 address */
+const host = (v: unknown): v is string => typeof v === 'string' && (/^[a-z0-9._-]{1,253}$/.test(v) || /^\[[0-9a-f:.]{2,45}\]$/.test(v));
+const chId = (v: unknown): v is string => typeof v === 'string' && v.length >= 1 && v.length <= 128;
+const guideId = (v: unknown): v is string => typeof v === 'string' && v.length >= 1 && v.length <= 200;
 /** A setting value from another computer: plain JSON, small. */
 const settingValue = (v: unknown): boolean => {
   try { return v !== undefined && JSON.stringify(v).length <= 16_384; } catch { return false; }
@@ -81,6 +88,10 @@ export function validateRecord(v: unknown): SyncRecord | null {
     case 'set':
       if (!(SYNCED_SETTING_KEYS as readonly unknown[]).includes(o.key) || !settingValue(o.value) || o.removed !== undefined) return null;
       return { k: 'set', key: o.key as SyncedSettingKey, value: o.value, at: o.at };
+    case 'fav':
+      // A favorite is kept whole: an odd guide id is left out and a long name trimmed, not the record dropped
+      if (!host(o.host) || !chId(o.ch) || typeof o.name !== 'string') return null;
+      return { k: 'fav', host: o.host, ch: o.ch, ...(guideId(o.guide) ? { guide: o.guide } : {}), name: o.name.slice(0, 500), at: o.at, ...removed };
     default:
       return null;
   }

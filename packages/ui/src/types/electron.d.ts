@@ -256,7 +256,7 @@ export interface MailboxApi {
 }
 
 /** Settings > Sync & transfer > Sync (the engine lives in main; see packages/mailbox/src/client/sync-engine.ts) */
-export type SyncParts = { watchlist: boolean; progress: boolean; settings: boolean };
+export type SyncParts = { watchlist: boolean; progress: boolean; settings: boolean; favorites: boolean };
 export interface SyncView {
   status: 'off' | 'pending' | 'active' | 'removed' | 'ended' | 'keyring' | 'update';
   lastSync: number | null;
@@ -326,6 +326,7 @@ export interface AppSettings {
   subdlApiKey?: string;            // SubDL API key for downloaded subtitles
   rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
   syncMissingTitles?: 'gray' | 'hide';  // Synced titles this computer doesn't have
+  syncMissingChannels?: 'hide' | 'gray';  // Synced favorite channels this computer doesn't have (default hide)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering

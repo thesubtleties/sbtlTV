@@ -145,11 +145,11 @@ describe('SyncEngine', () => {
 
   it('parts: a computer with settings off ignores settings records', async () => {
     const w = world(); const { a, b } = await pair(w);
-    a.e.setParts({ watchlist: true, progress: true, settings: true });
+    a.e.setParts({ watchlist: true, progress: true, settings: true, favorites: true });
     a.e.settingsChanged({ theme: 'light' }); await a.e.flush();
     await b.e.pull();
     expect(b.got.settings).toEqual([]);
-    b.e.setParts({ watchlist: true, progress: true, settings: true });
+    b.e.setParts({ watchlist: true, progress: true, settings: true, favorites: true });
     await b.e.pull();
     expect(b.got.settings).toEqual([{ theme: 'light' }]);
   });
@@ -391,10 +391,10 @@ describe('SyncEngine', () => {
     a.current = { theme: 'light' }; b.current = { theme: 'dark' };
     b.e.settingsChanged({ theme: 'dark' });      // b changed its look while its Settings switch was off
     w.advance(1000);
-    a.e.setParts({ watchlist: true, progress: true, settings: true }); await a.e.flush();   // first: supplies light
+    a.e.setParts({ watchlist: true, progress: true, settings: true, favorites: true }); await a.e.flush();   // first: supplies light
     w.advance(1000);
     await b.e.pull();
-    b.e.setParts({ watchlist: true, progress: true, settings: true }); await b.e.flush();
+    b.e.setParts({ watchlist: true, progress: true, settings: true, favorites: true }); await b.e.flush();
     await b.e.pull();
     expect(b.got.settings).toContainEqual({ theme: 'light' });   // b takes a's, not the other way round
     await a.e.pull();
@@ -495,6 +495,39 @@ describe('SyncEngine', () => {
     b2.e.record([later]); await b2.e.flush();
     await a.e.pull();
     expect(a.got.applied).toContainEqual(later);
+  });
+
+  it('a favorite reaches the other computer; with Favorites off it is not uploaded', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const fav = { k: 'fav' as const, host: 'provider.example', ch: '1234', name: 'CNN', at: w.now() };
+    a.e.record([fav]); await a.e.flush();
+    await b.e.pull();
+    expect(b.got.applied).toContainEqual(fav);
+    a.e.setParts({ watchlist: true, progress: true, settings: false, favorites: false });
+    w.advance(1000);
+    a.e.record([{ ...fav, ch: '5678', at: w.now() }]); await a.e.flush();
+    await b.e.pull();
+    expect(b.got.applied.find((r) => r.k === 'fav' && r.ch === '5678')).toBeUndefined();
+  });
+
+  it('turning Favorites back on hands over the favorites the others have again', async () => {
+    const w = world(); const { a, b } = await pair(w);
+    const fav = { k: 'fav' as const, host: 'provider.example', ch: '1234', name: 'CNN', at: w.now() };
+    a.e.record([fav]); await a.e.flush();
+    await b.e.pull(); await Promise.resolve();
+    b.e.setParts({ watchlist: true, progress: true, settings: false, favorites: false });
+    b.e.setParts({ watchlist: true, progress: true, settings: false, favorites: true });
+    expect(b.got.applied.filter((r) => r.k === 'fav')).toEqual([fav, fav]);
+  });
+
+  it('a sync file saved before Favorites existed has it on', async () => {
+    const w = world(); const { a } = await pair(w);
+    const file = join(a.dirPath, 'sync-state.json');
+    const s = JSON.parse(readFileSync(file, 'utf8'));
+    s.parts = { watchlist: true, progress: true, settings: false };
+    writeFileSync(file, JSON.stringify(s));
+    const a2 = w.make('Linux PC', true, a.dirPath);
+    expect(a2.e.view().parts.favorites).toBe(true);
   });
 
   it("a computer carries the changes it received, so they outlive the computer that made them (I3)", async () => {
@@ -600,7 +633,7 @@ describe('SyncEngine (lens 7)', () => {
 
   it('a part turned off is not uploaded', async () => {
     const w = world(); const { a, b } = await pair(w);
-    a.e.setParts({ watchlist: true, progress: false, settings: false });
+    a.e.setParts({ watchlist: true, progress: false, settings: false, favorites: true });
     const pm: SyncRecord = { k: 'pm', tmdb: 42, name: 'Private', pos: 5, dur: 100, done: false, at: w.now() };
     a.e.record([pm, wl(w.now())]); await a.e.flush();
     await b.e.pull();
@@ -610,10 +643,10 @@ describe('SyncEngine (lens 7)', () => {
 
   it('turning settings on takes the others\' settings at once, not at the next pull', async () => {
     const w = world(); const { a, b } = await pair(w);
-    a.e.setParts({ watchlist: true, progress: true, settings: true });
+    a.e.setParts({ watchlist: true, progress: true, settings: true, favorites: true });
     a.e.settingsChanged({ theme: 'light' }); await a.e.flush();
     await b.e.pull();
-    b.e.setParts({ watchlist: true, progress: true, settings: true });
+    b.e.setParts({ watchlist: true, progress: true, settings: true, favorites: true });
     expect(b.got.settings).toEqual([{ theme: 'light' }]);
   });
 

@@ -418,3 +418,38 @@ test('guideSearch caps a very long description', () => {
   const r = runQuery(db, { id: 1, type: 'guideSearch', query: 'big news', sourceIds: [], nowMs: 500, hideAdult: false }) as GuideSearchResult;
   assert.ok(r.later[0].description.length <= 600);
 });
+
+test('channels by guide id: only the given sources, never an empty guide id (synced favorites)', () => {
+  const db = new DatabaseSync(':memory:');
+  createSchema(db);
+  db.exec(`insert into channels(stream_id, source_id, name, channel_num, direct_url, epg_channel_id) values
+    ('m1_1', 'm1', 'CNN HD', 7, 'u', 'CNN.us'),
+    ('m1_2', 'm1', 'CNN SD', 3, 'u', 'CNN.us'),
+    ('m2_9', 'm2', 'CNN', 1, 'u', 'CNN.us'),
+    ('m1_3', 'm1', 'Blank', 1, 'u', '')`);
+  const rows = runQuery(db, { id: 1, type: 'channelsByGuideIds', guideIds: ['CNN.us', ''], sourceIds: ['m1'] }) as { stream_id: string }[];
+  assert.deepEqual(rows.map((r) => r.stream_id), ['m1_2', 'm1_1']);
+});
+
+test("channels by guide id also through the guide's own matches (EPGenius/XMLTV links), with each channel's linked ids", () => {
+  const db = new DatabaseSync(':memory:');
+  createSchema(db);
+  db.exec(`insert into channels(stream_id, source_id, name, channel_num, direct_url, epg_channel_id) values
+    ('m1_1', 'm1', 'US: CNN', 2, 'u', 'cnn-provider-id'),
+    ('m1_2', 'm1', 'Other', 1, 'u', '')`);
+  db.exec(`insert into epg_links(stream_id, epg_source, epg_channel_id, source_id, confidence, strategy) values
+    ('m1_1', 'epgenius', 'CNN.us', 'm1', 'high', 'exact_id')`);
+  const rows = runQuery(db, { id: 1, type: 'channelsByGuideIds', guideIds: ['CNN.us'], sourceIds: ['m1'] }) as { stream_id: string; guide_ids: string[] }[];
+  assert.deepEqual(rows.map((r) => [r.stream_id, r.guide_ids]), [['m1_1', ['CNN.us']]]);
+});
+
+test("a favorite's guide id: the guide's most confident match, else the provider's tvg-id, else none", () => {
+  const db = new DatabaseSync(':memory:');
+  createSchema(db);
+  db.exec(`insert into channels(stream_id, source_id, name, direct_url, epg_channel_id) values
+    ('m1_1', 'm1', 'A', 'u', 'raw-a'), ('m1_2', 'm1', 'B', 'u', 'raw-b'), ('m1_3', 'm1', 'C', 'u', '')`);
+  db.exec(`insert into epg_links(stream_id, epg_source, epg_channel_id, source_id, confidence, strategy) values
+    ('m1_1', 'x', 'low.a', 'm1', 'low', 's'), ('m1_1', 'y', 'high.a', 'm1', 'high', 's')`);
+  const rows = runQuery(db, { id: 1, type: 'favoriteGuides', streamIds: ['m1_1', 'm1_2', 'm1_3'] }) as { stream_id: string; guide: string }[];
+  assert.deepEqual(Object.fromEntries(rows.map((r) => [r.stream_id, r.guide])), { m1_1: 'high.a', m1_2: 'raw-b', m1_3: '' });
+});

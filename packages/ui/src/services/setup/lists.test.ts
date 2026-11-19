@@ -72,3 +72,20 @@ describe('R8 setup lists', () => {
     expect(wl[0].tmdb_id).toBeUndefined();
   });
 });
+
+describe('synced favorites in a setup file', () => {
+  it("keep the ids they answer to (their own and other computers'); bad ids are dropped, not the favorite (lens 3/6 I2)", async () => {
+    await db.favorites.clear();
+    await db.favorites.bulkPut([
+      { id: 'channel_m1_9', type: 'channel', stream_id: 'm1_9', name: 'CNN', added: new Date(1), ids: [{ host: 'provider.example', ch: '9' }, { host: 'other.example', ch: '5', guide: 'CNN.us' }] },
+      { id: 'channel_sync_x.example_1', type: 'channel', name: 'Waiting', added: new Date(1), ids: [{ host: 'x.example', ch: '1' }] },
+    ]);
+    const lists = JSON.parse(JSON.stringify(await readLists(['favorites'], false)));
+    lists.favorites.push({ id: 'channel_bad', type: 'channel', name: 'Bad', added: new Date(1).toISOString(), ids: [{ host: 5 }, 'x'] });
+    await replaceLists(lists);
+    const rows = await db.favorites.toArray();
+    expect(rows.find((r) => r.id === 'channel_m1_9')?.ids).toEqual([{ host: 'provider.example', ch: '9' }, { host: 'other.example', ch: '5', guide: 'CNN.us' }]);
+    expect(rows.find((r) => r.id === 'channel_sync_x.example_1')?.ids).toEqual([{ host: 'x.example', ch: '1' }]);
+    expect(rows.find((r) => r.id === 'channel_bad')?.ids).toBeUndefined();
+  });
+});

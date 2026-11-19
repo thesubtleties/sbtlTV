@@ -614,7 +614,7 @@ export class SyncEngine {
     const turnedOn = (Object.keys(parts) as (keyof Parts)[]).some((p) => parts[p] && !was[p]);
     if (turnedOn) {
       // What the other computers already have now applies here too (a key's part is in its prefix)
-      const partOf = (key: string): keyof Parts => (key.startsWith('wl:') ? 'watchlist' : key.startsWith('set:') ? 'settings' : 'progress');
+      const partOf = (key: string): keyof Parts => (key.startsWith('wl:') ? 'watchlist' : key.startsWith('set:') ? 'settings' : key.startsWith('fav:') ? 'favorites' : 'progress');
       f.applied = Object.fromEntries(Object.entries(f.applied).filter(([key]) => !(parts[partOf(key)] && !was[partOf(key)])));
       this.applyWinners();
     }
