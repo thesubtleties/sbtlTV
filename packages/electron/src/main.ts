@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage, screen, session } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage, screen, session } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
@@ -40,6 +40,7 @@ import { buildReport, formatLogLine, reportLogText, validateSyncStatus, type Rep
 import { makeZip } from './zip-writer.js';
 import { holdSingleInstance } from './single-instance.js';
 import { buildKind } from './build-kind.js';
+import { macMenuTemplate } from './mac-menu.js';
 import { saveOnWindowClose } from './window-close.js';
 const { autoUpdater } = electronUpdater;
 
@@ -3038,6 +3039,12 @@ async function startPlayer(): Promise<boolean> {
 }
 
 app.whenReady().then(async () => {
+  // macOS: the menu bar and About box say sbtlTV (Electron's default writes the package name there). Labels only:
+  // app.name stays as it is, since the data folder and the Keychain entry are derived from it
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(Menu.buildFromTemplate(macMenuTemplate('sbtlTV')));
+    app.setAboutPanelOptions({ applicationName: 'sbtlTV', applicationVersion: app.getVersion() });
+  }
   // On Windows and Linux, Chromium downloads spell-check dictionaries from Google
   // for the session's languages, even with spell checking off in the window. With
   // no languages there is nothing to download. (macOS uses the system checker.)
