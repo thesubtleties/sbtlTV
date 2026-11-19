@@ -54,6 +54,7 @@ export interface AppSettings {
   categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering (default: alphabetical)
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
   betaUpdates?: boolean;        // Offer beta (pre-release) updates too (default false)
+  systemMediaControls?: boolean; // Show what's playing in the system's media controls (default true; per computer)
   categoryBarWidth?: number;    // Category strip content width in px (default 160)
   channelColumnWidth?: number;  // Guide channel-info column width in px (default 300)
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
@@ -99,6 +100,7 @@ interface StoredSettings {
   categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch
   betaUpdates?: boolean;        // Offer beta (pre-release) updates too
+  systemMediaControls?: boolean; // Show what's playing in the system's media controls
   categoryBarWidth?: number;    // Category strip content width in px
   channelColumnWidth?: number;  // Guide channel-info column width in px
   guideOpacity?: number;        // Background opacity for EPG/category/title bar
@@ -272,6 +274,7 @@ export function getSettings(): AppSettings {
   result.categorySortOrder = stored.categorySortOrder ?? 'alphabetical';
   result.autoUpdateEnabled = stored.autoUpdateEnabled ?? true;
   result.betaUpdates = stored.betaUpdates ?? false;
+  result.systemMediaControls = stored.systemMediaControls ?? true;
   result.categoryBarWidth = stored.categoryBarWidth ?? 160;
   result.channelColumnWidth = stored.channelColumnWidth ?? 300;
   result.guideOpacity = stored.guideOpacity ?? 0.95;
@@ -365,6 +368,9 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.betaUpdates !== undefined) {
     updated.betaUpdates = settings.betaUpdates;
+  }
+  if (settings.systemMediaControls !== undefined) {
+    updated.systemMediaControls = settings.systemMediaControls;
   }
   if (settings.categoryBarWidth !== undefined) {
     updated.categoryBarWidth = settings.categoryBarWidth;

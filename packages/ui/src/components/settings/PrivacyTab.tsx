@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { IpCheckResult, StorageProtection } from '../../types/electron';
 import { debugLog } from '../../utils/debugLog';
-import { useSelectedListsEnabled } from '../../stores/uiStore';
-import { Button, Hint, OptionRow, Section, Segmented, SettingsTab } from './ui';
+import { useSelectedListsEnabled, useUIStore } from '../../stores/uiStore';
+import { Button, Hint, OnOff, OptionRow, Section, Segmented, SettingsTab } from './ui';
 import './PrivacyTab.css';
 
 interface PrivacyTabProps {
@@ -141,6 +141,12 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
   const selectedListsEnabled = useSelectedListsEnabled();
   const [protection, setProtection] = useState<StorageProtection | null>(null);
   const [syncOn, setSyncOn] = useState(false);
+  const mediaControls = useUIStore((s) => s.settings.systemMediaControls !== false);
+  const updateSettings = useUIStore((s) => s.updateSettings);
+  async function setMediaControls(enabled: boolean) {
+    updateSettings({ systemMediaControls: enabled });
+    await window.storage?.updateSettings({ systemMediaControls: enabled });
+  }
   useEffect(() => {
     if (!window.sync) return;
     void window.sync.view().then((v) => setSyncOn(v.status === 'active'));
@@ -179,6 +185,12 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         {syncOn && <Hint>With Sync on, your watchlist, watch progress and favorite channels (and settings, if you chose them) also go to your other computers, end-to-end encrypted through the sbtlTV relay.</Hint>}
         {protectionLine && <Hint tone={protectionLine.tone}>{protectionLine.text}</Hint>}
         {protection?.platform === 'linux' && <KeyringRow protection={protection} />}
+        <OptionRow
+          title="Media controls"
+          help="Show what's playing in your system's media controls: the Windows media panel (also on the lock screen), Now Playing on a Mac, media widgets on Linux. Off: nothing is shown there."
+        >
+          <OnOff label="Media controls" value={mediaControls} onChange={(v) => void setMediaControls(v)} />
+        </OptionRow>
         <Hint>
           {debugLoggingEnabled
             ? 'Debug logging is on. The log stays on this computer; logins are removed from it and provider addresses appear as labels.'

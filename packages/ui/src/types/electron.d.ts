@@ -333,6 +333,7 @@ export interface AppSettings {
   categorySortOrder?: 'alphabetical' | 'provider';  // Live category strip ordering (default: alphabetical)
   autoUpdateEnabled?: boolean;  // Auto-check for updates on launch (default true)
   betaUpdates?: boolean;        // Offer beta (pre-release) updates too (default false)
+  systemMediaControls?: boolean; // Show what's playing in the system's media controls (default true; per computer)
   categoryBarWidth?: number;    // Category strip content width in px (default 160)
   channelColumnWidth?: number;  // Guide channel-info column width in px (default 300, clamped 220-520)
   guideOpacity?: number;        // Background opacity for EPG/category/title bar (default 0.95)
