@@ -5,10 +5,11 @@
  * and episode list. Slides in as a full page, not a modal.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
-import { DetailHeader } from './DetailHeader';
+import { DetailBleed, DetailHeader } from './DetailHeader';
+import { useDetailBleed } from '../../hooks/useHeroBleed';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useMergedEpisodes } from '../../hooks/useVodDedup';
@@ -170,8 +171,17 @@ export function SeriesDetail({ series, onClose, onCollapse, isCollapsed, onPlayE
   // Current season episodes
   const currentEpisodes = seasons[selectedSeason] ?? [];
 
+  // The backdrop runs up under the title bar, clear until the art scrolls away (off while slid away for the player)
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const { onScroll: bleedScroll } = useDetailBleed(!isCollapsed, scrollerRef);
+
   return (
-    <div className={`series-detail${isCollapsed ? ' series-detail--collapsed' : ''}`}>
+    <div
+      className={`series-detail${isCollapsed ? ' series-detail--collapsed' : ''}`}
+      ref={scrollerRef}
+      onScroll={(e) => bleedScroll(e.currentTarget.scrollTop)}
+    >
+      <DetailBleed />
       {/* Backdrop */}
       <div className="series-detail__backdrop">
         {backdropUrl && <img src={backdropUrl} alt="" aria-hidden="true" />}

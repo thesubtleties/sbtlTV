@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef, useReducer } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useReducer } from 'react';
 import { detailNav, isBackKey, seriesSeasonKey } from '../utils/detailNav';
 import { Virtuoso } from 'react-virtuoso';
 import { HeroSection } from './vod/HeroSection';
@@ -20,6 +20,7 @@ import { clearMovieTitle } from '../hooks/useWatchProgress';
 import type { MissingTitle } from '../services/sync/missing';
 import { MissingRow } from './vod/MissingCard';
 import './VodPage.css';
+import { useHeroBleed } from '../hooks/useHeroBleed';
 
 // Animation timing (must match .vod-page transition in VodPage.css: 0.35s)
 const SLIDE_DURATION_MS = 350;
@@ -189,6 +190,28 @@ interface VodPageProps {
   onClose?: () => void;
 }
 
+/** The page's classes: bleed (the home's hero under the bars) and floating (the Floating header) first. */
+/**
+ * The home's see-through bars (useHeroBleed): the home itself, not a grid, not while the page is slid away, and not
+ * while a detail covers it. A detail sliding away for the player shows the home again (the page stays mounted until
+ * the stream loads, indefinitely if it fails), so the home's look comes back with it.
+ */
+export function heroBleedActive(o: { bleed: boolean; hasDetail: boolean; isPageCollapsed: boolean; shouldPageBeCollapsed: boolean }): boolean {
+  return o.bleed && !(o.hasDetail && !o.isPageCollapsed) && !o.shouldPageBeCollapsed;
+}
+
+export function vodPageClasses(o: { collapsed: boolean; contentHidden: boolean; detailOpen: boolean; bleed: boolean; floating: boolean; sliding: boolean }): string {
+  return [
+    'vod-page',
+    o.bleed ? 'vod-page--bleed' : '',
+    o.floating ? 'vod-page--floating' : '',
+    o.sliding ? 'vod-page--sliding' : '',
+    o.collapsed ? 'vod-page--collapsed' : '',
+    o.contentHidden ? 'vod-page--content-hidden' : '',
+    o.detailOpen ? 'vod-page--detail-open' : '',
+  ].filter(Boolean).join(' ');
+}
+
 export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // Navigation state from store (persists per media type across tab switches)
   const {
@@ -248,6 +271,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
   // Resolve selected groupKey back to category IDs for VodBrowse
   const selectedGroup = groupedCategories.find(g => g.groupKey === selectedCategoryId);
+  // One array per category list, not per render: the strip re-measures its capsule whenever this changes
+  const stripCategories = useMemo(() => groupedCategories.map(g => ({ id: g.groupKey, name: g.name })), [groupedCategories]);
   const selectedCategoryIds = selectedGroup?.categoryIds ?? null;
 
   // Build carousel rows for virtualization
@@ -482,22 +507,53 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // Determine animation mode: page-level (no detail) vs detail-level (has detail)
   const hasDetail = !!selectedItem;
   const shouldPageBeCollapsed = (isEntering || isPageCollapsed) && !hasDetail;
-  const pageClasses = [
-    'vod-page',
+  // The home's hero runs up under the title bar and this header (HeaderStyles.css)
+  const pageRef = useRef<HTMLDivElement>(null);
+  const bleed = selectedCategoryId === null;
+  // While the page slides in, the nav stays out of the motion and settles in once it lands (HeaderStyles.css): drawn
+  // on every frame of the slide it halved the slide's frame rate on a first open. The title bar goes clear at once
+  const [sliding, setSliding] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setSliding(false), SLIDE_DELAY_MS + SLIDE_DURATION_MS);
+    return () => clearTimeout(t);
+  }, []);
+  // The see-through bars: the home itself, including behind a detail sliding away for the player (heroBleedActive)
+  const { onScroll: bleedScroll } = useHeroBleed(
+    heroBleedActive({ bleed, hasDetail, isPageCollapsed, shouldPageBeCollapsed }), pageRef, scrollPosition);
+  // Floating header: it floats on every view, so content starts below it (--strip-h, kept current as it resizes)
+  const floating = useUIStore((s) => s.settings.appearance?.header === 'floating');
+  useLayoutEffect(() => {
+    const page = pageRef.current;
+    const strip = page?.querySelector<HTMLElement>('.h-category-strip');
+    if (!page || !strip) return;
+    const measure = () => page.style.setProperty('--strip-h', `${strip.offsetHeight}px`);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(strip);
+    return () => ro.disconnect();
+  }, [floating]);
+
+  const pageClasses = vodPageClasses({
     // Animate whole page when entering/exiting without detail
-    shouldPageBeCollapsed ? 'vod-page--collapsed' : '',
+    collapsed: shouldPageBeCollapsed,
     // Hide page content when detail is animating out
-    !pageContentVisible ? 'vod-page--content-hidden' : '',
+    contentHidden: !pageContentVisible,
     // A detail covers the page: stop drawing what's under it (drawn again while the detail slides
     // away for the player, so the home shows behind it rather than a blank page)
-    hasDetail && !isPageCollapsed ? 'vod-page--detail-open' : '',
-  ].filter(Boolean).join(' ');
+    detailOpen: hasDetail && !isPageCollapsed,
+    bleed,
+    floating,
+    sliding,
+  });
 
   return (
-    <div className={pageClasses}>
+    <div className={pageClasses} ref={pageRef}>
+      {/* The home's fill behind the title bar and header (HeaderStyles.css; opacity set by useHeroBleed) */}
+      <div className="vod-page__chrome-fill" aria-hidden="true" />
+      <div className="vod-page__chrome-shade" aria-hidden="true" />
       {/* Unified header: back + categories + search */}
       <HorizontalCategoryStrip
-        categories={groupedCategories.map(g => ({ id: g.groupKey, name: g.name }))}
+        categories={stripCategories}
         selectedId={selectedCategoryId}
         onSelect={handleCategorySelect}
         type={type}
@@ -549,6 +605,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
               // Only track scroll on home view
               if (selectedCategoryId === null) {
                 setScrollPosition((e.target as HTMLElement).scrollTop);
+                bleedScroll((e.target as HTMLElement).scrollTop);
               }
             }}
           />

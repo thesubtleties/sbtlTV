@@ -34,6 +34,11 @@ function useDebouncedValue<T>(value: T, delay: number): T {
 
 // Footer component - defined OUTSIDE to prevent remounting on scroll
 // Must be stable reference for Virtuoso
+/** Room above the first row for a floating header (HeaderStyles.css sizes it; 0 otherwise): rows scroll up under it */
+const GridHeader = () => <div className="vod-browse__top-space" aria-hidden="true" />;
+/** The top room's height, so jumps land below a floating header */
+const topSpace = () => document.querySelector<HTMLElement>('.vod-browse__top-space')?.offsetHeight ?? 0;
+
 const GridFooter = ({ context }: { context?: { loading: boolean } }) => {
   if (!context?.loading) return null;
   return (
@@ -90,7 +95,7 @@ export function VodBrowse({
   // Scroll to top when category changes OR when the active category is re-clicked (scrollTopNonce bump)
   useEffect(() => {
     if (virtuosoRef.current) {
-      virtuosoRef.current.scrollToIndex({ index: 0, align: 'start' });
+      virtuosoRef.current.scrollTo({ top: 0 });   // the very top: the top room shows too
     }
   }, [categoryKey, scrollTopNonce]);
 
@@ -126,6 +131,7 @@ export function VodBrowse({
       virtuosoRef.current.scrollToIndex({
         index,
         align: 'start',
+        offset: -topSpace(),
         // Instant scroll for letter jumps - smooth would load everything in between
       });
     }
@@ -207,6 +213,7 @@ export function VodBrowse({
         itemClassName="vod-browse__grid-item"
         components={{
           Scroller: GridScroller,
+          Header: GridHeader,
           Footer: GridFooter,
         }}
       />

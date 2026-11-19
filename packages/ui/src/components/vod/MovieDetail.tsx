@@ -5,10 +5,11 @@
  * Slides in as a full page, not a modal.
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
-import { DetailHeader } from './DetailHeader';
+import { DetailBleed, DetailHeader } from './DetailHeader';
+import { useDetailBleed } from '../../hooks/useHeroBleed';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
@@ -96,8 +97,17 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
     ? `${Math.floor(movie.duration / 60)}h ${movie.duration % 60}m`
     : null;
 
+  // The backdrop runs up under the title bar, clear until the art scrolls away (off while slid away for the player)
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const { onScroll: bleedScroll } = useDetailBleed(!isCollapsed, scrollerRef);
+
   return (
-    <div className={`movie-detail${isCollapsed ? ' movie-detail--collapsed' : ''}`}>
+    <div
+      className={`movie-detail${isCollapsed ? ' movie-detail--collapsed' : ''}`}
+      ref={scrollerRef}
+      onScroll={(e) => bleedScroll(e.currentTarget.scrollTop)}
+    >
+      <DetailBleed />
       {/* Backdrop */}
       <div className="movie-detail__backdrop">
         {backdropUrl && <img src={backdropUrl} alt="" aria-hidden="true" />}

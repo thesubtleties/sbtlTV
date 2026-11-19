@@ -67,6 +67,14 @@ if (process.platform === 'linux') {
   }
 }
 
+// Scrollbars drawn over the page, shown while scrolling (as macOS does on its own): the Movies/Series home and the
+// details run their art to the window's right edge instead of beside a scrollbar column. Before the app is ready;
+// any features passed at launch are kept
+if (process.platform !== 'darwin') {
+  const launchFeatures = app.commandLine.getSwitchValue('enable-features');
+  app.commandLine.appendSwitch('enable-features', [launchFeatures, 'OverlayScrollbar'].filter(Boolean).join(','));
+}
+
 // Provider addresses in logs become labels (see host-labels.ts). The debug log
 // keeps them only while the user has turned that on in Settings > Debug; it is
 // never saved, so every launch starts with labels.
