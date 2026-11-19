@@ -191,6 +191,15 @@ interface VodPageProps {
 }
 
 /** The page's classes: bleed (the home's hero under the bars) and floating (the Floating header) first. */
+/**
+ * The home's see-through bars (useHeroBleed): the home itself, not a grid, not while the page is slid away, and not
+ * while a detail covers it. A detail sliding away for the player shows the home again (the page stays mounted until
+ * the stream loads, indefinitely if it fails), so the home's look comes back with it.
+ */
+export function heroBleedActive(o: { bleed: boolean; hasDetail: boolean; isPageCollapsed: boolean; shouldPageBeCollapsed: boolean }): boolean {
+  return o.bleed && !(o.hasDetail && !o.isPageCollapsed) && !o.shouldPageBeCollapsed;
+}
+
 export function vodPageClasses(o: { collapsed: boolean; contentHidden: boolean; detailOpen: boolean; bleed: boolean; floating: boolean; sliding: boolean }): string {
   return [
     'vod-page',
@@ -501,8 +510,6 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // The home's hero runs up under the title bar and this header (HeaderStyles.css)
   const pageRef = useRef<HTMLDivElement>(null);
   const bleed = selectedCategoryId === null;
-  // The see-through bars are for the home itself: not while a detail covers it or the page is slid away for the
-  // player (it stays mounted there, indefinitely if the stream fails), where the title bar is as everywhere else
   // While the page slides in, the nav stays out of the motion and settles in once it lands (HeaderStyles.css): drawn
   // on every frame of the slide it halved the slide's frame rate on a first open. The title bar goes clear at once
   const [sliding, setSliding] = useState(true);
@@ -510,7 +517,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     const t = setTimeout(() => setSliding(false), SLIDE_DELAY_MS + SLIDE_DURATION_MS);
     return () => clearTimeout(t);
   }, []);
-  const { onScroll: bleedScroll } = useHeroBleed(bleed && !hasDetail && !shouldPageBeCollapsed, pageRef, scrollPosition);
+  // The see-through bars: the home itself, including behind a detail sliding away for the player (heroBleedActive)
+  const { onScroll: bleedScroll } = useHeroBleed(
+    heroBleedActive({ bleed, hasDetail, isPageCollapsed, shouldPageBeCollapsed }), pageRef, scrollPosition);
   // Floating header: it floats on every view, so content starts below it (--strip-h, kept current as it resizes)
   const floating = useUIStore((s) => s.settings.appearance?.header === 'floating');
   useLayoutEffect(() => {
@@ -523,7 +532,6 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     ro.observe(strip);
     return () => ro.disconnect();
   }, [floating]);
-
 
   const pageClasses = vodPageClasses({
     // Animate whole page when entering/exiting without detail

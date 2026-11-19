@@ -33,7 +33,7 @@ describe('useHeroBleed', () => {
     await act(async () => root.render(createElement(Page, { on: true })));
     await act(async () => root.unmount());
     expect(document.documentElement.classList.contains('hero-bleed')).toBe(false);
-    expect(document.documentElement.style.getPropertyValue('--chrome-fade')).toBe('');
+    expect(document.documentElement.getAttribute('style') ?? '').toBe('');
     host.remove();
   });
 
@@ -54,7 +54,7 @@ describe('useHeroBleed', () => {
     // The fill is its own layer, driven by opacity: nothing on the root changes per scroll (a root variable would
     // make the whole app's styles recalculate every frame)
     expect((host.querySelector('.vod-page__chrome-fill') as HTMLElement).style.opacity).toBe('0.5');
-    expect(document.documentElement.style.getPropertyValue('--chrome-fade')).toBe('');
+    expect(document.documentElement.getAttribute('style') ?? '').toBe('');
     await act(async () => root.unmount()); host.remove();
   });
 
@@ -70,23 +70,38 @@ describe('useHeroBleed', () => {
     await act(async () => root.unmount()); host.remove();
   });
 
-  it('nothing switches at a set point: the shade (both styles) and the header follow the scroll, cleared on leaving', async () => {
+  it('nothing switches at a set point: the shade and the header follow the scroll, cleared on leaving', async () => {
     const host = document.createElement('div'); document.body.append(host);
     const root = createRoot(host);
-    for (const style of ['simple', 'floating']) {
-      document.documentElement.dataset.vodHeader = style;
-      await act(async () => root.render(createElement(Sized, { on: true, startTop: 150 })));
-      await frame();
-      const shade = host.querySelector('.vod-page__chrome-shade') as HTMLElement;
-      const strip = host.querySelector('.h-category-strip') as HTMLElement;
-      expect(shade.style.opacity).toBe('0.75');   // 150 / (700 - 100) = 0.25 filled
-      expect(strip.style.getPropertyValue('--bar-t')).toBe('0.25');
-      expect(document.documentElement.classList.contains('chrome-solid')).toBe(false);
-      await act(async () => root.render(createElement(Sized, { on: false, startTop: 0 })));
-      expect(strip.style.getPropertyValue('--bar-t')).toBe('');
-    }
+    await act(async () => root.render(createElement(Sized, { on: true, startTop: 150 })));
+    await frame();
+    const shade = host.querySelector('.vod-page__chrome-shade') as HTMLElement;
+    const strip = host.querySelector('.h-category-strip') as HTMLElement;
+    expect(shade.style.opacity).toBe('0.75');   // 150 / (700 - 100) = 0.25 filled
+    expect(strip.style.getPropertyValue('--bar-t')).toBe('0.25');
+    await act(async () => root.render(createElement(Sized, { on: false, startTop: 0 })));
+    expect(strip.style.getPropertyValue('--bar-t')).toBe('');
     await act(async () => root.unmount()); host.remove();
-    delete document.documentElement.dataset.vodHeader;
+  });
+
+  it('once the home is covered (it was showing, then a detail opened), its scrolls leave the bars alone', async () => {
+    const bar = document.createElement('div'); bar.className = 'title-bar'; document.body.append(bar);
+    let scroll: (t: number) => void = () => {};
+    function Page({ on }: { on: boolean }) {
+      const ref = useRef<HTMLDivElement>(null);
+      scroll = useHeroBleed(on, ref, 0).onScroll;
+      const sized = (h: number) => (el: HTMLElement | null) => { if (el) Object.defineProperty(el, 'offsetHeight', { configurable: true, value: h }); };
+      return createElement('div', { ref }, createElement('div', { className: 'hero', ref: sized(700) }), createElement('div', { className: 'h-category-strip', ref: sized(68) }));
+    }
+    const host = document.createElement('div'); document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(createElement(Page, { on: true })));
+    scroll(150);
+    expect(bar.style.getPropertyValue('--bar-t')).toBe('0.25');
+    await act(async () => root.render(createElement(Page, { on: false })));
+    scroll(300);
+    expect(bar.style.getPropertyValue('--bar-t')).toBe('');
+    await act(async () => root.unmount()); host.remove(); bar.remove();
   });
 
   it('the title bar gets how far the bars have filled (--bar-t), so its logo and buttons follow the scroll; gone on leaving', async () => {

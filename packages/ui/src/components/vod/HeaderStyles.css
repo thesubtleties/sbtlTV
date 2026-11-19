@@ -1,9 +1,9 @@
 /*
  * Movies & Series header styles (Settings › Appearance › Movies & Series header) and the full-bleed hero they sit on.
  * <html data-vod-header="simple|floating"> picks the style (useCssVariableSync); VodPage's useHeroBleed sets
- * <html class="hero-bleed">; --bar-t (how far the bars have filled) on the title bar and the header; the fill and shade layers' opacity (0 at the top
- * of the home, 1 once the hero has passed under the bars); and the page's --bleed-chrome (title bar + header height).
- * Colours come from the palette roles only. Per scroll frame only the fill/shade layers' opacity and the title bar's --bar-t change.
+ * <html class="hero-bleed">, --bar-t (how far the bars have filled, 0 to 1) on the title bar and the header, the fill
+ * and shade layers' opacity, and the page's --bleed-chrome (title bar + header height). Colours come from the palette
+ * roles only. Per scroll frame only those two layers' opacity and the two --bar-t values change.
  */
 
 /* ---------- Full bleed (both styles): the home's hero runs up to the window's top edge ---------- */
@@ -70,7 +70,7 @@
 }
 
 /* Over the art the window buttons and logo are white with a shadow; they follow the scroll to their own colour as the
-   bars fill in (--bar-t, 0 to 1, set per frame by useHeroBleed on the title bar alone). Unset (the first frame on open)
+   bars fill in (--bar-t, set per frame by useHeroBleed or useDetailBleed on the title bar). Unset (the first frame on open)
    reads as 0, so the title bar is clear at once. The blend runs through the middle fifth of the fill (--bar-mix):
    on light palettes white-to-dark crosses a dark-to-light bar, and a straight blend sat grey on grey around halfway.
    The shadow goes with the white (held at full through the crossing it smudged the grey) */
@@ -78,22 +78,23 @@
   --bar-mix: clamp(0, (var(--bar-t, 0) - 0.4) / 0.2, 1);
   --bar-shadow: rgb(0 0 0 / calc(0.6 * (1 - var(--bar-mix))));
 }
-:root:is(.hero-bleed, .detail-bleed) .window-controls button:not(.is-on):not(:hover) {
+:root:is(.hero-bleed, .detail-bleed) .window-controls button:not(.close:hover) {
   color: color-mix(in srgb, var(--text) calc(var(--bar-mix) * 100%), #fff);
   filter: drop-shadow(0 1px 2px var(--bar-shadow));
+}
+/* Keep on top while it's on: the accent, lightened over the art (sbtl light's slate is lost on dark art) */
+:root:is(.hero-bleed, .detail-bleed) .window-controls button.is-on:not(.close:hover) {
+  color: color-mix(in srgb, var(--accent) calc(40% + var(--bar-mix) * 60%), #fff);
 }
 :root:is(.hero-bleed, .detail-bleed) .title-bar-logo {
   color: color-mix(in srgb, var(--logo-color) calc(var(--bar-mix) * 100%), #fff);
   filter: drop-shadow(0 1px 2px var(--bar-shadow));
 }
 
-/* No scrollbar on the home (wheel, trackpad and keys still scroll): its gutters, kept on both sides for the
-   scrollbar, would leave a strip down each edge the art can't reach. Grids (All, a category) keep theirs */
-.vod-page--bleed .vod-page__home {
-  scrollbar-width: none;
-  scrollbar-gutter: auto;
-}
-.vod-page--bleed .vod-page__home::-webkit-scrollbar { display: none; }
+/* The home's scrollbar is drawn over the art, shown while scrolling (overlay scrollbars: macOS's own, and switched on
+   for Linux and Windows in main.ts), so the art reaches both edges. One gutter at most where scrollbars are classic
+   (macOS set to always show them), not the two kept for the grids */
+.vod-page--bleed .vod-page__home { scrollbar-gutter: auto; }
 
 /* The hero grows by the bars' height, so the art starts at pixel 0 and its title keeps its place */
 .vod-page--bleed .hero {
@@ -123,15 +124,16 @@
   /* Underline and focus ring: white over the shade (the accent can be too dark there: sbtl light's slate) */
   --hdr-mark: color-mix(in srgb, var(--accent) calc(var(--bar-mix) * 100%), #fff);
 }
-/* Following the scroll frame by frame: an easing on top would trail behind it (and restart every frame) */
+/* Colours follow the scroll frame by frame: an easing on them would trail behind it (and restart every frame).
+   Hover fills still ease */
 :root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill,
-:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__back { transition: none; }
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__back,
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__arrow { transition: background-color 150ms ease, opacity 150ms ease; }
 .h-category-strip--unified .h-category-strip__pill,
 .h-category-strip--unified .h-category-strip__back,
 .h-category-strip--unified .h-category-strip__search { transition: color 150ms ease, text-shadow 150ms ease, filter 150ms ease; }
 .h-category-strip--unified .h-category-strip__search svg { color: var(--hdr-label); }
 .h-category-strip--unified .h-category-strip__search input { color: var(--hdr-label); }
-.h-category-strip--unified .h-category-strip__search:focus-within { border-color: var(--hdr-mark); }
 .h-category-strip--unified button:focus-visible { outline: 2px solid var(--hdr-mark); outline-offset: 2px; }
 
 /* ---------- Simple: categories as text tabs ---------- */
@@ -491,3 +493,7 @@
 @media (prefers-reduced-motion: reduce) {
   .vod-page:not(.vod-page--sliding) > .h-category-strip { animation: vod-nav-fade 200ms ease both; }
 }
+
+/* The search field's accent edge while it's in use, in either style. Last in the file, and as specific as the home's
+   search glass above, so it wins over each style's own border colour */
+:root[data-vod-header] .h-category-strip--unified .h-category-strip__search:focus-within { border-color: var(--hdr-mark); }

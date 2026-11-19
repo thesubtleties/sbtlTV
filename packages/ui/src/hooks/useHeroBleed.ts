@@ -16,11 +16,11 @@ function setBarT(fade: number | null) {
 }
 
 /**
- * The Movies / Series home: the hero runs up under the title bar and the header; what's behind them fills in to the
- * page colour as it scrolls away (HeaderStyles.css). The fill is its own layer (.vod-page__chrome-fill) driven by
- * opacity, so a scroll repaints only it; the root gets a class only (hero-bleed); the title bar and the header get
- * --bar-t (how far filled) for their colours. The page's
- * --bleed-chrome (title bar + header height); removes them when inactive or unmounted.
+ * The Movies / Series home: the hero runs up under the title bar and the header, and what's behind them fills in to
+ * the page colour as it scrolls away (HeaderStyles.css). Per scroll it sets only: the fill and shade layers' opacity
+ * (.vod-page__chrome-fill / -shade), --bar-t on the title bar and on the header (their colours follow it), and the
+ * page's --bleed-chrome (title bar + header height). The root gets a class (hero-bleed) and nothing per frame.
+ * Inactive or unmounted, the class and both --bar-t values go; the layers are hidden by CSS off the home.
  */
 export function useHeroBleed(active: boolean, pageRef: RefObject<HTMLElement | null>, startTop: number) {
   // A scroll of the home while a detail covers it would otherwise take the title bar back from the detail
@@ -87,7 +87,12 @@ export function useDetailBleed(active: boolean, scrollerRef: RefObject<HTMLEleme
     const root = document.documentElement;
     root.classList.add('detail-bleed');
     const frame = requestAnimationFrame(() => onScroll(scrollerRef.current?.scrollTop ?? 0));
-    return () => { cancelAnimationFrame(frame); root.classList.remove('detail-bleed'); setBarT(null); };
+    // The page growing (More like this, credits arriving) or the window resizing moves where the fill completes:
+    // follow it now rather than jump on the next scroll
+    const el = scrollerRef.current;
+    const ro = el && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => onScroll(el.scrollTop)) : null;
+    if (el && ro) { ro.observe(el); for (const child of el.children) ro.observe(child); }
+    return () => { cancelAnimationFrame(frame); ro?.disconnect(); root.classList.remove('detail-bleed'); setBarT(null); };
   }, [active, onScroll, scrollerRef]);
   return { onScroll };
 }
