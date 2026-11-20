@@ -78,7 +78,9 @@
 }
 .whats-new__state.is-on {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
+  font-weight: 600;
 }
 
 .whats-new__text {
@@ -87,6 +89,14 @@
   line-height: 1.5;
   color: var(--text-2);
 }
+
+.whats-new__install {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.whats-new__install a { color: var(--accent); text-decoration: none; }
+.whats-new__install a:hover { text-decoration: underline; }
 
 .whats-new__foot {
   display: flex;

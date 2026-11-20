@@ -1330,9 +1330,10 @@ function App() {
       {whatsNew && !firstRunOpen && (activeView !== 'settings' || whatsNewOverSettings) && (
         <WhatsNew
           version={whatsNew.version}
-          // The portable build has no Sync & transfer: no buttons that lead there
-          items={window.platform?.isPortable ? whatsNew.items.map(({ action: _, ...it }) => it) : whatsNew.items}
+          items={whatsNew.items}
           syncOn={syncOn}
+          // The Windows portable build has no Sync & transfer: those items link the installer instead
+          portable={!!window.platform?.isPortable}
           onClose={closeWhatsNew}
           onAction={(to) => {
             // Not seen yet: Settings covers it, it comes back when Settings closes, and only Done or Esc marks it seen

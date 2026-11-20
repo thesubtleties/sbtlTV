@@ -20,6 +20,15 @@ describe('WhatsNew', () => {
     expect(on).toContain('>on<');
     expect(on).not.toContain('>off<');
   });
+  it('in the portable build, Sync and Send a setup point to the installer instead of a chip or button', () => {
+    const p = renderToStaticMarkup(createElement(WhatsNew, { version: '0.17.0', items: WHATS_NEW['0.17.0'], portable: true, onAction: () => {}, onClose: () => {} }));
+    expect(p.match(/whats-new__install"/g)?.length).toBe(2);
+    expect(p).toContain('releases/latest');
+    expect(p).not.toContain('whats-new__state');
+    expect(p).not.toContain('Add a computer…');
+    expect(p).not.toContain('Open Sync &amp; transfer');
+    expect(p).toContain('More like this');
+  });
   it('points to the full notes and has Done', () => {
     expect(html).toContain('Full notes in Settings › About');
     expect(html).toContain('>Done<');
