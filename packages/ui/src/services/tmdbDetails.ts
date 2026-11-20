@@ -1,6 +1,6 @@
 /**
- * One TMDB request per title for details and credits, shared by the detail hooks
- * (useLazyBackdrop, useLazyPlot, useLazyCredits) and the hover prefetch. Calls in
+ * One TMDB request per title for details, credits and related titles (More like this), shared by
+ * the detail hooks (useLazyBackdrop, useLazyPlot, useLazyCredits, useMoreLikeThis) and the hover prefetch. Calls in
  * flight share one promise; a finished answer is kept for the session (up to
  * MAX_ENTRIES); a failure is dropped so the next ask tries again.
  */
@@ -9,13 +9,14 @@ import {
   getTvShowDetails,
   getMovieCredits,
   getTvShowCredits,
+  getRelatedIds,
   type TmdbMovieDetails,
   type TmdbTvDetails,
   type TmdbCredits,
 } from './tmdb';
 
 type Kind = 'movie' | 'series';
-const MAX_ENTRIES = 200;   // credits answers are large; 200 titles is plenty for a session
+const MAX_ENTRIES = 400;   // up to 3 per title (details, credits, related): about 130 titles
 const entries = new Map<string, Promise<unknown>>();
 
 function shared<T>(key: string, load: () => Promise<T>): Promise<T> {
@@ -42,6 +43,11 @@ export function tmdbDetails(apiKey: string, kind: Kind, tmdbId: number): Promise
 
 export function tmdbCredits(apiKey: string, kind: Kind, tmdbId: number): Promise<TmdbCredits> {
   return shared(`${kind}:${tmdbId}:credits`, () => (kind === 'movie' ? getMovieCredits(apiKey, tmdbId) : getTvShowCredits(apiKey, tmdbId)));
+}
+
+/** Ids of titles TMDB relates to this one ("More like this"), in TMDB's order. */
+export function tmdbRelated(apiKey: string, kind: Kind, tmdbId: number, which: 'recommendations' | 'similar'): Promise<number[]> {
+  return shared(`${kind}:${tmdbId}:${which}`, () => getRelatedIds(apiKey, kind, tmdbId, which));
 }
 
 /** Tests only. */

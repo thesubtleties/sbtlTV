@@ -1,0 +1,34 @@
+/* Under a detail page's info. The row brings its own 48px edge (like the home rows), so it
+   steps out of the detail content's side padding to line up with the page. */
+.more-like-this {
+  margin: 40px -48px 0;
+}
+
+@media (max-width: 768px) {
+  .more-like-this {
+    margin: 32px -24px 0;
+  }
+}
+
+/* Under the series page's tab: the tab names it, so the row's own title goes, and the row moves
+   up so its arrows sit level with the tabs and the cards start where the season picker would */
+.more-like-this--tab {
+  margin-top: -50px;
+}
+
+.more-like-this--tab .carousel__title {
+  visibility: hidden;
+}
+
+/* Moved up over the tab line: the row lets clicks through to the tabs, except its arrows and the
+   cards' scroll area (which starts below the tabs). The edge fades stay click-through, as in every row. */
+.more-like-this--tab,
+.more-like-this--tab .carousel,
+.more-like-this--tab .carousel__header {
+  pointer-events: none;
+}
+
+.more-like-this--tab .carousel > :not(.carousel__header):not(.carousel__fade),
+.more-like-this--tab .carousel__header button {
+  pointer-events: auto;
+}

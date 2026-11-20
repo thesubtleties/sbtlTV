@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Source } from '../types/electron';
 import { useUIStore, useSettingsLoaded } from '../stores/uiStore';
 import { SettingsSidebar, type SettingsTabId } from './settings/SettingsSidebar';
@@ -27,12 +27,37 @@ interface SettingsProps {
   onClose: () => void;
   /** Open on this tab (e.g. the rewind tip opens Live playback) */
   initialTab?: SettingsTabId;
+  /** Open Sync & transfer with the code already showing (Receive a setup on the empty Live TV screen) */
+  initialReceive?: boolean;
+  /** Open Sync & transfer with Add a computer open (What's new) */
+  initialAdd?: boolean;
+  /** Settings › About › What's new */
+  onShowWhatsNew?: () => void;
+  /** Bumped to go to initialTab (and initialAdd) while Settings is already open, keeping what it holds (an export's passphrase) */
+  openRequest?: number;
 }
 
-export function Settings({ onClose, initialTab }: SettingsProps) {
+export function Settings({ onClose, initialTab, initialReceive, initialAdd, onShowWhatsNew, openRequest }: SettingsProps) {
   // The last setup export's passphrase: kept while Settings is open, gone when it closes.
   const [lastExport, setLastExport] = useState<LastExport | null>(null);
+  // Receive a setup (empty Live TV screen): the code opens once, not on every return to the tab
+  const [receivePending, setReceivePending] = useState(!!initialReceive && initialTab === 'backup');
+  const receiveUsed = useCallback(() => setReceivePending(false), []);
+  const [addPending, setAddPending] = useState(!!initialAdd && initialTab === 'backup');
+  const addUsed = useCallback(() => setAddPending(false), []);
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'sources');
+  // Asked to show a tab while open (What's new over an open Settings): go there without starting over
+  const lastRequest = useRef(openRequest);
+  useEffect(() => {
+    if (openRequest === lastRequest.current) return;
+    lastRequest.current = openRequest;
+    if (initialTab) setActiveTab(initialTab);
+    setReceivePending(false);
+    setAddPending(!!initialAdd && initialTab === 'backup');
+  }, [openRequest, initialTab, initialAdd]);
+  const contentRef = useRef<HTMLDivElement>(null);
+  // Each tab starts at the top, not wherever the previous tab was scrolled to
+  useEffect(() => { contentRef.current?.scrollTo({ top: 0 }); }, [activeTab]);
   const [sources, setSources] = useState<Source[]>([]);
   const [isEncryptionAvailable, setIsEncryptionAvailable] = useState(true);
 
@@ -296,7 +321,7 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
           />
         );
       case 'backup':
-        return <BackupTransferTab lastExport={lastExport} onExported={setLastExport} />;
+        return <BackupTransferTab lastExport={lastExport} onExported={setLastExport} autoReceive={receivePending} onAutoReceiveUsed={receiveUsed} autoAdd={addPending} onAutoAddUsed={addUsed} />;
       case 'privacy':
         return (
           <PrivacyTab
@@ -342,6 +367,7 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
           <AboutTab
             autoUpdateEnabled={autoUpdateEnabled}
             onAutoUpdateChange={setAutoUpdateEnabled}
+            onShowWhatsNew={onShowWhatsNew}
           />
         );
       default:
@@ -380,7 +406,7 @@ export function Settings({ onClose, initialTab }: SettingsProps) {
           />
 
           {/* Tab Content */}
-          <div className="settings-content">
+          <div className="settings-content" ref={contentRef}>
             {renderTabContent()}
           </div>
         </div>

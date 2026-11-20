@@ -15,7 +15,7 @@ import { useToastStore } from './stores/toastStore';
 import { VideoCanvas } from './components/VideoCanvas';
 import { useChannelCount, useSelectedCategory } from './hooks/useChannels';
 import { useCssVariableSync } from './hooks/useCssVariableSync';
-import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode } from './stores/uiStore';
+import { useUIStore, useChannelSyncing, useVodSyncing, useTmdbMatching, useSetChannelSyncing, useSetVodSyncing, useAutoplayNextEpisode, useSettingsLoaded, useSourcesLoaded } from './stores/uiStore';
 import { data } from './data/client';
 import { resumePendingPlaylists } from './services/setup/pending';
 import type { StoredChannel, StoredSeries } from './db';
@@ -38,6 +38,17 @@ import { resumeSettled } from './hooks/resumeSettle';
 import { useSubtitleController, subtitleDefaults, systemLocale } from './hooks/useSubtitleController';
 import { perfMeasure, perfStart } from './utils/perfMarks';
 import { ErrorCard } from './components/ErrorCard';
+import { VodLoading, playbackStarted } from './components/VodLoading';
+import { sendSnapshot, setSyncActive } from './services/sync/outbox';
+import { applyRecords } from './services/sync/apply';
+import { useRematchFavorites } from './hooks/useRematchFavorites';
+import { useSyncActive } from './hooks/useSyncActive';
+import { FirstRun, OfferSync } from './components/FirstRun';
+import { WhatsNew } from './components/WhatsNew';
+import { WHATS_NEW, type WhatsNewItem } from './whatsNewItems';
+import { latestList, whatsNewOnLaunch } from './utils/whatsNew';
+import { rememberSeenVersion, rememberThisVersion } from './utils/seenVersion';
+import { firstRunMode, heldFirstRun, type FirstRunMode } from './utils/firstRun';
 
 // Auto-hide controls after this many milliseconds of inactivity
 const CONTROLS_AUTO_HIDE_MS = 3000;
@@ -145,10 +156,10 @@ async function tryLoadWithFallbacks(
  * or undefined (keep the stored one) while a saved delay is not restored yet;
  * a user's delay change passes the value it saved for its own load.
  */
-function saveVodProgress(info: VodPlayInfo, position: number, duration: number, subtitle?: SubtitleChoice): void {
+function saveVodProgress(info: VodPlayInfo, position: number, duration: number, subtitle?: SubtitleChoice, how?: { sync?: boolean }): Promise<void> {
   const sub = subtitle ?? currentSubtitle();
-  if (!info.streamId || !(duration > 0)) return;
-  updateWatchProgress({
+  if (!info.streamId || !(duration > 0)) return Promise.resolve();
+  return updateWatchProgress({
     type: info.type === 'series' ? 'episode' : 'movie',
     streamId: info.streamId,
     tmdbId: info.tmdbId,
@@ -164,7 +175,7 @@ function saveVodProgress(info: VodPlayInfo, position: number, duration: number, 
     subSpeed: sub?.speed,
     subdlId: sub?.subdlId,
     subdlAi: sub?.ai,
-  }).catch((err) => debugLog(`Saving watch progress failed: ${err instanceof Error ? err.message : err}`));
+  }, how).catch((err) => debugLog(`Saving watch progress failed: ${err instanceof Error ? err.message : err}`));
 }
 
 /** The subtitle choice saved with progress: delay, speed and SubDL file. */
@@ -264,6 +275,39 @@ function App() {
   const autoplayEnabled = useAutoplayNextEpisode();
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const loadTokenRef = useRef(0);
+  // Stopped or cancelled on purpose: mpv reports the open it was in the middle of as failed ("Opening failed or was
+  // aborted"). Not a problem to show; the next play clears it
+  const stoppedOnPurposeRef = useRef(false);
+  // The movie/episode loading screen: from Play until the first frames play (VodLoading.tsx). The ref is what the
+  // status handler reads: loaded = the file opened (it may still buffer), last = the previous position since then
+  const [vodLoading, setVodLoading] = useState<VodPlayInfo | null>(null);
+  const vodLoadingRef = useRef<{ active: boolean; loaded: boolean; last: number | null; fallback: number; from: View }>({ active: false, loaded: false, last: null, fallback: 0, from: 'none' });
+  const endVodLoading = useCallback(() => {
+    clearTimeout(vodLoadingRef.current.fallback);
+    vodLoadingRef.current = { ...vodLoadingRef.current, active: false, loaded: false, last: null, fallback: 0 };
+    setVodLoading(null);
+  }, []);
+  // Frames are playing: the loading screen and the Movies/Series page under it go together, straight to the video
+  const finishVodLoading = useCallback(() => {
+    endVodLoading();
+    setActiveView('none');
+  }, [endVodLoading]);
+  const showVodLoading = useCallback((info: VodPlayInfo) => {
+    clearTimeout(vodLoadingRef.current.fallback);
+    // Where Play was pressed: a Retry (or the call after the page's slide) keeps the first answer
+    const from = vodLoadingRef.current.active ? vodLoadingRef.current.from : playbackRef.current.activeView;
+    vodLoadingRef.current = { active: true, loaded: false, last: null, fallback: 0, from };
+    setVodLoading(info);
+  }, []);
+  // A failed or cancelled play started on the Movies/Series page goes back to it: the page, or its detail, slides back
+  // up (it slid away for the player). Played from elsewhere (Up Next between episodes), nothing reopens
+  const returnToVodPage = useCallback((info: VodPlayInfo) => {
+    const view: View = info.type === 'movie' ? 'movies' : 'series';
+    if (vodLoadingRef.current.from !== view) return;
+    setActiveView(view);
+    const ui = useUIStore.getState();
+    (info.type === 'movie' ? ui.setMoviesPageCollapsed : ui.setSeriesPageCollapsed)(false);
+  }, []);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [guideSearchNonce, setGuideSearchNonce] = useState(0);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
@@ -306,8 +350,65 @@ function App() {
   const [rewindBump, setRewindBump] = useState(0);
   // Settings opened on a specific tab (the rewind tip), else its default.
   const [settingsTab, setSettingsTab] = useState<SettingsTabId | undefined>(undefined);
+  // First-run setup: decided once settings and sources are read, then held until it closes
+  // (saving the first source mid-way must not make it vanish)
+  const settingsLoaded = useSettingsLoaded();
+  const sourcesLoaded = useSourcesLoaded();
+  const sourceCount = useUIStore((s) => s.sources.length);
+  // Synced favorites waiting for a channel: matched again when this computer's channels change
+  useRematchFavorites();
+  const firstRunMarker = useUIStore((s) => s.settings.firstRun);
+  const [firstRun, setFirstRun] = useState<FirstRunMode | 'closed'>(null);
+  const liveFirstRun = firstRunMode({ settingsLoaded, sourcesLoaded, sourceCount, marker: firstRunMarker });
+  useEffect(() => {
+    const next = heldFirstRun(firstRun, liveFirstRun);
+    if (next === firstRun) return;
+    setFirstRun(next);
+    // A fresh install has nothing new to show: record this version now, so quitting the setup half way
+    // (with a source already saved) doesn't look like an update on the next launch
+    if (liveFirstRun === 'setup' && !useUIStore.getState().settings.lastSeenVersion) void rememberThisVersion();
+  }, [firstRun, liveFirstRun]);
+  const firstRunOpen = firstRun === 'setup' || firstRun === 'offer-sync';
+  const firstRunOpenRef = useRef(false);
+  firstRunOpenRef.current = firstRunOpen;
+  // What's new: once per release after an update, decided when settings, sources and the first run are known
+  const [whatsNew, setWhatsNew] = useState<{ version: string; items: WhatsNewItem[] } | null>(null);
+  const syncOn = useSyncActive();
+  const whatsNewChecked = useRef(false);
+  useEffect(() => {
+    if (whatsNewChecked.current || !settingsLoaded || !sourcesLoaded || !window.platform) return;
+    whatsNewChecked.current = true;
+    const lastSeen = useUIStore.getState().settings.lastSeenVersion;
+    void Promise.all([window.platform.getVersion(), window.platform.getBuildKind()]).then(([version, kind]) => {
+      const r = whatsNewOnLaunch({ current: version, lastSeen, buildKind: kind, hasSources: sourceCount > 0, firstRun: liveFirstRun, items: WHATS_NEW });
+      if (r && r !== 'record') setWhatsNew({ version, items: r.show });
+      // Nothing to show for this release: remember it anyway, so a later update compares from here
+      else if (r === 'record') rememberSeenVersion(version);
+    }).catch(() => {});
+  }, [settingsLoaded, sourcesLoaded, sourceCount, liveFirstRun]);
+  // Opened from Settings › About: shown over Settings. Otherwise Settings covers it, and it comes back after, still unseen
+  const [whatsNewOverSettings, setWhatsNewOverSettings] = useState(false);
+  const whatsNewRef = useRef(whatsNew);
+  whatsNewRef.current = whatsNew;
+  const closeWhatsNew = useCallback(() => {
+    const open = whatsNewRef.current;
+    if (open) rememberSeenVersion(open.version);
+    setWhatsNew(null);
+  }, []);
+  const showWhatsNew = useCallback(() => {
+    void window.platform?.getVersion().then((version) => {
+      const items = latestList(WHATS_NEW, version);
+      if (items) { setWhatsNewOverSettings(true); setWhatsNew({ version, items }); }
+    }, () => {});
+  }, []);
+  const [settingsReceive, setSettingsReceive] = useState(false);
+  const [settingsAdd, setSettingsAdd] = useState(false);
+  // Bumped to send an already open Settings to a tab (What's new over Settings), keeping what it holds
+  const [settingsRequest, setSettingsRequest] = useState(0);
+  // Stable, so the memoized guide doesn't re-render with every App render
+  const openReceiveSetup = useCallback(() => { setSettingsTab('backup'); setSettingsReceive(true); setActiveView('settings'); }, []);
   // Leaving Settings by any route (Escape, another view) forgets the tab the tip opened it on.
-  useEffect(() => { if (activeView !== 'settings') setSettingsTab(undefined); }, [activeView]);
+  useEffect(() => { if (activeView !== 'settings') { setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); setWhatsNewOverSettings(false); } }, [activeView]);
   useEffect(() => {
     playbackRef.current = { duration, volume, activeView, categoriesOpen };
   }, [duration, volume, activeView, categoriesOpen]);
@@ -373,6 +474,23 @@ function App() {
       if (status.duration !== undefined) {
         setDuration(status.duration);
       }
+      // The loading screen goes once frames are playing, not when the file opens (it can buffer for seconds more)
+      const loading = vodLoadingRef.current;
+      if (loading.active && loading.loaded && status.position !== undefined) {
+        if (playbackStarted(loading.last, status.position)) finishVodLoading();
+        else loading.last = status.position;
+      }
+
+      // Paused: save now (the 15 s tick could be minutes away, and sync pushes after a save)
+      if (status.playing === false && playingRef.current) {
+        const info = vodInfoRef.current;
+        const pos = status.position ?? usePlaybackStore.getState().position;
+        const dur = status.duration ?? durationRef.current;
+        if (info?.streamId && dur > 0 && !progressBlockedRef.current && resumeSettled(pos, resumeTargetRef.current)) {
+          lastProgressSaveRef.current = Date.now();
+          void saveVodProgress(info, pos, dur);
+        }
+      }
 
       // Save watch progress for VOD (throttled to every 15 seconds)
       if (status.position !== undefined && status.duration && status.duration > 0) {
@@ -383,7 +501,7 @@ function App() {
           const now = Date.now();
           if (now - lastProgressSaveRef.current >= 15000) {
             lastProgressSaveRef.current = now;
-            saveVodProgress(info, status.position, status.duration);
+            void saveVodProgress(info, status.position, status.duration, undefined, { sync: false });
           }
         }
       }
@@ -409,6 +527,13 @@ function App() {
     // ("Playback error: loading failed"). All of them are in the debug log.
     window.mpv.onError((err) => {
       console.error('mpv error:', err);
+      if (stoppedOnPurposeRef.current) return;
+      // Failed before its first frames (the file opened, then the stream died): back to where Play was pressed
+      if (vodLoadingRef.current.active) {
+        const last = lastPlayRef.current;
+        if (last?.kind === 'vod') returnToVodPage(last.info);
+        endVodLoading();
+      }
       setError((current) => current ?? err);
     });
 
@@ -487,6 +612,8 @@ function App() {
       return;
     }
     setError(null);
+    stoppedOnPurposeRef.current = false;
+    endVodLoading();
     lastPlayRef.current = { kind: 'live', channel };
     const requestId = ++playRequestSeqRef.current;
     playRequestRef.current = { id: requestId, vodInfo: null, subtitleDelay: null };
@@ -546,6 +673,16 @@ function App() {
     if (window.mpv) await window.mpv.setVolume(next);
   };
 
+  // Cancel on the loading screen (or Escape): stop the load, back to where Play was pressed. Once the file has opened
+  // the movie is already the current one (still buffering), so it's a Stop
+  const handleStopRef = useRef<() => Promise<void>>(async () => {});
+  const cancelVodLoading = useCallback(() => {
+    const info = vodInfoRef.current ?? (lastPlayRef.current?.kind === 'vod' ? lastPlayRef.current.info : null);
+    if (vodLoadingRef.current.loaded) void handleStopRef.current();
+    else { loadTokenRef.current++; stoppedOnPurposeRef.current = true; void window.mpv?.stop(); }
+    if (info) returnToVodPage(info);
+    endVodLoading();
+  }, [endVodLoading, returnToVodPage]);
   const handleStop = async () => {
     debugLog('handleStop called');
     if (!window.mpv) return;
@@ -558,6 +695,8 @@ function App() {
     setUpNext(null);
     upNextFiredForRef.current = null;
     loadTokenRef.current++;
+    endVodLoading();
+    stoppedOnPurposeRef.current = true;
     await window.mpv.stop();
     debugLog('handleStop: mpv.stop() completed');
     setPlaying(false);
@@ -566,6 +705,7 @@ function App() {
     lastPlayRef.current = null;
     useSubtitleStore.getState().clear();
   };
+  handleStopRef.current = handleStop;
 
   const handleSeek = async (seconds: number) => {
     if (!window.mpv) return;
@@ -600,6 +740,8 @@ function App() {
       return;
     }
     setError(null);
+    stoppedOnPurposeRef.current = false;
+    showVodLoading(info);   // already up when Play was pressed on the Movies/Series page; a retry brings it back
     lastPlayRef.current = { kind: 'vod', info };
     // Look up the resume position and saved subtitle delay before loading. If the
     // progress store cannot be read, play from the start rather than not at all.
@@ -624,11 +766,13 @@ function App() {
     const requestId = ++playRequestSeqRef.current;
     playRequestRef.current = { id: requestId, vodInfo: info, subtitleDelay: delayCandidate };
     const result = await tryLoadWithFallbacks(info.url, false, window.mpv, requestId, resumePos || undefined);
+    if (myToken !== loadTokenRef.current) return; // superseded by a newer load, or cancelled
     if (!result.success) {
       debugLog(`  FAILED: ${result.error}`);
+      returnToVodPage(info);
+      endVodLoading();
       setError(result.error ?? 'Failed to load stream');
     } else {
-      if (myToken !== loadTokenRef.current) return; // superseded by a newer load
       debugLog(`  SUCCESS: playing${resumePos ? ` (resumed @ ${resumePos}s)` : ''}`);
       // Create a pseudo-channel for the now playing bar
       const workingUrl = result.url;
@@ -657,8 +801,16 @@ function App() {
       setPosition(0);   // reset position UI immediately; mpv status refines it (resume seeks on duration)
       setDuration(0);
       setPlaying(true);
-      // Close VOD pages when playing
-      setActiveView('none');
+      // Close VOD pages when playing. Under the loading screen, once frames play: closed now, the player could show
+      // through the screen's fade-in on a fast open. A slow provider can keep a file opening for 20 s and more, and
+      // Cancel is always there; the 60 s safety is only so a screen never stays over a video that plays without
+      // reporting its position
+      if (vodLoadingRef.current.active) {
+        vodLoadingRef.current.loaded = true;
+        vodLoadingRef.current.fallback = window.setTimeout(() => { if (vodLoadingRef.current.active) finishVodLoading(); }, 60000);
+      } else {
+        setActiveView('none');
+      }
     }
   }, []);
 
@@ -722,6 +874,35 @@ function App() {
   useEffect(() => {
     if (channelCount > 0 && useUIStore.getState().dataProblem === 'reset') useUIStore.getState().setDataProblem(null);
   }, [channelCount]);
+
+  // Sync: changes from the user's other computers, and what this one has when sync starts here
+  useEffect(() => {
+    if (!window.sync) return;
+    const offs = [
+      window.sync.onView((v) => setSyncActive(v.status === 'active')),
+      window.sync.onSnapshot(() => { void sendSnapshot(); }),
+      // Confirmed only once written: a failed write comes back on the next pull
+      window.sync.onApply((records) => { void applyRecords(records).then((done) => window.sync?.applied(done)).catch((e) => debugLog(`Sync: applying failed: ${e instanceof Error ? e.name : 'error'}`, 'sync')); }),
+      window.sync.onSettingsReplaced(async () => {
+        const r = await window.storage?.getSettings();
+        if (r?.data) useUIStore.getState().hydrateSettings(r.data);
+      }),
+      // Quitting: save where playback is, so sync can push it
+      window.sync.onBeforeQuit(async () => {
+        const info = vodInfoRef.current;
+        const pos = usePlaybackStore.getState().position;
+        if (info?.streamId && !progressBlockedRef.current && resumeSettled(pos, resumeTargetRef.current)) await saveVodProgress(info, pos, durationRef.current);
+      }),
+    ];
+    void window.sync.view().then((v) => setSyncActive(v.status === 'active'));
+    void window.sync.ready();   // listening now: main may start pulling
+    const onFocus = () => { void window.sync?.pull(); };
+    window.addEventListener('focus', onFocus);
+    return () => { offs.forEach((off) => off()); window.removeEventListener('focus', onFocus); };
+  }, []);
+
+  // Opening Movies or Series asks sync for news (throttled in main)
+  useEffect(() => { if (activeView === 'movies' || activeView === 'series') void window.sync?.pull(); }, [activeView]);
 
   // Hydrate settings from disk into Zustand (runs unconditionally, even without sources)
   useEffect(() => {
@@ -840,6 +1021,8 @@ function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // The first-run setup owns the keyboard (Esc doesn't close it; nothing reaches the player behind it)
+      if (firstRunOpenRef.current) return;
       // Don't handle shortcuts when typing in inputs
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
         return;
@@ -1112,15 +1295,17 @@ function App() {
         onClose={closeActiveView}
         scrollTopNonce={channelScrollNonce}
         searchFocusNonce={guideSearchNonce}
+        onReceiveSetup={openReceiveSetup}
       />
 
       {/* Settings Panel */}
-      {activeView === 'settings' && <Settings initialTab={settingsTab} onClose={() => { setActiveView('none'); setSettingsTab(undefined); }} />}
+      {activeView === 'settings' && <Settings openRequest={settingsRequest} initialTab={settingsTab} initialReceive={settingsReceive} initialAdd={settingsAdd} onShowWhatsNew={showWhatsNew} onClose={() => { setActiveView('none'); setSettingsTab(undefined); setSettingsReceive(false); setSettingsAdd(false); }} />}
 
       {/* Movies Page */}
       {activeView === 'movies' && (
         <MoviesPage
           onPlay={handlePlayVod}
+          onPlayStart={showVodLoading}
           onClose={() => setActiveView('none')}
         />
       )}
@@ -1129,7 +1314,36 @@ function App() {
       {activeView === 'series' && (
         <SeriesPage
           onPlay={handlePlayVod}
+          onPlayStart={showVodLoading}
           onClose={() => setActiveView('none')}
+        />
+      )}
+
+      {vodLoading && (
+        <VodLoading title={vodLoading.title} detail={vodLoading.episodeInfo} art={vodLoading.art} onCancel={cancelVodLoading} />
+      )}
+
+      {firstRun === 'setup' && (
+        <FirstRun onFinish={(to) => { setFirstRun('closed'); if (to === 'guide') setActiveView('guide'); }} />
+      )}
+      {firstRun === 'offer-sync' && <OfferSync onFinish={() => setFirstRun('closed')} />}
+      {whatsNew && !firstRunOpen && (activeView !== 'settings' || whatsNewOverSettings) && (
+        <WhatsNew
+          version={whatsNew.version}
+          items={whatsNew.items}
+          syncOn={syncOn}
+          // The Windows portable build has no Sync & transfer: those items link the installer instead
+          portable={!!window.platform?.isPortable}
+          onClose={closeWhatsNew}
+          onAction={(to) => {
+            // Not seen yet: Settings covers it, it comes back when Settings closes, and only Done or Esc marks it seen
+            setWhatsNewOverSettings(false);
+            setSettingsTab('backup');
+            setSettingsReceive(false);
+            setSettingsAdd(to === 'add-computer');
+            setSettingsRequest((n) => n + 1);
+            setActiveView('settings');
+          }}
         />
       )}
 

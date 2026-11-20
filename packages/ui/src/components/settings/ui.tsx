@@ -3,7 +3,7 @@
  * rows with a title column whose help explains the current choice, and
  * segmented controls instead of switches and dropdowns.
  */
-import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode, Ref } from 'react';
 import './ui.css';
 
 export function SettingsTab({ children, className }: { children: ReactNode; className?: string }) {
@@ -44,16 +44,18 @@ export function OptionRow({ title, help, children }: { title: string; help?: Rea
   );
 }
 
-export function Segmented<T extends string>({ value, options, onChange, disabled, compact }: {
+export function Segmented<T extends string>({ value, options, onChange, disabled, compact, label }: {
   value: T;
   options: { id: T; label: string }[];
   onChange: (id: T) => void;
   disabled?: boolean;
   /** Narrow segments sized to their labels, for longer option lists */
   compact?: boolean;
+  /** Spoken name of the choice (screen readers) */
+  label?: string;
 }) {
   return (
-    <div className={`st-seg${compact ? ' st-seg--compact' : ''}${disabled ? ' st-seg--disabled' : ''}`} role="radiogroup">
+    <div className={`st-seg${compact ? ' st-seg--compact' : ''}${disabled ? ' st-seg--disabled' : ''}`} role="radiogroup" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.id}
@@ -72,12 +74,14 @@ export function Segmented<T extends string>({ value, options, onChange, disabled
 }
 
 /** An on/off setting, as a two-way segmented control. */
-export function OnOff({ value, onChange, offLabel = 'Off', onLabel = 'On', disabled }: {
+export function OnOff({ value, onChange, offLabel = 'Off', onLabel = 'On', disabled, label }: {
   value: boolean;
   onChange: (value: boolean) => void;
   offLabel?: string;
   onLabel?: string;
   disabled?: boolean;
+  /** Spoken name of the switch (screen readers) */
+  label?: string;
 }) {
   return (
     <Segmented
@@ -85,6 +89,7 @@ export function OnOff({ value, onChange, offLabel = 'Off', onLabel = 'On', disab
       options={[{ id: 'off', label: offLabel }, { id: 'on', label: onLabel }]}
       onChange={(id) => onChange(id === 'on')}
       disabled={disabled}
+      label={label}
     />
   );
 }
@@ -119,6 +124,7 @@ export function Slider({ value, min, max, step, onChange, format, label }: {
 
 export function Button({ variant = 'default', className, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'default' | 'primary' | 'danger';
+  ref?: Ref<HTMLButtonElement>;
 }) {
   return <button type="button" {...props} className={`st-btn st-btn--${variant}${className ? ` ${className}` : ''}`} />;
 }

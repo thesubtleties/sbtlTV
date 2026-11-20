@@ -14,16 +14,23 @@ interface PrivacyTabProps {
   debugLoggingEnabled: boolean;
 }
 
-type Status = 'always' | 'on' | 'off' | 'not-set-up';
-const STATUS_LABEL: Record<Status, string> = { always: 'Always', on: 'On', off: 'Off', 'not-set-up': 'Not set up' };
+type Status = 'always' | 'on' | 'off' | 'not-set-up' | 'when-used';
+const STATUS_LABEL: Record<Status, string> = { always: 'Always', on: 'On', off: 'Off', 'not-set-up': 'Not set up', 'when-used': 'When used' };
 
 /** A service: what it sees across the row, whether it applies now on the right. */
-function Who({ title, sees, status, note }: { title: string; sees: string; status: Status; note?: string }) {
+function Who({ title, sees, status, where }: { title: string; sees: string; status: Status; where?: string }) {
   return (
     <div className="privacy__row">
       <div>
         <div className="st-row__title">{title}</div>
-        <div className="st-row__help">{sees}{note && <> <span className="privacy__note">{note}</span></>}</div>
+        {where && (
+          <div className="privacy__where" aria-label={where}>
+            {where.split(' › ').map((part, i) => (
+              <span key={part}>{i > 0 && <span className="privacy__where-sep" aria-hidden="true">›</span>}{part}</span>
+            ))}
+          </div>
+        )}
+        <div className="st-row__help">{sees}</div>
       </div>
       <span className={`privacy__status privacy__status--${status}`}>{STATUS_LABEL[status]}</span>
     </div>
@@ -133,6 +140,12 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
   const [ipCheck, setIpCheck] = useState<IpCheck>({ state: 'idle' });
   const selectedListsEnabled = useSelectedListsEnabled();
   const [protection, setProtection] = useState<StorageProtection | null>(null);
+  const [syncOn, setSyncOn] = useState(false);
+  useEffect(() => {
+    if (!window.sync) return;
+    void window.sync.view().then((v) => setSyncOn(v.status === 'active'));
+    return window.sync.onView((v) => setSyncOn(v.status === 'active'));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,9 +173,10 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
     <SettingsTab>
       <Section
         title="On this computer"
-        description="sbtlTV has no account and no server of its own, and sends no analytics, tracking or crash reports."
+        description="sbtlTV has no account and sends no analytics, tracking or crash reports. Its own servers, sbtltv.com and the sbtlTV relay, are only contacted by features that require it. No connections are made if these features are turned off. Scroll down to see exactly who sees what with your current settings."
       >
         <Hint>Your settings, watch history, favorites, watchlist, guide and library are kept on this computer.</Hint>
+        {syncOn && <Hint>With Sync on, your watchlist, watch progress and favorite channels (and settings, if you chose them) also go to your other computers, end-to-end encrypted through the sbtlTV relay.</Hint>}
         {protectionLine && <Hint tone={protectionLine.tone}>{protectionLine.text}</Hint>}
         {protection?.platform === 'linux' && <KeyringRow protection={protection} />}
         <Hint>
@@ -201,7 +215,7 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
         description="sbtlTV connects directly to each of these. Like a web browser, each request also says it comes from sbtlTV and which system you use."
       >
         <Who title="Your IPTV provider" status="always"
-          sees="Your IP address, your account, the series you open or point at, and what you watch and when. They provide the streams." />
+          sees="Your IP address, your account, the series you open, point at or have in Continue Watching, and what you watch and when. They provide the streams." />
         <Who title="Guide sources" status="always"
           sees="Your IP address and when the guide refreshes: your provider's guide, and any guide URLs you add." />
         <Who title="Image hosts" status="always"
@@ -210,16 +224,19 @@ export function PrivacyTab({ tmdbKeySet, posterDbKeySet, subdlKeySet, teamLogosE
           sees={`Two public data files with no account: the movie and series match file used by library syncs, and TMDB's browse lists when you have no TMDB key. Also ${autoUpdateEnabled ? 'the update check when sbtlTV starts' : 'update checks, only when you click Check for updates'} (your IP address and sbtlTV version).`} />
         <Who title="sbtltv.com" status={selectedListsEnabled ? 'on' : 'off'}
           sees="With Selected lists on: your IP address, about once a day, when sbtlTV checks for new lists. Nothing about you or what you watch is sent, and requests aren't logged."
-          note="Settings > Movies & Series > Selected lists." />
-        <Who title="TMDB" status={tmdbKeySet ? 'on' : 'not-set-up'}
-          sees="With your TMDB key: the key, your IP address, the lists you browse and the titles you open or point at. Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
-        <Who title="RatingPosterDB" status={posterDbKeySet ? 'on' : 'not-set-up'}
+          where="Settings › Movies or Series › Selected lists" />
+        <Who title="sbtlTV relay" status={syncOn ? 'on' : 'when-used'}
+          sees="While you send or receive a setup, or use Sync: the setup, or each computer's watchlist, progress, favorite channels and chosen settings, end-to-end encrypted so even we can't read them; your IP address and your sbtlTV version. Requests aren't logged. A setup is deleted when picked up, or after 10 minutes; synced data stays until you leave sync, or no computer has used it for 90 days."
+          where="Settings › Sync & transfer" />
+        <Who title="TMDB" status={tmdbKeySet ? 'on' : 'not-set-up'} where="Settings › TMDB"
+          sees="With your TMDB key: the key, your IP address, the lists you browse, the titles you open or point at, and synced titles this computer doesn't have (for their posters). Without one, only if GitHub's copy of the match file is unavailable: TMDB's public ID list, with your IP address." />
+        <Who title="RatingPosterDB" status={posterDbKeySet ? 'on' : 'not-set-up'} where="Settings › Poster DB"
           sees="With your RPDB key: the key, your IP address and which titles' posters you see; with RPDB backdrops on, also the titles you open or point at." />
-        <Who title="SubDL" status={subdlKeySet ? 'on' : 'not-set-up'}
+        <Who title="SubDL" status={subdlKeySet ? 'on' : 'not-set-up'} where="Settings › Subtitles"
           sees="With your SubDL key: the key, your IP address, and which movies and episodes you get subtitles for, in which language. It's asked when subtitles are on and the file has none in your language, or when you open Find subtitles." />
         <Who title="ESPN" status={teamLogosEnabled ? 'on' : 'off'}
           sees="With team logos on: your IP address and which teams are playing on the channel you watch."
-          note="Settings > Live TV > Guide > Team logos." />
+          where="Settings › Guide › Team logos" />
         <Hint>Your internet provider can see which of these sbtlTV connects to, and what you stream when a provider uses plain http. A VPN hides that from your internet provider, though not from the services above.</Hint>
       </Section>
     </SettingsTab>

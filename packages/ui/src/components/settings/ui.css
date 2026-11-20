@@ -1,6 +1,8 @@
 /* Settings building blocks (ui.tsx), in shtl's settings style. */
 
-.st-tab {
+.st-tab,
+/* Settings.css loads later and gives .settings-tab-content height: 100%; a long tab then overflows its own box and the bottom padding is lost. */
+.settings-tab-content.st-tab {
   display: flex;
   flex-direction: column;
   padding: 22px 22px 40px;

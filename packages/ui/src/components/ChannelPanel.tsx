@@ -1,11 +1,12 @@
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
-import { useFavoriteChannels } from '../hooks/useFavorites';
+import { removeFavoriteRow, useFavoriteChannels, useWaitingFavorites } from '../hooks/useFavorites';
+import { GuideMissingFavorites, type MissingFavoritesContext } from './MissingFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
-import { useChannelSortOrder, useChannelColumnWidth, useSourceNeedsLogin } from '../stores/uiStore';
+import { useChannelSortOrder, useChannelColumnWidth, useChannelSyncing, useSourceNeedsLogin, useUIStore } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import { loadGuideSearchMode, saveGuideSearchMode, type GuideSearchMode } from '../utils/guideSearchMode';
@@ -29,6 +30,8 @@ interface ChannelPanelProps {
   scrollTopNonce?: number;
   /** Changes when / asks for the search box */
   searchFocusNonce?: number;
+  /** No sources yet: offer to receive a setup from another computer (Sync & transfer) */
+  onReceiveSetup?: () => void;
 }
 
 function ChannelPanelImpl({
@@ -40,11 +43,15 @@ function ChannelPanelImpl({
   onClose,
   scrollTopNonce,
   searchFocusNonce,
+  onReceiveSetup,
 }: ChannelPanelProps) {
+  const noSources = useUIStore((s) => s.sources.length === 0);
+  const channelsSyncing = useChannelSyncing();
   const channelSortOrder = useChannelSortOrder();
   const isFavoritesView = categoryId === '__favorites__';
   const regularChannels = useChannels(isFavoritesView ? null : categoryId, channelSortOrder);
   const favoriteChannels = useFavoriteChannels();
+  const waiting = useWaitingFavorites();
   const channels = isFavoritesView ? favoriteChannels : regularChannels;
   const categories = useCategories();
   const waitingForLogin = useSourceNeedsLogin();
@@ -82,6 +89,12 @@ function ChannelPanelImpl({
     if (jump) return jump.rows;
     return searchMode === 'filter' ? filterChannelsByName(channels, searchQuery) : channels;
   }, [channels, jump, searchMode, searchQuery]);
+  // Favorites from other computers not on this one (grayed, last in Favorites), narrowed by the same filter
+  const shownWaiting = useMemo(() => {
+    if (!isFavoritesView || jump) return [];
+    return searchMode === 'filter' ? filterChannelsByName(waiting, searchQuery) : waiting;
+  }, [isFavoritesView, jump, searchMode, searchQuery, waiting]);
+  const missingContext = useMemo<MissingFavoritesContext>(() => ({ rows: shownWaiting, onRemove: (row) => removeFavoriteRow(row) }), [shownWaiting]);
 
   // Channel column width is a persisted setting; the EFFECTIVE width yields a bit on narrow
   // windows so the EPG grid never drops below 200px. The ref lets the mount-once ResizeObserver
@@ -515,8 +528,11 @@ function ChannelPanelImpl({
               onPlay={onPlayChannel}
             />
           )}
+          context={missingContext}
           components={{
-            EmptyPlaceholder: () => (
+            // A component defined once (not inline), so its Remove buttons keep focus across Guide renders
+            Footer: GuideMissingFavorites,
+            EmptyPlaceholder: () => shownWaiting.length ? null : (
               <div className="guide-empty">
                 <div className="guide-empty-icon">
                   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -538,14 +554,20 @@ function ChannelPanelImpl({
                   </>
                 ) : (
                   <>
-                    <h3>No Channels</h3>
+                    <h3>{channelsSyncing && !noSources ? 'Loading channels…' : 'No Channels'}</h3>
                     {waitingForLogin ? (
                       <p className="hint">A source needs its password before its channels can load: Settings → Sources</p>
-                    ) : (
+                    ) : channelsSyncing && !noSources ? (
+                      <p>Your source's channels are on their way.</p>
+                    ) : noSources ? (
                       <>
-                        <p>Sync your sources to load channels</p>
-                        <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+                        <p className="hint">Add a source in Settings, or receive a setup.</p>
+                        {onReceiveSetup && (
+                          <button type="button" className="st-btn st-btn--default" onClick={onReceiveSetup}>Receive a setup</button>
+                        )}
                       </>
+                    ) : (
+                      <p className="hint">Nothing came from your sources. Check them in Settings › Sources.</p>
                     )}
                   </>
                 )}

@@ -50,6 +50,11 @@ export function useCssVariableSync() {
   useEffect(() => {
     document.documentElement.dataset.typeface = typeface;
   }, [typeface]);
+  // Movies & Series header style: HeaderStyles.css keys off it
+  const vodHeader = useUIStore((s) => s.settings.appearance?.header ?? 'simple');
+  useEffect(() => {
+    document.documentElement.dataset.vodHeader = vodHeader;
+  }, [vodHeader]);
 
   // Linux performance mode: App.css drops every backdrop blur under this class.
   const performanceMode = useUIStore((s) => s.settings.linuxPerformanceMode === true) && !!window.platform?.isLinux;

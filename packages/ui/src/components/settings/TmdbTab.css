@@ -1,0 +1,16 @@
+/* TMDB logo beside the attribution notice; smaller than the app's own branding, as TMDB asks */
+.tmdb-attribution {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.tmdb-attribution__logo {
+  width: 52px;
+  height: auto;
+  flex: none;
+}
+
+.tmdb-attribution .st-hint {
+  margin: 0;
+}

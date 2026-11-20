@@ -1,0 +1,55 @@
+/* Sync > Computers: one quiet row per computer, actions on the right */
+.sync-computers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 620px;
+}
+
+.sync-computers__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.sync-computers__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.sync-computers__name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.sync-computers__seen {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.sync-computers__rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.sync-computers__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2, var(--text));
+}

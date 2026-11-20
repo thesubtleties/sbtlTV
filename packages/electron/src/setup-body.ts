@@ -21,7 +21,10 @@ export interface SetupBody {
 export interface SetupPreview {
   app: string; exportedAt: string; platform: string;
   sources: { name: string; type: string; withLogin: boolean; fromFile: boolean; host: string | null }[];
-  settings: boolean; apiKeys: boolean; favorites: number; watchlist: number; progress: number;
+  settings: boolean;
+  /** Which keys it carries, by product name (TMDB, RatingPosterDB, SubDL) */
+  apiKeys: string[];
+  favorites: number; watchlist: number; progress: number;
 }
 
 /**
@@ -188,7 +191,7 @@ export function describeSetup(body: SetupBody): SetupPreview {
     app: body.app, exportedAt: body.exportedAt, platform: body.platform,
     sources: (body.sources ?? []).map((s) => ({ name: s.name, type: s.type, withLogin: !!s.password, fromFile: s.url.startsWith('imported:'), host: hostOf(s.url) })),
     settings: body.settings !== undefined,
-    apiKeys: !!(body.apiKeys?.tmdb || body.apiKeys?.posterDb || body.apiKeys?.subdl),
+    apiKeys: [body.apiKeys?.tmdb && 'TMDB', body.apiKeys?.posterDb && 'RatingPosterDB', body.apiKeys?.subdl && 'SubDL'].filter((k): k is string => !!k),
     favorites: body.lists?.favorites?.length ?? 0,
     watchlist: body.lists?.watchlist?.length ?? 0,
     progress: body.lists?.progress?.length ?? 0,

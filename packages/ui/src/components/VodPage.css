@@ -27,6 +27,13 @@
   visibility: hidden;
 }
 
+/* An open detail covers the whole page. Left drawn, the home under it (every row, card and
+   layer) was composited on every frame and halved the frame rate when scrolling a detail's
+   rows. Hidden, not removed: rows, scroll position and virtualization stay as they were. */
+.vod-page--detail-open > *:not(.movie-detail):not(.series-detail) {
+  visibility: hidden;
+}
+
 /* Header */
 .vod-page__header {
   flex-shrink: 0;

@@ -5,7 +5,7 @@
   top: 44px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 100;
+  z-index: 160;   /* over the Movies/Series page (100) and the loading screen (150), under the title bar */
   display: flex;
   align-items: center;
   gap: 12px;

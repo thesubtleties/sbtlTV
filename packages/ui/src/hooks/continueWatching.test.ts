@@ -9,3 +9,43 @@ describe('mergeEpisodes', () => {
     expect(merged.map((e) => e.id).sort()).toEqual(['a2', 'b1']);
   });
 });
+
+describe('movieForRecord', () => {
+  const m = (stream_id: string, tmdb_id?: number) => ({ stream_id, tmdb_id, name: stream_id }) as never;
+  it('finds a movie by its stream id first, then by TMDB id (synced from a computer with other providers)', async () => {
+    const { movieForRecord } = await import('./useContinueWatching');
+    const byStream = new Map([['s1', m('s1', 1)]]);
+    const byTmdb = new Map([[2, m('other_9', 2)]]);
+    expect(movieForRecord({ stream_id: 's1', tmdb_id: 1 }, byStream, byTmdb)).toMatchObject({ stream_id: 's1' });
+    expect(movieForRecord({ stream_id: 'gone', tmdb_id: 2 }, byStream, byTmdb)).toMatchObject({ stream_id: 'other_9' });
+    expect(movieForRecord({ tmdb_id: 2 }, byStream, byTmdb)).toMatchObject({ stream_id: 'other_9' });
+    expect(movieForRecord({ stream_id: 'gone', tmdb_id: 3 }, byStream, byTmdb)).toBeUndefined();
+  });
+  it("prefers the record's own copy over another provider's copy of the same title (lens 7)", async () => {
+    const { movieForRecord } = await import('./useContinueWatching');
+    expect(movieForRecord({ stream_id: 's1', tmdb_id: 1 }, new Map([['s1', m('s1', 1)]]), new Map([[1, m('other_1', 1)]]))).toMatchObject({ stream_id: 's1' });
+  });
+});
+
+describe('newestPerTitle', () => {
+  it('one card per movie when two providers hold the same title: the newest copy (M2)', async () => {
+    const { newestPerTitle } = await import('./useContinueWatching');
+    const r = (id: string, tmdb_id: number | undefined, t: number) => ({ id, tmdb_id, updated_at: new Date(t) }) as never;
+    const out = newestPerTitle([r('movie_b', 603, 9), r('movie_a', 603, 5), r('movie_x', undefined, 7), r('movie_y', undefined, 3)]);
+    expect((out as { id: string }[]).map((x) => x.id)).toEqual(['movie_b', 'movie_x', 'movie_y']);
+  });
+});
+
+describe('seriesNeedingEpisodes', () => {
+  it('a finished last episode with no episode list on this computer asks for the list (synced from another computer)', async () => {
+    const { seriesNeedingEpisodes } = await import('./useContinueWatching');
+    const head = (series_id: string, completed: boolean) => ({ active: { completed }, series: { series_id }, relatedIds: [series_id] }) as never;
+    const eps = [{ series_id: 'b', season_num: 1, episode_num: 1 }] as never;
+    expect(seriesNeedingEpisodes([head('a', true), head('b', true), head('c', false)], eps)).toEqual(['a']);
+  });
+  it("a series whose episodes this computer has under a related copy (another provider) doesn't ask (lens 7)", async () => {
+    const { seriesNeedingEpisodes } = await import('./useContinueWatching');
+    const heads = [{ active: { completed: true }, series: { series_id: 'a' }, relatedIds: ['a', 'a2'] }] as never;
+    expect(seriesNeedingEpisodes(heads, [{ series_id: 'a2' }] as never)).toEqual([]);
+  });
+});

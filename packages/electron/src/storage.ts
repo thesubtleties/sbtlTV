@@ -9,6 +9,7 @@ import os from 'node:os';
 import { isKeyringSealed } from './secret-fallback.js';
 import { keptOnImport, type SetupSource } from './setup-body.js';
 import type { KeyProtector } from './setup-file.js';
+import { normalizeFirstRun, normalizeSeenVersion } from './settings-markers.js';
 
 // Store schema - passwords and API keys stored encrypted
 interface StoreSchema {
@@ -45,6 +46,8 @@ export interface AppSettings {
   posterDbApiKey?: string;         // RatingPosterDB API key
   subdlApiKey?: string;            // SubDL API key (downloaded subtitles)
   rpdbBackdropsEnabled?: boolean;  // Use RPDB for backdrop images (tier 2+)
+  syncMissingTitles?: 'gray' | 'hide';  // Synced titles this computer doesn't have (machine setting)
+  syncMissingChannels?: 'hide' | 'gray';  // Synced favorite channels this computer doesn't have (machine setting)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF protection bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering (default: alphabetical)
@@ -67,25 +70,14 @@ export interface AppSettings {
   subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
   rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
   rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
+  firstRun?: 'offer-sync' | 'done';  // First-run setup: offer sync once after a received setup, or finished (machine setting)
+  lastSeenVersion?: string;          // Version whose What's new was shown (machine setting)
 }
 
 export type { LinuxPlayerMode };
 
-export const PALETTES = ['sbtl', 'sbtl-light', 'mocha', 'pi', 'catppuccin', 'tokyonight', 'kanagawa', 'gruvbox', 'nord', 'rosepine', 'everforest', 'dracula', 'caelestia'] as const;
-export const TYPEFACES = ['fira', 'mono', 'system'] as const;
-export const ACCENTS = ['palette', 'system'] as const;
-export interface Appearance {
-  palette: (typeof PALETTES)[number];
-  typeface: (typeof TYPEFACES)[number];
-  accent: (typeof ACCENTS)[number];  // 'system' takes the OS accent where there is one
-}
-
-function normalizeAppearance(value: Partial<Appearance> | undefined): Appearance {
-  const palette = PALETTES.find(p => p === value?.palette) ?? 'sbtl';
-  const typeface = TYPEFACES.find(t => t === value?.typeface) ?? 'fira';
-  const accent = ACCENTS.find(a => a === value?.accent) ?? 'palette';
-  return { palette, typeface, accent };
-}
+export { PALETTES, TYPEFACES, ACCENTS, HEADERS, normalizeAppearance, type Appearance } from './appearance.js';
+import { normalizeAppearance, type Appearance } from './appearance.js';
 
 // Internal storage format (encrypted)
 interface StoredSettings {
@@ -99,6 +91,8 @@ interface StoredSettings {
   encryptedPosterDbApiKey?: string; // Base64 encoded encrypted buffer
   encryptedSubdlApiKey?: string;    // Base64 encoded encrypted buffer
   rpdbBackdropsEnabled?: boolean;   // Use RPDB for backdrop images
+  syncMissingTitles?: 'gray' | 'hide';
+  syncMissingChannels?: 'hide' | 'gray';
   allowLanSources?: boolean;        // Allow requests to LAN IPs
   debugLoggingEnabled?: boolean;    // Write verbose logs to file
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
@@ -122,6 +116,8 @@ interface StoredSettings {
   subtitles?: SubtitleSettings;  // Caption defaults per kind and subtitle look
   rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
   rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
+  firstRun?: 'offer-sync' | 'done';  // First-run setup: offer sync once after a received setup, or finished (machine setting)
+  lastSeenVersion?: string;          // Version whose What's new was shown (machine setting)
   alwaysOnTop?: boolean;  // Windows/macOS: keep the window above others (title bar pin)
 }
 
@@ -268,6 +264,8 @@ export function getSettings(): AppSettings {
     result.subdlApiKey = decryptPassword(stored.encryptedSubdlApiKey);
   }
   result.rpdbBackdropsEnabled = stored.rpdbBackdropsEnabled ?? false;
+  result.syncMissingTitles = stored.syncMissingTitles === 'hide' ? 'hide' : 'gray';
+  result.syncMissingChannels = stored.syncMissingChannels === 'gray' ? 'gray' : 'hide';
   result.allowLanSources = stored.allowLanSources ?? false;
   result.debugLoggingEnabled = stored.debugLoggingEnabled ?? false;
   result.channelSortOrder = stored.channelSortOrder ?? 'alphabetical';
@@ -290,6 +288,8 @@ export function getSettings(): AppSettings {
   result.subtitles = normalizeSubtitleSettings(stored.subtitles);
   result.rewindLiveBytes = normalizeRewindBytes(stored.rewindLiveBytes, os.totalmem());
   result.rewindTipShown = stored.rewindTipShown === true;
+  result.firstRun = normalizeFirstRun(stored.firstRun);
+  result.lastSeenVersion = normalizeSeenVersion(stored.lastSeenVersion);
   return result;
 }
 
@@ -327,6 +327,8 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   if (settings.subtitles !== undefined) updated.subtitles = normalizeSubtitleSettings({ ...current.subtitles, ...settings.subtitles });
   if (settings.rewindLiveBytes !== undefined) updated.rewindLiveBytes = normalizeRewindBytes(settings.rewindLiveBytes, os.totalmem());
   if (settings.rewindTipShown !== undefined) updated.rewindTipShown = settings.rewindTipShown === true;
+  if (settings.firstRun !== undefined) updated.firstRun = normalizeFirstRun(settings.firstRun);
+  if (settings.lastSeenVersion !== undefined) updated.lastSeenVersion = normalizeSeenVersion(settings.lastSeenVersion);
   if (settings.lastSourceId !== undefined) updated.lastSourceId = settings.lastSourceId;
   if (settings.tmdbApiKey !== undefined) {
     updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;
@@ -341,6 +343,8 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   if (settings.subdlApiKey !== undefined) {
     updated.encryptedSubdlApiKey = settings.subdlApiKey ? encryptPassword(settings.subdlApiKey) : undefined;
   }
+  if (settings.syncMissingTitles !== undefined) updated.syncMissingTitles = settings.syncMissingTitles === 'hide' ? 'hide' : 'gray';
+  if (settings.syncMissingChannels !== undefined) updated.syncMissingChannels = settings.syncMissingChannels === 'gray' ? 'gray' : 'hide';
   if (settings.rpdbBackdropsEnabled !== undefined) {
     updated.rpdbBackdropsEnabled = settings.rpdbBackdropsEnabled;
   }
@@ -483,6 +487,29 @@ export function replaceSetup(input: { sources: SetupSource[]; settings: Partial<
   updateSettings({ ...input.settings, tmdbApiKey: input.apiKeys.tmdb ?? '', posterDbApiKey: input.apiKeys.posterDb ?? '', subdlApiKey: input.apiKeys.subdl ?? '' });
   store.set('sources', []);
   for (const { playlist: _playlist, ...source } of input.sources) saveSource(source as Source);
+}
+
+/**
+ * A setup received with Send a setup: replaces only what it carries. Sent sources replace the
+ * sources; sent settings replace the settings that travel (machine ones stay, as with Import); each
+ * sent API key replaces that key. Anything not sent stays as it is.
+ */
+export function applyReceivedSetup(input: { sources?: SetupSource[]; settings?: Partial<AppSettings>; apiKeys: { tmdb?: string; posterDb?: string; subdl?: string } }): void {
+  if (input.settings) {
+    const kept = keptOnImport(store.get('settings') as unknown as Record<string, unknown>);
+    const keys = { tmdbApiKey: getSettings().tmdbApiKey, posterDbApiKey: getSettings().posterDbApiKey, subdlApiKey: getSettings().subdlApiKey };
+    store.set('settings', { theme: 'dark', vodRefreshHours: 24, epgRefreshHours: 6, ...kept } as StoredSettings);
+    updateSettings({ ...input.settings, ...keys });
+  }
+  updateSettings({
+    ...(input.apiKeys.tmdb && { tmdbApiKey: input.apiKeys.tmdb }),
+    ...(input.apiKeys.posterDb && { posterDbApiKey: input.apiKeys.posterDb }),
+    ...(input.apiKeys.subdl && { subdlApiKey: input.apiKeys.subdl }),
+  });
+  if (input.sources) {
+    store.set('sources', []);
+    for (const { playlist: _playlist, ...source } of input.sources) saveSource(source as Source);
+  }
 }
 
 /** Local backups: a random key sealed by this computer's keyring (as passwords are). */

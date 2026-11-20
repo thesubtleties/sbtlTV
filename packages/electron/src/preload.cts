@@ -167,6 +167,8 @@ export interface PlatformApi {
   isLinuxNonAppImage: boolean;
   supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
+  /** release, test (branch) or local build: What's new shows only in releases */
+  getBuildKind: () => Promise<'release' | 'test' | 'local'>;
   /** The largest Rewind live TV size this computer allows, in bytes (0 = not enough memory) */
   rewindCapBytes: () => Promise<number>;
 }
@@ -305,6 +307,47 @@ contextBridge.exposeInMainWorld('setup', {
   settlePlaylists: (sourceIds: string[]) => ipcRenderer.invoke('setup:settlePlaylists', sourceIds),
 });
 
+// Settings > Sync & transfer: Send to a device / Show my code
+contextBridge.exposeInMainWorld('mailbox', {
+  receive: () => ipcRenderer.invoke('mailbox:receive'),
+  send: (sel: unknown, code: string) => ipcRenderer.invoke('mailbox:send', sel, code),
+  confirm: () => ipcRenderer.invoke('mailbox:confirm'),
+  sameWords: () => ipcRenderer.invoke('mailbox:sameWords'),
+  cancel: () => ipcRenderer.invoke('mailbox:cancel'),
+  state: () => ipcRenderer.invoke('mailbox:state'),
+  // Sync: "Add a computer" (giver) and Join (receiver of a join)
+  sendJoin: (code: string) => ipcRenderer.invoke('mailbox:sendJoin', code),
+  join: (name: string) => ipcRenderer.invoke('mailbox:join', name),
+});
+
+// Settings > Sync & transfer > Sync: watchlist, progress and chosen settings across the user's computers
+const listen = (channel: string, cb: (data: unknown) => void) => {
+  const h = (_: unknown, data: unknown) => cb(data);
+  ipcRenderer.on(channel, h);
+  return () => { ipcRenderer.removeListener(channel, h); };
+};
+contextBridge.exposeInMainWorld('sync', {
+  ready: () => ipcRenderer.invoke('sync:ready'),
+  view: () => ipcRenderer.invoke('sync:view'),
+  available: () => ipcRenderer.invoke('sync:available'),
+  record: (records: unknown[]) => ipcRenderer.invoke('sync:record', records),
+  applied: (records: unknown[]) => ipcRenderer.invoke('sync:applied', records),
+  pull: () => ipcRenderer.invoke('sync:pull'),
+  dismissInterrupted: () => ipcRenderer.invoke('sync:dismissInterrupted'),
+  setParts: (p: unknown) => ipcRenderer.invoke('sync:setParts', p),
+  rename: (name: string) => ipcRenderer.invoke('sync:rename', name),
+  remove: (id: string) => ipcRenderer.invoke('sync:remove', id),
+  leave: () => ipcRenderer.invoke('sync:leave'),
+  onView: (cb: (v: unknown) => void) => listen('sync-view', cb),
+  onApply: (cb: (records: unknown) => void) => listen('sync-apply', cb),
+  onSnapshot: (cb: () => void) => listen('sync-snapshot', () => cb()),
+  onSettingsReplaced: (cb: () => void) => listen('settings-replaced', () => cb()),
+  // Quitting: the page saves playback progress, then says so (main waits at most 1.5 s)
+  onBeforeQuit: (cb: () => Promise<void> | void) => listen('app-before-quit', () => {
+    void Promise.resolve().then(cb).catch(() => {}).finally(() => ipcRenderer.send('app-quit-ready'));
+  }),
+});
+
 // Colors the desktop provides, for Settings > Appearance
 interface DesktopColors {
   accent: string | null;
@@ -367,6 +410,7 @@ contextBridge.exposeInMainWorld('platform', {
   isLinuxNonAppImage,
   supportsAutoUpdate: !isPortable && !isLinuxNonAppImage,
   getVersion: () => ipcRenderer.invoke('get-app-version'),
+  getBuildKind: () => ipcRenderer.invoke('get-build-kind'),
   rewindCapBytes: () => ipcRenderer.invoke('rewind-cap-bytes'),
 } satisfies PlatformApi);
 

@@ -1,0 +1,509 @@
+/*
+ * Movies & Series header styles (Settings › Appearance › Movies & Series header) and the full-bleed hero they sit on.
+ * <html data-vod-header="simple|floating"> picks the style (useCssVariableSync); VodPage's useHeroBleed sets
+ * <html class="hero-bleed">, --bar-t (how far the bars have filled, 0 to 1) on the title bar and the header, the fill
+ * and shade layers' opacity, and the page's --bleed-chrome (title bar + header height). Colours come from the palette
+ * roles only. Per scroll frame only those two layers' opacity and the two --bar-t values change.
+ */
+
+/* ---------- Full bleed (both styles): the home's hero runs up to the window's top edge ---------- */
+/* Two classes: VodPage.css's .vod-page { top: 32px } loads after this file and would win a tie */
+.vod-page.vod-page--bleed { top: 0; }
+
+/* The header floats over the hero instead of pushing it down */
+.vod-page--bleed > .h-category-strip {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: transparent;
+}
+
+/* The title bar is see-through too (also over a movie or series detail's backdrop, DetailHeader.css): one layer below
+   fills in behind both */
+:root:is(.hero-bleed, .detail-bleed) .title-bar {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+/* One fill and one blur behind the title bar and the header together (two blurred layers meeting show a line at the
+   join). It fills in to the page colour as the hero scrolls away: its opacity is all that changes per frame */
+.vod-page__chrome-fill { display: none; }
+.vod-page--bleed > .vod-page__chrome-fill {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--bleed-chrome, 108px);
+  background: var(--bg);
+  /* A tint, no blur: a blur here is redrawn across the whole width on every frame the page slides in */
+  opacity: 0;
+  pointer-events: none;
+  z-index: 45;
+}
+.vod-page--bleed.vod-page--detail-open > .vod-page__chrome-fill,
+.vod-page--bleed.vod-page--content-hidden > .vod-page__chrome-fill,
+.vod-page--bleed.vod-page--collapsed > .vod-page__chrome-fill { display: none; }
+
+/* Nothing of the home's bleed over a detail, or while the page slides away for the player */
+.vod-page--bleed.vod-page--detail-open > .vod-page__chrome-shade,
+.vod-page--bleed.vod-page--content-hidden > .vod-page__chrome-shade,
+.vod-page--bleed.vod-page--collapsed > .vod-page__chrome-shade { display: none; }
+
+/* A soft shade along the top keeps the window buttons, logo and header readable on bright art; it goes as the bars
+   fill in. Dark on every palette: movie art is what it sits on */
+.vod-page__chrome-shade { display: none; }
+.vod-page--bleed > .vod-page__chrome-shade {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--bleed-chrome, 108px) + 72px);
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.65), rgb(0 0 0 / 0.35) 55%, transparent);
+  /* Over the fill; useHeroBleed fades it out with the scroll (inline opacity) */
+  opacity: 1;
+  pointer-events: none;
+  z-index: 46;
+}
+
+/* Over the art the window buttons and logo are white with a shadow; they follow the scroll to their own colour as the
+   bars fill in (--bar-t, set per frame by useHeroBleed or useDetailBleed on the title bar). Unset (the first frame on open)
+   reads as 0, so the title bar is clear at once. The blend runs through the middle fifth of the fill (--bar-mix):
+   on light palettes white-to-dark crosses a dark-to-light bar, and a straight blend sat grey on grey around halfway.
+   The shadow goes with the white (held at full through the crossing it smudged the grey) */
+.title-bar {
+  --bar-mix: clamp(0, (var(--bar-t, 0) - 0.4) / 0.2, 1);
+  --bar-shadow: rgb(0 0 0 / calc(0.6 * (1 - var(--bar-mix))));
+}
+:root:is(.hero-bleed, .detail-bleed) .window-controls button:not(.close:hover) {
+  color: color-mix(in srgb, var(--text) calc(var(--bar-mix) * 100%), #fff);
+  filter: drop-shadow(0 1px 2px var(--bar-shadow));
+}
+/* Keep on top while it's on: the accent, lightened over the art (sbtl light's slate is lost on dark art) */
+:root:is(.hero-bleed, .detail-bleed) .window-controls button.is-on:not(.close:hover) {
+  color: color-mix(in srgb, var(--accent) calc(40% + var(--bar-mix) * 60%), #fff);
+}
+:root:is(.hero-bleed, .detail-bleed) .title-bar-logo {
+  color: color-mix(in srgb, var(--logo-color) calc(var(--bar-mix) * 100%), #fff);
+  filter: drop-shadow(0 1px 2px var(--bar-shadow));
+}
+
+/* The home's scrollbar is drawn over the art, shown while scrolling (overlay scrollbars: macOS's own, and switched on
+   for Linux and Windows in main.ts), so the art reaches both edges. One gutter at most where scrollbars are classic
+   (macOS set to always show them), not the two kept for the grids */
+.vod-page--bleed .vod-page__home { scrollbar-gutter: auto; }
+
+/* The hero grows by the bars' height, so the art starts at pixel 0 and its title keeps its place */
+.vod-page--bleed .hero {
+  height: calc(55vh + var(--bleed-chrome, 108px));
+  min-height: calc(400px + var(--bleed-chrome, 108px));
+  max-height: calc(600px + var(--bleed-chrome, 108px));
+}
+
+/* ---------- Both styles ---------- */
+/* Nothing in the header or the Genres panel is selectable by dragging (the search field still is) */
+.h-category-strip--unified,
+.h-category-strip__sheet { user-select: none; -webkit-user-select: none; }
+.h-category-strip--unified input { user-select: text; -webkit-user-select: text; }
+
+/* Label colour: the theme's text, and over the home's art (Simple) white with a shadow, following the scroll to the
+   theme's colours as the bars fill in: the same --bar-t and middle-fifth blend as the title bar's logo (set on the
+   header by useHeroBleed, so only the header restyles) */
+.h-category-strip--unified {
+  --hdr-label: var(--fg);
+  --hdr-shadow: transparent;
+  --hdr-mark: var(--accent);
+}
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified {
+  --bar-mix: clamp(0, (var(--bar-t, 0) - 0.4) / 0.2, 1);
+  --hdr-label: color-mix(in srgb, var(--fg) calc(var(--bar-mix) * 100%), #fff);
+  --hdr-shadow: rgb(0 0 0 / calc(0.75 * (1 - var(--bar-mix))));
+  /* Underline and focus ring: white over the shade (the accent can be too dark there: sbtl light's slate) */
+  --hdr-mark: color-mix(in srgb, var(--accent) calc(var(--bar-mix) * 100%), #fff);
+}
+/* Colours follow the scroll frame by frame: an easing on them would trail behind it (and restart every frame).
+   Hover fills still ease */
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill,
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__back,
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__arrow { transition: background-color 150ms ease, opacity 150ms ease; }
+.h-category-strip--unified .h-category-strip__pill,
+.h-category-strip--unified .h-category-strip__back,
+.h-category-strip--unified .h-category-strip__search { transition: color 150ms ease, text-shadow 150ms ease, filter 150ms ease; }
+.h-category-strip--unified .h-category-strip__search svg { color: var(--hdr-label); }
+.h-category-strip--unified .h-category-strip__search input { color: var(--hdr-label); }
+.h-category-strip--unified button:focus-visible { outline: 2px solid var(--hdr-mark); outline-offset: 2px; }
+
+/* ---------- Simple: categories as text tabs ---------- */
+:root[data-vod-header='simple'] .h-category-strip--unified { gap: 20px; }
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__back {
+  background: transparent;
+  padding: 6px;
+  color: var(--hdr-label);
+  filter: drop-shadow(0 1px 3px var(--hdr-shadow));
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__back:hover { background: var(--fill-2); }
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll { gap: 4px; }
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill {
+  position: relative;
+  background: transparent;
+  border-color: transparent;
+  color: color-mix(in srgb, var(--hdr-label) 72%, transparent);
+  font-weight: 500;
+  padding: 6px 12px;
+  text-shadow: 0 1px 4px var(--hdr-shadow);
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill:hover { color: var(--hdr-label); background: transparent; }
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill.active {
+  color: var(--hdr-label);
+  background: transparent;
+  font-weight: 700;
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__pill.active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--hdr-mark);
+}
+/* The row's edge fades are painted in the page colour: see-through over the art, as today once the bar is solid */
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before {
+  background: linear-gradient(to right, var(--bg), transparent);
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after {
+  background: linear-gradient(to left, var(--bg), transparent);
+}
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search {
+  /* Dark glass over the art on every palette, like the labels, turning to the usual glass with the scroll */
+  background-color: color-mix(in srgb, color-mix(in srgb, var(--bg) 45%, transparent) calc(var(--bar-mix) * 100%), rgb(0 0 0 / 0.35));
+  border-color: color-mix(in srgb, var(--edge) calc(var(--bar-mix) * 100%), rgb(255 255 255 / 0.2));
+  transition: width 0.25s ease;
+}
+/* On the home the row's edges fade to see-through (a mask) instead of painting a patch of the page colour: over the
+   art that shows the art, and once filled it shows the fill, the same colour the patch would be */
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-left {
+  mask-image: linear-gradient(to right, transparent, #000 32px);
+}
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-right {
+  mask-image: linear-gradient(to left, transparent, #000 32px);
+}
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper.fade-left.fade-right {
+  mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+}
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before,
+:root.hero-bleed[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after { display: none; }
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__arrow { color: var(--hdr-label); }
+/* Search: a round button that widens when used */
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 11px;
+  border-radius: 999px;
+  overflow: hidden;
+  cursor: pointer;
+  color: var(--hdr-label);
+  background-color: color-mix(in srgb, var(--bg) 45%, transparent);
+  border-color: var(--edge);
+  backdrop-filter: blur(20px);
+  transition: width 0.25s ease;
+}
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search:focus-within,
+:root[data-vod-header='simple'] .h-category-strip--unified .h-category-strip__search:has(input:not(:placeholder-shown)) {
+  width: 280px;
+}
+
+/* ---------- Floating: one glass capsule (Home · All · Genres), back and search as round glass buttons ---------- */
+/* In the Simple style the capsule group is invisible to layout and the Genres button isn't shown */
+.h-category-strip__nav { display: contents; }
+.h-category-strip__genres,
+.h-category-strip__indicator { display: none; }
+
+/* Caelestia's motion (/etc/xdg/quickshell/caelestia/components/Anim.qml) */
+:root[data-vod-header='floating'] {
+  --ease-spatial: cubic-bezier(0.38, 1.21, 0.22, 1);       /* moves, overshoots a little, settles */
+  --ease-spatial-fast: cubic-bezier(0.42, 1.67, 0.21, 0.9);
+  --ease-effects: cubic-bezier(0.34, 0.8, 0.34, 1);        /* fades and colour */
+  --ease-out: cubic-bezier(0.3, 0, 0.8, 0.15);             /* leaving */
+  --glass: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+:root[data-vod-header='floating'] .h-category-strip--unified { justify-content: space-between; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background-color: var(--glass);
+  border: 1px solid var(--edge);
+  backdrop-filter: blur(20px);   /* the title bar's own blur: no new effect to set up on the first open */
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.3);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  transition: background-color 250ms var(--ease-effects), border-color 250ms var(--ease-effects), box-shadow 250ms var(--ease-effects);
+}
+/* Only Home and All stay in the capsule; the categories live in the Genres panel */
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__arrow,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll .h-category-strip__pill:nth-child(n + 2) { display: none; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll-wrapper { flex: none; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll-wrapper::before,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll-wrapper::after { display: none; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__scroll { gap: 2px; overflow: visible; }
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__pill,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__genres-btn {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 18px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 220ms var(--ease-effects), transform 220ms var(--ease-spatial-fast);
+}
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__pill:active,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__genres-btn:active { transform: scale(0.94); }
+/* The highlight is the backing: the active item only changes colour */
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__pill.active,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__genres-btn.active {
+  background: transparent;
+  color: var(--on-button);
+}
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__indicator {
+  display: block;
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: var(--ind-w, 0px);
+  transform: translateX(var(--ind-x, 0px));
+  opacity: var(--ind-o, 0);
+  border-radius: 999px;
+  background: var(--button);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.25);
+  transition: transform 500ms var(--ease-spatial), width 500ms var(--ease-spatial), opacity 200ms var(--ease-effects);
+  pointer-events: none;
+}
+:root[data-vod-header='floating'] .h-category-strip__genres { display: block; position: static; }
+:root[data-vod-header='floating'] .h-category-strip__genres-label {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root[data-vod-header='floating'] .h-category-strip__genres-btn svg { width: 16px; height: 16px; transition: transform 500ms var(--ease-spatial); }
+:root[data-vod-header='floating'] .h-category-strip__genres-btn[aria-expanded='true'] svg { transform: rotate(180deg); }
+
+/* The panel grows out of the capsule: while it's open the capsule's own glass is off, so the panel's is the only layer
+   (no seam; and the capsule isn't the panel's backdrop root, which would stop its blur) */
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__nav:has(.h-category-strip__sheet) {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+:root[data-vod-header='floating'] .h-category-strip__sheet {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, 80vw);
+  max-height: 60vh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: calc(var(--cap-h, 48px) + 12px) 14px 14px;
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  border: 1px solid var(--edge);
+  backdrop-filter: blur(20px);
+  z-index: -1;
+  clip-path: inset(0 0 0 0 round 24px);
+  animation: hs-sheet-grow 520ms var(--ease-spatial) both;
+}
+:root[data-vod-header='floating'] .h-category-strip__sheet--closing { animation: hs-sheet-shrink 300ms var(--ease-out) both; }
+@keyframes hs-sheet-grow {
+  from { clip-path: inset(0 calc(50% - var(--cap-w, 240px) / 2) calc(100% - var(--cap-h, 48px)) round 999px); }
+  to { clip-path: inset(0 0 0 0 round 24px); }
+}
+@keyframes hs-sheet-shrink {
+  from { clip-path: inset(0 0 0 0 round 24px); }
+  to { clip-path: inset(0 calc(50% - var(--cap-w, 240px) / 2) calc(100% - var(--cap-h, 48px)) round 999px); }
+}
+:root[data-vod-header='floating'] .h-category-strip__sheet-item {
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  /* All together, as the panel opens (no waterfall) */
+  animation: hs-item-in 260ms var(--ease-effects) both;
+  animation-delay: 140ms;
+  transition: background-color 180ms var(--ease-effects), color 180ms var(--ease-effects), transform 220ms var(--ease-spatial-fast);
+}
+:root[data-vod-header='floating'] .h-category-strip__sheet-item:hover,
+:root[data-vod-header='floating'] .h-category-strip__sheet-item:focus-visible { background: var(--fill-3); transform: translateX(3px); outline: 2px solid var(--accent); outline-offset: -2px; }
+:root[data-vod-header='floating'] .h-category-strip__sheet-item.active { color: var(--accent); font-weight: 700; }
+:root[data-vod-header='floating'] .h-category-strip__sheet--closing .h-category-strip__sheet-item { animation: hs-item-out 140ms var(--ease-out) both; animation-delay: 0ms; }
+@keyframes hs-item-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hs-item-out { to { opacity: 0; } }
+
+/* Back and search: round glass buttons at either side; search swells open from its circle */
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__back {
+  border-radius: 999px;
+  background-color: var(--glass);
+  border: 1px solid var(--edge);
+  backdrop-filter: blur(20px);
+  color: var(--fg);
+  padding: 8px 14px 8px 10px;
+}
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search {
+  border-radius: 999px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  overflow: hidden;
+  cursor: pointer;
+  color: var(--fg);
+  background-color: var(--glass);
+  border-color: var(--edge);
+  backdrop-filter: blur(20px);
+  transition: width 500ms var(--ease-spatial), background-color 250ms var(--ease-effects);
+}
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search:focus-within,
+:root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search:has(input:not(:placeholder-shown)) { width: 280px; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-vod-header='floating'] .h-category-strip__sheet,
+  :root[data-vod-header='floating'] .h-category-strip__sheet-item { animation-duration: 1ms !important; animation-delay: 0ms !important; }
+  :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__indicator,
+  :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search { transition-duration: 1ms; }
+}
+
+/* ---------- Floating everywhere: on every Movies/Series view the header floats; content starts below it and scrolls
+   under it; only the window-button band behind it is solid (on the home the fill layer does it instead) ---------- */
+:root[data-vod-header='floating'] .vod-page--floating { top: 0; }
+:root[data-vod-header='floating'] .vod-page--floating > .h-category-strip {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: transparent;
+}
+:root[data-vod-header='floating'] .vod-page--floating:not(.vod-page--bleed)::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: var(--bg);
+  pointer-events: none;
+  z-index: 45;
+}
+.vod-browse__top-space { height: 0; }
+/* The grid starts at the window's top and its rows scroll up under the floating header; the room above the first row
+   keeps it clear at rest */
+:root[data-vod-header='floating'] .vod-page--floating:not(.vod-page--bleed) .vod-browse__top-space {
+  height: calc(32px + var(--strip-h, 76px));
+}
+/* On the home only the window-button band fills in (the capsule keeps floating over the rows) */
+:root[data-vod-header='floating'] .vod-page--bleed > .vod-page__chrome-fill { height: 32px; }
+
+/* The floating header's row lets clicks and the wheel through to the cards under it, except on its controls */
+:root[data-vod-header='floating'] .vod-page--floating > .h-category-strip { pointer-events: none; }
+:root[data-vod-header='floating'] .vod-page--floating > .h-category-strip > * { pointer-events: auto; }
+
+/* Shorter windows (a MacBook Air's): tighter rows, so the whole list fits without scrolling (the panel is capped at 60%
+   of the window's height). Tall screens keep the roomier rows */
+@media (max-height: 940px) {
+  :root[data-vod-header='floating'] .h-category-strip__sheet { gap: 2px; padding-bottom: 10px; }
+  :root[data-vod-header='floating'] .h-category-strip__sheet-item { padding: 6px 12px; }
+}
+@media (max-height: 700px) {
+  :root[data-vod-header='floating'] .h-category-strip__sheet-item { padding: 4px 12px; font-size: 0.9rem; }
+}
+
+/* Narrow windows: the capsule sits left, after back (centred it would cover the open search field), and the Genres
+   panel grows out of it to the right instead of to both sides */
+@media (max-width: 1000px) {
+  :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__nav {
+    left: 92px;
+    transform: none;
+  }
+  :root[data-vod-header='floating'] .h-category-strip__sheet {
+    left: 0;
+    transform: none;
+    width: min(760px, calc(100vw - 140px));
+    grid-template-columns: repeat(3, 1fr);
+    animation-name: hs-sheet-grow-right;
+  }
+  :root[data-vod-header='floating'] .h-category-strip__sheet--closing { animation-name: hs-sheet-shrink-right; }
+  :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search:focus-within,
+  :root[data-vod-header='floating'] .h-category-strip--unified .h-category-strip__search:has(input:not(:placeholder-shown)) {
+    width: min(280px, calc(100vw - 420px));
+  }
+}
+@keyframes hs-sheet-grow-right {
+  from { clip-path: inset(0 calc(100% - var(--cap-w, 240px)) calc(100% - var(--cap-h, 48px)) 0 round 999px); }
+  to { clip-path: inset(0 0 0 0 round 24px); }
+}
+@keyframes hs-sheet-shrink-right {
+  from { clip-path: inset(0 0 0 0 round 24px); }
+  to { clip-path: inset(0 calc(100% - var(--cap-w, 240px)) calc(100% - var(--cap-h, 48px)) 0 round 999px); }
+}
+
+/* Reduced motion: the rest of the movement goes too */
+@media (prefers-reduced-motion: reduce) {
+  .h-category-strip--unified .h-category-strip__search,
+  .h-category-strip--unified .h-category-strip__genres-btn svg,
+  .h-category-strip--unified .h-category-strip__pill,
+  .h-category-strip--unified .h-category-strip__genres-btn,
+  .h-category-strip__sheet-item,
+  .window-controls button,
+  .title-bar-logo { transition-duration: 1ms !important; }
+  .h-category-strip--unified .h-category-strip__pill:active,
+  .h-category-strip--unified .h-category-strip__genres-btn:active,
+  .h-category-strip__sheet-item:hover,
+  .h-category-strip__sheet-item:focus-visible { transform: none !important; }
+}
+
+/* The nav stays out of the motion: while the page slides in (or away) the header isn't drawn (its glass was redrawn on
+   every frame of the slide); the shade slides with the page and the title bar is clear from the start, no fade. Once
+   the page lands the nav settles in: an even fade with a small drift down on Caelestia's emphasized decelerate */
+.vod-page--sliding > .vod-page__chrome-fill,
+.vod-page--sliding > .h-category-strip,
+.vod-page--collapsed > .h-category-strip { visibility: hidden; }
+.vod-page:not(.vod-page--sliding) > .h-category-strip {
+  /* An even fade (no pop), and a small drift down that lands softly (Caelestia's emphasized decelerate) */
+  animation: vod-nav-fade 460ms cubic-bezier(0.4, 0, 0.2, 1) both, vod-nav-drift 560ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+}
+@keyframes vod-nav-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes vod-nav-drift { from { transform: translateY(-8px); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .vod-page:not(.vod-page--sliding) > .h-category-strip { animation: vod-nav-fade 200ms ease both; }
+}
+
+/* The search field's accent edge while it's in use, in either style. Last in the file, and as specific as the home's
+   search glass above, so it wins over each style's own border colour */
+:root[data-vod-header] .h-category-strip--unified .h-category-strip__search:focus-within { border-color: var(--hdr-mark); }

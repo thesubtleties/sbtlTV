@@ -5,15 +5,18 @@ import { useUIStore, useUpdateSettings, useUpdaterState, useSetUpdaterState } fr
 import { debugLog } from '../../utils/debugLog';
 import { OnOff } from './ui';
 import './AboutTab.css';
+import { WHATS_NEW } from '../../whatsNewItems';
+import { latestList } from '../../utils/whatsNew';
 
 interface AboutTabProps {
   autoUpdateEnabled: boolean;
   onAutoUpdateChange: (enabled: boolean) => void;
+  onShowWhatsNew?: () => void;
 }
 
 const CHECK_TIMEOUT_MS = 30_000;
 
-export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProps) {
+export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange, onShowWhatsNew }: AboutTabProps) {
   const updateSettings = useUpdateSettings();
   const updaterState = useUpdaterState();
   const setUpdaterState = useSetUpdaterState();
@@ -161,6 +164,20 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange }: AboutTabProp
           <span className="about-tab__title">
             sbtlTV <span className="about-tab__version">v{version || '...'}</span>
           </span>
+        </div>
+
+        <div className="about-tab__notes">
+          {onShowWhatsNew && !!version && !!latestList(WHATS_NEW, version) && (
+            <button type="button" className="st-btn" onClick={onShowWhatsNew}>What's new</button>
+          )}
+          <a
+            className="st-btn about-tab__notes-link"
+            href={version ? `https://github.com/thesubtleties/sbtlTV/releases/tag/v${version}` : 'https://github.com/thesubtleties/sbtlTV/releases'}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Release notes
+          </a>
         </div>
 
         <div className="about-tab__update-section">

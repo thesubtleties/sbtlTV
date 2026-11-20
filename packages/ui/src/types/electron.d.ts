@@ -185,6 +185,7 @@ export interface Appearance {
   palette: PaletteId;
   typeface: Typeface;
   accent: 'palette' | 'system';  // 'system' takes the OS accent where there is one
+  header?: 'simple' | 'floating';  // Movies & Series header (default 'simple')
 }
 
 /** Colors the desktop provides (Settings > Appearance). */
@@ -219,7 +220,10 @@ export type SetupPart = 'sources' | 'logins' | 'settings' | 'apiKeys' | 'favorit
 export interface SetupPreview {
   app: string; exportedAt: string; platform: string;
   sources: { name: string; type: string; withLogin: boolean; fromFile: boolean; host: string | null }[];
-  settings: boolean; apiKeys: boolean; favorites: number; watchlist: number; progress: number;
+  settings: boolean;
+  /** Which keys it carries, by product name (TMDB, RatingPosterDB, SubDL) */
+  apiKeys: string[];
+  favorites: number; watchlist: number; progress: number;
 }
 export interface SetupListsWire { favorites?: unknown[]; watchlist?: unknown[]; progress?: unknown[]; lastCategory?: string }
 type SetupResult<T> = { success: true; data: T } | { success: false; canceled: true } | { success?: undefined; error: string };
@@ -229,11 +233,59 @@ export interface SetupApi {
   unlock: (token: string, passphrase: string) => Promise<SetupResult<SetupPreview>>;
   backups: () => Promise<{ success: true; data: { name: string; label: string }[] }>;
   openBackup: (name: string) => Promise<SetupResult<{ token: string; preview: SetupPreview }>>;
-  apply: (token: string, opts: { backupFirst: boolean; currentLists: SetupListsWire; currentPlaylists: Record<string, string> }) => Promise<SetupResult<{ lists: SetupListsWire; backupName: string | null }> | { error: string; backupName: string | null }>;
+  apply: (token: string, opts: { backupFirst: boolean; currentLists: SetupListsWire; currentPlaylists: Record<string, string> }) => Promise<SetupResult<{ lists: SetupListsWire | null; backupName: string | null }> | { error: string; backupName: string | null }>;
   relaunch: () => Promise<void>;
   showFile: () => Promise<void>;
   pendingPlaylists: () => Promise<{ sourceId: string; content: string }[]>;
   settlePlaylists: (sourceIds: string[]) => Promise<void>;
+}
+
+/** Settings > Sync & transfer: send or receive a setup through the sbtlTV relay. */
+export interface MailboxSendSource { name: string; type: 'xtream' | 'm3u'; url: string; username?: string; password?: string }
+export interface MailboxApi {
+  receive: () => Promise<{ success?: boolean; error?: string }>;
+  send: (sel: { parts: SetupPart[]; sourceIds: string[] | null; extras: { sources: MailboxSendSource[]; apiKeys: { tmdb?: string; posterDb?: string; subdl?: string } }; lists: SetupListsWire; playlists: Record<string, string> }, code: string) => Promise<{ success?: boolean; error?: string }>;
+  confirm: () => Promise<{ success?: boolean; error?: string }>;
+  sameWords: () => Promise<{ success?: boolean }>;
+  cancel: () => Promise<{ success?: boolean }>;
+  state: () => Promise<{ success: boolean; data: { role: 'send' | 'receive' | null; state: import('../utils/knockView').KnockState | null; staged?: { token: string; preview: SetupPreview }; join?: { computers: string[] } } }>;
+  /** Sync: "Add a computer" rings their code with a join instead of a setup */
+  sendJoin: (code: string) => Promise<{ success?: boolean; error?: string }>;
+  /** A received join: join the sync with this computer's name (blank = its platform name) */
+  join: (name: string) => Promise<{ success?: boolean; error?: string }>;
+}
+
+/** Settings > Sync & transfer > Sync (the engine lives in main; see packages/mailbox/src/client/sync-engine.ts) */
+export type SyncParts = { watchlist: boolean; progress: boolean; settings: boolean; favorites: boolean };
+export interface SyncView {
+  status: 'off' | 'pending' | 'active' | 'removed' | 'ended' | 'keyring' | 'update';
+  lastSync: number | null;
+  parts: SyncParts;
+  name: string | null;
+  defaultName: string;
+  /** Computers to add again: an old group was retired by someone else after the relay lost its data */
+  interrupted: string[];
+  computers: { id: string; name: string; thisOne: boolean; lastSeen: number | null }[];
+}
+export interface SyncApi {
+  ready: () => Promise<void>;
+  view: () => Promise<SyncView>;
+  /** Sync can work here (a real keyring; not Linux basic_text) */
+  available: () => Promise<boolean>;
+  record: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;
+  /** These were written into the lists (after applyRecords): don't hand them over again */
+  applied: (records: import('@sbtltv/core').SyncRecord[]) => Promise<void>;
+  pull: () => Promise<void>;
+  dismissInterrupted: () => Promise<void>;
+  setParts: (parts: SyncParts) => Promise<void>;
+  rename: (name: string) => Promise<void>;
+  remove: (deviceId: string) => Promise<{ error?: string }>;
+  leave: () => Promise<{ error?: string }>;
+  onView: (cb: (v: SyncView) => void) => () => void;
+  onApply: (cb: (records: import('@sbtltv/core').SyncRecord[]) => void) => () => void;
+  onSnapshot: (cb: () => void) => () => void;
+  onSettingsReplaced: (cb: () => void) => () => void;
+  onBeforeQuit: (cb: () => Promise<void> | void) => () => void;
 }
 
 export interface PrivacyApi {
@@ -273,6 +325,8 @@ export interface AppSettings {
   posterDbApiKey?: string;         // RatingPosterDB API key for rating posters
   subdlApiKey?: string;            // SubDL API key for downloaded subtitles
   rpdbBackdropsEnabled?: boolean;  // Use RPDB backdrops (requires tier 2+ key)
+  syncMissingTitles?: 'gray' | 'hide';  // Synced titles this computer doesn't have
+  syncMissingChannels?: 'hide' | 'gray';  // Synced favorite channels this computer doesn't have (default hide)
   allowLanSources?: boolean;       // Allow requests to LAN IPs (SSRF bypass)
   debugLoggingEnabled?: boolean;   // Write verbose logs to file for debugging
   channelSortOrder?: 'alphabetical' | 'number';  // Channel list ordering
@@ -294,6 +348,8 @@ export interface AppSettings {
   subtitles?: SubtitleSettings;  // Caption defaults (live / movies & series) and subtitle look
   rewindLiveBytes?: number;  // Rewind live TV: in-memory back buffer per live channel, bytes; 0/absent = Off
   rewindTipShown?: boolean;  // The one-time "turn on rewind" tip has been shown
+  firstRun?: 'offer-sync' | 'done';  // First-run setup: offer sync once after a received setup, or finished (machine setting)
+  lastSeenVersion?: string;          // Version whose What's new was shown (machine setting)
 }
 
 export interface Source {
@@ -345,6 +401,8 @@ export interface PlatformApi {
   isLinuxNonAppImage: boolean;
   supportsAutoUpdate: boolean;
   getVersion: () => Promise<string>;
+  /** release, test (branch) or local build: What's new shows only in releases */
+  getBuildKind: () => Promise<'release' | 'test' | 'local'>;
   /** The largest Rewind live TV size this computer allows, in bytes (0 = not enough memory) */
   rewindCapBytes: () => Promise<number>;
 }
@@ -424,6 +482,8 @@ declare global {
     appearance?: AppearanceApi;
     privacy?: PrivacyApi;
     setup?: SetupApi;
+    mailbox?: MailboxApi;
+    sync?: SyncApi;
     fetchProxy?: FetchProxyApi;
     platform?: PlatformApi;
     debug?: DebugApi;

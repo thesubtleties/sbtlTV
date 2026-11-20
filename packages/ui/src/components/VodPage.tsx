@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useReducer } from 'react';
+import { detailNav, isBackKey, seriesSeasonKey } from '../utils/detailNav';
 import { Virtuoso } from 'react-virtuoso';
 import { HeroSection } from './vod/HeroSection';
 import { HorizontalCarousel } from './vod/HorizontalCarousel';
@@ -10,10 +11,17 @@ import { useVodHomeData } from '../hooks/useVodHomeData';
 import { useContinueWatchingResolved, type ContinueItem } from '../hooks/useContinueWatching';
 import { useClearProgress } from '../hooks/useWatchProgress';
 import { ContinueWatchingRow } from './vod/ContinueWatchingRow';
-import { useVodNavigation } from '../stores/uiStore';
+import { useUIStore, useVodNavigation } from '../stores/uiStore';
 import type { StoredMovie, StoredSeries } from '../db';
 import { type MediaItem, type VodType, type VodPlayInfo } from '../types/media';
+import { useMissingTitles } from '../hooks/useMissingTitles';
+import { toggleWatchlist } from '../hooks/useWatchlist';
+import { clearMovieTitle } from '../hooks/useWatchProgress';
+import type { MissingTitle } from '../services/sync/missing';
+import { MissingRow } from './vod/MissingCard';
 import './VodPage.css';
+import { useHeroBleed } from '../hooks/useHeroBleed';
+import { getTmdbImageUrl, TMDB_BACKDROP_SIZES } from '../services/tmdb';
 
 // Animation timing (must match .vod-page transition in VodPage.css: 0.35s)
 const SLIDE_DURATION_MS = 350;
@@ -25,8 +33,9 @@ type CarouselRow = {
   title: string;
   items: MediaItem[];
   loading?: boolean;
-  kind?: 'continue';
+  kind?: 'continue' | 'missing';
   continueItems?: ContinueItem[];
+  missing?: MissingTitle[];
   tag?: 'selected';
   subtitle?: string;
 };
@@ -38,17 +47,19 @@ interface HomeVirtuosoContext {
   featuredItems: MediaItem[];
   localPopularItems: MediaItem[];
   heroLoading: boolean;
+  heroPaused: boolean; // a detail covers the home: the hero stops rotating under it
   onItemClick: (item: MediaItem) => void;
   onHeroPlay: (item: MediaItem) => void;
   progressMap?: Map<string, number>;
   onContinuePlay: (item: ContinueItem) => void;
   onContinueRemove: (item: ContinueItem) => void;
+  onMissingRemove: (item: MissingTitle) => void;
 }
 
 // Header component for Virtuoso (defined outside render to prevent remounting)
 const HomeHeader: React.ComponentType<{ context?: HomeVirtuosoContext }> = ({ context }) => {
   if (!context) return null;
-  const { featuredItems, localPopularItems, type, onHeroPlay, onItemClick, tmdbApiKey, heroLoading } = context;
+  const { featuredItems, localPopularItems, type, onHeroPlay, onItemClick, tmdbApiKey, heroLoading, heroPaused } = context;
   return (
     <HeroSection
       items={featuredItems.length > 0 ? featuredItems : localPopularItems.slice(0, 5)}
@@ -57,6 +68,7 @@ const HomeHeader: React.ComponentType<{ context?: HomeVirtuosoContext }> = ({ co
       onMoreInfo={onItemClick}
       apiKey={tmdbApiKey}
       loading={heroLoading}
+      autoRotate={!heroPaused}
     />
   );
 };
@@ -77,8 +89,14 @@ const CarouselRowContent = (
         items={row.continueItems ?? []}
         onPlay={context.onContinuePlay}
         onRemove={context.onContinueRemove}
+        missing={row.missing}
+        onRemoveMissing={context.onMissingRemove}
       />
     );
+  }
+
+  if (row.kind === 'missing') {
+    return <MissingRow title={row.title} items={row.missing ?? []} onRemove={context.onMissingRemove} />;
   }
 
   return (
@@ -108,7 +126,7 @@ const homeVirtuosoComponents = {
 // Animation state machine for VodPage enter/exit/collapse transitions
 function useVodPageAnimation(
   selectedItem: MediaItem | null,
-  setSelectedItem: (item: MediaItem | null) => void,
+  closeDetail: () => void,
   setPageCollapsed: (collapsed: boolean) => void,
   onClose?: () => void,
 ) {
@@ -155,46 +173,94 @@ function useVodPageAnimation(
   // Back handler - close detail if open, otherwise slide page down
   const handlePageBack = useCallback(() => {
     if (selectedItem) {
-      setSelectedItem(null);
+      closeDetail();
     } else {
       setPageCollapsed(true);
       setTimeout(() => {
         onClose?.();
       }, SLIDE_DURATION_MS);
     }
-  }, [selectedItem, setSelectedItem, setPageCollapsed, onClose]);
+  }, [selectedItem, closeDetail, setPageCollapsed, onClose]);
 
   return { isEntering, pageContentVisible, handleCollapsePage, handlePageBack };
+}
+
+/** The art behind the loading screen for a title played from here: its backdrop when known, else its poster. */
+export function playArt(item: MediaItem): string | undefined {
+  if (item.backdrop_path) return getTmdbImageUrl(item.backdrop_path, TMDB_BACKDROP_SIZES.large) ?? undefined;
+  return ('stream_id' in item ? item.stream_icon : item.cover) || undefined;
 }
 
 interface VodPageProps {
   type: VodType;
   onPlay?: (info: VodPlayInfo) => void;
+  /** Play was pressed: the loading screen comes up now, over the page where it stands (no slide), and onPlay follows */
+  onPlayStart?: (info: VodPlayInfo) => void;
   onClose?: () => void;
 }
 
-export function VodPage({ type, onPlay, onClose }: VodPageProps) {
+/** The page's classes: bleed (the home's hero under the bars) and floating (the Floating header) first. */
+/**
+ * The home's see-through bars (useHeroBleed): the home itself, not a grid, not while the page is slid away, and not
+ * while a detail covers it. A detail sliding away for the player shows the home again (the page stays mounted until
+ * the stream loads, indefinitely if it fails), so the home's look comes back with it.
+ */
+export function heroBleedActive(o: { bleed: boolean; hasDetail: boolean; isPageCollapsed: boolean; shouldPageBeCollapsed: boolean }): boolean {
+  return o.bleed && !(o.hasDetail && !o.isPageCollapsed) && !o.shouldPageBeCollapsed;
+}
+
+export function vodPageClasses(o: { collapsed: boolean; contentHidden: boolean; detailOpen: boolean; bleed: boolean; floating: boolean; sliding: boolean }): string {
+  return [
+    'vod-page',
+    o.bleed ? 'vod-page--bleed' : '',
+    o.floating ? 'vod-page--floating' : '',
+    o.sliding ? 'vod-page--sliding' : '',
+    o.collapsed ? 'vod-page--collapsed' : '',
+    o.contentHidden ? 'vod-page--content-hidden' : '',
+    o.detailOpen ? 'vod-page--detail-open' : '',
+  ].filter(Boolean).join(' ');
+}
+
+export function VodPage({ type, onPlay, onPlayStart, onClose }: VodPageProps) {
   // Navigation state from store (persists per media type across tab switches)
   const {
     selectedCategoryId, setSelectedCategoryId,
     searchQuery, setSearchQuery,
     scrollPosition, setScrollPosition,
     detailItem, setDetailItem: setDetailItemStore,
+    detailTrail, setDetailTrail,
     isPageCollapsed, setPageCollapsed,
   } = useVodNavigation(type);
 
-  // Local selected item state, initialized from store
-  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(detailItem);
+  // The open title and the trail behind it (More like this), initialized from the store
+  const [nav, dispatchNav] = useReducer(detailNav<MediaItem>, { current: detailItem, trail: detailTrail });
+  const selectedItem = nav.current;
+  // A series reached with Back was left from its More like this tab: it reopens there
+  const [arrivedBack, setArrivedBack] = useState(false);
+  const clearSeriesSeason = useUIStore((s) => s.clearSeriesSeason);
+  const navRef = useRef(nav);
+  navRef.current = nav;
+  const goHome = useCallback(() => {
+    // Leaving the detail forgets the seasons picked along the way (the open series and its trail)
+    if (type === 'series') {
+      const { current, trail } = navRef.current;
+      for (const it of current ? [...trail, current] : trail) clearSeriesSeason(seriesSeasonKey(it as StoredSeries));
+    }
+    dispatchNav({ type: 'home' });
+  }, [type, clearSeriesSeason]);
+  const goBack = useCallback(() => { setArrivedBack(true); dispatchNav({ type: 'back' }); }, []);
+  const openDetail = useCallback((item: MediaItem) => { setArrivedBack(false); dispatchNav({ type: 'open', item }); }, []);
   const [scrollTopNonce, setScrollTopNonce] = useState(0);
 
   // Sync selected item back to store
   useEffect(() => {
-    setDetailItemStore(selectedItem);
-  }, [selectedItem, setDetailItemStore]);
+    setDetailItemStore(nav.current);
+    setDetailTrail(nav.trail);
+  }, [nav, setDetailItemStore, setDetailTrail]);
 
   // Animation state machine (enter/exit/collapse transitions)
   const { isEntering, pageContentVisible, handleCollapsePage, handlePageBack } =
-    useVodPageAnimation(selectedItem, setSelectedItem, setPageCollapsed, onClose);
+    useVodPageAnimation(selectedItem, goHome, setPageCollapsed, onClose);
 
   // All home view data (TMDB lists, watchlist, categories, genres)
   const {
@@ -209,10 +275,13 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   } = useVodHomeData(type);
 
   const continueItems = useContinueWatchingResolved(type);
+  const missing = useMissingTitles(type);
   const { clearOne, clearSeries } = useClearProgress();
 
   // Resolve selected groupKey back to category IDs for VodBrowse
   const selectedGroup = groupedCategories.find(g => g.groupKey === selectedCategoryId);
+  // One array per category list, not per render: the strip re-measures its capsule whenever this changes
+  const stripCategories = useMemo(() => groupedCategories.map(g => ({ id: g.groupKey, name: g.name })), [groupedCategories]);
   const selectedCategoryIds = selectedGroup?.categoryIds ?? null;
 
   // Build carousel rows for virtualization
@@ -221,8 +290,8 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     const rows: CarouselRow[] = [];
 
     // Continue Watching — always row #1 when non-empty (Virtuoso-safe: in the data array, never CSS-hidden)
-    if (continueItems.length > 0) {
-      rows.push({ key: 'continue-watching', title: 'Continue Watching', items: [], kind: 'continue', continueItems });
+    if (continueItems.length > 0 || missing.progress.length > 0) {
+      rows.push({ key: 'continue-watching', title: 'Continue Watching', items: [], kind: 'continue', continueItems, missing: missing.progress });
     }
 
     // Watchlist (top of home, only when non-empty)
@@ -232,6 +301,10 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         title: 'My Watchlist',
         items: watchlistItems,
       });
+    }
+    // Watchlist titles this computer doesn't have (synced from another), grayed
+    if (missing.watchlist.length > 0) {
+      rows.push({ key: 'watchlist-missing', title: 'Watchlist: not on this computer', items: [], kind: 'missing', missing: missing.watchlist });
     }
 
     // Trending
@@ -297,7 +370,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
     return rows;
   }, [
-    continueItems,
+    continueItems, missing,
     watchlistItems,
     trendingItems, trendingLoading,
     popularItems, popularLoading,
@@ -308,12 +381,19 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     type,
   ]);
 
-  const handleItemClick = useCallback((item: MediaItem) => {
-    setSelectedItem(item);
-  }, []);
+  // Titles opened from More like this go on a trail: Back (and the mouse and browser back) returns
+  // to the one before, Home leaves the detail. Anything opened elsewhere starts a fresh trail.
+  const handleSelectRelated = useCallback((item: MediaItem) => { setArrivedBack(false); dispatchNav({ type: 'openRelated', item }); }, []);
 
   const handlePlay = useCallback((info: VodPlayInfo) => {
     if (onPlay) {
+      // With the loading screen: it fades in over the page where it stands, and the load starts now. Sliding the page
+      // (or its detail) away under it would show the home through the fade
+      if (onPlayStart) {
+        onPlayStart(info);
+        onPlay(info);
+        return;
+      }
       // Trigger slide-down animation
       setPageCollapsed(true);
       // Delay playback until animation completes
@@ -321,11 +401,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         onPlay(info);
       }, SLIDE_DURATION_MS);
     }
-  }, [onPlay, setPageCollapsed]);
-
-  const handleCloseDetail = useCallback(() => {
-    setSelectedItem(null);
-  }, []);
+  }, [onPlay, onPlayStart, setPageCollapsed]);
 
   // Handle hero play button - movies play directly, series open detail
   const handleHeroPlay = useCallback((item: MediaItem) => {
@@ -340,11 +416,12 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
         streamId: movie.stream_id,
         tmdbId: movie.tmdb_id,
         sourceId: movie.source_id,
+        art: playArt(movie),
       });
     } else {
-      setSelectedItem(item);
+      openDetail(item);
     }
-  }, [type, handlePlay]);
+  }, [type, handlePlay, openDetail]);
 
   const handleContinuePlay = useCallback((it: ContinueItem) => {
     if (it.kind === 'movie') {
@@ -352,19 +429,27 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       handlePlay({
         url: m.direct_url, title: m.title || m.name, year: m.year || m.release_date?.slice(0, 4),
         plot: m.plot, type: 'movie', streamId: m.stream_id, tmdbId: m.tmdb_id, sourceId: m.source_id,
+        art: playArt(m),
       });
     } else if (it.playInfo) {
       // series: play the resume episode directly (like movies) — resumes via getResumePosition
-      handlePlay(it.playInfo);
+      handlePlay({ ...it.playInfo, art: it.playInfo.art ?? playArt(it.media) });
     } else {
       // fallback: open detail if we couldn't resolve the resume episode
-      setSelectedItem(it.media);
+      openDetail(it.media);
     }
-  }, [handlePlay]);
+  }, [handlePlay, openDetail]);
 
   const handleContinueRemove = useCallback((it: ContinueItem) => {
-    if (it.kind === 'movie') clearOne(it.key);
+    if (it.kind === 'movie') void clearMovieTitle(it.media.tmdb_id ?? undefined, it.key);
     else clearSeries({ tmdbId: it.seriesTmdbId, seriesStreamId: it.seriesStreamId });
+  }, [clearOne, clearSeries]);
+
+  // A grayed title (not in this library): removing it syncs like any removal
+  const handleMissingRemove = useCallback((m: MissingTitle) => {
+    if (m.from === 'watchlist') void toggleWatchlist(m.type, { tmdbId: m.tmdbId, name: m.name });
+    else if (m.type === 'movie') for (const id of m.progressIds ?? []) clearOne(id);
+    else clearSeries({ tmdbId: m.tmdbId });
   }, [clearOne, clearSeries]);
 
   // Hero is loading if we have no items AND data is still being fetched
@@ -373,57 +458,65 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     (trendingLoading || popularLoading);
 
   // Memoized context for Virtuoso to prevent unnecessary re-renders
+  const detailOpen = !!selectedItem;
+  // Back on this home from a title's page: ask sync for news (throttled in main), so changes made on
+  // another computer show while you browse; the rows redraw on their own when they arrive
+  const wasOpen = useRef(detailOpen);
+  useEffect(() => {
+    if (wasOpen.current && !detailOpen) void window.sync?.pull();
+    wasOpen.current = detailOpen;
+  }, [detailOpen]);
   const homeVirtuosoContext = useMemo((): HomeVirtuosoContext => ({
     type,
     tmdbApiKey,
     featuredItems,
     localPopularItems,
     heroLoading,
-    onItemClick: handleItemClick,
+    heroPaused: detailOpen,
+    onItemClick: openDetail,
     onHeroPlay: handleHeroPlay,
     progressMap: type === 'movie' ? movieProgressMap : undefined,
     onContinuePlay: handleContinuePlay,
     onContinueRemove: handleContinueRemove,
-  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, handleItemClick, handleHeroPlay, movieProgressMap, handleContinuePlay, handleContinueRemove]);
+    onMissingRemove: handleMissingRemove,
+  }), [type, tmdbApiKey, featuredItems, localPopularItems, heroLoading, detailOpen, openDetail, handleHeroPlay, movieProgressMap, handleContinuePlay, handleContinueRemove, handleMissingRemove]);
 
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {
-    setSelectedItem(null);
+    goHome();
     if (id === selectedCategoryId) {
       setScrollTopNonce((n) => n + 1);   // re-click active category → scroll grid to top
     } else {
       setSelectedCategoryId(id);
     }
-  }, [selectedCategoryId, setSelectedCategoryId, setSelectedItem]);
+  }, [selectedCategoryId, setSelectedCategoryId, goHome]);
 
-  // Handle mouse back button and browser back - close detail view
+  // Mouse back button, Alt+Left, Cmd+[ and the keyboard's Back key: one title back (or out of the
+  // detail). Handled here rather than through browser history, which can't tell back from forward.
+  // Not while the player covers the page.
   useEffect(() => {
-    const handleMouseBack = (e: MouseEvent) => {
-      if (e.button === 3 && selectedItem) {
-        e.preventDefault();
-        setSelectedItem(null);
-      }
+    if (!selectedItem || isPageCollapsed) return;
+    const handleMouse = (e: MouseEvent) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      if (e.type === 'mousedown' && e.button === 3) goBack();
     };
-
-    const handlePopState = () => {
-      if (selectedItem) {
-        setSelectedItem(null);
-      }
+    const handleKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+      if (!isBackKey(e, typing)) return;
+      e.preventDefault();
+      goBack();
     };
-
-    window.addEventListener('mousedown', handleMouseBack);
-    window.addEventListener('popstate', handlePopState);
-
-    // Push state when opening detail so back button works
-    if (selectedItem) {
-      window.history.pushState({ vodDetail: true }, '');
-    }
-
+    window.addEventListener('mousedown', handleMouse);
+    window.addEventListener('mouseup', handleMouse);
+    window.addEventListener('keydown', handleKey);
     return () => {
-      window.removeEventListener('mousedown', handleMouseBack);
-      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('mousedown', handleMouse);
+      window.removeEventListener('mouseup', handleMouse);
+      window.removeEventListener('keydown', handleKey);
     };
-  }, [selectedItem]);
+  }, [selectedItem, isPageCollapsed, goBack]);
 
   // Labels
   const typeLabel = type === 'movie' ? 'Movies' : 'Series';
@@ -432,19 +525,53 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // Determine animation mode: page-level (no detail) vs detail-level (has detail)
   const hasDetail = !!selectedItem;
   const shouldPageBeCollapsed = (isEntering || isPageCollapsed) && !hasDetail;
-  const pageClasses = [
-    'vod-page',
+  // The home's hero runs up under the title bar and this header (HeaderStyles.css)
+  const pageRef = useRef<HTMLDivElement>(null);
+  const bleed = selectedCategoryId === null;
+  // While the page slides in, the nav stays out of the motion and settles in once it lands (HeaderStyles.css): drawn
+  // on every frame of the slide it halved the slide's frame rate on a first open. The title bar goes clear at once
+  const [sliding, setSliding] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setSliding(false), SLIDE_DELAY_MS + SLIDE_DURATION_MS);
+    return () => clearTimeout(t);
+  }, []);
+  // The see-through bars: the home itself, including behind a detail sliding away for the player (heroBleedActive)
+  const { onScroll: bleedScroll } = useHeroBleed(
+    heroBleedActive({ bleed, hasDetail, isPageCollapsed, shouldPageBeCollapsed }), pageRef, scrollPosition);
+  // Floating header: it floats on every view, so content starts below it (--strip-h, kept current as it resizes)
+  const floating = useUIStore((s) => s.settings.appearance?.header === 'floating');
+  useLayoutEffect(() => {
+    const page = pageRef.current;
+    const strip = page?.querySelector<HTMLElement>('.h-category-strip');
+    if (!page || !strip) return;
+    const measure = () => page.style.setProperty('--strip-h', `${strip.offsetHeight}px`);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(strip);
+    return () => ro.disconnect();
+  }, [floating]);
+
+  const pageClasses = vodPageClasses({
     // Animate whole page when entering/exiting without detail
-    shouldPageBeCollapsed ? 'vod-page--collapsed' : '',
+    collapsed: shouldPageBeCollapsed,
     // Hide page content when detail is animating out
-    !pageContentVisible ? 'vod-page--content-hidden' : '',
-  ].filter(Boolean).join(' ');
+    contentHidden: !pageContentVisible,
+    // A detail covers the page: stop drawing what's under it (drawn again while the detail slides
+    // away for the player, so the home shows behind it rather than a blank page)
+    detailOpen: hasDetail && !isPageCollapsed,
+    bleed,
+    floating,
+    sliding,
+  });
 
   return (
-    <div className={pageClasses}>
+    <div className={pageClasses} ref={pageRef}>
+      {/* The home's fill behind the title bar and header (HeaderStyles.css; opacity set by useHeroBleed) */}
+      <div className="vod-page__chrome-fill" aria-hidden="true" />
+      <div className="vod-page__chrome-shade" aria-hidden="true" />
       {/* Unified header: back + categories + search */}
       <HorizontalCategoryStrip
-        categories={groupedCategories.map(g => ({ id: g.groupKey, name: g.name }))}
+        categories={stripCategories}
         selectedId={selectedCategoryId}
         onSelect={handleCategorySelect}
         type={type}
@@ -468,7 +595,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             categoryName={`All ${typeLabel}`}
             search={searchQuery || undefined}
             scrollTopNonce={scrollTopNonce}
-            onItemClick={handleItemClick}
+            onItemClick={openDetail}
           />
         ) : selectedCategoryId && selectedGroup ? (
           // Category view: Virtualized grid filtered by grouped category IDs
@@ -478,7 +605,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             categoryName={selectedGroup.name}
             search={searchQuery || undefined}
             scrollTopNonce={scrollTopNonce}
-            onItemClick={handleItemClick}
+            onItemClick={openDetail}
           />
         ) : (
           // Home view: Hero + virtualized carousels
@@ -496,6 +623,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
               // Only track scroll on home view
               if (selectedCategoryId === null) {
                 setScrollPosition((e.target as HTMLElement).scrollTop);
+                bleedScroll((e.target as HTMLElement).scrollTop);
               }
             }}
           />
@@ -505,11 +633,14 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       {/* Detail modal */}
       {selectedItem && type === 'movie' && (
         <MovieDetail
+          key={(selectedItem as StoredMovie).stream_id}
           movie={selectedItem as StoredMovie}
-          onClose={handleCloseDetail}
+          onSelectRelated={handleSelectRelated}
+          onClose={goHome}
+          onBack={nav.trail.length ? goBack : undefined}
           onCollapse={handleCollapsePage}
           isCollapsed={isEntering || isPageCollapsed}
-          onPlay={(movie, plot) => handlePlay({
+          onPlay={(movie, plot, art) => handlePlay({
             url: movie.direct_url,
             title: movie.title || movie.name,
             year: movie.year || movie.release_date?.slice(0, 4),
@@ -518,14 +649,19 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             streamId: movie.stream_id,
             tmdbId: movie.tmdb_id,
             sourceId: movie.source_id,
+            art,
           })}
           apiKey={tmdbApiKey}
         />
       )}
       {selectedItem && type === 'series' && (
         <SeriesDetail
+          key={(selectedItem as StoredSeries).series_id}
           series={selectedItem as StoredSeries}
-          onClose={handleCloseDetail}
+          onSelectRelated={handleSelectRelated}
+          onClose={goHome}
+          onBack={nav.trail.length ? goBack : undefined}
+          initialTab={arrivedBack ? 'more' : 'episodes'}
           onCollapse={handleCollapsePage}
           isCollapsed={isEntering || isPageCollapsed}
           onPlayEpisode={handlePlay}

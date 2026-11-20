@@ -87,3 +87,16 @@
 .about-tab__license {
   margin-top: 0;
 }
+
+/* What's new and the full release notes, under the version */
+.about-tab__notes {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.about-tab__notes-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

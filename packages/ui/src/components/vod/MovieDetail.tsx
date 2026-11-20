@@ -5,18 +5,22 @@
  * Slides in as a full page, not a modal.
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { getTmdbImageUrl, TMDB_POSTER_SIZES } from '../../services/tmdb';
 import { useLazyBackdrop } from '../../hooks/useLazyBackdrop';
-import { DetailHeader } from './DetailHeader';
+import { DetailBleed, DetailHeader } from './DetailHeader';
+import { useDetailBleed } from '../../hooks/useHeroBleed';
 import { useLazyPlot } from '../../hooks/useLazyPlot';
 import { useLazyCredits } from '../../hooks/useLazyCredits';
 import { useRpdbSettings } from '../../hooks/useRpdbSettings';
 import { getRpdbPosterUrl } from '../../services/rpdb';
 import { WatchlistButton } from './WatchlistButton';
+import { MoreLikeThis } from './MoreLikeThis';
+import { useMoreLikeThis } from '../../hooks/useMoreLikeThis';
 import { useMoviePlaySources } from '../../hooks/usePlayResolver';
 import { useMovieProgressByTmdb, useMovieProgress } from '../../hooks/useWatchProgress';
-import type { StoredMovie } from '../../db';
+import type { StoredMovie, StoredSeries } from '../../db';
+import type { MediaItem } from '../../types/media';
 import './MovieDetail.css';
 
 export interface MovieDetailProps {
@@ -24,11 +28,13 @@ export interface MovieDetailProps {
   onClose: () => void;
   onCollapse?: () => void;
   isCollapsed?: boolean;
-  onPlay?: (movie: StoredMovie, plot?: string | null) => void;
+  onPlay?: (movie: StoredMovie, plot?: string | null, art?: string) => void;
   apiKey?: string | null; // TMDB API key for lazy backdrop loading
+  onSelectRelated?: (item: MediaItem) => void; // a title picked in More like this
+  onBack?: () => void; // one title back; only when opened from More like this
 }
 
-export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, apiKey }: MovieDetailProps) {
+export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, apiKey, onSelectRelated, onBack }: MovieDetailProps) {
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -46,19 +52,22 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
   const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(movie, apiKey);
   const lazyCredits = useLazyCredits(movie, apiKey);
 
+  const { items: related } = useMoreLikeThis('movie', movie.tmdb_id, apiKey);
   const playSources = useMoviePlaySources(movie.tmdb_id, movie.stream_id);
   const progressByTmdb = useMovieProgressByTmdb(movie.tmdb_id);
   const progressByStream = useMovieProgress(movie.stream_id);
   const watchProgress = (progressByTmdb ?? progressByStream)?.progress ?? 0;
   const hasMultipleSources = playSources.length > 1;
 
+  // The backdrop shown here goes to the loading screen too (blurred behind it)
+  const playArt = tmdbBackdropUrl || movie.stream_icon || undefined;
   const handlePlay = useCallback(() => {
-    onPlay?.(movie, lazyPlot || movie.plot);
-  }, [movie, onPlay, lazyPlot]);
+    onPlay?.(movie, lazyPlot || movie.plot, playArt);
+  }, [movie, onPlay, lazyPlot, playArt]);
 
   const handlePlayFromSource = useCallback((url: string) => {
-    onPlay?.({ ...movie, direct_url: url }, lazyPlot || movie.plot);
-  }, [movie, onPlay, lazyPlot]);
+    onPlay?.({ ...movie, direct_url: url }, lazyPlot || movie.plot, playArt);
+  }, [movie, onPlay, lazyPlot, playArt]);
 
   // Load RPDB settings for poster
   const { apiKey: rpdbApiKey } = useRpdbSettings();
@@ -90,8 +99,17 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
     ? `${Math.floor(movie.duration / 60)}h ${movie.duration % 60}m`
     : null;
 
+  // The backdrop runs up under the title bar, clear until the art scrolls away (off while slid away for the player)
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const { onScroll: bleedScroll } = useDetailBleed(!isCollapsed, scrollerRef);
+
   return (
-    <div className={`movie-detail${isCollapsed ? ' movie-detail--collapsed' : ''}`}>
+    <div
+      className={`movie-detail${isCollapsed ? ' movie-detail--collapsed' : ''}`}
+      ref={scrollerRef}
+      onScroll={(e) => bleedScroll(e.currentTarget.scrollTop)}
+    >
+      <DetailBleed />
       {/* Backdrop */}
       <div className="movie-detail__backdrop">
         {backdropUrl && <img src={backdropUrl} alt="" aria-hidden="true" />}
@@ -99,7 +117,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
       </div>
 
       {/* Header with back button and collapse */}
-      <DetailHeader className="movie-detail" onBack={onClose} onCollapse={onCollapse} />
+      <DetailHeader className="movie-detail" onHome={onClose} onBack={onBack} onCollapse={onCollapse} />
 
       {/* Content */}
       <div className="movie-detail__content">
@@ -215,6 +233,7 @@ export function MovieDetail({ movie, onClose, onCollapse, isCollapsed, onPlay, a
             )}
           </div>
         </div>
+        <MoreLikeThis type="movie" items={related} onSelect={onSelectRelated} />
       </div>
     </div>
   );
