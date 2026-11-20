@@ -42,6 +42,7 @@ import { VodLoading, playbackStarted } from './components/VodLoading';
 import { sendSnapshot, setSyncActive } from './services/sync/outbox';
 import { applyRecords } from './services/sync/apply';
 import { useRematchFavorites } from './hooks/useRematchFavorites';
+import { useSyncActive } from './hooks/useSyncActive';
 import { FirstRun, OfferSync } from './components/FirstRun';
 import { WhatsNew } from './components/WhatsNew';
 import { WHATS_NEW, type WhatsNewItem } from './whatsNewItems';
@@ -372,6 +373,7 @@ function App() {
   firstRunOpenRef.current = firstRunOpen;
   // What's new: once per release after an update, decided when settings, sources and the first run are known
   const [whatsNew, setWhatsNew] = useState<{ version: string; items: WhatsNewItem[] } | null>(null);
+  const syncOn = useSyncActive();
   const whatsNewChecked = useRef(false);
   useEffect(() => {
     if (whatsNewChecked.current || !settingsLoaded || !sourcesLoaded || !window.platform) return;
@@ -1328,8 +1330,10 @@ function App() {
       {whatsNew && !firstRunOpen && (activeView !== 'settings' || whatsNewOverSettings) && (
         <WhatsNew
           version={whatsNew.version}
-          // The portable build has no Sync & transfer: no buttons that lead there
-          items={window.platform?.isPortable ? whatsNew.items.map(({ action: _, ...it }) => it) : whatsNew.items}
+          items={whatsNew.items}
+          syncOn={syncOn}
+          // The Windows portable build has no Sync & transfer: those items link the installer instead
+          portable={!!window.platform?.isPortable}
           onClose={closeWhatsNew}
           onAction={(to) => {
             // Not seen yet: Settings covers it, it comes back when Settings closes, and only Done or Esc marks it seen
