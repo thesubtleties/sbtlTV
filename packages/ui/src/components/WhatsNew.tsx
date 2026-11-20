@@ -5,9 +5,11 @@ import { Button } from './settings/ui';
 import './WhatsNew.css';
 
 /** Once after an update (and from Settings › About): a short list of what's new in this version. */
-export function WhatsNew({ version, items, onAction, onClose }: {
+export function WhatsNew({ version, items, syncOn = false, onAction, onClose }: {
   version: string;
   items: WhatsNewItem[];
+  /** This computer is syncing: the Sync item's chip says on (live, so it's right after Settings closes) */
+  syncOn?: boolean;
   onAction: (to: 'add-computer' | 'open-transfer') => void;
   onClose: () => void;
 }) {
@@ -30,7 +32,7 @@ export function WhatsNew({ version, items, onAction, onClose }: {
           <li key={it.id} className="whats-new__item">
             <div className="whats-new__title">
               {it.title}
-              {it.off && <span className="whats-new__off">off</span>}
+              {it.state === 'sync' && <span className={`whats-new__state${syncOn ? ' is-on' : ''}`}>{syncOn ? 'on' : 'off'}</span>}
             </div>
             <p className="whats-new__text">{it.text}</p>
             {it.action && <Button onClick={() => onAction(it.action!.to)}>{it.action.label}</Button>}

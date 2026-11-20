@@ -68,13 +68,17 @@
   font-weight: 600;
 }
 
-.whats-new__off {
+.whats-new__state {
   padding: 1px 7px;
   border: 1px solid var(--line);
   border-radius: 999px;
   font-size: 11px;
   font-weight: 500;
   color: var(--text-3);
+}
+.whats-new__state.is-on {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
 }
 
 .whats-new__text {
