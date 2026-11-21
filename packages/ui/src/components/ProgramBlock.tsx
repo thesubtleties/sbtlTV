@@ -121,8 +121,7 @@ export const ProgramBlock = memo(function ProgramBlock({
       style={{
         left: `${style.left}px`,
         width: `${style.width}px`,
-        // The aired fill grows in with the block's own stagger (--enter-delay, see the CSS)
-        ...(enterDelayMs !== undefined ? { animationDelay: `${enterDelayMs}ms`, '--enter-delay': `${enterDelayMs}ms` } as CSSProperties : {}),
+        ...(enterDelayMs !== undefined ? { animationDelay: `${enterDelayMs}ms` } : {}),
         ...(isCurrent ? { '--aired': `${aired}px` } as CSSProperties : {}),
       }}
       onClick={onClick}

@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { ProgramLane } from './ProgramLane';
 import { isProgramCurrent } from './ProgramBlock';
 import { onNow } from '../utils/onNow';
@@ -50,10 +50,16 @@ export const ChannelRow = memo(function ChannelRow({
     e.stopPropagation();
     toggleFavorite(channel.stream_id, channel.name);
   }, [toggleFavorite, channel.stream_id, channel.name]);
+  // The on-now line lands with the row: grows in when the row's programs morph in, otherwise fades in in place
+  const [morphed, setMorphed] = useState(false);
+  const handleMorph = useCallback(() => setMorphed(true), []);
   // No EPG, or nothing on: no second line, the cell looks as it always did
-  const on = showNow
-    ? onNow(nowProgram !== undefined ? nowProgram : programs?.find((p) => isProgramCurrent(p, now)), now)
-    : null;
+  // The live answer when it's for now; not read yet (or an answer from the minute before, while the next is read)
+  // falls back to the row's own programs, so the cell keeps its show instead of blinking out
+  const live = nowProgram === null || (nowProgram && isProgramCurrent(nowProgram, now))
+    ? nowProgram
+    : programs?.find((p) => isProgramCurrent(p, now));
+  const on = showNow ? onNow(live, now) : null;
   // Show channel_num when sorting by number, otherwise show list position
   const displayNumber = sortOrder === 'number' && channel.channel_num !== undefined
     ? channel.channel_num
@@ -84,7 +90,7 @@ export const ChannelRow = memo(function ChannelRow({
         <div className="guide-channel-text">
           <span className="guide-channel-name" title={channel.name}>{channel.name}</span>
           {on && (
-            <span className="guide-channel-now" title={`${on.title} · ${on.minutesLeft} min left`}>
+            <span className={`guide-channel-now${morphed ? ' guide-channel-now--morph' : ''}`} title={`${on.title} · ${on.minutesLeft} min left`}>
               <span className="guide-channel-now-title">{on.title}</span>
               <span className="guide-channel-now-line" aria-hidden="true">
                 <span style={{ width: `${on.pct}%` }} />
@@ -122,6 +128,7 @@ export const ChannelRow = memo(function ChannelRow({
           pixelsPerHour={pixelsPerHour}
           visibleHours={visibleHours}
           onPlay={handlePlay}
+          onMorph={handleMorph}
         />
       </div>
     </div>

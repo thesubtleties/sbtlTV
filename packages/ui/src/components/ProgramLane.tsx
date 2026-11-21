@@ -23,6 +23,8 @@ interface ProgramLaneProps {
   pixelsPerHour: number;
   visibleHours: number;
   onPlay: () => void;
+  /** Called when the row's programs arrive with the morph (so the channel cell can land its line with them) */
+  onMorph?: () => void;
 }
 
 interface VisibleProgram {
@@ -67,6 +69,7 @@ export const ProgramLane = memo(function ProgramLane({
   pixelsPerHour,
   visibleHours,
   onPlay,
+  onMorph,
 }: ProgramLaneProps) {
   const [phase, setPhase] = useState<Phase>(() =>
     programs === undefined ? { kind: 'loading', since: Date.now() } : { kind: 'ready', entering: false }
@@ -78,6 +81,8 @@ export const ProgramLane = memo(function ProgramLane({
   const morphEnabled = useGuideMorphEnabled();
   const morphEnabledRef = useRef(morphEnabled);
   morphEnabledRef.current = morphEnabled;
+  const onMorphRef = useRef(onMorph);
+  onMorphRef.current = onMorph;
 
   const laneWidth = pixelsPerHour * visibleHours;
   const placeholders = useMemo(() => loadingBlocks(rowIndex, laneWidth), [rowIndex, laneWidth]);
@@ -132,6 +137,7 @@ export const ProgramLane = memo(function ProgramLane({
       return;
     }
     setPhase({ kind: 'morph', moving: false, plan, placeholders, laneKey });
+    onMorphRef.current?.();
     const lead = setTimeout(() => {
       if (phaseRef.current.kind === 'morph') setPhase({ ...phaseRef.current, moving: true });
     }, MORPH_LEAD_MS);

@@ -115,16 +115,11 @@
   background: var(--accent-soft);
 }
 
-/* The aired fill grows in from the left as the show on now arrives: with the morph's landing (480ms,
-   MORPH_MS), or with a fade-in block's own stagger. A block that simply re-renders doesn't replay it. */
+/* With the morph, the aired fill grows in from the left as the show on now lands (480ms, MORPH_MS). Otherwise it
+   simply fades in with its block, in place. A block that just re-renders doesn't replay it. */
 .program-block.morph.current::before {
   transform-origin: left center;
   animation: aired-in 480ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
-}
-
-.program-block.program-block-in.current::before {
-  transform-origin: left center;
-  animation: aired-in 480ms cubic-bezier(0.22, 0.61, 0.36, 1) var(--enter-delay, 0ms) both;
 }
 
 @keyframes aired-in {
@@ -172,8 +167,7 @@
     animation: none;
     opacity: 1;
   }
-  .program-block.morph.current::before,
-  .program-block.program-block-in.current::before {
+  .program-block.morph.current::before {
     animation: none;
   }
 }

@@ -29,6 +29,12 @@ describe('ChannelRow: what is on now, under the name', () => {
     expect(html).toContain('How the Universe Works');
     expect(html).not.toContain('Late Show');
   });
+  it("an answer from the minute before (its show just ended) falls back to the row's programs: no blink", () => {
+    const earlier: StoredProgram = { ...show, id: 'p0', title: 'Earlier Show', start: at(19, 0), end: at(20, 0) };
+    const html = row({ nowProgram: earlier });
+    expect(html).toContain('How the Universe Works');
+    expect(html).not.toContain('Earlier Show');
+  });
   it('no EPG, nothing on now, or the setting off: just the name, as before', () => {
     for (const html of [row({ programs: [] }), row({ nowProgram: null }), row({ showNow: false })]) {
       expect(html).toContain('>Discovery<');

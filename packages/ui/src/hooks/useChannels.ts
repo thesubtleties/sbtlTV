@@ -135,26 +135,31 @@ export function useProgramsInRange(streamIds: string[], windowStart: Date, windo
   return last.current;
 }
 
-// Hook to get the current program for a list of channel IDs
+// What's on now for a list of channel IDs: null = nothing on (no EPG now), a missing entry = not read yet.
+// While a new set of IDs or a new minute is being read, the previous answer is kept (like useProgramsInRange),
+// so cells already on screen keep their show instead of dropping it and coming back (re-running their entrance).
 export function usePrograms(streamIds: string[]): Map<string, StoredProgram | null> {
   const nowMinute = Math.floor(Date.now() / 60_000) * 60_000;
-  const { data: fetched, stale } = useDataQuery(
+  const { data, stale } = useDataQuery(
     streamIds.length > 0 ? { type: 'programsInRange', streamIds, windowStartMs: nowMinute, windowEndMs: nowMinute + 1 } : null,
     ['epg_programs', 'epg_links'],
     [streamIds.join(','), nowMinute],
   );
-  const data = stale ? undefined : fetched;
-  return useMemo(() => {
+  const last = useRef<Map<string, StoredProgram | null>>(new Map());
+  const fresh = useMemo(() => {
+    if (!data || stale) return null;
     const result = new Map<string, StoredProgram | null>();
     for (const id of streamIds) result.set(id, null);
-    for (const row of data ?? []) {
+    for (const row of data) {
       if (row.start.getTime() <= nowMinute && row.end.getTime() > nowMinute) {
         const cur = result.get(row.stream_id);
         if (!cur || row.start > cur.start) result.set(row.stream_id, row);
       }
     }
     return result;
-  }, [data, streamIds.join(','), nowMinute]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data, stale, streamIds.join(','), nowMinute]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (fresh) last.current = fresh;
+  return last.current;
 }
 
 // Grouped category for adaptive category strip
