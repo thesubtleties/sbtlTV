@@ -93,8 +93,11 @@ describe('the guide hover card: where it opens', () => {
     return { left: parseFloat(el.style.left), top: parseFloat(el.style.top), shown: el.classList.contains('ghc--shown') };
   };
   beforeEach(() => { Object.assign(window, { innerWidth: 1600, innerHeight: 1000 }); });
-  it('at the pointer, under the block', () => {
-    expect(place({ left: 400, top: 200, bottom: 240, right: 900 }, 700)).toEqual({ left: 676, top: 246, shown: true });
+  it('under the block, at its start', () => {
+    expect(place({ left: 400, top: 200, bottom: 240, right: 900 }, 700)).toEqual({ left: 400, top: 246, shown: true });
+  });
+  it('on a block wider than the card, never so far left that the pointer is past its right end', () => {
+    expect(place({ left: 400, top: 200, bottom: 240, right: 1400 }, 1000).left).toBe(1000 - 360);
   });
   it('above the block when there is no room below, never under the title bar', () => {
     expect(place({ left: 400, top: 900, bottom: 940, right: 900 }, 700).top).toBe(900 - 6 - 120);
