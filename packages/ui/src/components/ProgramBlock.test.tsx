@@ -54,7 +54,9 @@ describe('ProgramBlock', () => {
     expect(airedPx(0, 50, at(21, 30), at(21, 0), 200)).toBe(50);     // now past the block
   });
   it('the times and description are there for screen readers', () => {
-    expect(render(at(21, 40))).toMatch(/aria-description="[^"]*–[^"]*"/);
+    expect(render(at(21, 40))).toMatch(/aria-description="On now, [^"]*–[^"]*"/);
+    expect(render(at(22, 10))).toMatch(/aria-description="Ended, [^"]*–[^"]*"/);
+    expect(render(at(20, 40))).toMatch(/aria-description="\d[^"]*–[^"]*"/);
   });
   it('lights up only the programmes a guide jump is for', () => {
     const lit = (ids: Set<string> | null) => renderToStaticMarkup(createElement(GuideHighlight.Provider, { value: ids },

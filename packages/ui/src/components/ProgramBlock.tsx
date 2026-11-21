@@ -138,8 +138,9 @@ export const ProgramBlock = memo(function ProgramBlock({
         ...(isCurrent ? { '--aired': `${aired}px` } : {}),
       }}
       onClick={onClick}
-      // The times and description for screen readers (the hover card is for the pointer)
-      aria-description={`${clockRange(program.start.getTime(), program.end.getTime())}${program.description ? `. ${program.description}` : ''}`}
+      // Whether it ended or is on now, the times and description for screen readers (the hover card is for the
+      // pointer; same words as the card and the channel cell)
+      aria-description={`${ended ? 'Ended, ' : isCurrent ? 'On now, ' : ''}${clockRange(program.start.getTime(), program.end.getTime())}${program.description ? `. ${program.description}` : ''}`}
       onMouseEnter={(e) => hover?.show(program, e.currentTarget, e.clientX)}
       onMouseLeave={() => hover?.hide()}
     >

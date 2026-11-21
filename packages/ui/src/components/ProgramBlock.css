@@ -147,14 +147,14 @@
 }
 
 /* Fade-straight-in entrance: rows that resolve without a noticeable wait,
-   and any program in a morphing row that had no placeholder to carry it. */
+   and any program in a morphing row that had no placeholder to carry it. Backwards only (hidden during the stagger
+   delay): holding the end state would pin opacity at 1 over an ended show's 0.7, and the class stays on the block. */
 .program-block.program-block-in {
-  animation: program-block-in 320ms ease-out both;
+  animation: program-block-in 320ms ease-out backwards;
 }
 
 @keyframes program-block-in {
   from { opacity: 0; background-color: var(--fill-1); }
-  to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -226,7 +226,8 @@
   background: var(--fill-2);
 }
 
-.program-block.program-block--ended:not(.program-block--found) .program-block-title {
+.program-block.program-block--ended:not(.program-block--found) .program-block-title,
+.program-block.program-block--ended:not(.program-block--found) .program-block-desc {
   color: var(--muted);
 }
 
