@@ -1,5 +1,8 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useContext, useState } from 'react';
 import { ProgramLane } from './ProgramLane';
+import { isProgramCurrent } from './ProgramBlock';
+import { onNow } from '../utils/onNow';
+import { GuideHover } from './guideHover';
 import { useIsFavoriteChannel, useToggleFavoriteChannel } from '../hooks/useFavorites';
 import type { StoredChannel, StoredProgram } from '../db';
 
@@ -10,6 +13,12 @@ interface ChannelRowProps {
   channelColumnWidth: number;
   // undefined while this row's programs have not been read yet; [] when the channel has no EPG
   programs: StoredProgram[] | undefined;
+  /**
+   * What's on right now, whatever time the grid shows (null: nothing; undefined: not read yet, so it comes from
+   * `programs`). Shown under the name with its progress; leave it out (showNow false) for the plain cell.
+   */
+  nowProgram?: StoredProgram | null;
+  showNow?: boolean;
   windowStart: Date;
   windowEnd: Date;
   /** The guide's minute tick: what is on now */
@@ -25,6 +34,8 @@ export const ChannelRow = memo(function ChannelRow({
   sortOrder,
   channelColumnWidth,
   programs,
+  nowProgram,
+  showNow = true,
   windowStart,
   windowEnd,
   now,
@@ -40,6 +51,17 @@ export const ChannelRow = memo(function ChannelRow({
     e.stopPropagation();
     toggleFavorite(channel.stream_id, channel.name);
   }, [toggleFavorite, channel.stream_id, channel.name]);
+  // The on-now line lands with the row: grows in when the row's programs morph in, otherwise fades in in place
+  const [morphed, setMorphed] = useState(false);
+  const handleMorph = useCallback(() => setMorphed(true), []);
+  // No EPG, or nothing on: no second line, the cell looks as it always did
+  // The live answer when it's for now; not read yet (or an answer from the minute before, while the next is read)
+  // falls back to the row's own programs, so the cell keeps its show instead of blinking out
+  const live = nowProgram === null || (nowProgram && isProgramCurrent(nowProgram, now))
+    ? nowProgram
+    : programs?.find((p) => isProgramCurrent(p, now));
+  const on = showNow ? onNow(live, now) : null;
+  const hover = useContext(GuideHover);
   // Show channel_num when sorting by number, otherwise show list position
   const displayNumber = sortOrder === 'number' && channel.channel_num !== undefined
     ? channel.channel_num
@@ -67,7 +89,21 @@ export const ChannelRow = memo(function ChannelRow({
             <span className="logo-placeholder">{channel.name.charAt(0)}</span>
           )}
         </div>
-        <span className="guide-channel-name" title={channel.name}>{channel.name}</span>
+        <div className="guide-channel-text">
+          <span className="guide-channel-name" title={channel.name}>{channel.name}</span>
+          {on && (
+            <span
+              className={`guide-channel-now${morphed ? ' guide-channel-now--morph' : ''}`}
+              onMouseEnter={(e) => { if (live) hover?.show(live, e.currentTarget); }}
+              onMouseLeave={() => hover?.hide()}
+            >
+              <span className="guide-channel-now-title">{on.title}</span>
+              <span className="guide-channel-now-line" aria-hidden="true">
+                <span style={{ width: `${on.pct}%` }} />
+              </span>
+            </span>
+          )}
+        </div>
         <button
           className={`channel-fav-btn${isFavorite ? ' active' : ''}`}
           onClick={handleToggleFavorite}
@@ -98,6 +134,7 @@ export const ChannelRow = memo(function ChannelRow({
           pixelsPerHour={pixelsPerHour}
           visibleHours={visibleHours}
           onPlay={handlePlay}
+          onMorph={handleMorph}
         />
       </div>
     </div>

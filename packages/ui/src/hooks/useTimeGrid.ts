@@ -5,7 +5,7 @@ export interface TimeGridState {
   now: Date;
   // The left edge of the visible time window
   anchor: Date;
-  // True when following the current time at the left edge
+  // True when following the current time (the left edge is then the half hour now is in)
   isAtNow: boolean;
   // Number of hours visible (2-5)
   visibleHours: number;
@@ -31,7 +31,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-// The current minute (the guide's "now", and the left edge at "now")
+// The current minute (the guide's "now"; the left edge at now is its half hour)
 function getNow(): Date {
   return new Date(minuteOf(Date.now()));
 }
@@ -86,6 +86,17 @@ function floorToHour(date: Date): Date {
   return result;
 }
 
+/**
+ * The guide's left edge while it follows now: the half hour now is in (8:00 or 8:30, local), so the show
+ * on now usually starts at the edge with its whole title, and the grid moves twice an hour, not every
+ * minute. Local minutes, not epoch maths: zones 30 or 45 minutes off UTC keep their own :00 and :30.
+ */
+export function floorToHalfHour(date: Date): Date {
+  const result = new Date(date);
+  result.setMinutes(result.getMinutes() < 30 ? 0 : 30, 0, 0);
+  return result;
+}
+
 // One hour back: from between hours, snap to the hour; from an hour, the one before
 export function stepBack(anchor: Date): Date {
   const hour = floorToHour(anchor);
@@ -126,9 +137,10 @@ export function useTimeGrid({
   // and what is on now in one render.
   const [browseAnchor, setBrowseAnchor] = useState<Date | null>(null);
   const isAtNow = browseAnchor === null;
-  const anchor = browseAnchor ?? now;
+  const liveAnchor = useMemo(() => floorToHalfHour(now), [now]);
+  const anchor = browseAnchor ?? liveAnchor;
 
-  // One tick per minute, on the minute: the clock, the left edge at "now" and
+  // One tick per minute, on the minute: the clock, the left edge at now (its half hour) and
   // what is on now all change together, when the shows do.
   const refreshNow = useCallback(() => {
     const minute = minuteOf(Date.now());
@@ -159,8 +171,8 @@ export function useTimeGrid({
 
   // Navigation: go back one hour (the first step back from "now" snaps to its hour)
   const goBack = useCallback(() => {
-    setBrowseAnchor((current) => stepBack(current ?? now));
-  }, [now]);
+    setBrowseAnchor((current) => stepBack(current ?? liveAnchor));
+  }, [liveAnchor]);
 
   // Navigation: go forward one hour (snap to even hour)
   const goForward = useCallback(() => {

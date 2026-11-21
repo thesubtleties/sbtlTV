@@ -1,0 +1,98 @@
+/* The guide's hover card: the search panel's surface (fill, edge, blur, shadow) at the card radius. Drawn on the body,
+   outside .app, so it sets the app's font itself. */
+.ghc {
+  position: fixed;
+  z-index: 90; /* above the guide (80), below Settings (1000) */
+  box-sizing: border-box;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  padding: 11px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(16px);
+  color: var(--text);
+  font-family: var(--font-sans);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 140ms ease-out, transform 160ms ease-out;
+}
+
+.ghc--shown {
+  opacity: 1;
+  transform: none;
+}
+
+/* On now: its progress along the top edge (the corners clip it), as the channel cell's line */
+.ghc--now::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--progress, 0%);
+  height: 2px;
+  background: var(--accent);
+}
+
+.ghc__title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ghc__when {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-condensed);
+  font-size: 12.5px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.ghc__times {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ghc__len {
+  color: var(--text-3);
+}
+
+.ghc__status {
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+.ghc--now .ghc__status {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.ghc__desc {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghc { transition: none; transform: none; }
+}

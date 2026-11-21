@@ -1,6 +1,7 @@
 import { createContext, memo, useEffect, useRef, useState } from 'react';
 import { isAiringLive, matchRanges, type GuideAiring, type GuideSearchChannel, type GuideSearchResult } from '@sbtltv/core';
 import './GuideSearchResults.css';
+import { clock, dayLabel, timeLeft } from '../utils/airTime';
 
 /** Programme ids to light up in the guide after a jump; null when not jumping. */
 export const GuideHighlight = createContext<Set<string> | null>(null);
@@ -27,15 +28,6 @@ export function flattenResults(r: GuideSearchResult, allChannels: boolean, expan
   return items;
 }
 
-const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-function dayLabel(ms: number, now: number): string {
-  const days = Math.round((new Date(ms).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86400000);
-  return days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : new Date(ms).toLocaleDateString([], { weekday: 'long' });
-}
-function timeLeft(endMs: number, now: number): string {
-  const left = Math.max(1, Math.round((endMs - now) / 60000));
-  return left >= 60 ? `${Math.floor(left / 60)}h ${left % 60}m left` : `${left}m left`;
-}
 
 // Memoised: this runs for every row on every arrow key
 const Marked = memo(function Marked({ text, query }: { text: string; query: string }) {
