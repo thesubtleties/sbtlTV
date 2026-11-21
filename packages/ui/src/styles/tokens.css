@@ -50,8 +50,8 @@
   --rating: #f5c518;
 
   /* Corners: firm, not bubbly (one place to tune the whole app) */
-  --r-control: 6px;
-  --r-inner: 4px;
+  --r-control: 4px;
+  --r-inner: 3px;
   --r-card: 6px;
   --r-panel: 10px;
 

@@ -229,6 +229,16 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange, onShowWhatsNew
       <div className="about-tab__footer">
         <div className="about-tab__links">
           <a
+            href="https://sbtltv.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="sbtltv.com"
+            aria-label="sbtltv.com"
+            className="about-tab__link about-tab__link--tv"
+          >
+            <Logo width={26} height={26} aria-hidden />
+          </a>
+          <a
             href="https://github.com/thesubtleties/sbtlTV"
             target="_blank"
             rel="noopener noreferrer"
@@ -246,7 +256,7 @@ export function AboutTab({ autoUpdateEnabled, onAutoUpdateChange, onShowWhatsNew
             title="sbtl.dev"
             className="about-tab__link"
           >
-            <SbtlMark width="28" height="22" />
+            <SbtlMark width="34" height="15.34" />
           </a>
         </div>
 

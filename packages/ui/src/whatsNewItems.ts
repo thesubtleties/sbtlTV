@@ -11,6 +11,11 @@ export interface WhatsNewItem {
 
 /** A short list per release (not the release notes). Keyed by version without a prerelease part. */
 export const WHATS_NEW: Record<string, WhatsNewItem[]> = {
+  '0.18.0': [
+    { id: 'guide', title: 'Guide refresh', text: "What's on under each channel name, show details on hover, and ended shows outlined. The on-now line can be turned off in Settings › Guide." },
+    { id: 'sync', title: 'Sync', state: 'sync', installOnly: true, text: 'Keep your watchlist, progress and favorite channels the same on your own computers. End-to-end encrypted.', action: { label: 'Add a computer…', to: 'add-computer' } },
+    { id: 'send', title: 'Send a setup', installOnly: true, text: "Set up another computer, or someone else's, with a short code.", action: { label: 'Open Sync & transfer', to: 'open-transfer' } },
+  ],
   '0.17.0': [
     { id: 'sync', title: 'Sync', state: 'sync', installOnly: true, text: 'Keep your watchlist, progress and favorite channels the same on your own computers. End-to-end encrypted.', action: { label: 'Add a computer…', to: 'add-computer' } },
     { id: 'send', title: 'Send a setup', installOnly: true, text: "Set up another computer, or someone else's, with a short code.", action: { label: 'Open Sync & transfer', to: 'open-transfer' } },

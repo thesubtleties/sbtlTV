@@ -1,5 +1,6 @@
 import { isAiringLive, type GuideAiring } from '@sbtltv/core';
 import type { GuideItem } from '../components/GuideSearchResults';
+import { floorToHalfHour } from '../hooks/useTimeGrid';
 
 /** Up and Down through the rows; null is back in the box, with nothing highlighted. */
 export function moveActive(activeId: string | null, key: 'ArrowUp' | 'ArrowDown', items: GuideItem[]): string | null {
@@ -29,11 +30,9 @@ export function airingAction(airing: GuideAiring, nowMs: number): 'feeds' | 'pla
   return airing.channels.length > 1 ? 'feeds' : 'play';
 }
 
-/** The left edge of the guide for a jump: the half hour the airing starts in. */
+/** The left edge of the guide for a jump: the half hour the airing starts in (as the grid's own edge at now). */
 export function jumpAnchor(startMs: number): Date {
-  const start = new Date(startMs);
-  start.setMinutes(start.getMinutes() < 30 ? 0 : 30, 0, 0);
-  return start;
+  return floorToHalfHour(new Date(startMs));
 }
 
 export interface SearchRead { text: string; settled: string; active: boolean; stale: boolean; loading: boolean; hasData: boolean; error: boolean }

@@ -338,7 +338,7 @@
   font-weight: 500;
   background: var(--fill-3);
   padding: 2px 7px;
-  border-radius: 6px;
+  border-radius: var(--r-control);
   color: var(--text-3);
 }
 

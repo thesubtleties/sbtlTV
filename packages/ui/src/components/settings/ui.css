@@ -97,7 +97,7 @@
   min-width: 92px;
   padding: 0 14px;
   border: 1px solid transparent;
-  border-radius: var(--r-inner);
+  border-radius: max(2px, calc(var(--r-control) - 3px)); /* concentric inside .st-seg (2px padding + 1px border) */
   background: transparent;
   color: var(--text-2);
   font-size: 13px;

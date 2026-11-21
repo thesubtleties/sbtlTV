@@ -131,30 +131,42 @@ export function useProgramsInRange(streamIds: string[], windowStart: Date, windo
   const last = useRef<Map<string, StoredProgram[]>>(new Map());
   // Rows fetched for an earlier set of ids must not be grouped against the new
   // ids: that would report every new row as "no EPG" instead of "not read yet".
-  if (data && !stale) last.current = groupProgramsByStream(streamIds, data);
+  // Grouped once per answer, not per render: each row's array keeps its identity, so rows stay memoized when the
+  // guide re-renders for something else.
+  const idsKey = streamIds.join(',');
+  const grouped = useMemo(
+    () => (data && !stale ? groupProgramsByStream(streamIds, data) : null),
+    [data, stale, idsKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  if (grouped) last.current = grouped;
   return last.current;
 }
 
-// Hook to get the current program for a list of channel IDs
-export function usePrograms(streamIds: string[]): Map<string, StoredProgram | null> {
-  const nowMinute = Math.floor(Date.now() / 60_000) * 60_000;
-  const { data: fetched, stale } = useDataQuery(
+// What's on at `now` (the guide's minute) for a list of channel IDs: null = nothing on. While a new set of IDs or a
+// new minute is being read the previous answer is kept (like useProgramsInRange), so cells keep their show; callers
+// check an answer is still current and fall back to the row's own programs otherwise.
+export function usePrograms(streamIds: string[], now: Date): ReadonlyMap<string, StoredProgram | null> {
+  const nowMinute = Math.floor(now.getTime() / 60_000) * 60_000;
+  const { data, stale } = useDataQuery(
     streamIds.length > 0 ? { type: 'programsInRange', streamIds, windowStartMs: nowMinute, windowEndMs: nowMinute + 1 } : null,
     ['epg_programs', 'epg_links'],
     [streamIds.join(','), nowMinute],
   );
-  const data = stale ? undefined : fetched;
-  return useMemo(() => {
+  const last = useRef<Map<string, StoredProgram | null>>(new Map());
+  const fresh = useMemo(() => {
+    if (!data || stale) return null;
     const result = new Map<string, StoredProgram | null>();
     for (const id of streamIds) result.set(id, null);
-    for (const row of data ?? []) {
+    for (const row of data) {
       if (row.start.getTime() <= nowMinute && row.end.getTime() > nowMinute) {
         const cur = result.get(row.stream_id);
         if (!cur || row.start > cur.start) result.set(row.stream_id, row);
       }
     }
     return result;
-  }, [data, streamIds.join(','), nowMinute]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data, stale, streamIds.join(','), nowMinute]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (fresh) last.current = fresh;
+  return last.current;
 }
 
 // Grouped category for adaptive category strip

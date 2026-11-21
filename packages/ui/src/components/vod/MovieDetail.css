@@ -259,7 +259,7 @@
   font-size: 0.8rem;
   color: var(--text-2);
   background: var(--fill-3);
-  border-radius: 6px;
+  border-radius: var(--r-control);
 }
 
 /* Description */
