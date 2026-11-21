@@ -37,6 +37,15 @@ describe('ChannelRow: the on-now line lands with its row', () => {
     act(() => morph?.());
     expect(cell()?.className).not.toContain('--morph');
   });
+  it('fades in only when the show arrives after the row is on screen; a row rebuilt with its show shows it at once', () => {
+    render({});
+    render({ programs: [show] });
+    expect(cell()?.className).not.toContain('--instant');
+    act(() => root.unmount());
+    root = createRoot(host);
+    render({ programs: [show] });
+    expect(cell()?.className).toContain('guide-channel-now--instant');
+  });
   it('once grown, the class goes, so a later remount of the line just fades in', () => {
     render({});
     act(() => morph?.());
@@ -45,3 +54,27 @@ describe('ChannelRow: the on-now line lands with its row', () => {
     expect(cell()?.className).not.toContain('--morph');
   });
 });
+
+describe('ChannelRow: a cut-off channel name', () => {
+  const name = () => host.querySelector('.guide-channel-name')!;
+  const over = (px: number) => {
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(200 + px);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(200);
+  };
+  afterEach(() => vi.restoreAllMocks());
+  it('fits: nothing special', () => {
+    over(0); render({});
+    expect(name().className).toBe('guide-channel-name');
+  });
+  it('over by a sliver: shown whole (clipped, no ellipsis) and it never slides', () => {
+    over(5); render({});
+    expect(name().className).toContain('--near-fit');
+    expect(name().className).not.toContain('--overflow');
+  });
+  it('clearly cut off: an ellipsis at rest, and it slides by what is hidden while its row is hovered', () => {
+    over(40); render({});
+    expect(name().className).toContain('--overflow');
+    expect((name() as HTMLElement).style.getPropertyValue('--marquee')).toBe('-46px');
+  });
+});
+

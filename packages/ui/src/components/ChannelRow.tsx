@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ProgramLane } from './ProgramLane';
 import { isProgramCurrent } from './ProgramBlock';
 import { onNow } from '../utils/onNow';
@@ -29,6 +29,12 @@ interface ChannelRowProps {
   visibleHours: number;
   onPlay: (channel: StoredChannel) => void;
 }
+
+/** A little room after a sliding name's last letter, and how fast it travels (px a second, there and back) */
+const MARQUEE_END_PX = 6;
+/** A name over by this much or less shows whole (clipped by a sliver of its last letter), with no ellipsis or slide */
+const NAME_NEAR_FIT_PX = 8;
+const MARQUEE_PX_PER_S = 60;
 
 export const ChannelRow = memo(function ChannelRow({
   channel,
@@ -66,7 +72,28 @@ export const ChannelRow = memo(function ChannelRow({
   const live = nowProgram && isProgramCurrent(nowProgram, now) ? nowProgram : programs?.find((p) => isProgramCurrent(p, now));
   const on = showNow ? onNow(live, now) : null;
   lineShown.current = on !== null;
+  // Fades in only when the show arrives after the row is on screen (a fresh load, or a show starting after a gap);
+  // a row rebuilt by scrolling, with its show already read, shows it at once like its name and programs
+  const [hadShowOnMount] = useState(on !== null);
   const hover = useContext(GuideHover);
+  // A cut-off name slides to its end and back while the row is hovered (as long titles on the Movies/Series cards):
+  // by exactly what's hidden, so it works at any channel column width (re-measured when the column is resized)
+  const nameRef = useRef<HTMLSpanElement>(null);
+  const [nameHidden, setNameHidden] = useState(0);
+  useEffect(() => {
+    const el = nameRef.current;
+    if (!el) return;
+    const measure = () => setNameHidden(Math.max(0, el.scrollWidth - el.clientWidth));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [channel.name]);
+  // Only a sliver over (the edge of the last letter): no ellipsis (it would hide more than the overflow) and no slide
+  const nameSlides = nameHidden > NAME_NEAR_FIT_PX;
+  const marquee: CSSProperties | undefined = nameSlides
+    ? { '--marquee': `${-(nameHidden + MARQUEE_END_PX)}px`, '--marquee-dur': `${Math.max(2.4, (nameHidden + MARQUEE_END_PX) / MARQUEE_PX_PER_S * 2.5)}s` }
+    : undefined;
   // Show channel_num when sorting by number, otherwise show list position
   const displayNumber = sortOrder === 'number' && channel.channel_num !== undefined
     ? channel.channel_num
@@ -95,10 +122,12 @@ export const ChannelRow = memo(function ChannelRow({
           )}
         </div>
         <div className="guide-channel-text">
-          <span className="guide-channel-name" title={channel.name}>{channel.name}</span>
+          <span ref={nameRef} className={`guide-channel-name${nameSlides ? ' guide-channel-name--overflow' : nameHidden > 0 ? ' guide-channel-name--near-fit' : ''}`} style={marquee}>
+            <span className="guide-channel-name__inner">{channel.name}</span>
+          </span>
           {on && (
             <span
-              className={`guide-channel-now${morphed ? ' guide-channel-now--morph' : ''}`}
+              className={`guide-channel-now${morphed ? ' guide-channel-now--morph' : ''}${hadShowOnMount ? ' guide-channel-now--instant' : ''}`}
               aria-description={`On now, ${timeLeft(on.program.end.getTime(), now.getTime())}`}
               onMouseEnter={(e) => hover?.show(on.program, e.currentTarget, e.clientX)}
               onMouseLeave={() => hover?.hide()}

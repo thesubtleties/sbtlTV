@@ -386,6 +386,34 @@
   line-height: 18px;
 }
 
+/* A name over by only a sliver: clipped, not an ellipsis (which would hide more than the overflow), and no slide */
+.guide-channel-name--near-fit {
+  text-overflow: clip;
+}
+
+/* A cut-off name slides to its end and back while its row is hovered, the channel or any of its shows (--marquee:
+   how far, set by ChannelRow), as long titles do on the Movies/Series cards; the 0.3s wait means sweeping across
+   rows starts nothing; at rest it ends in an ellipsis */
+.guide-channel-row:hover .guide-channel-name--overflow {
+  text-overflow: clip;
+}
+
+.guide-channel-row:hover .guide-channel-name--overflow .guide-channel-name__inner {
+  display: inline-block;
+  animation: guide-name-marquee var(--marquee-dur, 3s) ease-in-out 0.3s both;
+}
+
+@keyframes guide-name-marquee {
+  0%, 12% { transform: translateX(0); }
+  45%, 62% { transform: translateX(var(--marquee, 0px)); }
+  100% { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-channel-row:hover .guide-channel-name--overflow { text-overflow: ellipsis; }
+  .guide-channel-row:hover .guide-channel-name--overflow .guide-channel-name__inner { display: inline; animation: none; }
+}
+
 .guide-channel-now {
   display: flex;
   flex-direction: column;
@@ -419,11 +447,16 @@
   transform-origin: left center;
 }
 
-/* When a cell gets its show it fades in where it is (minute ticks don't replay it). When the row's programs morph in
+/* When a cell gets its show after it's on screen it fades in where it is (minute ticks don't replay it; a row rebuilt
+   by scrolling with its show already read shows it at once, --instant). When the row's programs morph in
    before the line shows, the line instead grows with their landing: after the morph's lead (700ms, MORPH_LEAD_MS)
    over its 480ms (MORPH_MS), as the on-now block's fill does; the class then goes (ChannelRow). */
 .guide-channel-now {
   animation: guide-now-title-in 320ms ease-out both;
+}
+
+.guide-channel-now--instant {
+  animation: none;
 }
 
 .guide-channel-now--morph .guide-channel-now-line > span {
