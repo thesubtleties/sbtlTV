@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import type { StoredMovie, StoredSeries } from '../../db';
 import { MediaCard } from './MediaCard';
 import { getMovieProgress } from '../../hooks/useWatchProgress';
 import { itemWidth, type CardSize } from './carouselSizes';
+import { CarouselNav, useRowScroll } from './useRowScroll';
 import './HorizontalCarousel.css';
 
 type CarouselItem = StoredMovie | StoredSeries;
@@ -72,57 +72,8 @@ export function HorizontalCarousel({
   tag,
   subtitle,
 }: HorizontalCarouselProps) {
-  const [scroller, setScroller] = useState<HTMLElement | null>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
   const displayItems = maxItems ? items.slice(0, maxItems) : items;
-
-  const scrollerRef = useCallback((el: HTMLElement | Window | null) => {
-    setScroller(el instanceof HTMLElement ? el : null);
-  }, []);
-
-  // Update scroll button visibility
-  const updateScrollButtons = useCallback(() => {
-    if (!scroller) return;
-    const { scrollLeft, scrollWidth, clientWidth } = scroller;
-    setCanScrollLeft(scrollLeft > 0);
-    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 1);
-  }, [scroller]);
-
-  useEffect(() => {
-    if (!scroller) return;
-    updateScrollButtons();
-    scroller.addEventListener('scroll', updateScrollButtons, { passive: true });
-    window.addEventListener('resize', updateScrollButtons);
-    return () => {
-      scroller.removeEventListener('scroll', updateScrollButtons);
-      window.removeEventListener('resize', updateScrollButtons);
-    };
-  }, [scroller, updateScrollButtons, displayItems.length]);
-
-  // Scroll by most of a screen
-  const scroll = useCallback((direction: 'left' | 'right') => {
-    if (!scroller) return;
-    const amount = scroller.clientWidth * 0.75;
-    scroller.scrollTo({
-      left: direction === 'left' ? scroller.scrollLeft - amount : scroller.scrollLeft + amount,
-      behavior: 'smooth',
-    });
-  }, [scroller]);
-
-  // Keyboard navigation
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    // preventDefault: a focused row's scroller would also do the browser's own small
-    // arrow scroll, which cancels our smooth page (one press moved 40px instead of 75%)
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      scroll('left');
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      scroll('right');
-    }
-  }, [scroll]);
+  const { scrollerRef, canScrollLeft, canScrollRight, scroll, handleKeyDown } = useRowScroll(displayItems.length);
 
   // Hidden carousels render a minimal placeholder for Virtuoso
   if (hidden || (displayItems.length === 0 && !loading)) {
@@ -140,28 +91,7 @@ export function HorizontalCarousel({
           </h2>
           {subtitle && <span className="carousel__subtitle">{subtitle}</span>}
         </div>
-        <div className="carousel__nav">
-          <button
-            className="carousel__nav-btn"
-            onClick={() => scroll('left')}
-            disabled={loading || !canScrollLeft}
-            aria-label="Scroll left"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
-          <button
-            className="carousel__nav-btn"
-            onClick={() => scroll('right')}
-            disabled={loading || !canScrollRight}
-            aria-label="Scroll right"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M9 18l6-6-6-6" />
-            </svg>
-          </button>
-        </div>
+        <CarouselNav canScrollLeft={canScrollLeft} canScrollRight={canScrollRight} scroll={scroll} disabled={loading} />
       </div>
 
       {loading ? (
