@@ -491,9 +491,12 @@
 /* The nav stays out of the motion: while the page slides in (or away) the header isn't drawn (its glass was redrawn on
    every frame of the slide); the shade slides with the page and the title bar is clear from the start, no fade. Once
    the page lands the nav settles in: an even fade with a small drift down on Caelestia's emphasized decelerate */
+/* The hero's slide dots too: their glass would be redrawn over the moving page, so they settle in with the nav */
+.vod-page--sliding .hero__nav,
 .vod-page--sliding > .vod-page__chrome-fill,
 .vod-page--sliding > .h-category-strip,
 .vod-page--collapsed > .h-category-strip { visibility: hidden; }
+.vod-page:not(.vod-page--sliding) .hero__nav { animation: vod-nav-fade 460ms cubic-bezier(0.4, 0, 0.2, 1) both; }
 .vod-page:not(.vod-page--sliding) > .h-category-strip {
   /* An even fade (no pop), and a small drift down that lands softly (Caelestia's emphasized decelerate) */
   animation: vod-nav-fade 460ms cubic-bezier(0.4, 0, 0.2, 1) both, vod-nav-drift 560ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
@@ -502,6 +505,7 @@
 @keyframes vod-nav-drift { from { transform: translateY(-8px); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .vod-page:not(.vod-page--sliding) > .h-category-strip { animation: vod-nav-fade 200ms ease both; }
+  .vod-page:not(.vod-page--sliding) .hero__nav { animation: vod-nav-fade 200ms ease both; }
 }
 
 /* The search field's accent edge while it's in use, in either style. Last in the file, and as specific as the home's
