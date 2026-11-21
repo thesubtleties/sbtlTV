@@ -81,6 +81,13 @@ export function isSliver(program: StoredProgram, width: number, now: Date, windo
   return width < SLIVER_PX && program.start.getTime() < windowStart.getTime() && isProgramCurrent(program, now);
 }
 
+/** A show that already ended (by the guide's tick): drawn as an outline, see the CSS. Shown at the grid's :00/:30
+ * start and whenever the guide looks back. */
+export function isProgramEnded(program: StoredProgram, now: Date): boolean {
+  const progEndMs = program.end instanceof Date ? program.end.getTime() : new Date(program.end).getTime();
+  return progEndMs <= now.getTime();
+}
+
 export function isProgramCurrent(program: StoredProgram, now: Date): boolean {
   const progStartMs = program.start instanceof Date ? program.start.getTime() : new Date(program.start).getTime();
   const progEndMs = program.end instanceof Date ? program.end.getTime() : new Date(program.end).getTime();
@@ -108,6 +115,7 @@ export const ProgramBlock = memo(function ProgramBlock({
 
   // Check if this program contains "now"
   const isCurrent = isProgramCurrent(program, now);
+  const ended = isProgramEnded(program, now);
 
   if (!style.visible) {
     return null;
@@ -122,7 +130,7 @@ export const ProgramBlock = memo(function ProgramBlock({
 
   return (
     <div
-      className={`program-block ${isCurrent ? 'current' : ''}${sliver ? ' program-block--sliver' : ''}${className ? ` ${className}` : ''}${lit ? ' program-block--found' : ''}`}
+      className={`program-block ${isCurrent ? 'current' : ''}${ended ? ' program-block--ended' : ''}${sliver ? ' program-block--sliver' : ''}${className ? ` ${className}` : ''}${lit ? ' program-block--found' : ''}`}
       style={{
         left: `${style.left}px`,
         width: `${style.width}px`,

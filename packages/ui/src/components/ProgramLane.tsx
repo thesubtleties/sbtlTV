@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, memo, type CSSProperties } from 'react';
 import type { StoredProgram } from '../db';
 import { useGuideMorphEnabled } from '../stores/uiStore';
-import { ProgramBlock, EmptyProgramBlock, airedPx, getProgramStyle, isProgramCurrent, isSliver } from './ProgramBlock';
+import { ProgramBlock, EmptyProgramBlock, airedPx, getProgramStyle, isProgramCurrent, isProgramEnded, isSliver } from './ProgramBlock';
 import {
   loadingBlocks,
   planMorph,
@@ -188,7 +188,7 @@ export const ProgramLane = memo(function ProgramLane({
         {plan.become.map(({ placeholder, program, titled }) => (
           <div
             key={`m${placeholder}`}
-            className={`program-block morph become${moving && program.onAir ? ' current' : ''}${moving && isSliver(program.program, program.width, now, windowStart) ? ' program-block--sliver' : ''}`}
+            className={`program-block morph become${moving && program.onAir ? ' current' : ''}${moving && isProgramEnded(program.program, now) ? ' program-block--ended' : ''}${moving && isSliver(program.program, program.width, now, windowStart) ? ' program-block--sliver' : ''}`}
             style={moving
               ? {
                   left: `${program.left}px`,
