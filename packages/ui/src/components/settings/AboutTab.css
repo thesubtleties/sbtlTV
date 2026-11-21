@@ -80,6 +80,11 @@
   display: flex;
 }
 
+/* The TV logo's antenna counts towards its height: up a touch so the screen sits on the row's centre line */
+.about-tab__link--tv {
+  transform: translateY(-2px);
+}
+
 .about-tab__link:hover {
   color: var(--text-2);
 }
