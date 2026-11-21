@@ -147,14 +147,14 @@
 }
 
 /* Fade-straight-in entrance: rows that resolve without a noticeable wait,
-   and any program in a morphing row that had no placeholder to carry it. */
+   and any program in a morphing row that had no placeholder to carry it. Backwards only (hidden during the stagger
+   delay): holding the end state would pin opacity at 1 over an ended show's 0.7, and the class stays on the block. */
 .program-block.program-block-in {
-  animation: program-block-in 320ms ease-out both;
+  animation: program-block-in 320ms ease-out backwards;
 }
 
 @keyframes program-block-in {
   from { opacity: 0; background-color: var(--fill-1); }
-  to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -202,6 +202,32 @@
 }
 
 .program-block.current .program-block-desc {
+  color: var(--muted);
+}
+
+/* A show that already ended (the grid's first minutes after :00/:30, or looking back): an outline, not a filled
+   block, a little faded, so it doesn't read as coming up. Hover brings it back. Last, so it wins over the morph's
+   landing fill (the morph carries this class while it moves); a block a guide search lit keeps its highlight. */
+.program-block.program-block--ended:not(.program-block--found) {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--fill-2);
+}
+
+/* Not on the morph, which has its own transitions (left, width) */
+.program-block.program-block--ended:not(.morph) {
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.program-block.program-block--ended:not(.program-block--found):not(:hover) {
+  opacity: 0.7;
+}
+
+.program-block.program-block--ended:not(.program-block--found):hover {
+  background: var(--fill-2);
+}
+
+.program-block.program-block--ended:not(.program-block--found) .program-block-title,
+.program-block.program-block--ended:not(.program-block--found) .program-block-desc {
   color: var(--muted);
 }
 

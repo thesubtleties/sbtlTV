@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ProgramBlock, airedPx, isSliver } from './ProgramBlock';
+import { ProgramBlock, airedPx, isProgramEnded, isSliver } from './ProgramBlock';
 import { GuideHighlight } from './GuideSearchResults';
 import type { StoredProgram } from '../db';
 
@@ -18,6 +18,13 @@ describe('ProgramBlock', () => {
   it("is highlighted while on now, by the guide's tick rather than the wall clock", () => {
     expect(render(at(21, 59))).toMatch(/class="program-block current/);
     expect(render(at(22, 0))).not.toMatch(/\bcurrent\b/);
+  });
+  it('a show that already ended is marked ended (an outline, not upcoming), by the guide\'s tick', () => {
+    expect(isProgramEnded(program, at(21, 59))).toBe(false);
+    expect(isProgramEnded(program, at(22, 0))).toBe(true);
+    // The 21:00-22:00 show in a grid from 21:30, seen at 22:10: ended, not on now
+    expect(render(at(22, 10))).toMatch(/class="program-block +program-block--ended"/);
+    expect(render(at(21, 45))).not.toContain('program-block--ended');
   });
   it('the show on now carries how much has aired (drawn brighter), in px from its left edge', () => {
     // Window from 21:00 at 200 px/h; the show runs 21:00-22:00; at 21:15, 50 px have aired
@@ -47,7 +54,9 @@ describe('ProgramBlock', () => {
     expect(airedPx(0, 50, at(21, 30), at(21, 0), 200)).toBe(50);     // now past the block
   });
   it('the times and description are there for screen readers', () => {
-    expect(render(at(21, 40))).toMatch(/aria-description="[^"]*–[^"]*"/);
+    expect(render(at(21, 40))).toMatch(/aria-description="On now, [^"]*–[^"]*"/);
+    expect(render(at(22, 10))).toMatch(/aria-description="Ended, [^"]*–[^"]*"/);
+    expect(render(at(20, 40))).toMatch(/aria-description="\d[^"]*–[^"]*"/);
   });
   it('lights up only the programmes a guide jump is for', () => {
     const lit = (ids: Set<string> | null) => renderToStaticMarkup(createElement(GuideHighlight.Provider, { value: ids },
