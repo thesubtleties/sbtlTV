@@ -11,11 +11,11 @@ const card = (now: Date) =>
   renderToStaticMarkup(createElement(GuideHoverCard, { program: show, anchor, pointerX: 40, now }));
 
 describe('the guide hover card', () => {
-  it('a show on now: title, one line of when (times, length, time left), description, progress on the edge', () => {
+  it('a show on now: title with time left at its end, one line of when (times, length), description, progress on the edge', () => {
     const html = card(at(20, 45));
     expect(html).toContain('Shark Tank');
     expect(html).toContain('1h 30m');
-    expect(html).toContain('45m left');
+    expect(html).toMatch(/class="ghc__head">.*Shark Tank.*45m left.*<\/div><div class="ghc__when">/);
     expect(html).toContain('ghc--now');
     expect(html).toContain('--progress:50%');
     expect(html).toContain('A portable product for beach hangs.');

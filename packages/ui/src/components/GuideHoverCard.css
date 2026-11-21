@@ -40,7 +40,15 @@
   background: var(--accent);
 }
 
+.ghc__head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
 .ghc__title {
+  flex: 1;
+  min-width: 0;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.3;
@@ -69,9 +77,17 @@
   text-overflow: ellipsis;
 }
 
-/* --text-2, not --text-3: at this size --text-3 on this surface is under 4.5:1 on several palettes */
+/* At the title's right end. --text-2, not --text-3: at this size --text-3 on this surface is under 4.5:1 on several
+   palettes */
 .ghc__status {
+  flex: none;
   margin-left: auto;
+  font-family: var(--font-condensed);
+  font-size: 12px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
 .ghc--now .ghc__status {
