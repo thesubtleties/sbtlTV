@@ -8,7 +8,7 @@
   justify-content: center;
   padding: 4px 10px;
   background: var(--fill-1);
-  border-radius: 6px;
+  border-radius: var(--r-inner); /* 4 px: programmes, as in guide search results and the hero Play button */
   border-left: 2px solid transparent;
   cursor: pointer;
   overflow: hidden;
