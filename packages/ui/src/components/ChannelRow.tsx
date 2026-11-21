@@ -1,5 +1,7 @@
 import { memo, useCallback } from 'react';
 import { ProgramLane } from './ProgramLane';
+import { isProgramCurrent } from './ProgramBlock';
+import { onNow } from '../utils/onNow';
 import { useIsFavoriteChannel, useToggleFavoriteChannel } from '../hooks/useFavorites';
 import type { StoredChannel, StoredProgram } from '../db';
 
@@ -10,6 +12,12 @@ interface ChannelRowProps {
   channelColumnWidth: number;
   // undefined while this row's programs have not been read yet; [] when the channel has no EPG
   programs: StoredProgram[] | undefined;
+  /**
+   * What's on right now, whatever time the grid shows (null: nothing; undefined: not read yet, so it comes from
+   * `programs`). Shown under the name with its progress; leave it out (showNow false) for the plain cell.
+   */
+  nowProgram?: StoredProgram | null;
+  showNow?: boolean;
   windowStart: Date;
   windowEnd: Date;
   /** The guide's minute tick: what is on now */
@@ -25,6 +33,8 @@ export const ChannelRow = memo(function ChannelRow({
   sortOrder,
   channelColumnWidth,
   programs,
+  nowProgram,
+  showNow = true,
   windowStart,
   windowEnd,
   now,
@@ -40,6 +50,10 @@ export const ChannelRow = memo(function ChannelRow({
     e.stopPropagation();
     toggleFavorite(channel.stream_id, channel.name);
   }, [toggleFavorite, channel.stream_id, channel.name]);
+  // No EPG, or nothing on: no second line, the cell looks as it always did
+  const on = showNow
+    ? onNow(nowProgram !== undefined ? nowProgram : programs?.find((p) => isProgramCurrent(p, now)), now)
+    : null;
   // Show channel_num when sorting by number, otherwise show list position
   const displayNumber = sortOrder === 'number' && channel.channel_num !== undefined
     ? channel.channel_num
@@ -67,7 +81,17 @@ export const ChannelRow = memo(function ChannelRow({
             <span className="logo-placeholder">{channel.name.charAt(0)}</span>
           )}
         </div>
-        <span className="guide-channel-name" title={channel.name}>{channel.name}</span>
+        <div className="guide-channel-text">
+          <span className="guide-channel-name" title={channel.name}>{channel.name}</span>
+          {on && (
+            <span className="guide-channel-now" title={`${on.title} · ${on.minutesLeft} min left`}>
+              <span className="guide-channel-now-title">{on.title}</span>
+              <span className="guide-channel-now-line" aria-hidden="true">
+                <span style={{ width: `${on.pct}%` }} />
+              </span>
+            </span>
+          )}
+        </div>
         <button
           className={`channel-fav-btn${isFavorite ? ' active' : ''}`}
           onClick={handleToggleFavorite}

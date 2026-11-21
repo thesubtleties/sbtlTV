@@ -24,7 +24,37 @@
 /* Current program (contains "now"): the guide's one accent moment */
 .program-block.current {
   background: var(--accent-soft);
-  border-left-color: var(--accent);
+}
+
+/* The show on now: its aired part a little brighter, ending in a short eased edge at now (--aired, set
+   inline), so the block reads as its own progress. Under the text. */
+.program-block.current::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--aired, 0px);
+  border-radius: inherit;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  --aired-tint: 12%;
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--accent) var(--aired-tint), transparent) calc(100% - 12px),
+    color-mix(in srgb, var(--accent) calc(var(--aired-tint) * 0.9), transparent) calc(100% - 7px),
+    color-mix(in srgb, var(--accent) calc(var(--aired-tint) * 0.58), transparent) calc(100% - 4px),
+    color-mix(in srgb, var(--accent) calc(var(--aired-tint) * 0.22), transparent) calc(100% - 2px),
+    transparent 100%);
+  pointer-events: none;
+}
+
+.program-block.current > * {
+  position: relative;
+}
+
+/* Only a sliver of the show on now left in view: no clipped letters */
+.program-block--sliver > * {
+  visibility: hidden;
 }
 
 .program-block.current:hover {

@@ -25,3 +25,9 @@ test('the guide search setting is saved and read back', () => {
   assert.match(storage, /updated\.guideSearchHideAdult = settings\.guideSearchHideAdult/);
   assert.match(storage, /result\.guideSearchHideAdult = stored\.guideSearchHideAdult \?\? false/);
 });
+
+test("the guide's on-now line setting is saved and read back, on by default", () => {
+  const storage = source('storage.ts');
+  assert.match(storage, /updated\.guideNowInChannel = settings\.guideNowInChannel/);
+  assert.match(storage, /result\.guideNowInChannel = stored\.guideNowInChannel \?\? true/);
+});

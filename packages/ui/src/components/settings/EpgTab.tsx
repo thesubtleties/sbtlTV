@@ -1,4 +1,4 @@
-import { useUpdateSettings } from '../../stores/uiStore';
+import { useGuideNowInChannel, useUpdateSettings } from '../../stores/uiStore';
 import { data } from '../../data/client';
 import { useToast } from '../../hooks/useToast';
 import { debugLog } from '../../utils/debugLog';
@@ -42,6 +42,7 @@ export function EpgTab({
   onGuideSearchHideAdultChange,
 }: EpgTabProps) {
   const updateSettings = useUpdateSettings();
+  const guideNowInChannel = useGuideNowInChannel();
   const toast = useToast();
 
   async function handleSortOrderChange(order: 'alphabetical' | 'number') {
@@ -127,9 +128,14 @@ export function EpgTab({
     await window.storage.updateSettings({ guideSearchHideAdult: enabled });
   }
 
+  async function handleGuideNowInChannelChange(on: boolean) {
+    updateSettings({ guideNowInChannel: on });
+    await window.storage?.updateSettings({ guideNowInChannel: on });
+  }
+
   return (
     <SettingsTab>
-      <Section title="Channels" description="How the guide orders channels and categories, and what search covers.">
+      <Section title="Channels" description="How the guide orders channels and categories, what search covers, and what each channel shows.">
         <OptionRow
           title="Channel order"
           help={channelSortOrder === 'number'
@@ -156,6 +162,9 @@ export function EpgTab({
         </OptionRow>
         <OptionRow title="Leave adult categories out of search" help="Goes by the provider's flag and category names, so some may get through.">
           <OnOff value={guideSearchHideAdult} onChange={(on) => void handleGuideSearchHideAdultChange(on)} />
+        </OptionRow>
+        <OptionRow title="What's on, under each channel" help="The show on now and how far along it is.">
+          <OnOff value={guideNowInChannel} onChange={(on) => void handleGuideNowInChannelChange(on)} />
         </OptionRow>
       </Section>
 

@@ -1,12 +1,12 @@
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
+import { useChannels, useCategories, useProgramsInRange, usePrograms } from '../hooks/useChannels';
 import { removeFavoriteRow, useFavoriteChannels, useWaitingFavorites } from '../hooks/useFavorites';
 import { GuideMissingFavorites, type MissingFavoritesContext } from './MissingFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
-import { useChannelSortOrder, useChannelColumnWidth, useChannelSyncing, useSourceNeedsLogin, useUIStore } from '../stores/uiStore';
+import { useChannelSortOrder, useChannelColumnWidth, useChannelSyncing, useGuideNowInChannel, useSourceNeedsLogin, useUIStore } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import { loadGuideSearchMode, saveGuideSearchMode, type GuideSearchMode } from '../utils/guideSearchMode';
@@ -20,6 +20,10 @@ import { useToastStore } from '../stores/toastStore';
 import { debugLog } from '../utils/debugLog';
 import './ChannelPanel.css';
 
+
+const HOUR_MS = 3_600_000;
+// usePrograms with no ids reads nothing (the on-now line is off)
+const NO_IDS: string[] = [];
 interface ChannelPanelProps {
   categoryId: string | null;
   visible: boolean;
@@ -275,6 +279,9 @@ function ChannelPanelImpl({
   // Programs are read only for the rows Virtuoso is rendering (see useGuideRowRange).
   const { handleRangeChange, loadedStreamIds } = useGuideRowRange(displayChannels);
   const programs = useProgramsInRange(loadedStreamIds, loadStart, loadEnd);
+  // What's on now under each channel name, whatever time the grid shows (not read at all when it's off)
+  const showNow = useGuideNowInChannel();
+  const nowPrograms = usePrograms(showNow ? loadedStreamIds : NO_IDS);
 
   // Keyboard navigation
   useEffect(() => {
@@ -333,6 +340,8 @@ function ChannelPanelImpl({
   }, [windowStart, windowEnd, visibleHours]);
 
   // Calculate position of a time slot within the grid
+  const nowX = ((now.getTime() - windowStart.getTime()) / HOUR_MS) * pixelsPerHour;
+
   const getTimeSlotPosition = useCallback(
     (slotTime: Date) => {
       const offsetHours = (slotTime.getTime() - windowStart.getTime()) / 3600000;
@@ -487,6 +496,19 @@ function ChannelPanelImpl({
       <div className="guide-time-header">
         <div className="guide-time-header-spacer" style={{ width: effectiveColumnWidth }} />
         <div className="guide-time-header-grid">
+          {/* Unlabeled half-hour notches between the hour labels */}
+          {[...timeSlots, ...(timeSlots[0] ? [new Date(timeSlots[0].getTime() - HOUR_MS)] : [])].map((slot) => {
+            const half = getTimeSlotPosition(new Date(slot.getTime() + HOUR_MS / 2));
+            return half > 2 && half < availableWidth
+              ? <span key={`half-${slot.getTime()}`} className="guide-time-half" style={{ left: half }} aria-hidden="true" />
+              : null;
+          })}
+          {/* Now: a small caret above the times (Tabler caret-down, filled) */}
+          {nowX >= 0 && nowX <= availableWidth && (
+            <svg className="guide-time-now" style={{ left: Math.max(nowX, 5) }} viewBox="5 9 14 8" aria-hidden="true">
+              <path d="M18 9c.852 0 1.297 .986 .783 1.623l-.076 .084l-6 6a1 1 0 0 1 -1.32 .083l-.094 -.083l-6 -6l-.083 -.094l-.054 -.077l-.054 -.096l-.017 -.036l-.027 -.067l-.032 -.108l-.01 -.053l-.01 -.06l-.004 -.057v-.118l.005 -.058l.009 -.06l.01 -.052l.032 -.108l.027 -.067l.07 -.132l.065 -.09l.073 -.081l.094 -.083l.077 -.054l.096 -.054l.036 -.017l.067 -.027l.108 -.032l.053 -.01l.06 -.01l.057 -.004l12.059 -.002z" />
+            </svg>
+          )}
           {timeSlots.map((slot, i) => {
             const position = getTimeSlotPosition(slot);
             // Hide if marker would be cut off at left edge or beyond right edge
@@ -520,6 +542,8 @@ function ChannelPanelImpl({
               sortOrder={channelSortOrder}
               channelColumnWidth={effectiveColumnWidth}
               programs={programs.get(channel.stream_id)}
+              showNow={showNow}
+              nowProgram={showNow ? nowPrograms.get(channel.stream_id) : null}
               windowStart={windowStart}
               windowEnd={windowEnd}
               now={now}

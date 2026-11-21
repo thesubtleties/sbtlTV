@@ -182,3 +182,7 @@ test('the guide search setting travels with a setup and is checked', () => {
 test('selectedListsEnabled stays on this machine (0.15.0 rejects unknown setting keys on import)', () => {
   assert.deepEqual(settingsForExport({ selectedListsEnabled: false } as never), {});
 });
+
+test('guideNowInChannel stays on this machine (0.17.0 and older reject unknown setting keys on import)', () => {
+  assert.deepEqual(settingsForExport({ guideNowInChannel: false } as never), {});
+});

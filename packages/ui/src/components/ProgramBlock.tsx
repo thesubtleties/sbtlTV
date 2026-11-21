@@ -1,4 +1,4 @@
-import { useContext, useMemo, memo } from 'react';
+import { useContext, useMemo, memo, type CSSProperties } from 'react';
 import { GuideHighlight } from './GuideSearchResults';
 import type { StoredProgram } from '../db';
 import './ProgramBlock.css';
@@ -61,6 +61,9 @@ export function getProgramStyle(
   };
 }
 
+/** Narrower than this, a show on now drops its text: a tinted sliver, not clipped letters. */
+export const SLIVER_PX = 56;
+
 export function isProgramCurrent(program: StoredProgram, now: Date): boolean {
   const progStartMs = program.start instanceof Date ? program.start.getTime() : new Date(program.start).getTime();
   const progEndMs = program.end instanceof Date ? program.end.getTime() : new Date(program.end).getTime();
@@ -98,16 +101,24 @@ export const ProgramBlock = memo(function ProgramBlock({
     return null;
   }
 
+  // How much of the show on now has aired, in px from the block's left edge (drawn brighter, see the CSS)
+  const airedPx = isCurrent
+    ? Math.min(style.width, Math.max(0, ((now.getTime() - windowStart.getTime()) / 3_600_000) * pixelsPerHour - style.left))
+    : 0;
+  // A show on now with only a sliver left shows no text (its title is under the channel name)
+  const sliver = isCurrent && style.width < SLIVER_PX;
+
   // Determine if we should show description (only if block is wide enough)
   const showDescription = style.width > 200 && program.description;
 
   return (
     <div
-      className={`program-block ${isCurrent ? 'current' : ''}${className ? ` ${className}` : ''}${lit ? ' program-block--found' : ''}`}
+      className={`program-block ${isCurrent ? 'current' : ''}${sliver ? ' program-block--sliver' : ''}${className ? ` ${className}` : ''}${lit ? ' program-block--found' : ''}`}
       style={{
         left: `${style.left}px`,
         width: `${style.width}px`,
         ...(enterDelayMs !== undefined ? { animationDelay: `${enterDelayMs}ms` } : {}),
+        ...(isCurrent ? { '--aired': `${airedPx}px` } as CSSProperties : {}),
       }}
       onClick={onClick}
       title={`${program.title}\n${formatTime(program.start)} - ${formatTime(program.end)}${program.description ? `\n\n${program.description}` : ''}`}
