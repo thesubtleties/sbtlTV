@@ -61,6 +61,12 @@ export function getProgramStyle(
   };
 }
 
+/** How much of a show on now has aired, in px from its block's left edge (0 to the block's width). */
+export function airedPx(left: number, width: number, now: Date, windowStart: Date, pixelsPerHour: number): number {
+  const nowX = ((now.getTime() - windowStart.getTime()) / 3_600_000) * pixelsPerHour;
+  return Math.min(width, Math.max(0, nowX - left));
+}
+
 /** Narrower than this, a show on now drops its text: a tinted sliver, not clipped letters. */
 export const SLIVER_PX = 56;
 
@@ -101,10 +107,8 @@ export const ProgramBlock = memo(function ProgramBlock({
     return null;
   }
 
-  // How much of the show on now has aired, in px from the block's left edge (drawn brighter, see the CSS)
-  const airedPx = isCurrent
-    ? Math.min(style.width, Math.max(0, ((now.getTime() - windowStart.getTime()) / 3_600_000) * pixelsPerHour - style.left))
-    : 0;
+  // How much of the show on now has aired (drawn brighter, see the CSS)
+  const aired = isCurrent ? airedPx(style.left, style.width, now, windowStart, pixelsPerHour) : 0;
   // A show on now with only a sliver left shows no text (its title is under the channel name)
   const sliver = isCurrent && style.width < SLIVER_PX;
 
@@ -117,8 +121,9 @@ export const ProgramBlock = memo(function ProgramBlock({
       style={{
         left: `${style.left}px`,
         width: `${style.width}px`,
-        ...(enterDelayMs !== undefined ? { animationDelay: `${enterDelayMs}ms` } : {}),
-        ...(isCurrent ? { '--aired': `${airedPx}px` } as CSSProperties : {}),
+        // The aired fill grows in with the block's own stagger (--enter-delay, see the CSS)
+        ...(enterDelayMs !== undefined ? { animationDelay: `${enterDelayMs}ms`, '--enter-delay': `${enterDelayMs}ms` } as CSSProperties : {}),
+        ...(isCurrent ? { '--aired': `${aired}px` } as CSSProperties : {}),
       }}
       onClick={onClick}
       title={`${program.title}\n${formatTime(program.start)} - ${formatTime(program.end)}${program.description ? `\n\n${program.description}` : ''}`}
