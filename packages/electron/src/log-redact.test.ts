@@ -173,15 +173,30 @@ test('bare IPv6 addresses are labelled; times, MAC-like and loopback are not mis
   assert.equal(redactUrls('loopback ::1 stays'), 'loopback ::1 stays');
 });
 
+/**
+ * Linear, not a time budget: a line 4x as long takes about 4x as long (quadratic would be 16x). Best of 3 runs each,
+ * plus 10 ms of slack for tiny timings, so a slow or busy CI runner (the mac leg took 284 ms once) can't fail it.
+ */
+function assertLinear(piece: string, count: number) {
+  const best = (line: string) => {
+    let min = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const t = performance.now();
+      redactUrls(line);
+      min = Math.min(min, performance.now() - t);
+    }
+    return min;
+  };
+  const small = best(piece.repeat(count));
+  const large = best(piece.repeat(count * 4));
+  assert.ok(large < small * 8 + 10, `${piece.slice(0, 12)}…: ${small.toFixed(1)} ms -> ${large.toFixed(1)} ms at 4x`);
+}
+
 test('the new passes stay linear on hostile lines', () => {
-  const lines = [
-    '%3A%2F%2F'.repeat(20_000), ':\\/\\/'.repeat(30_000), '"password":'.repeat(20_000), 'a:'.repeat(100_000), '::'.repeat(100_000), 'access_token='.repeat(15_000),
+  const pieces: [string, number][] = [
+    ['%3A%2F%2F', 20_000], [':\\/\\/', 30_000], ['"password":', 20_000], ['a:', 100_000], ['::', 100_000], ['access_token=', 15_000],
   ];
-  for (const line of lines) {
-    const t = performance.now();
-    redactUrls(line);
-    assert.ok(performance.now() - t < 200, `${line.slice(0, 12)}… took too long`);
-  }
+  for (const [piece, count] of pieces) assertLinear(piece, count);
 });
 
 test('an encoded URL after characters that change length when lowercased is still cut (no index drift)', () => {
@@ -285,11 +300,7 @@ test("a user's folder in a path becomes ~ (the folder name is often the person's
 });
 
 test('the path pass stays linear on hostile lines', () => {
-  for (const line of ['/home/'.repeat(40_000), 'C:\\Users\\'.repeat(25_000), '/Users/a'.repeat(30_000)]) {
-    const t = performance.now();
-    redactUrls(line);
-    assert.ok(performance.now() - t < 200);
-  }
+  for (const [piece, count] of [['/home/', 40_000], ['C:\\Users\\', 25_000], ['/Users/a', 30_000]] as const) assertLinear(piece, count);
 });
 
 test('SubDL hosts stay readable; a key in a query (SubDL puts one in its file links) does not', () => {
