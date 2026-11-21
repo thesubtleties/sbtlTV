@@ -1,7 +1,8 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useContext, useState } from 'react';
 import { ProgramLane } from './ProgramLane';
 import { isProgramCurrent } from './ProgramBlock';
 import { onNow } from '../utils/onNow';
+import { GuideHover } from './guideHover';
 import { useIsFavoriteChannel, useToggleFavoriteChannel } from '../hooks/useFavorites';
 import type { StoredChannel, StoredProgram } from '../db';
 
@@ -60,6 +61,7 @@ export const ChannelRow = memo(function ChannelRow({
     ? nowProgram
     : programs?.find((p) => isProgramCurrent(p, now));
   const on = showNow ? onNow(live, now) : null;
+  const hover = useContext(GuideHover);
   // Show channel_num when sorting by number, otherwise show list position
   const displayNumber = sortOrder === 'number' && channel.channel_num !== undefined
     ? channel.channel_num
@@ -90,7 +92,11 @@ export const ChannelRow = memo(function ChannelRow({
         <div className="guide-channel-text">
           <span className="guide-channel-name" title={channel.name}>{channel.name}</span>
           {on && (
-            <span className={`guide-channel-now${morphed ? ' guide-channel-now--morph' : ''}`} title={`${on.title} · ${on.minutesLeft} min left`}>
+            <span
+              className={`guide-channel-now${morphed ? ' guide-channel-now--morph' : ''}`}
+              onMouseEnter={(e) => { if (live) hover?.show(live, e.currentTarget); }}
+              onMouseLeave={() => hover?.hide()}
+            >
               <span className="guide-channel-now-title">{on.title}</span>
               <span className="guide-channel-now-line" aria-hidden="true">
                 <span style={{ width: `${on.pct}%` }} />

@@ -20,3 +20,15 @@ describe('what a guide row shows under its channel name', () => {
     expect(onNow({ title: 'x', start: at(20, 0), end: at(20, 0) }, at(20, 0))).toBeNull();
   });
 });
+
+import { clockRange } from './airTime';
+describe('a show\'s times', () => {
+  it('say a shared AM/PM once, and both when they differ', () => {
+    const r = clockRange(new Date(2026, 10, 20, 23, 5).getTime(), new Date(2026, 10, 20, 23, 35).getTime());
+    const across = clockRange(new Date(2026, 10, 20, 23, 35).getTime(), new Date(2026, 10, 21, 0, 5).getTime());
+    // In a 12-hour locale: "11:05 – 11:35 PM" and "11:35 PM – 12:05 AM"; in a 24-hour one there's nothing to share
+    const suffixes = r.match(/[AP]M/g)?.length ?? 0;
+    expect(suffixes).toBeLessThanOrEqual(1);
+    expect(across.match(/[AP]M/g)?.length ?? 0).not.toBe(1);
+  });
+});

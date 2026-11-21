@@ -7,7 +7,7 @@ import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
 import { useChannelSortOrder, useChannelColumnWidth, useChannelSyncing, useGuideNowInChannel, useSourceNeedsLogin, useUIStore } from '../stores/uiStore';
-import type { StoredChannel } from '../db';
+import type { StoredChannel, StoredProgram } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import { loadGuideSearchMode, saveGuideSearchMode, type GuideSearchMode } from '../utils/guideSearchMode';
 import { type GuideAiring, type GuideSearchChannel } from '@sbtltv/core';
@@ -18,10 +18,15 @@ import { useDataState } from '../hooks/useDataState';
 import { GuideHighlight, GuideSearchResults, flattenResults, type GuideItem } from './GuideSearchResults';
 import { useToastStore } from '../stores/toastStore';
 import { debugLog } from '../utils/debugLog';
+import { createPortal } from 'react-dom';
+import { GuideHover, type GuideHoverApi } from './guideHover';
+import { GuideHoverCard } from './GuideHoverCard';
 import './ChannelPanel.css';
 
 
 const HOUR_MS = 3_600_000;
+// How long the pointer rests on a show before its card appears
+const HOVER_DELAY_MS = 350;
 // usePrograms with no ids reads nothing (the on-now line is off)
 const NO_IDS: string[] = [];
 interface ChannelPanelProps {
@@ -342,6 +347,33 @@ function ChannelPanelImpl({
   // Calculate position of a time slot within the grid
   const nowX = ((now.getTime() - windowStart.getTime()) / HOUR_MS) * pixelsPerHour;
 
+  // The hover card: after a beat on a block; at once when moving from one block to the next; gone on scroll or click
+  const [hover, setHover] = useState<{ program: StoredProgram; rect: DOMRect } | null>(null);
+  const hoverShown = useRef(false);
+  hoverShown.current = hover !== null;
+  const hoverTimers = useRef<{ show?: number; hide?: number }>({});
+  const hoverApi = useMemo<GuideHoverApi>(() => ({
+    show: (program, el) => {
+      window.clearTimeout(hoverTimers.current.show);
+      window.clearTimeout(hoverTimers.current.hide);
+      const open = () => setHover({ program, rect: el.getBoundingClientRect() });
+      if (hoverShown.current) open();
+      else hoverTimers.current.show = window.setTimeout(open, HOVER_DELAY_MS);
+    },
+    hide: () => {
+      window.clearTimeout(hoverTimers.current.show);
+      window.clearTimeout(hoverTimers.current.hide);
+      hoverTimers.current.hide = window.setTimeout(() => setHover(null), 80);
+    },
+  }), []);
+  const dropHover = useCallback(() => {
+    window.clearTimeout(hoverTimers.current.show);
+    window.clearTimeout(hoverTimers.current.hide);
+    setHover(null);
+  }, []);
+  useEffect(() => { if (!visible) dropHover(); }, [visible, dropHover]);
+  useEffect(() => () => dropHover(), [dropHover]);
+
   const getTimeSlotPosition = useCallback(
     (slotTime: Date) => {
       const offsetHours = (slotTime.getTime() - windowStart.getTime()) / 3600000;
@@ -527,7 +559,8 @@ function ChannelPanelImpl({
       </div>
 
       {/* EPG Grid Area */}
-      <div className="guide-content">
+      <div className="guide-content" onScrollCapture={dropHover} onMouseDownCapture={dropHover}>
+        <GuideHover.Provider value={hoverApi}>
         <GuideHighlight.Provider value={jump?.ids ?? null}>
         <Virtuoso
           ref={channelListRef}
@@ -600,6 +633,8 @@ function ChannelPanelImpl({
           }}
         />
         </GuideHighlight.Provider>
+        </GuideHover.Provider>
+        {hover && createPortal(<GuideHoverCard program={hover.program} anchor={hover.rect} now={now} />, document.body)}
       </div>
     </div>
   );

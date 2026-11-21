@@ -1,5 +1,6 @@
 import { useContext, useMemo, memo, type CSSProperties } from 'react';
 import { GuideHighlight } from './GuideSearchResults';
+import { GuideHover } from './guideHover';
 import type { StoredProgram } from '../db';
 import './ProgramBlock.css';
 
@@ -92,16 +93,11 @@ export const ProgramBlock = memo(function ProgramBlock({
   );
 
   const highlight = useContext(GuideHighlight);
+  const hover = useContext(GuideHover);
   const lit = highlight?.has(program.id) ?? false;
 
   // Check if this program contains "now"
   const isCurrent = isProgramCurrent(program, now);
-
-  // Format time for tooltip
-  const formatTime = (date: Date | string) => {
-    const d = date instanceof Date ? date : new Date(date);
-    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  };
 
   if (!style.visible) {
     return null;
@@ -125,7 +121,8 @@ export const ProgramBlock = memo(function ProgramBlock({
         ...(isCurrent ? { '--aired': `${aired}px` } as CSSProperties : {}),
       }}
       onClick={onClick}
-      title={`${program.title}\n${formatTime(program.start)} - ${formatTime(program.end)}${program.description ? `\n\n${program.description}` : ''}`}
+      onMouseEnter={(e) => hover?.show(program, e.currentTarget)}
+      onMouseLeave={() => hover?.hide()}
     >
       <span className="program-block-title">{program.title}</span>
       {showDescription && (

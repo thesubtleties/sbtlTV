@@ -21,7 +21,8 @@ describe('ChannelRow: what is on now, under the name', () => {
     const html = row({});
     expect(html).toContain('guide-channel-now-title">How the Universe Works<');
     expect(html).toContain('width:25%');
-    expect(html).toContain('How the Universe Works · 45 min left');
+    // Its details are in the guide's hover card now, not a native tooltip
+    expect(html).not.toContain('min left');
   });
   it("comes from the live on-now lookup when given, whatever time the grid shows", () => {
     const later: StoredProgram = { ...show, id: 'p2', title: 'Late Show', start: at(23, 0), end: at(24, 0) };
