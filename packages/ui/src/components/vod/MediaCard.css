@@ -364,7 +364,7 @@
   white-space: nowrap;
   color: var(--text);
   background: color-mix(in srgb, var(--scrim) 55%, transparent);
-  border-radius: 6px;
+  border-radius: var(--r-control);
   backdrop-filter: blur(4px);
   opacity: 0;
   pointer-events: none;

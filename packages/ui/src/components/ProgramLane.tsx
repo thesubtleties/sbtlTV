@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, memo, type CSSProperties } from 'react';
 import type { StoredProgram } from '../db';
 import { useGuideMorphEnabled } from '../stores/uiStore';
-import { ProgramBlock, EmptyProgramBlock, airedPx, getProgramStyle, isProgramCurrent } from './ProgramBlock';
+import { ProgramBlock, EmptyProgramBlock, airedPx, getProgramStyle, isProgramCurrent, isSliver } from './ProgramBlock';
 import {
   loadingBlocks,
   planMorph,
@@ -188,13 +188,13 @@ export const ProgramLane = memo(function ProgramLane({
         {plan.become.map(({ placeholder, program, titled }) => (
           <div
             key={`m${placeholder}`}
-            className={`program-block morph become${moving && program.onAir ? ' current' : ''}`}
+            className={`program-block morph become${moving && program.onAir ? ' current' : ''}${moving && isSliver(program.program, program.width, now, windowStart) ? ' program-block--sliver' : ''}`}
             style={moving
               ? {
                   left: `${program.left}px`,
                   width: `${program.width}px`,
                   // The show on now lands with its aired fill growing in (the real block that follows doesn't replay it)
-                  ...(program.onAir ? { '--aired': `${airedPx(program.left, program.width, now, windowStart, pixelsPerHour)}px` } as CSSProperties : {}),
+                  ...(program.onAir ? { '--aired': `${airedPx(program.left, program.width, now, windowStart, pixelsPerHour)}px` } : {}),
                 }
               : placeholderStyle(phase.placeholders[placeholder])}
           >

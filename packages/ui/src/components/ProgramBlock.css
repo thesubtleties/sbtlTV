@@ -21,7 +21,7 @@
   background: var(--fill-3);
 }
 
-/* Current program (contains "now"): the guide's one accent moment */
+/* Current program (contains now): accent-tinted, its aired part a little brighter (below) */
 .program-block.current {
   background: var(--accent-soft);
 }
@@ -33,7 +33,8 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 0;
+  /* From the block's outer left edge (over its 2px transparent left border), where airedPx measures from */
+  left: -2px;
   width: var(--aired, 0px);
   border-radius: inherit;
   border-top-right-radius: 0;
@@ -52,8 +53,8 @@
   position: relative;
 }
 
-/* Only a sliver of the show on now left in view: no clipped letters */
-.program-block--sliver > * {
+/* A show on now cut off at the left with little left in view: no clipped letters, while the channel cell names it */
+.guide-now-on .program-block--sliver > * {
   visibility: hidden;
 }
 
@@ -75,7 +76,7 @@
 
 /* Loading: the row's programs have not been read yet. Blocks hold still at 2%
    white (5% background at 0.4 opacity, matching the empty block); only the
-   left edge, which every real block carries, wakes and fades. Each block runs
+   2px left edge (on real blocks it shows only when a guide search lights them) wakes and fades. Each block runs
    on its own period and phase (set inline by ProgramLane). */
 .program-block.loading {
   background: var(--fill-2);

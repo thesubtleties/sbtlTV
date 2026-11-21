@@ -3,7 +3,7 @@
   background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-card);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5); backdrop-filter: blur(16px);
 }
-/* A thin scrollbar with no arrow buttons, as the guide's channel list: nothing square in the rounded corner */
+/* A thin scrollbar with no arrow buttons: nothing square in the rounded corner */
 .gsr-panel::-webkit-scrollbar { width: 10px; }
 .gsr-panel::-webkit-scrollbar-button { display: none; }
 .gsr-panel::-webkit-scrollbar-track { background: transparent; }

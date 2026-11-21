@@ -79,11 +79,10 @@ export function startMinuteTicker(onTick: () => void): () => void {
   };
 }
 
-// Floor to the current hour
+// Floor to the current hour (local). By subtracting, not setMinutes: in the hour repeated when clocks go back,
+// setMinutes resolves to the first pass and lands an hour early.
 function floorToHour(date: Date): Date {
-  const result = new Date(date);
-  result.setMinutes(0, 0, 0);
-  return result;
+  return new Date(date.getTime() - (date.getMinutes() * 60 + date.getSeconds()) * 1000 - date.getMilliseconds());
 }
 
 /**
@@ -92,9 +91,8 @@ function floorToHour(date: Date): Date {
  * minute. Local minutes, not epoch maths: zones 30 or 45 minutes off UTC keep their own :00 and :30.
  */
 export function floorToHalfHour(date: Date): Date {
-  const result = new Date(date);
-  result.setMinutes(result.getMinutes() < 30 ? 0 : 30, 0, 0);
-  return result;
+  // Subtracting (not setMinutes, which lands an hour early in the hour repeated when clocks go back)
+  return new Date(date.getTime() - ((date.getMinutes() % 30) * 60 + date.getSeconds()) * 1000 - date.getMilliseconds());
 }
 
 // One hour back: from between hours, snap to the hour; from an hour, the one before
@@ -140,8 +138,8 @@ export function useTimeGrid({
   const liveAnchor = useMemo(() => floorToHalfHour(now), [now]);
   const anchor = browseAnchor ?? liveAnchor;
 
-  // One tick per minute, on the minute: the clock, the left edge at now (its half hour) and
-  // what is on now all change together, when the shows do.
+  // One tick per minute, on the minute: the clock and what is on now change together, when the shows do, and the
+  // left edge with them when a half hour starts.
   const refreshNow = useCallback(() => {
     const minute = minuteOf(Date.now());
     setNow((current) => (current.getTime() === minute ? current : new Date(minute)));
@@ -169,7 +167,7 @@ export function useTimeGrid({
   const loadStart = useMemo(() => addHours(anchor, -preloadBefore), [anchor, preloadBefore]);
   const loadEnd = useMemo(() => addHours(anchor, visibleHours + preloadAfter), [anchor, visibleHours, preloadAfter]);
 
-  // Navigation: go back one hour (the first step back from "now" snaps to its hour)
+  // Navigation: go back one hour (from now's half hour: from :30 to its hour, from :00 to the hour before)
   const goBack = useCallback(() => {
     setBrowseAnchor((current) => stepBack(current ?? liveAnchor));
   }, [liveAnchor]);

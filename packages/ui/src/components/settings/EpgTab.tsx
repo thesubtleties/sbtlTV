@@ -1,5 +1,6 @@
 import { useGuideNowInChannel, useUpdateSettings } from '../../stores/uiStore';
 import { data } from '../../data/client';
+import { saveSettings } from '../../utils/saveSettings';
 import { useToast } from '../../hooks/useToast';
 import { debugLog } from '../../utils/debugLog';
 import { OnOff, OptionRow, Section, Segmented, SettingsTab, Slider } from './ui';
@@ -48,16 +49,13 @@ export function EpgTab({
   async function handleSortOrderChange(order: 'alphabetical' | 'number') {
     onChannelSortOrderChange(order);
     updateSettings({ channelSortOrder: order });
-    if (!window.storage) return;
-    await window.storage.updateSettings({ channelSortOrder: order });
+    await saveSettings({ channelSortOrder: order });
   }
 
   async function handleCategorySortOrderChange(order: 'alphabetical' | 'provider') {
     onCategorySortOrderChange(order);
     updateSettings({ categorySortOrder: order });
-    if (window.storage) {
-      await window.storage.updateSettings({ categorySortOrder: order });
-    }
+    await saveSettings({ categorySortOrder: order });
     if (order !== 'provider') return;
 
     // Provider order needs per-category `position`; backfill via resync if absent.
@@ -88,49 +86,43 @@ export function EpgTab({
   async function handleWidthChange(width: number) {
     onCategoryBarWidthChange(width);
     updateSettings({ categoryBarWidth: width });
-    if (!window.storage) return;
-    await window.storage.updateSettings({ categoryBarWidth: width });
+    await saveSettings({ categoryBarWidth: width });
   }
 
   async function handleChannelWidthChange(width: number) {
     onChannelColumnWidthChange(width);
     updateSettings({ channelColumnWidth: width });
-    if (!window.storage) return;
-    await window.storage.updateSettings({ channelColumnWidth: width });
+    await saveSettings({ channelColumnWidth: width });
   }
 
   async function handleOpacityChange(pct: number) {
     const opacity = pct / 100;
     onGuideOpacityChange(opacity);
     updateSettings({ guideOpacity: opacity });
-    if (!window.storage) return;
-    await window.storage.updateSettings({ guideOpacity: opacity });
+    await saveSettings({ guideOpacity: opacity });
   }
 
   async function handleSportsMatchupChange(enabled: boolean) {
     onSportsMatchupChange(enabled);
     updateSettings({ sportsMatchupEnabled: enabled });
-    if (!window.storage) return;
-    await window.storage.updateSettings({ sportsMatchupEnabled: enabled });
+    await saveSettings({ sportsMatchupEnabled: enabled });
   }
 
   async function handleGuideMorphChange(enabled: boolean) {
     onGuideMorphChange(enabled);
     updateSettings({ guideMorphEnabled: enabled });
-    if (!window.storage) return;
-    await window.storage.updateSettings({ guideMorphEnabled: enabled });
+    await saveSettings({ guideMorphEnabled: enabled });
   }
 
   async function handleGuideSearchHideAdultChange(enabled: boolean) {
     onGuideSearchHideAdultChange(enabled);
     updateSettings({ guideSearchHideAdult: enabled });
-    if (!window.storage) return;
-    await window.storage.updateSettings({ guideSearchHideAdult: enabled });
+    await saveSettings({ guideSearchHideAdult: enabled });
   }
 
   async function handleGuideNowInChannelChange(on: boolean) {
     updateSettings({ guideNowInChannel: on });
-    await window.storage?.updateSettings({ guideNowInChannel: on });
+    await saveSettings({ guideNowInChannel: on });
   }
 
   return (

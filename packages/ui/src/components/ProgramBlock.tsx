@@ -1,6 +1,7 @@
-import { useContext, useMemo, memo, type CSSProperties } from 'react';
+import { useContext, useMemo, memo } from 'react';
 import { GuideHighlight } from './GuideSearchResults';
 import { GuideHover } from './guideHover';
+import { clockRange } from '../utils/airTime';
 import type { StoredProgram } from '../db';
 import './ProgramBlock.css';
 
@@ -68,8 +69,17 @@ export function airedPx(left: number, width: number, now: Date, windowStart: Dat
   return Math.min(width, Math.max(0, nowX - left));
 }
 
-/** Narrower than this, a show on now drops its text: a tinted sliver, not clipped letters. */
-export const SLIVER_PX = 56;
+/** Narrower than this, a show on now cut off at the grid's left edge drops its text (see isSliver). */
+const SLIVER_PX = 56;
+
+/**
+ * A show on now cut off at the grid's left edge with little of it left in view: a tinted sliver, not clipped
+ * letters. Its text is hidden only while the channel cell names the show on now (.guide-now-on, see the CSS); a short
+ * show that starts in view keeps its text.
+ */
+export function isSliver(program: StoredProgram, width: number, now: Date, windowStart: Date): boolean {
+  return width < SLIVER_PX && program.start.getTime() < windowStart.getTime() && isProgramCurrent(program, now);
+}
 
 export function isProgramCurrent(program: StoredProgram, now: Date): boolean {
   const progStartMs = program.start instanceof Date ? program.start.getTime() : new Date(program.start).getTime();
@@ -105,8 +115,7 @@ export const ProgramBlock = memo(function ProgramBlock({
 
   // How much of the show on now has aired (drawn brighter, see the CSS)
   const aired = isCurrent ? airedPx(style.left, style.width, now, windowStart, pixelsPerHour) : 0;
-  // A show on now with only a sliver left shows no text (its title is under the channel name)
-  const sliver = isCurrent && style.width < SLIVER_PX;
+  const sliver = isSliver(program, style.width, now, windowStart);
 
   // Determine if we should show description (only if block is wide enough)
   const showDescription = style.width > 200 && program.description;
@@ -118,15 +127,17 @@ export const ProgramBlock = memo(function ProgramBlock({
         left: `${style.left}px`,
         width: `${style.width}px`,
         ...(enterDelayMs !== undefined ? { animationDelay: `${enterDelayMs}ms` } : {}),
-        ...(isCurrent ? { '--aired': `${aired}px` } as CSSProperties : {}),
+        ...(isCurrent ? { '--aired': `${aired}px` } : {}),
       }}
       onClick={onClick}
-      onMouseEnter={(e) => hover?.show(program, e.currentTarget)}
+      // The times and description for screen readers (the hover card is for the pointer)
+      aria-description={`${clockRange(program.start.getTime(), program.end.getTime())}${program.description ? `. ${program.description}` : ''}`}
+      onMouseEnter={(e) => hover?.show(program, e.currentTarget, e.clientX)}
       onMouseLeave={() => hover?.hide()}
     >
-      <span className="program-block-title">{program.title}</span>
+      <span className="program-block-title" dir="auto">{program.title}</span>
       {showDescription && (
-        <span className="program-block-desc">{program.description}</span>
+        <span className="program-block-desc" dir="auto">{program.description}</span>
       )}
     </div>
   );

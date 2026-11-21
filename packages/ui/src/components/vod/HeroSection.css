@@ -124,7 +124,7 @@
 .hero__genre {
   padding: 3px 8px;
   background: var(--fill-3);
-  border-radius: 6px;
+  border-radius: var(--r-control);
   font-size: 0.75rem;
 }
 

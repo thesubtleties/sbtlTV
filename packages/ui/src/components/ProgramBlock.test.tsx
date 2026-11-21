@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ProgramBlock } from './ProgramBlock';
+import { ProgramBlock, airedPx, isSliver } from './ProgramBlock';
 import { GuideHighlight } from './GuideSearchResults';
 import type { StoredProgram } from '../db';
 
@@ -27,13 +27,27 @@ describe('ProgramBlock', () => {
     expect(html).toContain('--aired:50px');
     expect(render(at(22, 30))).not.toContain('--aired');
   });
-  it('a show on now with only a sliver left in view drops its text', () => {
-    // From 21:30 the show has 30 min left = 100 px: full block; from 21:50, 10 min = 33 px: a sliver
-    expect(render(at(21, 40))).not.toContain('program-block--sliver');
-    const sliver = renderToStaticMarkup(createElement(ProgramBlock, {
+  it('a show on now cut off at the left with little left in view is a sliver; a short show starting in view is not', () => {
+    // Window from 21:50 at 200 px/h: the 21:00-22:00 show has 10 min in view (33 px) and started before the edge
+    expect(isSliver(program, 33, at(21, 50), at(21, 50))).toBe(true);
+    // A 15-minute show starting in view at 48 px keeps its text
+    const short = { ...program, start: at(22, 0), end: at(22, 15) };
+    expect(isSliver(short, 48, at(22, 5), at(21, 30))).toBe(false);
+    // Not on now: never
+    expect(isSliver(program, 33, at(22, 30), at(21, 50))).toBe(false);
+    const html = renderToStaticMarkup(createElement(ProgramBlock, {
       program, windowStart: at(21, 50), windowEnd: at(23, 50), now: at(21, 50), pixelsPerHour: 200,
     }));
-    expect(sliver).toContain('program-block--sliver');
+    expect(html).toContain('program-block--sliver');
+  });
+  it('the aired width: from the block to now, never below 0 or past the block', () => {
+    expect(airedPx(100, 200, at(21, 30), at(21, 0), 200)).toBe(0);    // now (x 100) at the block's start
+    expect(airedPx(0, 200, at(21, 30), at(21, 0), 200)).toBe(100);   // block cut at the left: aired = now's x
+    expect(airedPx(150, 200, at(21, 30), at(21, 0), 200)).toBe(0);   // now before the block
+    expect(airedPx(0, 50, at(21, 30), at(21, 0), 200)).toBe(50);     // now past the block
+  });
+  it('the times and description are there for screen readers', () => {
+    expect(render(at(21, 40))).toMatch(/aria-description="[^"]*–[^"]*"/);
   });
   it('lights up only the programmes a guide jump is for', () => {
     const lit = (ids: Set<string> | null) => renderToStaticMarkup(createElement(GuideHighlight.Provider, { value: ids },
