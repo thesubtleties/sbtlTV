@@ -1,0 +1,96 @@
+/* The guide's hover card: the search panel's surface and corner (fill, edge, shadow, --r-card). The surface is opaque,
+   so no backdrop blur (it would cost a redraw over playing video and show nothing). Drawn on the body, outside .app,
+   so it sets the app's font itself. */
+.ghc {
+  position: fixed;
+  z-index: 95; /* above the guide (80) and the category strip (90), below the sidebar (100) and Settings (1000) */
+  box-sizing: border-box;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  padding: 11px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  color: var(--text);
+  font-family: var(--font-sans);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 140ms ease-out, transform 160ms ease-out;
+}
+
+.ghc--shown {
+  opacity: 1;
+  transform: none;
+}
+
+/* On now: its progress along the top edge (the corners clip it), as the channel cell's line */
+.ghc--now::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--progress, 0%);
+  height: 2px;
+  background: var(--accent);
+}
+
+.ghc__title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ghc__when {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-condensed);
+  font-size: 12.5px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.ghc__times {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --text-2, not --text-3: at this size --text-3 on this surface is under 4.5:1 on several palettes */
+.ghc__status {
+  margin-left: auto;
+}
+
+.ghc--now .ghc__status {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.ghc__desc {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghc { transition: none; transform: none; }
+}

@@ -1,8 +1,17 @@
 .gsr-panel {
   position: absolute; top: calc(100% + 6px); right: 0; width: min(480px, calc(100cqw - 214px)); max-height: 68vh; overflow-y: auto; z-index: 40;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-panel);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-card);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5); backdrop-filter: blur(16px);
 }
+/* A thin scrollbar with no arrow buttons: nothing square in the rounded corner */
+.gsr-panel::-webkit-scrollbar { width: 10px; }
+.gsr-panel::-webkit-scrollbar-button { display: none; }
+.gsr-panel::-webkit-scrollbar-track { background: transparent; }
+.gsr-panel::-webkit-scrollbar-thumb {
+  background: var(--fill-3); border-radius: 5px;
+  border: 3px solid transparent; background-clip: padding-box;
+}
+.gsr-panel::-webkit-scrollbar-thumb:hover { background-color: var(--line); }
 /* The box has its own line here: only the panel's own edges are in the way */
 @media (max-width: 860px) {
   .gsr-panel { width: min(480px, calc(100cqw - 44px)); }

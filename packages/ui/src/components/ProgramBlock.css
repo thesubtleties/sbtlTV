@@ -8,7 +8,7 @@
   justify-content: center;
   padding: 4px 10px;
   background: var(--fill-1);
-  border-radius: 6px;
+  border-radius: var(--r-inner); /* programmes share the inner radius with guide search results */
   border-left: 2px solid transparent;
   cursor: pointer;
   overflow: hidden;
@@ -21,10 +21,41 @@
   background: var(--fill-3);
 }
 
-/* Current program (contains "now"): the guide's one accent moment */
+/* Current program (contains now): accent-tinted, its aired part a little brighter (below) */
 .program-block.current {
   background: var(--accent-soft);
-  border-left-color: var(--accent);
+}
+
+/* The show on now: its aired part a little brighter, ending in a short eased edge at now (--aired, set
+   inline), so the block reads as its own progress. Under the text. */
+.program-block.current::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* From the block's outer left edge (over its 2px transparent left border), where airedPx measures from */
+  left: -2px;
+  width: var(--aired, 0px);
+  border-radius: inherit;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  --aired-tint: 12%;
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--accent) var(--aired-tint), transparent) calc(100% - 12px),
+    color-mix(in srgb, var(--accent) calc(var(--aired-tint) * 0.9), transparent) calc(100% - 7px),
+    color-mix(in srgb, var(--accent) calc(var(--aired-tint) * 0.58), transparent) calc(100% - 4px),
+    color-mix(in srgb, var(--accent) calc(var(--aired-tint) * 0.22), transparent) calc(100% - 2px),
+    transparent 100%);
+  pointer-events: none;
+}
+
+.program-block.current > * {
+  position: relative;
+}
+
+/* A show on now cut off at the left with little left in view: no clipped letters, while the channel cell names it */
+.guide-now-on .program-block--sliver > * {
+  visibility: hidden;
 }
 
 .program-block.current:hover {
@@ -45,7 +76,7 @@
 
 /* Loading: the row's programs have not been read yet. Blocks hold still at 2%
    white (5% background at 0.4 opacity, matching the empty block); only the
-   left edge, which every real block carries, wakes and fades. Each block runs
+   2px left edge (on real blocks it shows only when a guide search lights them) wakes and fades. Each block runs
    on its own period and phase (set inline by ProgramLane). */
 .program-block.loading {
   background: var(--fill-2);
@@ -83,7 +114,18 @@
 
 .program-block.morph.current {
   background: var(--accent-soft);
-  border-left-color: var(--accent);
+}
+
+/* With the morph, the aired fill grows in from the left as the show on now lands (480ms, MORPH_MS). Otherwise it
+   simply fades in with its block, in place. A block that just re-renders doesn't replay it. */
+.program-block.morph.current::before {
+  transform-origin: left center;
+  animation: aired-in 480ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes aired-in {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
 
 .program-block.morph.spare {
@@ -125,6 +167,9 @@
   .program-block.morph .program-block-title {
     animation: none;
     opacity: 1;
+  }
+  .program-block.morph.current::before {
+    animation: none;
   }
 }
 

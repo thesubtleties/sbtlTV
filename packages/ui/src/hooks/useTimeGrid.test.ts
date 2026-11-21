@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { minuteOf, msUntilNextMinute, startMinuteTicker, stepBack } from './useTimeGrid';
+import { floorToHalfHour, minuteOf, msUntilNextMinute, startMinuteTicker, stepBack } from './useTimeGrid';
 
 const at = (h: number, m: number, s: number, ms = 0) => new Date(2026, 9, 17, h, m, s, ms).getTime();
 
@@ -41,5 +41,14 @@ describe('guide minute tick', () => {
   it('the first step back from now snaps to its hour, then goes an hour at a time', () => {
     expect(stepBack(new Date(at(21, 42, 0))).getTime()).toBe(at(21, 0, 0));
     expect(stepBack(new Date(at(21, 0, 0))).getTime()).toBe(at(20, 0, 0));
+  });
+
+  it('at now the grid starts on the half hour (local), so the show on now starts at the edge', () => {
+    expect(floorToHalfHour(new Date(at(21, 0, 0))).getTime()).toBe(at(21, 0, 0));
+    expect(floorToHalfHour(new Date(at(21, 29, 59, 999))).getTime()).toBe(at(21, 0, 0));
+    expect(floorToHalfHour(new Date(at(21, 30, 0))).getTime()).toBe(at(21, 30, 0));
+    expect(floorToHalfHour(new Date(at(21, 59, 0))).getTime()).toBe(at(21, 30, 0));
+    // One step back from a half-hour edge lands on its hour
+    expect(stepBack(floorToHalfHour(new Date(at(21, 42, 0)))).getTime()).toBe(at(21, 0, 0));
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, memo, type CSSProperties } from 'react';
 import type { StoredProgram } from '../db';
 import { useGuideMorphEnabled } from '../stores/uiStore';
-import { ProgramBlock, EmptyProgramBlock, getProgramStyle, isProgramCurrent } from './ProgramBlock';
+import { ProgramBlock, EmptyProgramBlock, airedPx, getProgramStyle, isProgramCurrent, isSliver } from './ProgramBlock';
 import {
   loadingBlocks,
   planMorph,
@@ -23,6 +23,8 @@ interface ProgramLaneProps {
   pixelsPerHour: number;
   visibleHours: number;
   onPlay: () => void;
+  /** Called when the row's programs arrive with the morph (so the channel cell can land its line with them) */
+  onMorph?: () => void;
 }
 
 interface VisibleProgram {
@@ -67,6 +69,7 @@ export const ProgramLane = memo(function ProgramLane({
   pixelsPerHour,
   visibleHours,
   onPlay,
+  onMorph,
 }: ProgramLaneProps) {
   const [phase, setPhase] = useState<Phase>(() =>
     programs === undefined ? { kind: 'loading', since: Date.now() } : { kind: 'ready', entering: false }
@@ -78,6 +81,8 @@ export const ProgramLane = memo(function ProgramLane({
   const morphEnabled = useGuideMorphEnabled();
   const morphEnabledRef = useRef(morphEnabled);
   morphEnabledRef.current = morphEnabled;
+  const onMorphRef = useRef(onMorph);
+  onMorphRef.current = onMorph;
 
   const laneWidth = pixelsPerHour * visibleHours;
   const placeholders = useMemo(() => loadingBlocks(rowIndex, laneWidth), [rowIndex, laneWidth]);
@@ -132,6 +137,7 @@ export const ProgramLane = memo(function ProgramLane({
       return;
     }
     setPhase({ kind: 'morph', moving: false, plan, placeholders, laneKey });
+    onMorphRef.current?.();
     const lead = setTimeout(() => {
       if (phaseRef.current.kind === 'morph') setPhase({ ...phaseRef.current, moving: true });
     }, MORPH_LEAD_MS);
@@ -182,8 +188,15 @@ export const ProgramLane = memo(function ProgramLane({
         {plan.become.map(({ placeholder, program, titled }) => (
           <div
             key={`m${placeholder}`}
-            className={`program-block morph become${moving && program.onAir ? ' current' : ''}`}
-            style={moving ? { left: `${program.left}px`, width: `${program.width}px` } : placeholderStyle(phase.placeholders[placeholder])}
+            className={`program-block morph become${moving && program.onAir ? ' current' : ''}${moving && isSliver(program.program, program.width, now, windowStart) ? ' program-block--sliver' : ''}`}
+            style={moving
+              ? {
+                  left: `${program.left}px`,
+                  width: `${program.width}px`,
+                  // The show on now lands with its aired fill growing in (the real block that follows doesn't replay it)
+                  ...(program.onAir ? { '--aired': `${airedPx(program.left, program.width, now, windowStart, pixelsPerHour)}px` } : {}),
+                }
+              : placeholderStyle(phase.placeholders[placeholder])}
           >
             {(titled || moving) && (
               <span className={`program-block-title${titled ? '' : ' late'}`}>{program.program.title}</span>

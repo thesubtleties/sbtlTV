@@ -1,12 +1,12 @@
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
+import { useChannels, useCategories, useProgramsInRange, usePrograms } from '../hooks/useChannels';
 import { removeFavoriteRow, useFavoriteChannels, useWaitingFavorites } from '../hooks/useFavorites';
 import { GuideMissingFavorites, type MissingFavoritesContext } from './MissingFavorites';
 import { useTimeGrid } from '../hooks/useTimeGrid';
 import { useGuideRowRange } from '../hooks/useGuideRowRange';
 import { ChannelRow } from './ChannelRow';
-import { useChannelSortOrder, useChannelColumnWidth, useChannelSyncing, useSourceNeedsLogin, useUIStore } from '../stores/uiStore';
+import { useChannelSortOrder, useChannelColumnWidth, useChannelSyncing, useGuideNowInChannel, useSourceNeedsLogin, useUIStore } from '../stores/uiStore';
 import type { StoredChannel } from '../db';
 import { filterChannelsByName } from '../utils/channelFilter';
 import { loadGuideSearchMode, saveGuideSearchMode, type GuideSearchMode } from '../utils/guideSearchMode';
@@ -18,8 +18,14 @@ import { useDataState } from '../hooks/useDataState';
 import { GuideHighlight, GuideSearchResults, flattenResults, type GuideItem } from './GuideSearchResults';
 import { useToastStore } from '../stores/toastStore';
 import { debugLog } from '../utils/debugLog';
+import { GuideHover, type GuideHoverApi } from './guideHover';
+import { GuideHoverLayer } from './GuideHoverLayer';
 import './ChannelPanel.css';
 
+
+const HOUR_MS = 3_600_000;
+// usePrograms with no ids reads nothing (the on-now line is off)
+const NO_IDS: string[] = [];
 interface ChannelPanelProps {
   categoryId: string | null;
   visible: boolean;
@@ -275,6 +281,11 @@ function ChannelPanelImpl({
   // Programs are read only for the rows Virtuoso is rendering (see useGuideRowRange).
   const { handleRangeChange, loadedStreamIds } = useGuideRowRange(displayChannels);
   const programs = useProgramsInRange(loadedStreamIds, loadStart, loadEnd);
+  // What's on now under each channel name, whatever time the grid shows. Its own lookup only when the grid's loaded
+  // window doesn't cover now (browsing ahead or back); otherwise the rows' programs already hold it. Off: no lookup.
+  const showNow = useGuideNowInChannel();
+  const loadCoversNow = now >= loadStart && now < loadEnd;
+  const nowPrograms = usePrograms(showNow && !loadCoversNow ? loadedStreamIds : NO_IDS, now);
 
   // Keyboard navigation
   useEffect(() => {
@@ -332,10 +343,24 @@ function ChannelPanelImpl({
     return slots;
   }, [windowStart, windowEnd, visibleHours]);
 
+  // Where now falls in the grid, in px from its left edge (the caret)
+  const nowX = ((now.getTime() - windowStart.getTime()) / HOUR_MS) * pixelsPerHour;
+
+  // The hover card lives in GuideHoverLayer (its state never re-renders the rows); blocks reach it through this
+  // stable API, and anything that changes what's under a still pointer drops it (resetKey)
+  const hoverRef = useRef<GuideHoverApi>(null);
+  const hoverApi = useMemo<GuideHoverApi>(() => ({
+    show: (program, el, x) => hoverRef.current?.show(program, el, x),
+    hide: () => hoverRef.current?.hide(),
+    drop: () => hoverRef.current?.drop(),
+  }), []);
+  const dropHover = hoverApi.drop;
+  const hoverResetKey = `${windowStart.getTime()}|${pixelsPerHour}|${categoryId}|${jump?.title ?? ''}|${displayChannels.length}`;
+
   // Calculate position of a time slot within the grid
   const getTimeSlotPosition = useCallback(
     (slotTime: Date) => {
-      const offsetHours = (slotTime.getTime() - windowStart.getTime()) / 3600000;
+      const offsetHours = (slotTime.getTime() - windowStart.getTime()) / HOUR_MS;
       return offsetHours * pixelsPerHour;
     },
     [windowStart, pixelsPerHour]
@@ -344,7 +369,7 @@ function ChannelPanelImpl({
   return (
     <div
       ref={gridContainerRef}
-      className={`guide-panel ${visible ? 'visible' : 'hidden'} ${categoryStripOpen ? 'with-categories' : ''} ${sidebarExpanded ? 'sidebar-expanded' : ''}`}
+      className={`guide-panel ${visible ? 'visible' : 'hidden'} ${categoryStripOpen ? 'with-categories' : ''} ${sidebarExpanded ? 'sidebar-expanded' : ''}${showNow ? ' guide-now-on' : ''}`}
     >
       {/* Top Bar - Time Display & Navigation */}
       <div className="guide-header">
@@ -487,6 +512,19 @@ function ChannelPanelImpl({
       <div className="guide-time-header">
         <div className="guide-time-header-spacer" style={{ width: effectiveColumnWidth }} />
         <div className="guide-time-header-grid">
+          {/* Unlabeled half-hour notches between the hour labels */}
+          {[...timeSlots, ...(timeSlots[0] ? [new Date(timeSlots[0].getTime() - HOUR_MS)] : [])].map((slot) => {
+            const half = getTimeSlotPosition(new Date(slot.getTime() + HOUR_MS / 2));
+            return half > 2 && half < availableWidth
+              ? <span key={`half-${slot.getTime()}`} className="guide-time-half" style={{ left: half }} aria-hidden="true" />
+              : null;
+          })}
+          {/* Now: a small caret above the times (Tabler caret-down, filled), kept 5px in so the left edge doesn't cut it */}
+          {nowX >= 0 && nowX <= availableWidth && (
+            <svg className="guide-time-now" style={{ left: Math.max(nowX, 5) }} viewBox="5 9 14 8" aria-hidden="true">
+              <path d="M18 9c.852 0 1.297 .986 .783 1.623l-.076 .084l-6 6a1 1 0 0 1 -1.32 .083l-.094 -.083l-6 -6l-.083 -.094l-.054 -.077l-.054 -.096l-.017 -.036l-.027 -.067l-.032 -.108l-.01 -.053l-.01 -.06l-.004 -.057v-.118l.005 -.058l.009 -.06l.01 -.052l.032 -.108l.027 -.067l.07 -.132l.065 -.09l.073 -.081l.094 -.083l.077 -.054l.096 -.054l.036 -.017l.067 -.027l.108 -.032l.053 -.01l.06 -.01l.057 -.004l12.059 -.002z" />
+            </svg>
+          )}
           {timeSlots.map((slot, i) => {
             const position = getTimeSlotPosition(slot);
             // Hide if marker would be cut off at left edge or beyond right edge
@@ -505,7 +543,8 @@ function ChannelPanelImpl({
       </div>
 
       {/* EPG Grid Area */}
-      <div className="guide-content">
+      <div className="guide-content" onScrollCapture={dropHover} onMouseDownCapture={dropHover}>
+        <GuideHover.Provider value={hoverApi}>
         <GuideHighlight.Provider value={jump?.ids ?? null}>
         <Virtuoso
           ref={channelListRef}
@@ -520,6 +559,8 @@ function ChannelPanelImpl({
               sortOrder={channelSortOrder}
               channelColumnWidth={effectiveColumnWidth}
               programs={programs.get(channel.stream_id)}
+              showNow={showNow}
+              nowProgram={nowPrograms.get(channel.stream_id) ?? undefined}
               windowStart={windowStart}
               windowEnd={windowEnd}
               now={now}
@@ -576,6 +617,8 @@ function ChannelPanelImpl({
           }}
         />
         </GuideHighlight.Provider>
+        </GuideHover.Provider>
+        <GuideHoverLayer apiRef={hoverRef} now={now} visible={visible} resetKey={hoverResetKey} />
       </div>
     </div>
   );
