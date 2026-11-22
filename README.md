@@ -8,7 +8,7 @@
 A desktop IPTV player built with Electron and mpv.
 
 <p align="center">
-  <img src="https://storage.sbtl.dev/spookyspot/sbtltv-0.17.webp" alt="sbtlTV UI" width="720" />
+  <img src="https://storage.sbtl.dev/spookyspot/sbtltv-0.18.webp" alt="sbtlTV UI" width="720" />
 </p>
 
 sbtlTV aims to be a dead-simple, low-latency player that looks good and stays out of your way: quick channel changes, a real program guide, a proper Movies and Series library, and the small comforts that make IPTV feel like TV - resume where you left off, captions, themes, and streams that reconnect on their own. It is updated regularly; if you run into a problem or have an idea, [open an issue](../../issues).
