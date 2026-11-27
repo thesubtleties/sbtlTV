@@ -6,7 +6,7 @@
  */
 import { parentPort, workerData } from 'node:worker_threads';
 import type { Source, DataSettings, DataTable, SyncProgress } from '@sbtltv/core';
-import { configureTmdbExportFetch, checkProviderUrl } from '@sbtltv/core';
+import { checkProviderUrl } from '@sbtltv/core';
 import { setUrlGuard } from '@sbtltv/local-adapter';
 import { openDatabase, runJob, setRedactor, type Db, type StageContext, type SyncJob } from '@sbtltv/data';
 import { nodePlatform } from '@sbtltv/data/node';
@@ -26,10 +26,11 @@ let db: Db | null = null;
 let sources: Source[] = [];
 let settings: DataSettings = { epgRefreshHours: 6, vodRefreshHours: 24, allowLanSources: false, debugLoggingEnabled: false };
 let tempDir = '';
+let tmdbPath = '';
 
 function ctx(): StageContext {
   return {
-    db: db!, platform, tempDir, allowLanSources: settings.allowLanSources,
+    db: db!, platform, tempDir, tmdbPath, allowLanSources: settings.allowLanSources,
     log: (category, message) => post({ type: 'log', category, message }),
     // A failure's message reaches the page (an episode that failed to load shows it): logins never.
     progress: (progress: SyncProgress) => post({ type: 'progress', progress: progress.message ? { ...progress, message: cleanErrorText(progress.message) } : progress }),
@@ -41,6 +42,8 @@ port.on('message', (m: { type: string } & Record<string, unknown>) => {
   switch (m.type) {
     case 'init':
       tempDir = m.tempDir as string;
+      // The TMDB titles cache sits next to the data file (a cache: rebuilt when missing or damaged).
+      tmdbPath = platform.files.join(platform.files.dirname(m.dbPath as string), 'tmdb-titles.sqlite');
       settings = m.settings as DataSettings;
       // Provider requests made by the clients in this thread obey the LAN setting.
       setUrlGuard((url) => checkProviderUrl(url, settings.allowLanSources));
@@ -52,10 +55,6 @@ port.on('message', (m: { type: string } & Record<string, unknown>) => {
         post({ type: 'fatal', error: `${role} worker could not open the data file: ${e instanceof Error ? e.stack ?? e.message : String(e)}` });
         return;
       }
-      configureTmdbExportFetch({
-        async fetchText(url) { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); },
-        async fetchBinary(url) { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return new Uint8Array(await r.arrayBuffer()); },
-      });
       post({ type: 'ready' });
       break;
     case 'sources': sources = m.sources as Source[]; break;

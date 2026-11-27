@@ -8,6 +8,8 @@ export interface StageContext {
   platform: Platform;
   db: Db;
   tempDir: string;
+  /** The TMDB titles cache file (tmdb-titles.sqlite next to the data file); opened only while matching. */
+  tmdbPath: string;
   allowLanSources: boolean;
   log(category: string, message: string): void;
   progress(p: SyncProgress): void;

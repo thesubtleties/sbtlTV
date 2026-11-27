@@ -4,12 +4,13 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Source, DataTable, SyncProgress } from '@sbtltv/core';
 import { createSchema } from '../src/schema.js';
 import { nodePlatform } from '../src/node/index.js';
-import { syncChannels, syncVod, syncEpisodes, type StageContext, type ChannelClient, type VodClient } from '../src/sync-stages.js';
+import { openTitles } from '../src/tmdb-store.js';
+import { syncChannels, syncVod, syncEpisodes, matchTmdb, type StageContext, type ChannelClient, type VodClient } from '../src/sync-stages.js';
 
 function ctx(db: DatabaseSync) {
   const changed: [DataTable[], string | null][] = [];
   const progress: SyncProgress[] = [];
-  const c: StageContext = { db, platform: nodePlatform(), tempDir: '/tmp', allowLanSources: false, log: () => {}, progress: (p) => progress.push(p), changed: (t, s) => changed.push([t, s]) };
+  const c: StageContext = { db, platform: nodePlatform(), tempDir: '/tmp', tmdbPath: '/nonexistent/tmdb-titles.sqlite', allowLanSources: false, log: () => {}, progress: (p) => progress.push(p), changed: (t, s) => changed.push([t, s]) };
   return { c, changed, progress };
 }
 const source: Source = { id: 's1', name: 'P', type: 'xtream', url: 'http://x', username: 'u', password: 'p', enabled: true };
@@ -195,4 +196,35 @@ test('syncEpisodes keeps a stored list when the provider sends none, leaves it u
   assert.equal((db.prepare("select episodes_fetched t from vod_series").get() as { t: number }).t, 5, 'not stamped fresh');
   assert.deepEqual(changed, []);
   assert.deepEqual(progress.at(-1), { sourceId: 's1', stage: 'episodes', state: 'finished', seriesId: 's1_sr', counts: { episodes: 0 } });
+});
+
+test('matchTmdb matches new rows from a fresh titles cache, stamps every attempt, and skips rows already tried', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  db.exec(`insert into vod_movies(stream_id, source_id, name, title, year, direct_url) values
+    ('s1_m1', 's1', 'Heat (1995)', 'Heat', '1995', 'u'), ('s1_m2', 's1', 'Nothing Like It', null, null, 'u')`);
+  const { c, progress } = ctx(db);
+  c.tmdbPath = path.join(mkdtempSync(path.join(tmpdir(), 'tmdb-')), 'tmdb-titles.sqlite');
+  const t = openTitles(c.platform, c.tmdbPath, () => {});
+  t.exec(`create table movie_titles(norm text not null, id integer not null, year integer, popularity real not null);
+    insert into movie_titles values ('heat', 1, 1986, 99), ('heat', 949, 1995, 50);
+    create table series_titles(norm text not null, id integer not null, year integer, popularity real not null);
+    insert into meta values ('movie', ${Date.now()}, 'enriched'), ('series', ${Date.now()}, 'enriched')`);
+  t.close();
+  await matchTmdb(c, source);
+  const got = db.prepare('select stream_id, tmdb_id, popularity, match_attempted is not null as tried from vod_movies order by stream_id').all().map((r) => ({ ...(r as object) }));
+  assert.deepEqual(got, [{ stream_id: 's1_m1', tmdb_id: 949, popularity: 50, tried: 1 }, { stream_id: 's1_m2', tmdb_id: null, popularity: null, tried: 1 }]);
+  assert.deepEqual(progress.map((p) => p.state), ['started', 'finished']);
+});
+
+test('matchTmdb fails the stage cleanly when no titles can be had', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  db.exec("insert into vod_movies(stream_id, source_id, name, direct_url) values ('s1_m1', 's1', 'Heat', 'u')");
+  const { c, progress } = ctx(db);
+  c.tmdbPath = path.join(mkdtempSync(path.join(tmpdir(), 'tmdb-')), 'tmdb-titles.sqlite');
+  c.tempDir = mkdtempSync(path.join(tmpdir(), 'tmdb-tmp-'));
+  // Both sources fail (no network), and there is no cached table: the stage fails with a clear message.
+  c.platform = { ...c.platform, net: { async downloadToFile() { throw new Error('offline'); } } };
+  await matchTmdb(c, source);
+  assert.equal(progress.at(-1)?.state, 'failed');
+  assert.match(progress.at(-1)?.message ?? '', /TMDB movie titles unavailable/);
 });
