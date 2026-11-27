@@ -27,7 +27,8 @@
     "@sbtltv/core": "workspace:*",
     "@sbtltv/local-adapter": "workspace:*",
     "electron-store": "^11.0.2",
-    "electron-updater": "^6.7.3"
+    "electron-updater": "^6.7.3",
+    "@sbtltv/data": "workspace:*"
   },
   "optionalDependencies": {
     "@sbtltv/mpv-texture": "workspace:*"
