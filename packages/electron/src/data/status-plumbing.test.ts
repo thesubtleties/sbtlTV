@@ -45,3 +45,8 @@ test('the build keeps what tsc emitted into dist/data and drops only files whose
   const stale = readdirSync(new URL('./', import.meta.url)).filter((f) => !sources.has(f.replace(/\.(js|js\.map|d\.ts)$/, '')));
   assert.deepEqual(stale, []);
 });
+
+test('guide staging files live next to the data file, and leftovers are swept before any worker starts', () => {
+  assert.match(source('data/sync-worker.ts'), /stagingDir = platform\.files\.dirname\(m\.dbPath as string\)/);
+  assert.match(source('data/data-process.ts'), /sweepStagingFiles\(platform, path\.dirname\(dbPath\)\);[\s\S]*?startWorker\('sync'\)/);
+});

@@ -1,7 +1,9 @@
-import type { Db } from './platform.js';
+import type { Db, Platform } from './platform.js';
 import type { Category, Channel, Movie, Series, Episode, DataTable, VodDetailFields } from '@sbtltv/core';
 import { redact } from './redact.js';
 import { reindexGuide } from './schema.js';
+import { openStaging, type GuideStaging } from './guide-staging.js';
+import { rollbackQuietly } from './sql.js';
 
 export interface EpgProgramInput { epg_channel_id: string; startMs: number; endMs: number; title: string; description: string }
 export interface EpgLinkInput { stream_id: string; epg_channel_id: string; confidence: string; strategy: string }
@@ -17,7 +19,7 @@ function tx<T>(db: Db, fn: () => T): T {
     db.exec('commit');
     return out;
   } catch (e) {
-    db.exec('rollback');
+    rollbackQuietly(db);
     throw e;
   }
 }
@@ -82,18 +84,38 @@ export function replaceChannels(db: Db, sourceId: string, listed: { categories: 
 // a guide switch (built-in to override, or back) from leaving stale links behind.
 // Programme ids carry the source id: two sources pointing at the same guide each
 // keep their own copy, so deleting or resyncing one never touches the other.
-export function replaceEpg(db: Db, sourceId: string, epgSource: string, input: { programs: EpgProgramInput[]; links: EpgLinkInput[] }): DataTable[] {
+// The programmes come from the staging file (guide-staging.ts), in the order they were staged (the first of a
+// duplicate id wins, as before); the source and guide names come from the staging, so they can't disagree with its
+// ids. Callers discard the staging.
+export function commitStagedEpg(db: Db, staging: GuideStaging, links: EpgLinkInput[]): DataTable[] {
+  const { sourceId, epgSource } = staging;
+  staging.flush();
   return tx(db, () => {
     db.prepare(`delete from epg_programs where source_id = ?`).run(sourceId);
     db.prepare(`delete from epg_links where source_id = ?`).run(sourceId);
-    const insP = db.prepare(`insert or ignore into epg_programs(id, source_id, epg_source, epg_channel_id, start, end, title, description) values (?, ?, ?, ?, ?, ?, ?, ?)`);
-    for (const p of input.programs) insP.run(`${sourceId}::${epgSource}::${p.epg_channel_id}::${p.startMs}`, sourceId, epgSource, p.epg_channel_id, p.startMs, p.endMs, p.title, p.description);
+    db.prepare(`insert or ignore into epg_programs(id, source_id, epg_source, epg_channel_id, start, end, title, description)
+      select id, ?, ?, epg_channel_id, start, end, title, description from ${staging.table} order by rowid`).run(sourceId, epgSource);
     const insL = db.prepare(`insert or replace into epg_links(stream_id, epg_source, epg_channel_id, source_id, confidence, strategy) values (?, ?, ?, ?, ?, ?)`);
-    for (const l of input.links) insL.run(l.stream_id, epgSource, l.epg_channel_id, sourceId, l.confidence, l.strategy);
+    for (const l of links) insL.run(l.stream_id, epgSource, l.epg_channel_id, sourceId, l.confidence, l.strategy);
     db.prepare(`insert into sources_meta(source_id, last_epg_sync) values (?, ?) on conflict(source_id) do update set last_epg_sync = excluded.last_epg_sync`).run(sourceId, Date.now());
     reindexGuide(db);
     return ['epg_programs', 'epg_links', 'sources_meta'];
   });
+}
+
+// replaceEpg's staging needs no files of its own (a private scratch database), only a unique name.
+let anon = 0;
+const NO_FILES = { uuid: () => `anon${(++anon).toString(16).padStart(12, '0')}` } as unknown as Platform;
+
+// The whole guide given at once (tests and small callers); the guide sync stages as it parses instead.
+export function replaceEpg(db: Db, sourceId: string, epgSource: string, input: { programs: EpgProgramInput[]; links: EpgLinkInput[] }): DataTable[] {
+  const staging = openStaging(db, NO_FILES, null, sourceId, epgSource);
+  try {
+    for (const p of input.programs) staging.add(p);
+    return commitStagedEpg(db, staging, input.links);
+  } finally {
+    staging.discard();
+  }
 }
 
 export function replaceVod(db: Db, sourceId: string, input: { movies: Movie[]; series: Series[]; categories: VodCategoryInput[] }): DataTable[] {

@@ -24,9 +24,11 @@ test('decompressToFile inflates a gzip file by magic bytes and reports the size'
   const { xmlPath, sizeMB } = await decompressToFile(P, gz, () => {});
   assert.ok(sizeMB >= 0);
   assert.notEqual(xmlPath, gz);
-  const parsed = await parseXmltvFile(P, xmlPath, undefined, () => {});
+  const programs: unknown[] = [];
+  const parsed = await parseXmltvFile(P, xmlPath, undefined, () => {}, (p) => programs.push(p));
   assert.equal(parsed.channels.length, 2);
-  assert.equal(parsed.programs.length, 2);
+  assert.equal(programs.length, 2);
+  assert.equal(parsed.programCount, 2);
 });
 
 test('decompressToFile leaves a plain XML file where it is', async () => {
@@ -41,11 +43,12 @@ test('parseXmltvFile keeps only programmes for channels the provider has when a 
   const dir = mkdtempSync(path.join(tmpdir(), 'epg-'));
   const xml = path.join(dir, 'guide.xml');
   writeFileSync(xml, XML);
-  const parsed = await parseXmltvFile(P, xml, [{ epg_channel_id: 'cbs.us', name: 'CBS', stream_id: 's1_10' }], () => {});
+  const programs: { channel_id: string; title: string; description: string; startMs: number; endMs: number }[] = [];
+  const parsed = await parseXmltvFile(P, xml, [{ epg_channel_id: 'cbs.us', name: 'CBS', stream_id: 's1_10' }], () => {}, (p) => programs.push(p));
   assert.deepEqual(parsed.channels.map((c) => c.id), ['cbs.us', 'abc.us']);
-  assert.deepEqual(parsed.programs.map((p) => [p.channel_id, p.title, p.description]), [['cbs.us', 'Noon News', 'Local & national']]);
-  assert.equal(parsed.programs[0].startMs, Date.UTC(2026, 8, 21, 12));
-  assert.equal(parsed.programs[0].endMs, Date.UTC(2026, 8, 21, 13));
+  assert.deepEqual(programs.map((p) => [p.channel_id, p.title, p.description]), [['cbs.us', 'Noon News', 'Local & national']]);
+  assert.equal(programs[0].startMs, Date.UTC(2026, 8, 21, 12));
+  assert.equal(programs[0].endMs, Date.UTC(2026, 8, 21, 13));
 });
 
 import { createServer } from 'node:http';

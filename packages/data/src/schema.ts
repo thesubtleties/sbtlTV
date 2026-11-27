@@ -1,3 +1,4 @@
+import { rollbackQuietly } from './sql.js';
 import type { Db } from './platform.js';
 
 export const SCHEMA_VERSION = 3;
@@ -68,7 +69,7 @@ create table if not exists epg_programs (
 );
 create index if not exists epg_programs_channel_start on epg_programs(source_id, epg_source, epg_channel_id, start);
 
--- One row per (stream, guide). replaceEpg clears a source's links wholesale, so a
+-- One row per (stream, guide). A guide replace clears a source's links wholesale, so a
 -- guide switch never leaves rows under the old guide name.
 create table if not exists epg_links (
   stream_id text not null,
@@ -153,7 +154,7 @@ export function createSchema(db: Db): void {
     db.prepare("insert or replace into meta(key, value) values ('schema_version', ?)").run(String(SCHEMA_VERSION));
     db.exec('commit');
   } catch (e) {
-    db.exec('rollback');
+    rollbackQuietly(db);
     throw e;
   }
 }
@@ -197,7 +198,7 @@ export function migrate(db: Db): void {
       db.prepare("update meta set value=? where key='schema_version'").run(String(v + 1));
       db.exec('commit');
     } catch (e) {
-      db.exec('rollback');
+      rollbackQuietly(db);
       throw e;
     }
   }

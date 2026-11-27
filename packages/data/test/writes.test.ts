@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { seedFixture } from './fixtures.js';
+import { openStaging } from '../src/guide-staging.js';
 import { runQuery } from '../src/queries.js';
-import { replaceChannels, replaceEpg, replaceVod, replaceEpisodes, applyTmdbMatches, updateVodDetails, deleteSource, clearAll, setSourceError } from '../src/writes.js';
+import { commitStagedEpg, replaceChannels, replaceEpg, replaceVod, replaceEpisodes, applyTmdbMatches, updateVodDetails, deleteSource, clearAll, setSourceError } from '../src/writes.js';
 
 const count = (db: DatabaseSync, sql: string) => (db.prepare(sql).get() as { c: number }).c;
 
@@ -283,4 +284,69 @@ test('deleteSource and clearAll leave no programme in the search index', () => {
   const again = new DatabaseSync(':memory:'); seedFixture(again);
   clearAll(again);
   assert.equal(fts(again, 'noon'), 0);
+});
+
+// Today's (dev's) replaceEpg, kept here only to prove the staged path writes the same thing.
+function oldReplaceEpg(db: DatabaseSync, sourceId: string, epgSource: string, input: { programs: { epg_channel_id: string; startMs: number; endMs: number; title: string; description: string }[]; links: { stream_id: string; epg_channel_id: string; confidence: string; strategy: string }[] }) {
+  db.exec('begin immediate');
+  db.prepare('delete from epg_programs where source_id = ?').run(sourceId);
+  db.prepare('delete from epg_links where source_id = ?').run(sourceId);
+  const insP = db.prepare('insert or ignore into epg_programs(id, source_id, epg_source, epg_channel_id, start, end, title, description) values (?, ?, ?, ?, ?, ?, ?, ?)');
+  for (const p of input.programs) insP.run(`${sourceId}::${epgSource}::${p.epg_channel_id}::${p.startMs}`, sourceId, epgSource, p.epg_channel_id, p.startMs, p.endMs, p.title, p.description);
+  const insL = db.prepare('insert or replace into epg_links(stream_id, epg_source, epg_channel_id, source_id, confidence, strategy) values (?, ?, ?, ?, ?, ?)');
+  for (const l of input.links) insL.run(l.stream_id, epgSource, l.epg_channel_id, sourceId, l.confidence, l.strategy);
+  db.exec("insert into epg_programs_fts(epg_programs_fts) values('rebuild')");
+  db.exec('commit');
+}
+
+test('the staged replace writes exactly what the old one did: rows in rowid order, links, search', () => {
+  const programs = Array.from({ length: 12_000 }, (_, i) => ({ epg_channel_id: `ch${i % 37}`, startMs: 1000 + Math.floor(i / 37) * 60_000, endMs: 1000 + Math.floor(i / 37) * 60_000 + 60_000, title: i % 5 === 0 ? `Football ${i}` : `Show ${i}`, description: i % 3 ? 'desc' : '' }));
+  programs.push({ ...programs[10], title: 'Duplicate id, must lose' });
+  const links = [{ stream_id: 's1_10', epg_channel_id: 'ch1', confidence: 'exact', strategy: 'exact_id' }, { stream_id: 's1_11', epg_channel_id: 'ch2', confidence: 'high', strategy: 'display_name' }];
+  const a = new DatabaseSync(':memory:'); seedFixture(a); oldReplaceEpg(a, 's1', 'g', { programs, links });
+  const b = new DatabaseSync(':memory:'); seedFixture(b); replaceEpg(b, 's1', 'g', { programs, links });
+  const dump = (db: DatabaseSync) => ({
+    programs: db.prepare('select rowid, * from epg_programs order by rowid').all().map((r) => ({ ...(r as object) })),
+    links: db.prepare('select * from epg_links order by stream_id, epg_source').all().map((r) => ({ ...(r as object) })),
+    search: db.prepare("select rowid from epg_programs_fts where epg_programs_fts match 'football' order by rowid").all().map((r) => (r as { rowid: number }).rowid),
+  });
+  expect(dump(b)).toEqual(dump(a));
+  expect(dump(b).search.length).toBeGreaterThan(0);
+});
+
+test('a failing commit keeps the old guide, and the staging is gone', () => {
+  const db = new DatabaseSync(':memory:'); seedFixture(db);
+  const before = db.prepare("select id, title from epg_programs where source_id = 's1' order by rowid").all().map((r) => ({ ...(r as object) }));
+  const bad = [{ stream_id: null as unknown as string, epg_channel_id: 'cbs.us', confidence: 'exact', strategy: 'exact_id' }];
+  expect(() => replaceEpg(db, 's1', 'epg1', { programs: [{ epg_channel_id: 'cbs.us', startMs: 9000, endMs: 9500, title: 'New', description: '' }], links: bad })).toThrow();
+  expect(db.prepare("select id, title from epg_programs where source_id = 's1' order by rowid").all().map((r) => ({ ...(r as object) }))).toEqual(before);
+  expect((db.prepare('pragma database_list').all() as { name: string }[]).map((r) => r.name)).toEqual(['main']);
+});
+
+test('two connections stage independently and each source gets exactly its own programmes', () => {
+  const file = path.join(mkdtempSync(path.join(tmpdir(), 'stage-')), 'd.sqlite');
+  const a = new DatabaseSync(file, { timeout: 5000 }); seedFixture(a);
+  const b = new DatabaseSync(file, { timeout: 5000 });
+  const P = nodePlatform();
+  const sa = openStaging(a, P, path.dirname(file), 's1', 'g1');
+  const sb = openStaging(b, P, path.dirname(file), 's2', 'g2');
+  for (let i = 0; i < 6000; i++) { sa.add({ epg_channel_id: 'x', startMs: i, endMs: i + 1, title: 'A', description: '' }); sb.add({ epg_channel_id: 'y', startMs: i, endMs: i + 1, title: 'B', description: '' }); }
+  commitStagedEpg(a, sa, []); sa.discard();
+  commitStagedEpg(b, sb, []); sb.discard();
+  const by = (src: string) => (a.prepare('select count(*) c, min(title) lo, max(title) hi from epg_programs where source_id = ?').get(src) as { c: number; lo: string; hi: string });
+  expect({ ...by('s1') }).toEqual({ c: 6000, lo: 'A', hi: 'A' });
+  expect({ ...by('s2') }).toEqual({ c: 6000, lo: 'B', hi: 'B' });
+});
+
+test('staging never waits for another connection\'s write lock (the quick lane stages while the sync lane commits)', () => {
+  const file = path.join(mkdtempSync(path.join(tmpdir(), 'stage-')), 'd.sqlite');
+  const a = new DatabaseSync(file, { timeout: 100 }); a.exec('pragma journal_mode = wal'); seedFixture(a);
+  const b = new DatabaseSync(file, { timeout: 100 });
+  a.exec('begin immediate'); a.exec("delete from epg_programs where source_id = 's2'");   // holds the main write lock
+  try {
+    const s = openStaging(b, nodePlatform(), path.dirname(file), 's1', 'g');
+    for (let i = 0; i <= 5000; i++) s.add({ epg_channel_id: 'x', startMs: i, endMs: i + 1, title: 'T', description: '' });
+    expect(() => s.flush()).not.toThrow();
+    s.discard();
+  } finally { a.exec('rollback'); }
 });

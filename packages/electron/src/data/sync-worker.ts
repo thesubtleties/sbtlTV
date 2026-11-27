@@ -27,10 +27,11 @@ let sources: Source[] = [];
 let settings: DataSettings = { epgRefreshHours: 6, vodRefreshHours: 24, allowLanSources: false, debugLoggingEnabled: false };
 let tempDir = '';
 let tmdbPath = '';
+let stagingDir = '';
 
 function ctx(): StageContext {
   return {
-    db: db!, platform, tempDir, tmdbPath, allowLanSources: settings.allowLanSources,
+    db: db!, platform, tempDir, tmdbPath, stagingDir, allowLanSources: settings.allowLanSources,
     log: (category, message) => post({ type: 'log', category, message }),
     // A failure's message reaches the page (an episode that failed to load shows it): logins never.
     progress: (progress: SyncProgress) => post({ type: 'progress', progress: progress.message ? { ...progress, message: cleanErrorText(progress.message) } : progress }),
@@ -44,6 +45,8 @@ port.on('message', (m: { type: string } & Record<string, unknown>) => {
       tempDir = m.tempDir as string;
       // The TMDB titles cache sits next to the data file (a cache: rebuilt when missing or damaged).
       tmdbPath = platform.files.join(platform.files.dirname(m.dbPath as string), 'tmdb-titles.sqlite');
+      // Guide syncs stage into scratch files beside it (guide-staging.ts).
+      stagingDir = platform.files.dirname(m.dbPath as string);
       settings = m.settings as DataSettings;
       // Provider requests made by the clients in this thread obey the LAN setting.
       setUrlGuard((url) => checkProviderUrl(url, settings.allowLanSources));
