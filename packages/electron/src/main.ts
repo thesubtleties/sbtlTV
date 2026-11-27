@@ -2966,7 +2966,7 @@ ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: s
   }
 });
 
-// Fetch binary - for gzipped/binary content (EPG files, TMDB exports), returns base64
+// Fetch binary - for gzipped/binary content, returns base64
 // Uses same SSRF protection as fetch-proxy (respects allowLanSources setting)
 ipcMain.handle('fetch-binary', async (_event, url: string) => {
   const settings = storage.getSettings();

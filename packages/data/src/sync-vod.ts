@@ -120,7 +120,7 @@ export async function syncEpisodes(ctx: StageContext, source: Source, client: Vo
 
 // Matches rows that have never been attempted. match_attempted survives resyncs now
 // (the replaceVod upsert leaves it alone), so this is incremental for real. Titles come from the on-disk cache
-// (tmdb-store.ts), refreshed at most daily and only when there is something to match.
+// (tmdb-store.ts), opened only when there is something to match; ensureTitles decides when it reloads.
 export async function matchTmdb(ctx: StageContext, source: Source): Promise<void> {
   ctx.progress({ sourceId: source.id, stage: 'tmdb', state: 'started' });
   let titles: Db | null = null;

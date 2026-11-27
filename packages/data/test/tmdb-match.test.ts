@@ -16,7 +16,7 @@ test('a year hit wins, the first in file order among several', () => {
 });
 
 test('no year, or no hit for the year: the most popular; equal popularity -> the earlier line', () => {
-  const m = titleMatcher(db([['heat', 1, 1986, 20], ['heat', 2, 1995, 50], ['heat', 3, 2001, 50]]), 'movie');
+  const m = titleMatcher(db([['heat', 9, 0, 1], ['heat', 1, 1986, 20], ['heat', 2, 1995, 50], ['heat', 3, 2001, 50]]), 'movie');
   expect(m('Heat')).toEqual({ id: 2, popularity: 50 });
   expect(m('Heat', 1970)).toEqual({ id: 2, popularity: 50 });
   expect(m('Heat', 0)).toEqual({ id: 2, popularity: 50 }); // year 0 counts as no year, as before
@@ -32,4 +32,9 @@ test('titles that normalise to nothing, and unknown titles, match nothing', () =
   const m = titleMatcher(db([['heat', 1, 1995, 1]]), 'movie');
   expect(m('!!!')).toBeNull();
   expect(m('Nope')).toBeNull();
+});
+
+test('the "the" retry keeps the year', () => {
+  const m = titleMatcher(db([['thing', 7, 2011, 9], ['thing', 8, 1982, 1]]), 'movie');
+  expect(m('The Thing', 1982)).toEqual({ id: 8, popularity: 1 });
 });

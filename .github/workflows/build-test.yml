@@ -94,6 +94,7 @@ jobs:
           pnpm --filter @sbtltv/ui test
           pnpm --filter @sbtltv/electron test
           pnpm --filter @sbtltv/data test
+          pnpm --filter @sbtltv/core test
 
       # The tests above use this runner's Node; users get the SQLite inside Electron
       - name: Run data tests with Electron's own Node

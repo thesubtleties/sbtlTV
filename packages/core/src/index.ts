@@ -7,7 +7,7 @@ export * from './interfaces';
 // Data process protocol
 export * from './data-protocol';
 
-// EPG matching and TMDB export matching (pure; run by the electron data process)
+// EPG matching and TMDB title normalisation (pure; run by the data layer)
 export * from './epg-types';
 export * from './epg-matcher';
 export * from './epg-links';

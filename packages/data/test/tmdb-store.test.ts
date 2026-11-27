@@ -40,6 +40,7 @@ test('a load swaps in every usable line in file order, normalised, and records m
     expect(await loadTitles(P, db, 'movie', { url: `${url}/m.gz`, origin: 'enriched' }, opts)).toBe(2);
     expect(rows(db, 'movie_titles')).toEqual([{ norm: 'the matrix', id: 1, year: 1999, popularity: 80 }, { norm: 'heat', id: 2, year: 1995, popularity: 50 }]);
     expect(titlesMeta(db, 'movie')).toEqual({ loadedAt: 10 * DAY, origin: 'enriched' });
+    expect(db.prepare("select name from sqlite_master where type = 'index' and tbl_name = 'movie_titles'").all().map((r) => (r as { name: string }).name)).toEqual(['movie_titles_norm']);
   } finally { close(); }
 });
 
@@ -58,7 +59,7 @@ test('the tmdb origin skips adult entries, reads original_title / original_name 
 
 test('rows reach staging while the file is still being read (the export is never held whole)', async () => {
   const { db, opts } = setup();
-  const big = enrichedLines(Array.from({ length: 12_000 }, (_, i) => ({ i, t: `Title ${i}`, y: 2000, p: i })));
+  const big = enrichedLines(Array.from({ length: 60_000 }, (_, i) => ({ i, t: `Title ${i}`, y: 2000, p: i })));
   const { url, close } = await serve({ '/m.gz': () => gzipSync(big) });
   let stagedMidRead = -1; let chunks = 0;
   const spy: Platform = { ...P, files: { ...P.files, readText: async function* (p, size) {
@@ -70,7 +71,7 @@ test('rows reach staging while the file is still being read (the export is never
   try {
     await loadTitles(spy, db, 'movie', { url: `${url}/m.gz`, origin: 'enriched' }, opts);
     expect(stagedMidRead).toBeGreaterThan(0);
-    expect((db.prepare('select count(*) c from movie_titles').get() as { c: number }).c).toBe(12_000);
+    expect((db.prepare('select count(*) c from movie_titles').get() as { c: number }).c).toBe(60_000);
   } finally { close(); }
 });
 
@@ -146,7 +147,7 @@ test('damaged file is rebuilt', () => {
 });
 
 test('titleSources: enriched cache repo files, and the tmdb export for yesterday', () => {
-  const now = Date.UTC(2026, 10, 26, 12);
+  const now = new Date(2026, 10, 26, 12).getTime();   // local noon: "yesterday" is the local date, as before
   expect(titleSources('movie', now).enriched.url).toBe('https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb-movies-enriched.ndjson.gz');
   expect(titleSources('series', now).enriched.url).toBe('https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb-tvs-enriched.ndjson.gz');
   expect(titleSources('movie', now).tmdb.url).toBe('https://files.tmdb.org/p/exports/movie_ids_11_25_2026.json.gz');
@@ -180,5 +181,68 @@ test('a table from TMDB\'s own export (no years) is not fresh: the enriched expo
     enrichedUp = true;
     expect(await ensureTitles(P, db, 'movie', sources, { ...opts, nowMs: opts.nowMs + 1000 })).toBe('loaded');
     expect(titlesMeta(db, 'movie')?.origin).toBe('enriched');
+  } finally { close(); }
+});
+
+test('the stale-table rule: a table with years is kept up to 7 days rather than switching to the year-less export', async () => {
+  const { db, opts } = setup();
+  let tmdbHits = 0;
+  const { url, close } = await serve({
+    '/e.gz': () => gzipSync(enrichedLines([{ i: 1, t: 'Heat', y: 1995, p: 5 }])),
+    '/t.gz': () => { tmdbHits++; return gzipSync(JSON.stringify({ id: 2, original_title: 'Heat', popularity: 1 })); },
+    '/down': () => 503,
+  });
+  const up = { enriched: { url: `${url}/e.gz`, origin: 'enriched' as const }, tmdb: { url: `${url}/t.gz`, origin: 'tmdb' as const } };
+  const githubDown = { ...up, enriched: { url: `${url}/down`, origin: 'enriched' as const } };
+  try {
+    await ensureTitles(P, db, 'movie', up, opts);
+    expect(await ensureTitles(P, db, 'movie', githubDown, { ...opts, nowMs: opts.nowMs + 6 * DAY })).toBe('stale');
+    expect(tmdbHits).toBe(0);
+    expect(titlesMeta(db, 'movie')?.origin).toBe('enriched');
+    // past 7 days the year-less export is the last resort (it should never come to this)
+    expect(await ensureTitles(P, db, 'movie', githubDown, { ...opts, nowMs: opts.nowMs + 8 * DAY })).toBe('loaded');
+    expect(titlesMeta(db, 'movie')?.origin).toBe('tmdb');
+    // a year-less table under a day old is used as is while GitHub stays down (no re-download of TMDB's export)
+    expect(await ensureTitles(P, db, 'movie', githubDown, { ...opts, nowMs: opts.nowMs + 8 * DAY + 1000 })).toBe('stale');
+    expect(tmdbHits).toBe(1);
+    // and once GitHub is back, the enriched table returns
+    expect(await ensureTitles(P, db, 'movie', up, { ...opts, nowMs: opts.nowMs + 8 * DAY + 2000 })).toBe('loaded');
+    expect(titlesMeta(db, 'movie')?.origin).toBe('enriched');
+  } finally { close(); }
+});
+
+test('a line with no end (a broken or hostile export) fails the load instead of growing without bound', async () => {
+  const { db, opts } = setup();
+  const { url, close } = await serve({ '/ok.gz': () => gzipSync(enrichedLines([{ i: 1, t: 'Heat', p: 5 }])), '/long.gz': () => gzipSync('x'.repeat(2_000_000)) });
+  try {
+    await loadTitles(P, db, 'movie', { url: `${url}/ok.gz`, origin: 'enriched' }, opts);
+    await expect(loadTitles(P, db, 'movie', { url: `${url}/long.gz`, origin: 'enriched' }, opts)).rejects.toThrow('line longer than');
+    expect(rows(db, 'movie_titles')).toHaveLength(1);
+  } finally { close(); }
+});
+
+test('a title line too long to be real is skipped (no slow normalising of junk)', async () => {
+  const { db, opts } = setup();
+  const junk = JSON.stringify({ i: 2, t: ' '.repeat(10_000) + 'x', p: 1 });
+  const { url, close } = await serve({ '/m.gz': () => gzipSync(enrichedLines([{ i: 1, t: 'Heat', p: 5 }]) + junk + '\n') });
+  try {
+    expect(await loadTitles(P, db, 'movie', { url: `${url}/m.gz`, origin: 'enriched' }, opts)).toBe(1);
+  } finally { close(); }
+});
+
+test('the unpacked export is deleted before the swap (lower disk peak), and a failed load gives its space back', async () => {
+  const { db, opts, tempDir, dir } = setup();
+  const lines = enrichedLines(Array.from({ length: 40_000 }, (_, i) => ({ i, t: `Some Long Movie Title Number ${i}`, y: 2000, p: i })));
+  const { url, close } = await serve({ '/m.gz': () => gzipSync(lines), '/bad.gz': () => gzipSync(lines + 'x'.repeat(2_000_000)) });
+  let tempAtSwap = -1;
+  const origExec = db.exec.bind(db);
+  db.exec = (sql: string) => { if (sql.startsWith('alter table')) tempAtSwap = readdirSync(tempDir).length; origExec(sql); };
+  const size = () => statSync(path.join(dir, 'tmdb-titles.sqlite')).size;
+  try {
+    await loadTitles(P, db, 'movie', { url: `${url}/m.gz`, origin: 'enriched' }, opts);
+    expect(tempAtSwap).toBe(0);
+    const good = size();
+    await expect(loadTitles(P, db, 'movie', { url: `${url}/bad.gz`, origin: 'enriched' }, opts)).rejects.toThrow();
+    expect(size()).toBeLessThan(good * 1.2);
   } finally { close(); }
 });

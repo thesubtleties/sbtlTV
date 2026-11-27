@@ -4,16 +4,23 @@
  * chunk plus one batch. A cache only: a damaged file is deleted and rebuilt.
  */
 import { normalizeTitle } from '@sbtltv/core';
-import type { Db, Log, Platform } from './platform.js';
+import type { Db, Log, Platform, Statement } from './platform.js';
 import { decompressToFile, downloadToTempFile, type TempFileOptions } from './epg.js';
 import { readLines } from './lines.js';
 
 export type TitleKind = 'movie' | 'series';
 export type TitleOrigin = 'enriched' | 'tmdb';
 export interface TitleSource { url: string; origin: TitleOrigin }
+export interface TitleSources { enriched: TitleSource; tmdb: TitleSource }
 export interface LoadOptions { tempDir: string; allowLan: boolean; log: Log; nowMs: number }
 
 export const TMDB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// How long a table with years is kept while the cache repo can't be reached, before TMDB's own (year-less) export is
+// used: stale good matches beat wrong ones on common titles. If the repo is ever gone for this long, it gets rehosted.
+export const TMDB_STALE_MAX_MS = 7 * TMDB_MAX_AGE_MS;
+// Real export lines are under 200 characters. Longer is junk: skipped below 64 KiB, a failed load above.
+const MAX_TITLE_LINE = 4096;
+const MAX_LINE = 64 * 1024;
 const BATCH_ROWS = 5000;
 const CHUNK_BYTES = 256 * 1024;
 const DOWNLOAD: TempFileOptions = { prefix: 'tmdb', maxBytes: 256 * 1024 * 1024, label: 'TMDB download' };
@@ -25,7 +32,7 @@ export function titleTable(kind: TitleKind): 'movie_titles' | 'series_titles' {
 }
 
 // TMDB's own export is named by date; yesterday's is the newest one sure to exist (as the old code did).
-export function titleSources(kind: TitleKind, nowMs: number): { enriched: TitleSource; tmdb: TitleSource } {
+export function titleSources(kind: TitleKind, nowMs: number): TitleSources {
   const d = new Date(nowMs); d.setDate(d.getDate() - 1);
   const date = `${String(d.getMonth() + 1).padStart(2, '0')}_${String(d.getDate()).padStart(2, '0')}_${d.getFullYear()}`;
   return {
@@ -76,7 +83,7 @@ export function isFresh(loadedAt: number, nowMs: number): boolean {
 interface TitleRow { norm: string; id: number; year: number | null; popularity: number }
 
 function parseLine(line: string, kind: TitleKind, origin: TitleOrigin): TitleRow | null {
-  if (!line) return null;
+  if (!line || line.length > MAX_TITLE_LINE) return null;
   let e: Record<string, unknown>;
   try { e = JSON.parse(line) as Record<string, unknown>; } catch { return null; }
   if (!e || typeof e !== 'object') return null;
@@ -95,8 +102,7 @@ function parseLine(line: string, kind: TitleKind, origin: TitleOrigin): TitleRow
 }
 
 // Writes one batch in its own synchronous transaction (never an await inside a transaction).
-function writeBatch(db: Db, table: string, batch: TitleRow[]): void {
-  const ins = db.prepare(`insert into ${table}(norm, id, year, popularity) values (?, ?, ?, ?)`);
+function writeBatch(db: Db, ins: Statement, batch: TitleRow[]): void {
   db.exec('begin immediate');
   try {
     for (const r of batch) ins.run(r.norm, r.id, r.year, r.popularity);
@@ -119,15 +125,18 @@ export async function loadTitles(platform: Platform, db: Db, kind: TitleKind, sr
     temps.push(xmlPath);
     db.exec(`drop table if exists ${next}`);
     db.exec(`create table ${next}(norm text not null, id integer not null, year integer, popularity real not null)`);
+    const ins = db.prepare(`insert into ${next}(norm, id, year, popularity) values (?, ?, ?, ?)`);
     let count = 0;
     let batch: TitleRow[] = [];
-    for await (const line of readLines(platform, xmlPath, CHUNK_BYTES)) {
+    for await (const line of readLines(platform, xmlPath, CHUNK_BYTES, MAX_LINE)) {
       const row = parseLine(line, kind, src.origin);
       if (!row) continue;
       batch.push(row);
-      if (batch.length >= BATCH_ROWS) { writeBatch(db, next, batch); count += batch.length; batch = []; }
+      if (batch.length >= BATCH_ROWS) { writeBatch(db, ins, batch); count += batch.length; batch = []; }
     }
-    if (batch.length) { writeBatch(db, next, batch); count += batch.length; }
+    if (batch.length) { writeBatch(db, ins, batch); count += batch.length; }
+    // The unpacked export (~70 MB) goes before the swap: the swap and vacuum need room of their own.
+    await platform.files.removeAsync(xmlPath).catch(() => {});
     if (count === 0) throw new Error(`TMDB ${kind} export had no usable rows`);
     db.exec('begin immediate');
     try {
@@ -144,26 +153,26 @@ export async function loadTitles(platform: Platform, db: Db, kind: TitleKind, sr
     opts.log(`TMDB match: loaded ${count} ${kind} titles (${src.origin})`);
     return count;
   } catch (e) {
-    try { db.exec(`drop table if exists ${next}`); } catch { /* the next load drops it */ }
+    try { db.exec(`drop table if exists ${next}`); db.exec('pragma incremental_vacuum'); } catch { /* the next load drops it */ }
     throw e;
   } finally {
     for (const t of temps) await platform.files.removeAsync(t).catch(() => {});
   }
 }
 
-// Makes the kind's titles usable: fresh as is, else reload from the cache repo; on failure a stale table is used, and
-// only with no table at all is TMDB's own export tried.
-export async function ensureTitles(platform: Platform, db: Db, kind: TitleKind, sources: { enriched: TitleSource; tmdb: TitleSource }, opts: LoadOptions): Promise<'fresh' | 'loaded' | 'stale' | 'none'> {
+// Makes the kind's titles usable. Fresh enriched titles are used as they are; otherwise the cache repo is tried. When it
+// can't be reached, a table with years is kept for up to 7 days, and a year-less table for a day. Only past that, or
+// with no table at all, is TMDB's own (year-less) export loaded; failing that too, whatever table there is still serves.
+export async function ensureTitles(platform: Platform, db: Db, kind: TitleKind, sources: TitleSources, opts: LoadOptions): Promise<'fresh' | 'loaded' | 'stale' | 'none'> {
   const meta = titlesMeta(db, kind);
-  // Only the enriched export counts as fresh: a table from TMDB's own export has no years, and rows matched against it
-  // are never matched again, so the enriched one is tried again on every run until it loads.
   if (meta && meta.origin === 'enriched' && isFresh(meta.loadedAt, opts.nowMs)) return 'fresh';
   const fail = (e: unknown) => opts.log(`TMDB match: ${kind} titles load failed: ${e instanceof Error ? e.message : String(e)}`);
   try { await loadTitles(platform, db, kind, sources.enriched, opts); return 'loaded'; } catch (e) { fail(e); }
+  const useCached = () => { opts.log(`TMDB match: using cached ${kind} titles from ${new Date(meta!.loadedAt).toISOString().slice(0, 10)}`); return 'stale' as const; };
   if (meta) {
-    opts.log(`TMDB match: using cached ${kind} titles from ${new Date(meta.loadedAt).toISOString().slice(0, 10)}`);
-    return 'stale';
+    const keepFor = meta.origin === 'enriched' ? TMDB_STALE_MAX_MS : TMDB_MAX_AGE_MS;
+    if (meta.loadedAt > opts.nowMs || opts.nowMs - meta.loadedAt < keepFor) return useCached();
   }
   try { await loadTitles(platform, db, kind, sources.tmdb, opts); return 'loaded'; } catch (e) { fail(e); }
-  return 'none';
+  return meta ? useCached() : 'none';
 }

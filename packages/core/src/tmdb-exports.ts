@@ -6,23 +6,26 @@ export interface MatchParams {
   year?: number;
 }
 
+// Language/country codes commonly used by providers
+const LANG_CODES = 'ES|EN|DE|FR|IT|PT|RU|JP|KR|CN|US|UK|MX|AR|BR|NL|PL|TR|IN|AU|CA';
+// Built once: normalizeTitle runs over every line of the TMDB export (1.2M+ titles per load).
+const QUALITY_LANG_PREFIX = new RegExp(`^(4k|hd|sd|uhd)[-\\s]*(${LANG_CODES})?\\s*[-–—]\\s*`, 'i');
+const LANG_PREFIX = new RegExp(`^(${LANG_CODES})\\s*[-–—]\\s*`, 'i');
+const LANG_SUFFIX = new RegExp(`\\s*[\\(\\[](${LANG_CODES})[\\)\\]]\\s*$`, 'i');
+
 /**
- * Normalize title for matching
+ * Normalize title for matching (provider titles and TMDB export titles alike)
  * Strips provider prefixes (ES -, 4K-ES -, etc.) and language suffixes ((ES), [EN], etc.)
- * @internal Exported for testing
  */
 export function normalizeTitle(title: string): string {
-  // Language/country codes commonly used by providers
-  const langCodes = 'ES|EN|DE|FR|IT|PT|RU|JP|KR|CN|US|UK|MX|AR|BR|NL|PL|TR|IN|AU|CA';
-
   return title
     .toLowerCase()
     // Remove leading quality+language prefixes: "4K-ES - ", "HD-EN - ", "4K - ", etc.
-    .replace(new RegExp(`^(4k|hd|sd|uhd)[-\\s]*(${langCodes})?\\s*[-–—]\\s*`, 'i'), '')
+    .replace(QUALITY_LANG_PREFIX, '')
     // Remove leading language prefixes: "ES - ", "EN - ", etc.
-    .replace(new RegExp(`^(${langCodes})\\s*[-–—]\\s*`, 'i'), '')
+    .replace(LANG_PREFIX, '')
     // Remove trailing language tags: "(ES)", "[EN]", etc.
-    .replace(new RegExp(`\\s*[\\(\\[](${langCodes})[\\)\\]]\\s*$`, 'i'), '')
+    .replace(LANG_SUFFIX, '')
     // Remove year patterns (parentheses/brackets)
     .replace(/\s*\(\d{4}\)\s*/g, ' ')
     .replace(/\s*\[\d{4}\]\s*/g, ' ')
