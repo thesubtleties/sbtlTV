@@ -20,6 +20,12 @@ test('a data reset travels worker -> data process -> host -> main -> renderer', 
   assert.match(preload, /ipcRenderer\.on\('data-status', listener\)/);
 });
 
+test('the sync worker installs the error redactor and the LAN guard (the data tests set their own)', () => {
+  const worker = source('data/sync-worker.ts');
+  assert.match(worker, /^setRedactor\(cleanErrorText\);$/m);
+  assert.match(worker, /setUrlGuard\(\(url\) => checkProviderUrl\(url, settings\.allowLanSources\)\)/);
+});
+
 test('the guide search setting is saved and read back', () => {
   const storage = source('storage.ts');
   assert.match(storage, /updated\.guideSearchHideAdult = settings\.guideSearchHideAdult/);

@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 
-const SRC = new URL('../src/', import.meta.url).pathname;
+const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? (f === 'node' ? [] : files(p)) : p.endsWith('.ts') ? [p] : []; });
 }

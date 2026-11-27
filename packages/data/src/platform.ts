@@ -1,7 +1,6 @@
 /** What the shared data code needs from the system it runs on. Sized to what the code uses today. */
 export type SqlScalar = null | number | bigint | string | Uint8Array;
-/** Positional values, or one object of named values first (node:sqlite's two forms). */
-export type SqlParam = SqlScalar;
+/** Named values (`$name` keys), passed before any positional ones (node:sqlite's two forms). */
 export type SqlNamed = Record<string, SqlScalar>;
 export interface RunResult { changes: number | bigint; lastInsertRowid: number | bigint }
 export interface Statement {
@@ -29,7 +28,8 @@ export interface Files {
   size(p: string): number;
   /** The first `bytes` bytes (fewer if the file is shorter). */
   readHead(p: string, bytes: number): Uint8Array;
-  /** The file as UTF-8 text, in chunks of about `chunkBytes`. */
+  /** The file as UTF-8 text, in chunks of about `chunkBytes`. A character split across a chunk boundary must arrive
+   * whole in one chunk (a streaming decoder); the XMLTV parser only joins strings and can't repair a broken one. */
   readText(p: string, chunkBytes: number): AsyncIterable<string>;
 }
 export interface Net {

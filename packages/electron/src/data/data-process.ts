@@ -11,10 +11,11 @@ import { fileURLToPath } from 'node:url';
 import type { MessagePortMain } from 'electron';
 import type { Source, DataSettings, DataEvent, DataTable, ControlMessage, ControlReply, SyncProgress } from '@sbtltv/core';
 
-const platform = nodePlatform();
 import { openDatabase, routeRendererMessage, JobLanes, dueJobs, deletedSourceIds, workerStoppedProgress, type Db, type LaneName, type SyncJob } from '@sbtltv/data';
 import { nodePlatform } from '@sbtltv/data/node';
 import { needsLogin } from '@sbtltv/core';
+
+const platform = nodePlatform();
 
 const parent = process.parentPort;
 if (!parent) throw new Error('data-process must run as an Electron utility process');

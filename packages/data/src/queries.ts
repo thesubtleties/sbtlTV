@@ -1,4 +1,4 @@
-import type { Db, Statement, SqlParam } from './platform.js';
+import type { Db, Statement, SqlNamed } from './platform.js';
 import { GUIDE_SEARCH_MIN_CHARS, groupAirings, guideSearchMatch, isAdultCategoryName, matchesChannelName, sortChannels, type DataRequest, type GuideSearchResult, type GuideSearchRow } from '@sbtltv/core';
 
 // Every request compiles to a fixed statement. Lists travel as JSON text and
@@ -66,7 +66,7 @@ function guideSearch(db: Db, req: Extract<DataRequest, { type: 'guideSearch' }>)
   const named = sortChannels((stmt(db, `select ch.stream_id, ch.name, ch.stream_icon,
       exists(select 1 from epg_links l where l.stream_id = ch.stream_id) as has_guide
     from channels ch where ${CH_SRC} and ${NOT_HIDDEN} order by ch.name collate nocase`)
-    .all(shared) as unknown as GuideSearchResult['channels']).filter((c) => matchesChannelName(c.name, req.query)), req.query);
+    .all(shared) as GuideSearchResult['channels']).filter((c) => matchesChannelName(c.name, req.query)), req.query);
   const channels = { channels: named.slice(0, GUIDE_SEARCH_CHANNELS), channelTotal: named.length };
   const match = guideSearchMatch(req.query);
   if (!match) return { ...empty, ...channels };
@@ -79,9 +79,9 @@ function guideSearch(db: Db, req: Extract<DataRequest, { type: 'guideSearch' }>)
     where epg_programs_fts match $match and ${CH_SRC} and ${NOT_HIDDEN}`;
   const params = (ftsMatch: string, limit: number) => ({ ...shared, $match: ftsMatch, $now: req.nowMs, $limit: limit, $maxDescription: GUIDE_SEARCH_DESCRIPTION });
   const later = (ftsMatch: string) => stmt(db, `${airings('0')} and p.start > $now order by p.start limit $limit`)
-    .all(params(ftsMatch, GUIDE_SEARCH_LATER_ROWS)) as unknown as GuideSearchRow[];
+    .all(params(ftsMatch, GUIDE_SEARCH_LATER_ROWS)) as GuideSearchRow[];
   const live = stmt(db, `${airings('bm25(epg_programs_fts, 12.0, 1.0)')} and p.start <= $now and p.end > $now order by rank limit $limit`)
-    .all(params(match.live, GUIDE_SEARCH_LIVE_ROWS)) as unknown as GuideSearchRow[];
+    .all(params(match.live, GUIDE_SEARCH_LIVE_ROWS)) as GuideSearchRow[];
   const rows = [...live, ...later(match.title), ...(match.mentions ? later(match.mentions) : [])];
   return { ...channels, ...groupAirings(rows, req.query, req.nowMs) };
 }
@@ -168,7 +168,7 @@ export function runQuery(db: Db, req: DataRequest): unknown {
     case 'syncStatus':
       return stmt(db, `select source_id, epg_url, last_channel_sync, last_epg_sync, last_vod_sync, channel_count, category_count, movie_count, series_count, error from sources_meta`).all();
     case 'movies': {
-      const b = req.by; const p: Record<string, SqlParam> = { $sources: j(req.sourceIds) }; const limit = req.limit ?? 1000;
+      const b = req.by; const p: SqlNamed = { $sources: j(req.sourceIds) }; const limit = req.limit ?? 1000;
       let rows: unknown[];
       if (b.kind === 'categories') rows = stmt(db, `select ${MOVIE_COLS} from vod_movies where stream_id in (select item_id from vod_item_categories where item_type='movie' and category_id in (select value from json_each($cats))) and ${SRC} order by name collate nocase`).all({ ...p, $cats: j(b.categoryIds) });
       else if (b.kind === 'all') rows = stmt(db, `select ${MOVIE_COLS} from vod_movies where ${SRC} order by name collate nocase`).all(p);
@@ -179,7 +179,7 @@ export function runQuery(db: Db, req: DataRequest): unknown {
       return withCategoryIds(db, rows as { stream_id: string }[], 'movie');
     }
     case 'series': {
-      const b = req.by; const p: Record<string, SqlParam> = { $sources: j(req.sourceIds) }; const limit = req.limit ?? 1000;
+      const b = req.by; const p: SqlNamed = { $sources: j(req.sourceIds) }; const limit = req.limit ?? 1000;
       let rows: unknown[];
       if (b.kind === 'categories') rows = stmt(db, `select ${SERIES_COLS} from vod_series where series_id in (select item_id from vod_item_categories where item_type='series' and category_id in (select value from json_each($cats))) and ${SRC} order by name collate nocase`).all({ ...p, $cats: j(b.categoryIds) });
       else if (b.kind === 'all') rows = stmt(db, `select ${SERIES_COLS} from vod_series where ${SRC} order by name collate nocase`).all(p);

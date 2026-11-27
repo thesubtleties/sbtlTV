@@ -46,7 +46,7 @@ function get(url: string, allowLan: boolean, redirects = 0): Promise<http.Incomi
 
 export function nodePlatform(): Platform {
   return {
-    openDb: (p, o) => new DatabaseSync(p, { readOnly: o.readOnly, timeout: o.busyTimeoutMs }) as unknown as Db,
+    openDb: (p, o): Db => new DatabaseSync(p, { readOnly: o.readOnly, timeout: o.busyTimeoutMs }),
     uuid: () => randomUUID(),
     files: {
       join: (...parts) => path.join(...parts),

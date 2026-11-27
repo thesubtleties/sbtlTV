@@ -179,7 +179,7 @@ test('data-process log lines name a source by id, never by its name', async () =
   // The shared code and what stays in Electron's data folder (data-process, sync-worker).
   for (const dir of [fileURLToPath(new URL('../src/', import.meta.url)), fileURLToPath(new URL('../../electron/src/data/', import.meta.url))]) {
     for (const f of readdirSync(dir).filter((n) => n.endsWith('.ts') && !n.endsWith('.test.ts'))) {
-      assert.doesNotMatch(readFileSync(path.join(dir, f), 'utf8'), /\blog\([^\n]*(?:\.name\b|\$\{name\})/, f);
+      assert.doesNotMatch(readFileSync(path.join(dir, f), 'utf8'), /\b(?:log\(|message:)[^\n]*(?:\.name\b|\$\{name\})/, f);
     }
   }
 });

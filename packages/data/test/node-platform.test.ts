@@ -63,8 +63,14 @@ test('files: readHead, readText in chunks, remove of a missing file is fine', as
   const dir = mkdtempSync(path.join(tmpdir(), 'd-'));
   writeFileSync(path.join(dir, 't.txt'), 'é'.repeat(3000));
   expect(Array.from(p.files.readHead(path.join(dir, 't.txt'), 2))).toEqual([0xc3, 0xa9]);
-  let text = ''; for await (const c of p.files.readText(path.join(dir, 't.txt'), 1024)) text += c;
-  expect(text).toBe('é'.repeat(3000));
+  // 2-, 3- and 4-byte characters at odd chunk sizes: boundaries land inside characters, and each chunk must hold whole ones.
+  const mixed = 'aé€😀'.repeat(500);
+  writeFileSync(path.join(dir, 'm.txt'), mixed);
+  for (const size of [1, 3, 5, 7, 1021]) {
+    const chunks: string[] = []; for await (const c of p.files.readText(path.join(dir, 'm.txt'), size)) chunks.push(c);
+    expect(chunks.some((c) => c.includes('\uFFFD'))).toBe(false);
+    expect(chunks.join('')).toBe(mixed);
+  }
   expect(() => p.files.remove(path.join(dir, 'missing'))).not.toThrow();
 });
 

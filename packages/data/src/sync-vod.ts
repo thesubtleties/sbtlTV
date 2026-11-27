@@ -68,7 +68,7 @@ export async function syncVod(ctx: StageContext, source: Source, client: VodClie
     if (useSeries) ctx.log('vod', `Fetched ${series!.length} series, ${seriesCats!.length} categories`);
     const keepMovies: Movie[] = useMovies ? movies! : storedMovies(ctx.db, source.id);
     const keepSeries: Series[] = useSeries ? series! : storedSeries(ctx.db, source.id);
-    const existingCats = ctx.db.prepare('select category_id, name, type from vod_categories where source_id = ?').all(source.id) as unknown as VodCategoryInput[];
+    const existingCats = ctx.db.prepare('select category_id, name, type from vod_categories where source_id = ?').all(source.id) as VodCategoryInput[];
     const categories: VodCategoryInput[] = [
       ...(useMovies ? movieCats!.map((c) => ({ category_id: c.category_id, name: c.category_name, type: 'movie' as const })) : existingCats.filter((c) => c.type === 'movie')),
       ...(useSeries ? seriesCats!.map((c) => ({ category_id: c.category_id, name: c.category_name, type: 'series' as const })) : existingCats.filter((c) => c.type === 'series')),

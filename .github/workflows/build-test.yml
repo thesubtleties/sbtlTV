@@ -8,6 +8,10 @@ on:
       - 'packages/mpv-texture/**'
       - 'packages/electron/**'
       - 'packages/ui/**'
+      - 'packages/data/**'
+      - 'packages/core/**'
+      - 'packages/local-adapter/**'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/build-test.yml'
   workflow_dispatch:
 
