@@ -8,3 +8,4 @@ export * from './router.js';
 export * from './lanes.js';
 export * from './scheduler.js';
 export * from './epg.js';
+export * from './sync-stages.js';

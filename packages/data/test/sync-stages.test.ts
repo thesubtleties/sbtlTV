@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import type { Source, DataTable, SyncProgress } from '@sbtltv/core';
-import { createSchema } from './schema.js';
-import { syncChannels, syncVod, syncEpisodes, type StageContext, type ChannelClient, type VodClient } from './sync-stages.js';
+import { createSchema } from '../src/schema.js';
+import { nodePlatform } from '../src/node/index.js';
+import { syncChannels, syncVod, syncEpisodes, type StageContext, type ChannelClient, type VodClient } from '../src/sync-stages.js';
 
 function ctx(db: DatabaseSync) {
   const changed: [DataTable[], string | null][] = [];
   const progress: SyncProgress[] = [];
-  const c: StageContext = { db, tempDir: '/tmp', allowLanSources: false, log: () => {}, progress: (p) => progress.push(p), changed: (t, s) => changed.push([t, s]) };
+  const c: StageContext = { db, platform: nodePlatform(), tempDir: '/tmp', allowLanSources: false, log: () => {}, progress: (p) => progress.push(p), changed: (t, s) => changed.push([t, s]) };
   return { c, changed, progress };
 }
 const source: Source = { id: 's1', name: 'P', type: 'xtream', url: 'http://x', username: 'u', password: 'p', enabled: true };
@@ -90,7 +91,7 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { syncEpg } from './sync-stages.js';
+import { syncEpg } from '../src/sync-stages.js';
 
 test('syncVod replaces movies and keeps series untouched when the series fetch rejects', async () => {
   const db = new DatabaseSync(':memory:'); createSchema(db);
@@ -175,9 +176,11 @@ test('data-process log lines name a source by id, never by its name', async () =
   assert.ok(logs.length >= 4, logs.join('\n'));
   assert.deepEqual(logs.filter((m) => m.includes('Acme')), []);
   // The rematch line lives in the worker (not callable here): no log call in src/data prints a name (source.name, or a name copied from it).
-  const dir = fileURLToPath(new URL('../../src/data/', import.meta.url));
-  for (const f of readdirSync(dir).filter((n) => n.endsWith('.ts') && !n.endsWith('.test.ts'))) {
-    assert.doesNotMatch(readFileSync(path.join(dir, f), 'utf8'), /\blog\([^\n]*(?:\.name\b|\$\{name\})/, f);
+  // The shared code and what stays in Electron's data folder (data-process, sync-worker).
+  for (const dir of [fileURLToPath(new URL('../src/', import.meta.url)), fileURLToPath(new URL('../../electron/src/data/', import.meta.url))]) {
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.ts') && !n.endsWith('.test.ts'))) {
+      assert.doesNotMatch(readFileSync(path.join(dir, f), 'utf8'), /\blog\([^\n]*(?:\.name\b|\$\{name\})/, f);
+    }
   }
 });
 

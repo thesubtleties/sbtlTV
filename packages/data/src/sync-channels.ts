@@ -1,11 +1,12 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { Db, Platform } from './platform.js';
 import type { Source, Channel, Category, DataTable, SyncProgress } from '@sbtltv/core';
 import { XtreamClient, fetchAndParseM3U, parseM3U } from '@sbtltv/local-adapter';
 import { checkProviderUrl, redactUrl } from '@sbtltv/core';
 import { replaceChannels, setSourceError } from './writes.js';
 
 export interface StageContext {
-  db: DatabaseSync;
+  platform: Platform;
+  db: Db;
   tempDir: string;
   allowLanSources: boolean;
   log(category: string, message: string): void;

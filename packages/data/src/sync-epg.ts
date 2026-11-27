@@ -1,10 +1,9 @@
-import { promises as fsp } from 'node:fs';
 import type { Source, Channel } from '@sbtltv/core';
 import { matchChannelsToEpg, buildEpgLinks, redactUrl } from '@sbtltv/core';
 import type { StageContext } from './sync-channels.js';
 import { replaceEpg } from './writes.js';
 import type { EpgProgramInput } from './writes.js';
-import { downloadToTempFile, decompressToFile, parseXmltvFile } from './epg-source.js';
+import { downloadToTempFile, decompressToFile, parseXmltvFile } from './epg.js';
 
 // One EPG setting may hold several URLs, comma separated (kept from sync.ts).
 // `epgSource` names the guide in epg_programs/epg_links: 'xtream://<url>' for the
@@ -22,7 +21,7 @@ export async function syncEpg(ctx: StageContext, source: Source, channels: Chann
       ctx.log('epg', `Fetching XMLTV from: ${redactUrl(url)}`);
       let tmp: string;
       try {
-        tmp = await downloadToTempFile(url, ctx.tempDir, (m) => ctx.log('net', m), ctx.allowLanSources);
+        tmp = await downloadToTempFile(ctx.platform, url, ctx.tempDir, (m) => ctx.log('net', m), ctx.allowLanSources);
       } catch (e) {
         failedUrls.push(redactUrl(url));
         ctx.log('epg', `EPG WARNING: fetch failed for ${redactUrl(url)}: ${e instanceof Error ? e.message : String(e)}`);
@@ -30,14 +29,14 @@ export async function syncEpg(ctx: StageContext, source: Source, channels: Chann
       }
       let xmlPath = tmp;
       try {
-        const out = await decompressToFile(tmp, (m) => ctx.log('epg', m));
+        const out = await decompressToFile(ctx.platform, tmp, (m) => ctx.log('epg', m));
         xmlPath = out.xmlPath;
-        const parsed = await parseXmltvFile(xmlPath, providerChannels, (m) => ctx.log('epg', m));
+        const parsed = await parseXmltvFile(ctx.platform, xmlPath, providerChannels, (m) => ctx.log('epg', m));
         for (const c of parsed.channels) allChannels.set(c.id, c);
         for (const p of parsed.programs) programs.push({ epg_channel_id: p.channel_id, startMs: p.startMs, endMs: p.endMs, title: p.title, description: p.description });
       } finally {
-        await fsp.unlink(xmlPath).catch(() => {});
-        if (xmlPath !== tmp) await fsp.unlink(tmp).catch(() => {});
+        await ctx.platform.files.removeAsync(xmlPath);
+        if (xmlPath !== tmp) await ctx.platform.files.removeAsync(tmp);
       }
     }
     if (failedUrls.length > 0 && failedUrls.length === urls.length) {
