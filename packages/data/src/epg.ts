@@ -237,7 +237,8 @@ function matchedXmltvIds(xmltvChannels: EpgChannelInfo[], providerChannels: Prov
 /**
  * Parses an XMLTV file. With a provider channel list, phase 1 scans the
  * <channel> elements, matches them, and phase 2 keeps only programmes for the
- * matched channels. Without one, every programme is returned.
+ * matched channels. Without one, every programme is kept. Kept programmes go to
+ * `onProgram` as they are parsed (never collected); the channels are returned.
  */
 export async function parseXmltvFile(platform: Platform, xmlPath: string, providerChannels: ProviderChannel[] | undefined, log: Log, onProgram: (p: ParsedProgram) => void): Promise<{ channels: EpgChannelInfo[]; programCount: number }> {
   const fileSize = platform.files.size(xmlPath);

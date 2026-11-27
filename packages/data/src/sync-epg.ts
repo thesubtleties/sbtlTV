@@ -18,7 +18,7 @@ export async function syncEpg(ctx: StageContext, source: Source, channels: Chann
   // Programmes are staged on disk as they are parsed (guide-staging.ts), never held whole in memory.
   let staging: GuideStaging | null = null;
   try {
-    staging = openStaging(ctx.db, source.id, epgSource);
+    staging = openStaging(ctx.db, ctx.platform, ctx.stagingDir, source.id, epgSource);
     const stage = staging;
     for (const url of urls) {
       ctx.log('epg', `Fetching XMLTV from: ${redactUrl(url)}`);
@@ -71,7 +71,7 @@ export async function syncEpg(ctx: StageContext, source: Source, channels: Chann
     }
     ctx.log('epg', 'Clearing old EPG data and storing new...');
     const t0 = Date.now();
-    const tables = commitStagedEpg(ctx.db, source.id, epgSource, stage, links);
+    const tables = commitStagedEpg(ctx.db, stage, links);
     ctx.changed(tables, source.id);
     ctx.log('epg', `EPG sync complete: ${stage.parsed} programs stored in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     ctx.progress({ sourceId: source.id, stage: 'epg', state: 'finished', counts: { programs: stage.parsed, linked: links.length } });
@@ -83,6 +83,7 @@ export async function syncEpg(ctx: StageContext, source: Source, channels: Chann
     ctx.progress({ sourceId: source.id, stage: 'epg', state: 'failed', message });
     return 0;
   } finally {
-    staging?.discard();
+    // Cleanup never turns a finished sync into a crashed job; a file left behind is swept at the next start.
+    try { staging?.discard(); } catch (e) { ctx.log('epg', `EPG staging cleanup failed: ${e instanceof Error ? e.message : String(e)}`); }
   }
 }

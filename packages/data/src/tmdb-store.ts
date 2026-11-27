@@ -4,6 +4,7 @@
  * chunk plus one batch. A cache only: a damaged file is deleted and rebuilt.
  */
 import { normalizeTitle } from '@sbtltv/core';
+import { rollbackQuietly } from './sql.js';
 import type { Db, Log, Platform, Statement } from './platform.js';
 import { decompressToFile, downloadToTempFile, type TempFileOptions } from './epg.js';
 import { readLines } from './lines.js';
@@ -108,7 +109,7 @@ function writeBatch(db: Db, ins: Statement, batch: TitleRow[]): void {
     for (const r of batch) ins.run(r.norm, r.id, r.year, r.popularity);
     db.exec('commit');
   } catch (e) {
-    db.exec('rollback');
+    rollbackQuietly(db);
     throw e;
   }
 }
@@ -146,7 +147,7 @@ export async function loadTitles(platform: Platform, db: Db, kind: TitleKind, sr
       db.prepare('insert into meta(kind, loaded_at, origin) values (?, ?, ?) on conflict(kind) do update set loaded_at = excluded.loaded_at, origin = excluded.origin').run(kind, opts.nowMs, src.origin);
       db.exec('commit');
     } catch (e) {
-      db.exec('rollback');
+      rollbackQuietly(db);
       throw e;
     }
     db.exec('pragma incremental_vacuum');

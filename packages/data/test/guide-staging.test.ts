@@ -1,45 +1,65 @@
 import { expect, test } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { createSchema } from '../src/schema.js';
-import { openStaging, STAGING_BATCH } from '../src/guide-staging.js';
+import { nodePlatform } from '../src/node/index.js';
+import { openStaging, sweepStagingFiles, STAGING_BATCH } from '../src/guide-staging.js';
 
+const P = nodePlatform();
 const prog = (ch: string, startMs: number, title = 'T') => ({ epg_channel_id: ch, startMs, endMs: startMs + 1, title, description: '' });
-const staged = (db: DatabaseSync) => db.prepare('select id, title from temp.epg_staging order by rowid').all().map((r) => ({ ...(r as object) }));
-const exists = (db: DatabaseSync) => (db.prepare("select count(*) c from temp.sqlite_master where name = 'epg_staging'").get() as { c: number }).c === 1;
+const rows = (db: DatabaseSync, table: string) => (db.prepare(`select count(*) c from ${table}`).get() as { c: number }).c;
+const dir = () => mkdtempSync(path.join(tmpdir(), 'staging-'));
+const stagingFiles = (d: string) => readdirSync(d).filter((f) => f.startsWith('guide-staging-'));
 
-test('adds are buffered and written in batches; flush writes the rest', () => {
+test('adds are buffered and written in batches to a scratch file next to the data; flush writes the rest', () => {
   const db = new DatabaseSync(':memory:'); createSchema(db);
-  const s = openStaging(db, 's1', 'g');
+  const d = dir();
+  const s = openStaging(db, P, d, 's1', 'g');
+  expect(stagingFiles(d)).toHaveLength(1);
   for (let i = 0; i < STAGING_BATCH; i++) s.add(prog('a', i));
-  expect(staged(db)).toHaveLength(STAGING_BATCH);
-  s.add(prog('a', STAGING_BATCH));
-  expect(staged(db)).toHaveLength(STAGING_BATCH);
+  expect(rows(db, s.table)).toBe(STAGING_BATCH);
+  s.add(prog('a', STAGING_BATCH)); s.add(prog('a', STAGING_BATCH));   // a duplicate: kept here, dropped at commit
+  expect(rows(db, s.table)).toBe(STAGING_BATCH);
   s.flush();
-  expect(staged(db)).toHaveLength(STAGING_BATCH + 1);
-  expect(s.parsed).toBe(STAGING_BATCH + 1);
+  expect(rows(db, s.table)).toBe(STAGING_BATCH + 2);
+  expect(s.parsed).toBe(STAGING_BATCH + 2);
+  s.discard();
 });
 
-test('first add wins for a duplicate id (as insert or ignore did); parsed still counts both', () => {
+test('two stagings on one connection are independent; discard detaches and deletes the file (twice is fine)', () => {
   const db = new DatabaseSync(':memory:'); createSchema(db);
-  const s = openStaging(db, 's1', 'g');
-  s.add(prog('a', 1, 'First')); s.add(prog('a', 1, 'Second')); s.add(prog('b', 1, 'Other'));
-  s.flush();
-  expect(staged(db)).toEqual([{ id: 's1::g::a::1', title: 'First' }, { id: 's1::g::b::1', title: 'Other' }]);
-  expect(s.parsed).toBe(3);
+  const d = dir();
+  const a = openStaging(db, P, d, 's1', 'g'); const b = openStaging(db, P, d, 's2', 'g');
+  a.add(prog('a', 1)); a.flush();
+  expect(rows(db, b.table)).toBe(0);
+  expect(a.table).not.toBe(b.table);
+  a.discard(); a.discard(); b.discard();
+  expect(stagingFiles(d)).toEqual([]);
+  expect((db.prepare('pragma database_list').all() as { name: string }[]).map((r) => r.name)).toEqual(['main']);
 });
 
-test('reopen starts empty, and discard drops the table (twice is fine)', () => {
+test('a failed batch rolls back and leaves no transaction open on the connection', () => {
   const db = new DatabaseSync(':memory:'); createSchema(db);
-  const a = openStaging(db, 's1', 'g'); a.add(prog('a', 1)); a.flush();
-  const b = openStaging(db, 's2', 'g');
-  expect(staged(db)).toEqual([]);
-  b.discard(); b.discard();
-  expect(exists(db)).toBe(false);
-});
-
-test('a written batch leaves no transaction open', () => {
-  const db = new DatabaseSync(':memory:'); createSchema(db);
-  const s = openStaging(db, 's1', 'g');
-  for (let i = 0; i < STAGING_BATCH; i++) s.add(prog('a', i));
+  const s = openStaging(db, P, dir(), 's1', 'g');
+  s.add({ ...prog('a', 1), title: null as unknown as string });
+  expect(() => s.flush()).toThrow();
   expect(db.isTransaction).toBe(false);
+  s.discard();
+});
+
+test('without a folder (the test-only replaceEpg path) a private scratch database is used', () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  const s = openStaging(db, P, null, 's1', 'g');
+  s.add(prog('a', 1)); s.flush();
+  expect(rows(db, s.table)).toBe(1);
+  s.discard();
+});
+
+test('sweepStagingFiles removes scratch files a crash left behind and nothing else', () => {
+  const d = dir();
+  for (const f of ['guide-staging-old.sqlite', 'guide-staging-old.sqlite-journal', 'sbtltv-data.sqlite', 'tmdb-titles.sqlite']) writeFileSync(path.join(d, f), 'x');
+  expect(sweepStagingFiles(P, d)).toBe(2);
+  expect(readdirSync(d).sort()).toEqual(['sbtltv-data.sqlite', 'tmdb-titles.sqlite']);
 });

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import type { MessagePortMain } from 'electron';
 import type { Source, DataSettings, DataEvent, DataTable, ControlMessage, ControlReply, SyncProgress } from '@sbtltv/core';
 
-import { openDatabase, routeRendererMessage, JobLanes, dueJobs, deletedSourceIds, workerStoppedProgress, type Db, type LaneName, type SyncJob } from '@sbtltv/data';
+import { openDatabase, sweepStagingFiles, routeRendererMessage, JobLanes, dueJobs, deletedSourceIds, workerStoppedProgress, type Db, type LaneName, type SyncJob } from '@sbtltv/data';
 import { nodePlatform } from '@sbtltv/data/node';
 import { needsLogin } from '@sbtltv/core';
 
@@ -32,8 +32,10 @@ const rendererPorts = new Set<MessagePortMain>();
 let schedulerTimer: NodeJS.Timeout | null = null;
 let stopping = false;
 const SCHEDULER_INTERVAL_MS = 5 * 60_000;
-// The worker heap: a 3GB guide is streamed, but its matched programmes (a few
-// hundred thousand objects) live in memory at once. (TMDB titles are on disk, tmdb-store.ts.)
+// The worker heap cap (a limit, not memory set aside). Guide programmes and TMDB titles are staged on disk now
+// (guide-staging.ts, tmdb-store.ts); what is still held whole is a provider's lists (VOD and live streams, as the
+// response text plus the parsed array). Kept at 8 GB until each job's peak is measured on the largest providers:
+// a cap below a real peak makes the worker die and retry the same job.
 const WORKER_HEAP_MB = 8192;
 
 interface LaneWorker { worker: Worker | null; restarts: number; timer: NodeJS.Timeout | null }
@@ -170,6 +172,8 @@ parent.on('message', (e) => {
   switch (m.type) {
     case 'init':
       sources = m.sources; settings = m.settings; dbPath = m.dbPath; tempDir = m.tempDir;
+      // Guide staging files a crash left behind; no worker runs yet, so none is in use.
+      try { sweepStagingFiles(platform, path.dirname(dbPath)); } catch (e) { log('data', `staging sweep failed: ${e instanceof Error ? e.message : String(e)}`); }
       startWorker('sync');
       schedulerTimer = setInterval(scheduleDue, SCHEDULER_INTERVAL_MS);
       break;

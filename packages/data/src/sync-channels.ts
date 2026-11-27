@@ -10,6 +10,8 @@ export interface StageContext {
   tempDir: string;
   /** The TMDB titles cache file (tmdb-titles.sqlite next to the data file); opened only while matching. */
   tmdbPath: string;
+  /** Where guide syncs keep their scratch staging files (next to the data file). */
+  stagingDir: string;
   allowLanSources: boolean;
   log(category: string, message: string): void;
   progress(p: SyncProgress): void;

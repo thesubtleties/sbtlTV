@@ -320,19 +320,33 @@ test('a failing commit keeps the old guide, and the staging is gone', () => {
   const bad = [{ stream_id: null as unknown as string, epg_channel_id: 'cbs.us', confidence: 'exact', strategy: 'exact_id' }];
   expect(() => replaceEpg(db, 's1', 'epg1', { programs: [{ epg_channel_id: 'cbs.us', startMs: 9000, endMs: 9500, title: 'New', description: '' }], links: bad })).toThrow();
   expect(db.prepare("select id, title from epg_programs where source_id = 's1' order by rowid").all().map((r) => ({ ...(r as object) }))).toEqual(before);
-  expect((db.prepare("select count(*) c from temp.sqlite_master where name = 'epg_staging'").get() as { c: number }).c).toBe(0);
+  expect((db.prepare('pragma database_list').all() as { name: string }[]).map((r) => r.name)).toEqual(['main']);
 });
 
 test('two connections stage independently and each source gets exactly its own programmes', () => {
   const file = path.join(mkdtempSync(path.join(tmpdir(), 'stage-')), 'd.sqlite');
   const a = new DatabaseSync(file, { timeout: 5000 }); seedFixture(a);
   const b = new DatabaseSync(file, { timeout: 5000 });
-  const sa = openStaging(a, 's1', 'g1');
-  const sb = openStaging(b, 's2', 'g2');
+  const P = nodePlatform();
+  const sa = openStaging(a, P, path.dirname(file), 's1', 'g1');
+  const sb = openStaging(b, P, path.dirname(file), 's2', 'g2');
   for (let i = 0; i < 6000; i++) { sa.add({ epg_channel_id: 'x', startMs: i, endMs: i + 1, title: 'A', description: '' }); sb.add({ epg_channel_id: 'y', startMs: i, endMs: i + 1, title: 'B', description: '' }); }
-  commitStagedEpg(a, 's1', 'g1', sa, []); sa.discard();
-  commitStagedEpg(b, 's2', 'g2', sb, []); sb.discard();
+  commitStagedEpg(a, sa, []); sa.discard();
+  commitStagedEpg(b, sb, []); sb.discard();
   const by = (src: string) => (a.prepare('select count(*) c, min(title) lo, max(title) hi from epg_programs where source_id = ?').get(src) as { c: number; lo: string; hi: string });
   expect({ ...by('s1') }).toEqual({ c: 6000, lo: 'A', hi: 'A' });
   expect({ ...by('s2') }).toEqual({ c: 6000, lo: 'B', hi: 'B' });
+});
+
+test('staging never waits for another connection\'s write lock (the quick lane stages while the sync lane commits)', () => {
+  const file = path.join(mkdtempSync(path.join(tmpdir(), 'stage-')), 'd.sqlite');
+  const a = new DatabaseSync(file, { timeout: 100 }); a.exec('pragma journal_mode = wal'); seedFixture(a);
+  const b = new DatabaseSync(file, { timeout: 100 });
+  a.exec('begin immediate'); a.exec("delete from epg_programs where source_id = 's2'");   // holds the main write lock
+  try {
+    const s = openStaging(b, nodePlatform(), path.dirname(file), 's1', 'g');
+    for (let i = 0; i <= 5000; i++) s.add({ epg_channel_id: 'x', startMs: i, endMs: i + 1, title: 'T', description: '' });
+    expect(() => s.flush()).not.toThrow();
+    s.discard();
+  } finally { a.exec('rollback'); }
 });
