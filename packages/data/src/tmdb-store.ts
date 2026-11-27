@@ -42,6 +42,9 @@ function tryOpen(platform: Platform, path: string): Db {
   const db = platform.openDb(path, { readOnly: false, busyTimeoutMs: 5000 });
   try {
     if ((db.prepare('pragma quick_check').get() as { quick_check: string }).quick_check !== 'ok') throw new Error('quick_check failed');
+    // Set before the first table exists (it only applies to a new file): the space a daily reload frees is given back
+    // after each swap, so the file stays at one copy of the titles instead of two.
+    db.exec('pragma auto_vacuum = incremental');
     db.exec('create table if not exists meta(kind text primary key, loaded_at integer not null, origin text not null)');
     return db;
   } catch (e) {
@@ -137,6 +140,7 @@ export async function loadTitles(platform: Platform, db: Db, kind: TitleKind, sr
       db.exec('rollback');
       throw e;
     }
+    db.exec('pragma incremental_vacuum');
     opts.log(`TMDB match: loaded ${count} ${kind} titles (${src.origin})`);
     return count;
   } catch (e) {
@@ -151,7 +155,9 @@ export async function loadTitles(platform: Platform, db: Db, kind: TitleKind, sr
 // only with no table at all is TMDB's own export tried.
 export async function ensureTitles(platform: Platform, db: Db, kind: TitleKind, sources: { enriched: TitleSource; tmdb: TitleSource }, opts: LoadOptions): Promise<'fresh' | 'loaded' | 'stale' | 'none'> {
   const meta = titlesMeta(db, kind);
-  if (meta && isFresh(meta.loadedAt, opts.nowMs)) return 'fresh';
+  // Only the enriched export counts as fresh: a table from TMDB's own export has no years, and rows matched against it
+  // are never matched again, so the enriched one is tried again on every run until it loads.
+  if (meta && meta.origin === 'enriched' && isFresh(meta.loadedAt, opts.nowMs)) return 'fresh';
   const fail = (e: unknown) => opts.log(`TMDB match: ${kind} titles load failed: ${e instanceof Error ? e.message : String(e)}`);
   try { await loadTitles(platform, db, kind, sources.enriched, opts); return 'loaded'; } catch (e) { fail(e); }
   if (meta) {

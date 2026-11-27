@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { createServer } from 'node:http';
-import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -151,4 +151,34 @@ test('titleSources: enriched cache repo files, and the tmdb export for yesterday
   expect(titleSources('series', now).enriched.url).toBe('https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb-tvs-enriched.ndjson.gz');
   expect(titleSources('movie', now).tmdb.url).toBe('https://files.tmdb.org/p/exports/movie_ids_11_25_2026.json.gz');
   expect(titleSources('series', now).tmdb.url).toBe('https://files.tmdb.org/p/exports/tv_series_ids_11_25_2026.json.gz');
+});
+
+test('a daily reload gives the old table space back (the file does not keep growing)', async () => {
+  const { db, opts, dir } = setup();
+  const big = gzipSync(enrichedLines(Array.from({ length: 40_000 }, (_, i) => ({ i, t: `Some Long Movie Title Number ${i}`, y: 2000, p: i }))));
+  const { url, close } = await serve({ '/m.gz': () => big });
+  const size = () => statSync(path.join(dir, 'tmdb-titles.sqlite')).size;
+  try {
+    await loadTitles(P, db, 'movie', { url: `${url}/m.gz`, origin: 'enriched' }, opts);
+    const first = size();
+    await loadTitles(P, db, 'movie', { url: `${url}/m.gz`, origin: 'enriched' }, { ...opts, nowMs: opts.nowMs + DAY });
+    expect(size()).toBeLessThan(first * 1.2);
+  } finally { close(); }
+});
+
+test('a table from TMDB\'s own export (no years) is not fresh: the enriched export is tried again next time', async () => {
+  const { db, opts } = setup();
+  let enrichedUp = false;
+  const { url, close } = await serve({
+    '/e.gz': () => (enrichedUp ? gzipSync(enrichedLines([{ i: 1, t: 'Heat', y: 1995, p: 5 }])) : 503),
+    '/t.gz': () => gzipSync(JSON.stringify({ id: 2, original_title: 'Heat', popularity: 1 })),
+  });
+  const sources = { enriched: { url: `${url}/e.gz`, origin: 'enriched' as const }, tmdb: { url: `${url}/t.gz`, origin: 'tmdb' as const } };
+  try {
+    expect(await ensureTitles(P, db, 'movie', sources, opts)).toBe('loaded');
+    expect(titlesMeta(db, 'movie')?.origin).toBe('tmdb');
+    enrichedUp = true;
+    expect(await ensureTitles(P, db, 'movie', sources, { ...opts, nowMs: opts.nowMs + 1000 })).toBe('loaded');
+    expect(titlesMeta(db, 'movie')?.origin).toBe('enriched');
+  } finally { close(); }
 });
