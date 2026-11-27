@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { Db } from './platform.js';
 
 export const SCHEMA_VERSION = 3;
 
@@ -145,7 +145,7 @@ create table if not exists vod_item_categories (
 create index if not exists vod_item_categories_category on vod_item_categories(category_id, item_type);
 `;
 
-export function createSchema(db: DatabaseSync): void {
+export function createSchema(db: Db): void {
   db.exec('begin');
   try {
     db.exec(DDL);
@@ -158,19 +158,19 @@ export function createSchema(db: DatabaseSync): void {
   }
 }
 
-export function readSchemaVersion(db: DatabaseSync): number {
+export function readSchemaVersion(db: Db): number {
   const hasMeta = db.prepare("select count(*) as c from sqlite_master where type='table' and name='meta'").get() as { c: number };
   if (hasMeta.c === 0) return 0;
   const row = db.prepare("select value from meta where key='schema_version'").get() as { value: string } | undefined;
   return row ? Number(row.value) : 0;
 }
 
-export function reindexGuide(db: DatabaseSync): void {
+export function reindexGuide(db: Db): void {
   db.exec(`insert into epg_programs_fts(epg_programs_fts) values('rebuild')`);
 }
 
 // Migrations are numbered functions from version n to n+1.
-const MIGRATIONS: Array<(db: DatabaseSync) => void> = [
+const MIGRATIONS: Array<(db: Db) => void> = [
   (db) => { db.exec(GUIDE_INDEX_DDL); reindexGuide(db); },
   // Lists stored before v3 have no time, so the first open or hover refreshes them once.
   (db) => {
@@ -181,7 +181,7 @@ const MIGRATIONS: Array<(db: DatabaseSync) => void> = [
 
 export class NewerSchemaError extends Error {}
 
-export function migrate(db: DatabaseSync): void {
+export function migrate(db: Db): void {
   const current = readSchemaVersion(db);
   if (current === 0) {
     createSchema(db);

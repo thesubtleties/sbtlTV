@@ -6,110 +6,50 @@
  * the provider's channels with core's matcher; the second parses only the
  * <programme> blocks of matched channels and skips the rest early.
  */
-import { createReadStream, createWriteStream, statSync, openSync, readSync, closeSync } from 'node:fs';
-import { promises as fsp } from 'node:fs';
-import { createGunzip } from 'node:zlib';
-import { pipeline } from 'node:stream/promises';
-import { Transform } from 'node:stream';
-import http from 'node:http';
-import https from 'node:https';
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { matchChannelsToEpg, checkProviderUrl, redactUrl } from '@sbtltv/core';
+import { matchChannelsToEpg, redactUrl } from '@sbtltv/core';
 import type { Channel, EpgChannelInfo } from '@sbtltv/core';
+import type { Log, Platform } from './platform.js';
 
 export const MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024 * 1024;   // 4GB on disk (an Xtream xmltv.php is often plain XML)
 export const MAX_DECOMPRESS_BYTES = 4 * 1024 * 1024 * 1024; // 4GB decompressed
 
-export type Log = (message: string) => void;
+export type { Log } from './platform.js';
 export interface ProviderChannel { epg_channel_id: string; name: string; stream_id: string }
 export interface ParsedProgram { channel_id: string; title: string; description: string; startMs: number; endMs: number }
 export interface ParsedGuide { channels: EpgChannelInfo[]; programs: ParsedProgram[] }
 
 // ---- Download ----
 
-function sizeGuard(limit: number, what: string): Transform {
-  let total = 0;
-  return new Transform({
-    transform(chunk: Buffer, _enc, cb) {
-      total += chunk.length;
-      if (total > limit) cb(new Error(`${what} exceeds ${Math.round(limit / 1024 / 1024)}MB limit`));
-      else cb(null, chunk);
-    },
-  });
-}
-
-const MAX_REDIRECTS = 5;
-
-// Every hop, including redirect targets, is checked against the LAN block.
-function get(url: string, allowLan: boolean, redirects = 0): Promise<http.IncomingMessage> {
-  return new Promise((resolve, reject) => {
-    try { checkProviderUrl(url, allowLan); } catch (e) { reject(e); return; }
-    const mod = url.startsWith('https:') ? https : http;
-    // Ask for the bytes as stored: with gzip accepted, some servers inflate a .gz
-    // in flight and hand over the raw multi-GB XML instead of the archive.
-    const req = mod.get(url, { headers: { 'Accept-Encoding': 'identity', 'Cache-Control': 'no-cache' } }, (res) => {
-      const status = res.statusCode ?? 0;
-      if (status >= 300 && status < 400 && res.headers.location) {
-        res.resume();
-        if (redirects >= MAX_REDIRECTS) { reject(new Error(`too many redirects (${MAX_REDIRECTS}) fetching ${redactUrl(url)}`)); return; }
-        resolve(get(new URL(res.headers.location, url).toString(), allowLan, redirects + 1));
-        return;
-      }
-      if (status < 200 || status >= 300) { res.resume(); reject(new Error(`HTTP ${status}${res.statusMessage ? `: ${res.statusMessage}` : ''}`)); return; }
-      resolve(res);
-    });
-    req.on('error', reject);
-  });
-}
-
-// Streams the response to a temp file (no ArrayBuffer size limits) and returns its path.
-export async function downloadToTempFile(url: string, tempDir: string, log: Log, allowLan: boolean): Promise<string> {
-  const res = await get(url, allowLan);
-  const tmpPath = path.join(tempDir, `epg-${randomUUID()}.tmp`);
-  let bytes = 0;
-  const counter = new Transform({ transform(chunk: Buffer, _e, cb) { bytes += chunk.length; cb(null, chunk); } });
-  try {
-    await pipeline(res, counter, sizeGuard(MAX_DOWNLOAD_BYTES, 'EPG download'), createWriteStream(tmpPath));
-  } catch (err) {
-    await fsp.unlink(tmpPath).catch(() => {});
-    throw err;
-  }
-  log(`epg-download ${res.statusCode} ${bytes}B ${redactUrl(url)}`);
+// Streams the response to a temp file (no ArrayBuffer size limits) and returns its path. The Net adapter checks every
+// hop against the LAN block, follows redirects, enforces the cap and removes the file on failure.
+export async function downloadToTempFile(platform: Platform, url: string, tempDir: string, log: Log, allowLan: boolean): Promise<string> {
+  const tmpPath = platform.files.join(tempDir, `epg-${platform.uuid()}.tmp`);
+  const { status, bytes } = await platform.net.downloadToFile(url, tmpPath, { maxBytes: MAX_DOWNLOAD_BYTES, allowLan, label: 'EPG download' });
+  log(`epg-download ${status} ${bytes}B ${redactUrl(url)}`);
   return tmpPath;
 }
 
 // ---- Decompress ----
 
-function isGzip(filePath: string): boolean {
-  const fd = openSync(filePath, 'r');
-  try {
-    const header = Buffer.alloc(2);
-    const n = readSync(fd, header, 0, 2, 0);
-    return n === 2 && header[0] === 0x1f && header[1] === 0x8b;
-  } finally {
-    closeSync(fd);
-  }
+function isGzip(platform: Platform, filePath: string): boolean {
+  const header = platform.files.readHead(filePath, 2);
+  return header.length === 2 && header[0] === 0x1f && header[1] === 0x8b;
 }
 
 // Inflates a gzip file next to itself (by magic bytes, whatever the URL said) and
 // deletes the archive. A plain XML file is returned as is.
-export async function decompressToFile(inputPath: string, log: Log): Promise<{ xmlPath: string; sizeMB: number }> {
-  if (!isGzip(inputPath)) {
-    const size = statSync(inputPath).size;
+export async function decompressToFile(platform: Platform, inputPath: string, log: Log): Promise<{ xmlPath: string; sizeMB: number }> {
+  const { files } = platform;
+  if (!isGzip(platform, inputPath)) {
+    const size = files.size(inputPath);
     return { xmlPath: inputPath, sizeMB: Math.round(size / 1024 / 1024) };
   }
-  const xmlPath = path.join(path.dirname(inputPath), `epg-xml-${randomUUID()}.tmp`);
-  const compressedSize = statSync(inputPath).size;
+  const xmlPath = files.join(files.dirname(inputPath), `epg-xml-${platform.uuid()}.tmp`);
+  const compressedSize = files.size(inputPath);
   log(`Streaming decompression of ${Math.round(compressedSize / 1024 / 1024)}MB...`);
-  try {
-    await pipeline(createReadStream(inputPath), createGunzip(), sizeGuard(MAX_DECOMPRESS_BYTES, 'EPG decompression'), createWriteStream(xmlPath));
-  } catch (err) {
-    await fsp.unlink(xmlPath).catch(() => {});
-    throw err;
-  }
-  await fsp.unlink(inputPath).catch((e) => log(`Failed to clean up compressed temp file ${inputPath}: ${e instanceof Error ? e.message : e}`));
-  const decompressedSize = statSync(xmlPath).size;
+  await platform.gunzip.gunzipFile(inputPath, xmlPath, { maxBytes: MAX_DECOMPRESS_BYTES, label: 'EPG decompression' });
+  try { await files.removeAsync(inputPath); } catch (e) { log(`Failed to clean up compressed temp file ${inputPath}: ${e instanceof Error ? e.message : e}`); }
+  const decompressedSize = files.size(xmlPath);
   log(`Decompressed to ${Math.round(decompressedSize / 1024 / 1024)}MB on disk`);
   return { xmlPath, sizeMB: Math.round(decompressedSize / 1024 / 1024) };
 }
@@ -138,19 +78,16 @@ export function parseXmltvDate(d: string): number | null {
 interface RawProgram { channel_id: string; title: string; description: string; startMs: number; endMs: number }
 
 /**
- * Stream-parse an XMLTV file. Reads the file in chunks, accumulates element
- * blocks, and emits parsed channel/programme objects. Constant memory.
+ * Stream-parse XMLTV text arriving in chunks (a file read piece by piece): accumulates element blocks and emits parsed
+ * channel/programme objects. Constant memory.
  */
-function streamParseXmltv(
-  filePath: string,
+export async function parseXmltvChunks(
+  chunks: AsyncIterable<string>,
   filterChannelIds: Set<string> | null,
   onChannel: (ch: EpgChannelInfo) => void,
   onProgram: (p: RawProgram) => void,
   log: Log,
 ): Promise<{ channelCount: number; programCount: number; skipped: number }> {
-  return new Promise((resolve, reject) => {
-    const stream = createReadStream(filePath, { encoding: 'utf-8', highWaterMark: 256 * 1024 });
-
     let remainder = '';
     let channelCount = 0;
     let programCount = 0;
@@ -239,7 +176,7 @@ function streamParseXmltv(
       }
     }
 
-    stream.on('data', (chunk) => {
+    for await (const chunk of chunks) {
       remainder += chunk;
 
       // Process complete elements: find </channel> and </programme> closing tags
@@ -274,11 +211,9 @@ function streamParseXmltv(
         const keepFrom = remainder.length - 64 * 1024;
         remainder = remainder.slice(keepFrom);
       }
-    });
+    }
 
-    stream.on('end', () => resolve({ channelCount, programCount, skipped }));
-    stream.on('error', reject);
-  });
+    return { channelCount, programCount, skipped };
 }
 
 // Which XMLTV channels does any provider channel resolve to? Every automatic
@@ -301,8 +236,9 @@ function matchedXmltvIds(xmltvChannels: EpgChannelInfo[], providerChannels: Prov
  * <channel> elements, matches them, and phase 2 keeps only programmes for the
  * matched channels. Without one, every programme is returned.
  */
-export async function parseXmltvFile(xmlPath: string, providerChannels: ProviderChannel[] | undefined, log: Log): Promise<ParsedGuide> {
-  const fileSize = statSync(xmlPath).size;
+export async function parseXmltvFile(platform: Platform, xmlPath: string, providerChannels: ProviderChannel[] | undefined, log: Log): Promise<ParsedGuide> {
+  const fileSize = platform.files.size(xmlPath);
+  const read = () => platform.files.readText(xmlPath, 256 * 1024);
   log(`Stream-parsing ${Math.round(fileSize / 1024 / 1024)}MB file (${providerChannels?.length ?? 0} provider channels for filtering)...`);
   const t0 = Date.now();
 
@@ -310,7 +246,7 @@ export async function parseXmltvFile(xmlPath: string, providerChannels: Provider
   if (providerChannels && providerChannels.length > 0) {
     log('Phase 1: scanning for channel elements...');
     const xmltvChannels: EpgChannelInfo[] = [];
-    await streamParseXmltv(xmlPath, null, (ch) => xmltvChannels.push(ch), () => {}, log);
+    await parseXmltvChunks(read(), null, (ch) => xmltvChannels.push(ch), () => {}, log);
     log(`Found ${xmltvChannels.length} EPG channels`);
     filterIds = matchedXmltvIds(xmltvChannels, providerChannels);
     log(`Matched ${filterIds.size}/${providerChannels.length} provider channels - will filter programmes`);
@@ -318,7 +254,7 @@ export async function parseXmltvFile(xmlPath: string, providerChannels: Provider
 
   const channels: EpgChannelInfo[] = [];
   const programs: ParsedProgram[] = [];
-  const stats = await streamParseXmltv(xmlPath, filterIds, (ch) => channels.push(ch), (p) => programs.push(p), log);
+  const stats = await parseXmltvChunks(read(), filterIds, (ch) => channels.push(ch), (p) => programs.push(p), log);
   if (stats.skipped > 0) log(`Skipped ${stats.skipped} programmes for non-matching channels`);
   log(`Done: ${channels.length} channels, ${programs.length} programs in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   return { channels, programs };

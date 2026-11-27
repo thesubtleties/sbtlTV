@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { JobLanes, laneFor, PREFETCH_EXPIRY_MS, type LaneName } from './lanes.js';
-import type { SyncJob } from './router.js';
+import { test } from 'vitest';
+import { JobLanes, laneFor, PREFETCH_EXPIRY_MS, type LaneName } from '../src/lanes.js';
+import type { SyncJob } from '../src/router.js';
 
 function harness() {
   const sent: [LaneName, SyncJob][] = [];

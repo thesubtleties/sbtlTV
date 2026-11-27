@@ -5,7 +5,10 @@
 // entries are bundled into self-contained files. The tests under src/data/ are
 // bundled for the same reason: node --test loads them straight from dist/data/.
 import { build } from 'esbuild';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
+
+// Files moved out of src/data (now @sbtltv/data) would otherwise linger here and get packed into the app.
+rmSync('dist/data', { recursive: true, force: true });
 
 const entries = ['src/data/data-process.ts', 'src/data/sync-worker.ts'].filter(existsSync);
 if (existsSync('src/data')) {

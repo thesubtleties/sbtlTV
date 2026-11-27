@@ -1,11 +1,12 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { Db, Platform } from './platform.js';
 import type { Source, Channel, Category, DataTable, SyncProgress } from '@sbtltv/core';
 import { XtreamClient, fetchAndParseM3U, parseM3U } from '@sbtltv/local-adapter';
 import { checkProviderUrl, redactUrl } from '@sbtltv/core';
 import { replaceChannels, setSourceError } from './writes.js';
 
 export interface StageContext {
-  db: DatabaseSync;
+  platform: Platform;
+  db: Db;
   tempDir: string;
   allowLanSources: boolean;
   log(category: string, message: string): void;
@@ -81,8 +82,9 @@ export async function syncChannels(ctx: StageContext, source: Source, client: Ch
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     ctx.log('sync', `Sync FAILED for source ${source.id}: ${message}`);  // never the name (it can say who the provider is)
-    ctx.changed(setSourceError(ctx.db, source.id, message), source.id);
+    // The page hears first: storing the error can throw (no redactor set), and the banner must still clear.
     ctx.progress({ sourceId: source.id, stage: 'channels', state: 'failed', message });
+    ctx.changed(setSourceError(ctx.db, source.id, message), source.id);
     return null;
   }
 }
