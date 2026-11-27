@@ -33,7 +33,7 @@ let schedulerTimer: NodeJS.Timeout | null = null;
 let stopping = false;
 const SCHEDULER_INTERVAL_MS = 5 * 60_000;
 // The worker heap: a 3GB guide is streamed, but its matched programmes (a few
-// hundred thousand objects) and the TMDB export maps live in memory at once.
+// hundred thousand objects) live in memory at once. (TMDB titles are on disk, tmdb-store.ts.)
 const WORKER_HEAP_MB = 8192;
 
 interface LaneWorker { worker: Worker | null; restarts: number; timer: NodeJS.Timeout | null }

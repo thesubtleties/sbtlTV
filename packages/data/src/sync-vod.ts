@@ -1,5 +1,8 @@
 import type { Source, Category, Movie, Series, Season } from '@sbtltv/core';
-import { getEnrichedMovieExports, getEnrichedTvExports, extractMatchParams, findBestMatch } from '@sbtltv/core';
+import { extractMatchParams } from '@sbtltv/core';
+import { openTitles, ensureTitles, titleSources } from './tmdb-store.js';
+import { titleMatcher } from './tmdb-match.js';
+import type { Db } from './platform.js';
 import type { StageContext } from './sync-channels.js';
 import { replaceVod, replaceEpisodes, applyTmdbMatches } from './writes.js';
 import type { VodCategoryInput } from './writes.js';
@@ -116,25 +119,30 @@ export async function syncEpisodes(ctx: StageContext, source: Source, client: Vo
 }
 
 // Matches rows that have never been attempted. match_attempted survives resyncs now
-// (the replaceVod upsert leaves it alone), so this is incremental for real.
+// (the replaceVod upsert leaves it alone), so this is incremental for real. Titles come from the on-disk cache
+// (tmdb-store.ts), opened only when there is something to match; ensureTitles decides when it reloads.
 export async function matchTmdb(ctx: StageContext, source: Source): Promise<void> {
   ctx.progress({ sourceId: source.id, stage: 'tmdb', state: 'started' });
+  let titles: Db | null = null;
   try {
     for (const kind of ['movie', 'series'] as const) {
       const table = kind === 'movie' ? 'vod_movies' : 'vod_series';
       const key = kind === 'movie' ? 'stream_id' : 'series_id';
       const rows = ctx.db.prepare(`select ${key} as id, name, title, year from ${table} where source_id = ? and tmdb_id is null and match_attempted is null`).all(source.id) as { id: string; name: string; title: string | null; year: string | null }[];
       if (rows.length === 0) { ctx.log('vod', `TMDB match: no new ${kind} rows to match`); continue; }
-      ctx.log('vod', `TMDB match: downloading ${kind} exports for ${rows.length} rows...`);
-      const exports = kind === 'movie' ? await getEnrichedMovieExports() : await getEnrichedTvExports();
-      const now = Date.now();
+      ctx.log('vod', `TMDB match: ${rows.length} new ${kind} rows`);
+      titles ??= openTitles(ctx.platform, ctx.tmdbPath, (m) => ctx.log('vod', m));
+      const nowMs = Date.now();
+      const state = await ensureTitles(ctx.platform, titles, kind, titleSources(kind, nowMs), { tempDir: ctx.tempDir, allowLan: false, log: (m) => ctx.log('vod', m), nowMs });
+      if (state === 'none') throw new Error(`TMDB ${kind} titles unavailable`);
+      const match = titleMatcher(titles, kind);
       let matched = 0;
       for (let i = 0; i < rows.length; i += 500) {
         const batch = rows.slice(i, i + 500).map((r) => {
           const params = extractMatchParams({ name: r.name, title: orUndef(r.title), year: orUndef(r.year) });
-          const hit = findBestMatch(exports, params.title, params.year);
+          const hit = match(params.title, params.year);
           if (hit) matched++;
-          return { id: r.id, tmdb_id: hit?.id, popularity: hit?.popularity, matchAttemptedMs: now };
+          return { id: r.id, tmdb_id: hit?.id, popularity: hit?.popularity, matchAttemptedMs: nowMs };
         });
         ctx.changed(applyTmdbMatches(ctx.db, kind, batch), source.id);
       }
@@ -145,5 +153,7 @@ export async function matchTmdb(ctx: StageContext, source: Source): Promise<void
     const message = e instanceof Error ? e.message : String(e);
     ctx.log('vod', `TMDB match failed: ${message}`);
     ctx.progress({ sourceId: source.id, stage: 'tmdb', state: 'failed', message });
+  } finally {
+    try { titles?.close(); } catch { /* closing a cache */ }
   }
 }

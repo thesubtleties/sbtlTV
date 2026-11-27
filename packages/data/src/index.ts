@@ -11,3 +11,6 @@ export * from './epg.js';
 export * from './sync-stages.js';
 export * from './jobs.js';
 export * from './coordinator.js';
+export * from './lines.js';
+export * from './tmdb-store.js';
+export * from './tmdb-match.js';

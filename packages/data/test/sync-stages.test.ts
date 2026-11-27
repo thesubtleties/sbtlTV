@@ -4,12 +4,13 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Source, DataTable, SyncProgress } from '@sbtltv/core';
 import { createSchema } from '../src/schema.js';
 import { nodePlatform } from '../src/node/index.js';
-import { syncChannels, syncVod, syncEpisodes, type StageContext, type ChannelClient, type VodClient } from '../src/sync-stages.js';
+import { openTitles } from '../src/tmdb-store.js';
+import { syncChannels, syncVod, syncEpisodes, matchTmdb, type StageContext, type ChannelClient, type VodClient } from '../src/sync-stages.js';
 
 function ctx(db: DatabaseSync) {
   const changed: [DataTable[], string | null][] = [];
   const progress: SyncProgress[] = [];
-  const c: StageContext = { db, platform: nodePlatform(), tempDir: '/tmp', allowLanSources: false, log: () => {}, progress: (p) => progress.push(p), changed: (t, s) => changed.push([t, s]) };
+  const c: StageContext = { db, platform: nodePlatform(), tempDir: '/tmp', tmdbPath: '/nonexistent/tmdb-titles.sqlite', allowLanSources: false, log: () => {}, progress: (p) => progress.push(p), changed: (t, s) => changed.push([t, s]) };
   return { c, changed, progress };
 }
 const source: Source = { id: 's1', name: 'P', type: 'xtream', url: 'http://x', username: 'u', password: 'p', enabled: true };
@@ -195,4 +196,72 @@ test('syncEpisodes keeps a stored list when the provider sends none, leaves it u
   assert.equal((db.prepare("select episodes_fetched t from vod_series").get() as { t: number }).t, 5, 'not stamped fresh');
   assert.deepEqual(changed, []);
   assert.deepEqual(progress.at(-1), { sourceId: 's1', stage: 'episodes', state: 'finished', seriesId: 's1_sr', counts: { episodes: 0 } });
+});
+
+// The TMDB tests never reach the network: a download means the cache logic slipped, and fails loudly here.
+const offline = { async downloadToFile(): Promise<never> { throw new Error('offline'); } };
+function titlesCache(c: StageContext, loadedAt: number, origin = 'enriched') {
+  c.tmdbPath = path.join(mkdtempSync(path.join(tmpdir(), 'tmdb-')), 'tmdb-titles.sqlite');
+  c.tempDir = mkdtempSync(path.join(tmpdir(), 'tmdb-tmp-'));
+  c.platform = { ...c.platform, net: offline };
+  const t = openTitles(c.platform, c.tmdbPath, () => {});
+  t.exec(`create table movie_titles(norm text not null, id integer not null, year integer, popularity real not null);
+    insert into movie_titles values ('heat', 1, 1986, 99), ('heat', 949, 1995, 50);
+    create table series_titles(norm text not null, id integer not null, year integer, popularity real not null);
+    insert into series_titles values ('lost', 4607, 2004, 30);
+    insert into meta values ('movie', ${loadedAt}, '${origin}'), ('series', ${loadedAt}, '${origin}')`);
+  t.close();
+}
+
+test('matchTmdb matches new movie and series rows from the titles cache, stamps every attempt, and leaves rows already tried alone', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  db.exec(`insert into vod_movies(stream_id, source_id, name, title, year, direct_url, match_attempted) values
+    ('s1_m1', 's1', 'Heat (1995)', 'Heat', '1995', 'u', null), ('s1_m2', 's1', 'Nothing Like It', null, null, 'u', null),
+    ('s1_m3', 's1', 'Heat', 'Heat', null, 'u', 5)`);
+  db.exec("insert into vod_series(series_id, source_id, name) values ('s1_sr1', 's1', 'Lost')");
+  const { c, progress } = ctx(db);
+  titlesCache(c, Date.now());
+  await matchTmdb(c, source);
+  const got = db.prepare('select stream_id, tmdb_id, popularity, match_attempted from vod_movies order by stream_id').all().map((r) => ({ ...(r as object) })) as { match_attempted: number | null }[];
+  assert.deepEqual(got.map((r) => ({ ...r, match_attempted: r.match_attempted === 5 ? 5 : r.match_attempted !== null })),
+    [{ stream_id: 's1_m1', tmdb_id: 949, popularity: 50, match_attempted: true }, { stream_id: 's1_m2', tmdb_id: null, popularity: null, match_attempted: true },
+     { stream_id: 's1_m3', tmdb_id: null, popularity: null, match_attempted: 5 }]);
+  assert.equal((db.prepare("select tmdb_id from vod_series where series_id = 's1_sr1'").get() as { tmdb_id: number }).tmdb_id, 4607);
+  assert.deepEqual(progress.map((p) => p.state), ['started', 'finished']);
+});
+
+test('matchTmdb matches from a stale table while the cache repo is unreachable', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  db.exec("insert into vod_movies(stream_id, source_id, name, title, year, direct_url) values ('s1_m1', 's1', 'Heat (1995)', 'Heat', '1995', 'u')");
+  const { c, progress } = ctx(db);
+  const logs: string[] = []; c.log = (_cat, m) => logs.push(m);
+  titlesCache(c, Date.now() - 3 * 24 * 60 * 60 * 1000);
+  await matchTmdb(c, source);
+  assert.equal((db.prepare("select tmdb_id from vod_movies").get() as { tmdb_id: number }).tmdb_id, 949);
+  assert.ok(logs.some((m) => m.startsWith('TMDB match: using cached movie titles')));
+  assert.equal(progress.at(-1)?.state, 'finished');
+});
+
+test('matchTmdb with nothing new to match never opens the titles cache', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  const { c, progress } = ctx(db);
+  c.tmdbPath = path.join(mkdtempSync(path.join(tmpdir(), 'tmdb-')), 'tmdb-titles.sqlite');
+  await matchTmdb(c, source);
+  assert.equal(readdirSync(path.dirname(c.tmdbPath)).length, 0);
+  assert.equal(progress.at(-1)?.state, 'finished');
+});
+
+test('matchTmdb fails the stage cleanly when no titles can be had', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  db.exec("insert into vod_movies(stream_id, source_id, name, direct_url) values ('s1_m1', 's1', 'Heat', 'u')");
+  const { c, progress } = ctx(db);
+  c.tmdbPath = path.join(mkdtempSync(path.join(tmpdir(), 'tmdb-')), 'tmdb-titles.sqlite');
+  c.tempDir = mkdtempSync(path.join(tmpdir(), 'tmdb-tmp-'));
+  // Both sources fail (no network), and there is no cached table: the stage fails with a clear message.
+  c.platform = { ...c.platform, net: { async downloadToFile() { throw new Error('offline'); } } };
+  await matchTmdb(c, source);
+  assert.equal(progress.at(-1)?.state, 'failed');
+  assert.match(progress.at(-1)?.message ?? '', /TMDB movie titles unavailable/);
+  // Not stamped: the row is matched on the next run, once titles can be had
+  assert.equal((db.prepare('select match_attempted from vod_movies').get() as { match_attempted: number | null }).match_attempted, null);
 });

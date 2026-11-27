@@ -20,12 +20,16 @@ export interface ParsedGuide { channels: EpgChannelInfo[]; programs: ParsedProgr
 
 // ---- Download ----
 
+export interface TempFileOptions { prefix: string; maxBytes: number; label: string }
+const EPG_DOWNLOAD: TempFileOptions = { prefix: 'epg', maxBytes: MAX_DOWNLOAD_BYTES, label: 'EPG download' };
+const EPG_DECOMPRESS: TempFileOptions = { prefix: 'epg-xml', maxBytes: MAX_DECOMPRESS_BYTES, label: 'EPG decompression' };
+
 // Streams the response to a temp file (no ArrayBuffer size limits) and returns its path. The Net adapter checks every
 // hop against the LAN block, follows redirects, enforces the cap and removes the file on failure.
-export async function downloadToTempFile(platform: Platform, url: string, tempDir: string, log: Log, allowLan: boolean): Promise<string> {
-  const tmpPath = platform.files.join(tempDir, `epg-${platform.uuid()}.tmp`);
-  const { status, bytes } = await platform.net.downloadToFile(url, tmpPath, { maxBytes: MAX_DOWNLOAD_BYTES, allowLan, label: 'EPG download' });
-  log(`epg-download ${status} ${bytes}B ${redactUrl(url)}`);
+export async function downloadToTempFile(platform: Platform, url: string, tempDir: string, log: Log, allowLan: boolean, opts: TempFileOptions = EPG_DOWNLOAD): Promise<string> {
+  const tmpPath = platform.files.join(tempDir, `${opts.prefix}-${platform.uuid()}.tmp`);
+  const { status, bytes } = await platform.net.downloadToFile(url, tmpPath, { maxBytes: opts.maxBytes, allowLan, label: opts.label });
+  log(`${opts.prefix}-download ${status} ${bytes}B ${redactUrl(url)}`);
   return tmpPath;
 }
 
@@ -38,16 +42,16 @@ function isGzip(platform: Platform, filePath: string): boolean {
 
 // Inflates a gzip file next to itself (by magic bytes, whatever the URL said) and
 // deletes the archive. A plain XML file is returned as is.
-export async function decompressToFile(platform: Platform, inputPath: string, log: Log): Promise<{ xmlPath: string; sizeMB: number }> {
+export async function decompressToFile(platform: Platform, inputPath: string, log: Log, opts: TempFileOptions = EPG_DECOMPRESS): Promise<{ xmlPath: string; sizeMB: number }> {
   const { files } = platform;
   if (!isGzip(platform, inputPath)) {
     const size = files.size(inputPath);
     return { xmlPath: inputPath, sizeMB: Math.round(size / 1024 / 1024) };
   }
-  const xmlPath = files.join(files.dirname(inputPath), `epg-xml-${platform.uuid()}.tmp`);
+  const xmlPath = files.join(files.dirname(inputPath), `${opts.prefix}-${platform.uuid()}.tmp`);
   const compressedSize = files.size(inputPath);
   log(`Streaming decompression of ${Math.round(compressedSize / 1024 / 1024)}MB...`);
-  await platform.gunzip.gunzipFile(inputPath, xmlPath, { maxBytes: MAX_DECOMPRESS_BYTES, label: 'EPG decompression' });
+  await platform.gunzip.gunzipFile(inputPath, xmlPath, { maxBytes: opts.maxBytes, label: opts.label });
   try { await files.removeAsync(inputPath); } catch (e) { log(`Failed to clean up compressed temp file ${inputPath}: ${e instanceof Error ? e.message : e}`); }
   const decompressedSize = files.size(xmlPath);
   log(`Decompressed to ${Math.round(decompressedSize / 1024 / 1024)}MB on disk`);
