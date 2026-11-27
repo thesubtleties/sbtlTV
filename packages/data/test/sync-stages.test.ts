@@ -265,3 +265,47 @@ test('matchTmdb fails the stage cleanly when no titles can be had', async () => 
   // Not stamped: the row is matched on the next run, once titles can be had
   assert.equal((db.prepare('select match_attempted from vod_movies').get() as { match_attempted: number | null }).match_attempted, null);
 });
+
+test('syncEpg writes programmes to staging while the guide file is still being read, and stores them all', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  const { c, progress } = ctx(db);
+  c.tempDir = mkdtempSync(path.join(tmpdir(), 'epg-stage-')); c.allowLanSources = true;
+  const n = 12_000;
+  const stamp = (ms: number) => new Date(ms).toISOString().replace(/[-:T]/g, '').slice(0, 14) + ' +0000';
+  const base = Date.UTC(2026, 8, 21);
+  const progs = Array.from({ length: n }, (_, i) => `<programme start="${stamp(base + i * 60_000)}" stop="${stamp(base + i * 60_000 + 59_000)}" channel="cbs.us"><title>P${i}</title></programme>`).join('\n');
+  const big = `<?xml version="1.0"?><tv><channel id="cbs.us"><display-name>CBS</display-name></channel>\n${progs}\n</tv>`;
+  const { url, close } = await serve((_req, res) => { res.writeHead(200); res.end(big); });
+  const seen: number[] = [];
+  c.platform = { ...c.platform, files: { ...c.platform.files, readText: async function* (p, size) {
+    for await (const chunk of nodePlatform().files.readText(p, size)) {
+      seen.push((db.prepare("select count(*) c from temp.sqlite_master where name = 'epg_staging'").get() as { c: number }).c
+        ? (db.prepare('select count(*) c from temp.epg_staging').get() as { c: number }).c : 0);
+      yield chunk;
+    }
+  } } };
+  try {
+    const stored = await syncEpg(c, source, [cbs], `${url}/guide.xml`, 'override');
+    assert.equal(stored, n);
+    assert.ok(seen.at(-1)! > 0, `staged before the read finished: ${seen.join(',')}`);
+    assert.equal((db.prepare('select count(*) c from epg_programs').get() as { c: number }).c, n);
+    assert.equal(progress.at(-1)?.state, 'finished');
+  } finally { close(); }
+});
+
+test('staging is discarded on every exit: a later failing URL after a good one leaves nothing staged', async () => {
+  const db = new DatabaseSync(':memory:'); createSchema(db);
+  const { c } = ctx(db);
+  c.tempDir = mkdtempSync(path.join(tmpdir(), 'epg-stage-')); c.allowLanSources = true;
+  const { url, close } = await serve((req, res) => { res.writeHead(200); res.end(GUIDE); });
+  const exists = () => (db.prepare("select count(*) c from temp.sqlite_master where name = 'epg_staging'").get() as { c: number }).c;
+  try {
+    const unrelated = { ...cbs, name: 'Zzz', epg_channel_id: 'nothing.here' };
+    await syncEpg(c, source, [unrelated], `${url}/g.xml`, 'override');   // nothing links -> old guide kept
+    assert.equal(exists(), 0);
+    await syncEpg(c, source, [cbs], `${url}/g.xml`, 'override');         // success
+    assert.equal(exists(), 0);
+    await syncEpg(c, source, [cbs], 'http://127.0.0.1:1/down', 'override'); // every URL fails
+    assert.equal(exists(), 0);
+  } finally { close(); }
+});

@@ -16,7 +16,6 @@ export const MAX_DECOMPRESS_BYTES = 4 * 1024 * 1024 * 1024; // 4GB decompressed
 export type { Log } from './platform.js';
 export interface ProviderChannel { epg_channel_id: string; name: string; stream_id: string }
 export interface ParsedProgram { channel_id: string; title: string; description: string; startMs: number; endMs: number }
-export interface ParsedGuide { channels: EpgChannelInfo[]; programs: ParsedProgram[] }
 
 // ---- Download ----
 
@@ -240,7 +239,7 @@ function matchedXmltvIds(xmltvChannels: EpgChannelInfo[], providerChannels: Prov
  * <channel> elements, matches them, and phase 2 keeps only programmes for the
  * matched channels. Without one, every programme is returned.
  */
-export async function parseXmltvFile(platform: Platform, xmlPath: string, providerChannels: ProviderChannel[] | undefined, log: Log): Promise<ParsedGuide> {
+export async function parseXmltvFile(platform: Platform, xmlPath: string, providerChannels: ProviderChannel[] | undefined, log: Log, onProgram: (p: ParsedProgram) => void): Promise<{ channels: EpgChannelInfo[]; programCount: number }> {
   const fileSize = platform.files.size(xmlPath);
   const read = () => platform.files.readText(xmlPath, 256 * 1024);
   log(`Stream-parsing ${Math.round(fileSize / 1024 / 1024)}MB file (${providerChannels?.length ?? 0} provider channels for filtering)...`);
@@ -257,9 +256,9 @@ export async function parseXmltvFile(platform: Platform, xmlPath: string, provid
   }
 
   const channels: EpgChannelInfo[] = [];
-  const programs: ParsedProgram[] = [];
-  const stats = await parseXmltvChunks(read(), filterIds, (ch) => channels.push(ch), (p) => programs.push(p), log);
+  // Programmes go straight to the caller (the guide sync stages them on disk): never collected here.
+  const stats = await parseXmltvChunks(read(), filterIds, (ch) => channels.push(ch), onProgram, log);
   if (stats.skipped > 0) log(`Skipped ${stats.skipped} programmes for non-matching channels`);
-  log(`Done: ${channels.length} channels, ${programs.length} programs in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-  return { channels, programs };
+  log(`Done: ${channels.length} channels, ${stats.programCount} programs in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  return { channels, programCount: stats.programCount };
 }
