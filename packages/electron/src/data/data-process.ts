@@ -10,11 +10,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { MessagePortMain } from 'electron';
 import type { Source, DataSettings, DataEvent, DataTable, ControlMessage, ControlReply, SyncProgress } from '@sbtltv/core';
-import { openDatabase } from './db.js';
-import { routeRendererMessage, type SyncJob } from './router.js';
-import { JobLanes, type LaneName } from './lanes.js';
-import { dueSyncs } from './scheduler.js';
-import { runQuery } from './queries.js';
+
+const platform = nodePlatform();
+import { openDatabase, routeRendererMessage, JobLanes, dueJobs, deletedSourceIds, workerStoppedProgress, type Db, type LaneName, type SyncJob } from '@sbtltv/data';
+import { nodePlatform } from '@sbtltv/data/node';
 import { needsLogin } from '@sbtltv/core';
 
 const parent = process.parentPort;
@@ -22,7 +21,7 @@ if (!parent) throw new Error('data-process must run as an Electron utility proce
 const tell = (m: ControlReply) => parent.postMessage(m);
 const log = (category: string, message: string) => tell({ type: 'log', category, message });
 
-let db: ReturnType<typeof openDatabase> | null = null;
+let db: Db | null = null;
 let sources: Source[] = [];
 let settings: DataSettings | null = null;
 let dbPath = '';
@@ -46,24 +45,13 @@ function broadcast(ev: DataEvent): void {
   for (const p of rendererPorts) p.postMessage(ev);
 }
 
-function stageOf(job: SyncJob): SyncProgress['stage'] | null {
-  switch (job.kind) {
-    case 'channels': case 'importPlaylist': return 'channels';
-    case 'vod': return 'vod';
-    case 'episodes': return 'episodes';
-    case 'rematch': return 'epg';
-    default: return null;
-  }
-}
-
 const lanes = new JobLanes({
   send: (lane, job) => workers[lane].worker?.postMessage({ type: 'job', job }),
   // The worker died mid-job: tell the renderer the stage failed so its banner
   // clears; the lane re-runs the job once its replacement worker is ready.
   failed: (job) => {
-    const stage = stageOf(job);
-    if (!stage || !('sourceId' in job)) return;
-    const progress: SyncProgress = { sourceId: job.sourceId, stage, state: 'failed', message: 'sync worker stopped unexpectedly; retrying', ...(job.kind === 'episodes' ? { seriesId: job.seriesId } : {}) };
+    const progress = workerStoppedProgress(job);
+    if (!progress) return;
     tell({ type: 'sync', progress });
     broadcast({ kind: 'sync', progress });
   },
@@ -73,33 +61,22 @@ const enqueue = (job: SyncJob): void => { lanes.enqueue(job); };
 
 function scheduleDue(): void {
   if (!db || !settings) return;
-  const metas = runQuery(db, { id: 0, type: 'syncStatus' }) as Parameters<typeof dueSyncs>[0];
-  for (const d of dueSyncs(metas, sources, settings, Date.now())) {
-    // By id, never by name (a name can say who the provider is); the log shows it as [source N].
-    if (d.channels) { log('sync', `Source ${d.sourceId} is stale, syncing...`); enqueue({ kind: 'channels', sourceId: d.sourceId }); }
-    if (d.vod) { log('vod', `Source ${d.sourceId} is stale, syncing VOD...`); enqueue({ kind: 'vod', sourceId: d.sourceId }); }
-  }
+  for (const d of dueJobs(db, sources, settings, Date.now())) { log(d.category, d.message); enqueue(d.job); }
 }
 
 // Rows for sources that are no longer configured (a delete that arrived while
 // the process was down) are removed. Skipped when main hands over no sources at
 // all, so a transient empty list can never wipe the file.
 function reconcileSources(): void {
-  if (!db || sources.length === 0) return;
-  const stored = db.prepare(`
-    select source_id from sources_meta union select source_id from channels
-    union select source_id from vod_movies union select source_id from vod_series`).all() as { source_id: string }[];
-  const configured = new Set(sources.map((s) => s.id));
-  for (const { source_id } of stored) {
-    if (!configured.has(source_id)) { log('data', `removing rows of deleted source ${source_id}`); enqueue({ kind: 'deleteSource', sourceId: source_id }); }
-  }
+  if (!db) return;
+  for (const id of deletedSourceIds(db, sources)) { log('data', `removing rows of deleted source ${id}`); enqueue({ kind: 'deleteSource', sourceId: id }); }
 }
 
 // The read connection is (re)opened whenever the bulk worker comes up: a
 // restart may have moved a corrupt file aside and created a fresh one.
 function openReadConnection(): void {
   try { db?.close(); } catch { /* already closed */ }
-  db = openDatabase(dbPath, { readOnly: true });
+  db = openDatabase(platform, dbPath, { readOnly: true });
   if (!readyTold) { readyTold = true; tell({ type: 'ready' }); }
 }
 
