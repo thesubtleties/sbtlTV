@@ -101,3 +101,14 @@ test('the parser gives the same result whether a tag is cut across chunks or not
   expect(whole.ch).toEqual([{ id: 'cbs.us', displayNames: ['CBS', 'CBS Chicago'] }, { id: 'abc.us', displayNames: ['ABC'] }]);
   expect(whole.pr).toHaveLength(2);
 });
+
+test('decompressToFile takes its own cap, label and temp-file prefix', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'epg-'));
+  const gz = path.join(dir, 'titles.gz');
+  writeFileSync(gz, gzipSync(Buffer.from('x'.repeat(5000))));
+  await expect(decompressToFile(P, gz, () => {}, { prefix: 'tmdb-ndjson', maxBytes: 100, label: 'TMDB decompression' }))
+    .rejects.toThrow('TMDB decompression exceeds');
+  writeFileSync(gz, gzipSync(Buffer.from('{"i":1}\n')));
+  const { xmlPath } = await decompressToFile(P, gz, () => {}, { prefix: 'tmdb-ndjson', maxBytes: 1000, label: 'TMDB decompression' });
+  expect(path.basename(xmlPath).startsWith('tmdb-ndjson-')).toBe(true);
+});
