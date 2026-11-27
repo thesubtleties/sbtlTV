@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 // These hops run only inside Electron and a utility process, so no unit test reaches them.
@@ -36,4 +36,12 @@ test("the guide's on-now line setting is saved and read back, on by default", ()
   const storage = source('storage.ts');
   assert.match(storage, /updated\.guideNowInChannel = settings\.guideNowInChannel/);
   assert.match(storage, /result\.guideNowInChannel = stored\.guideNowInChannel \?\? true/);
+});
+
+test('the build keeps what tsc emitted into dist/data and drops only files whose source is gone', () => {
+  // This test runs from dist/data/. data-host.js comes from tsc (main imports it); the bundle step must not delete it.
+  assert.ok(existsSync(new URL('./data-host.js', import.meta.url)), 'dist/data/data-host.js missing: the app cannot start');
+  const sources = new Set(readdirSync(new URL('../../src/data/', import.meta.url)).map((f) => f.replace(/\.ts$/, '')));
+  const stale = readdirSync(new URL('./', import.meta.url)).filter((f) => !sources.has(f.replace(/\.(js|js\.map|d\.ts)$/, '')));
+  assert.deepEqual(stale, []);
 });
