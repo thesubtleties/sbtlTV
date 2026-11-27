@@ -67,3 +67,8 @@ test('files: readHead, readText in chunks, remove of a missing file is fine', as
   expect(text).toBe('é'.repeat(3000));
   expect(() => p.files.remove(path.join(dir, 'missing'))).not.toThrow();
 });
+
+test('files.removeAsync reports a failed delete instead of hiding it (the guide cleanup logs it)', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'd-'));
+  await expect(p.files.removeAsync(dir)).rejects.toThrow();   // a directory can't be unlinked
+});

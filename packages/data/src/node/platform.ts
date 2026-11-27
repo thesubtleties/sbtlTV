@@ -55,7 +55,7 @@ export function nodePlatform(): Platform {
       exists: (p) => existsSync(p),
       list: (d) => readdirSync(d),
       remove: (p) => rmSync(p, { force: true }),
-      removeAsync: (p) => fsp.unlink(p).catch(() => {}),
+      removeAsync: (p) => fsp.unlink(p),
       size: (p) => statSync(p).size,
       readHead: (p, n) => { const fd = openSync(p, 'r'); try { const b = Buffer.alloc(n); const got = readSync(fd, b, 0, n, 0); return new Uint8Array(b.subarray(0, got)); } finally { closeSync(fd); } },
       readText: (p, chunkBytes) => createReadStream(p, { encoding: 'utf-8', highWaterMark: chunkBytes }) as AsyncIterable<string>,

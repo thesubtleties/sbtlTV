@@ -35,8 +35,8 @@ export async function syncEpg(ctx: StageContext, source: Source, channels: Chann
         for (const c of parsed.channels) allChannels.set(c.id, c);
         for (const p of parsed.programs) programs.push({ epg_channel_id: p.channel_id, startMs: p.startMs, endMs: p.endMs, title: p.title, description: p.description });
       } finally {
-        await ctx.platform.files.removeAsync(xmlPath);
-        if (xmlPath !== tmp) await ctx.platform.files.removeAsync(tmp);
+        await ctx.platform.files.removeAsync(xmlPath).catch(() => {});
+        if (xmlPath !== tmp) await ctx.platform.files.removeAsync(tmp).catch(() => {});
       }
     }
     if (failedUrls.length > 0 && failedUrls.length === urls.length) {

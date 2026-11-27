@@ -24,6 +24,7 @@ export interface Files {
   list(dir: string): string[];
   /** Removes a file if present (never throws for a missing file). */
   remove(p: string): void;
+  /** Rejects when the delete fails (a missing file included); callers that don't care catch it themselves. */
   removeAsync(p: string): Promise<void>;
   size(p: string): number;
   /** The first `bytes` bytes (fewer if the file is shorter). */
