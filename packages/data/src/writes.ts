@@ -1,6 +1,6 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { Db } from './platform.js';
 import type { Category, Channel, Movie, Series, Episode, DataTable, VodDetailFields } from '@sbtltv/core';
-import { cleanErrorText } from '../log-redact.js';
+import { redact } from './redact.js';
 import { reindexGuide } from './schema.js';
 
 export interface EpgProgramInput { epg_channel_id: string; startMs: number; endMs: number; title: string; description: string }
@@ -10,7 +10,7 @@ export interface VodCategoryInput { category_id: string; name: string; type: 'mo
 // `begin immediate` takes the write lock up front: with two writer lanes and a
 // long-lived reader under WAL, a deferred transaction could fail to upgrade
 // its lock halfway through.
-function tx<T>(db: DatabaseSync, fn: () => T): T {
+function tx<T>(db: Db, fn: () => T): T {
   db.exec('begin immediate');
   try {
     const out = fn();
@@ -50,7 +50,7 @@ function uniqueListings(input: { categories: Category[]; channels: Channel[] }):
   return { categories: [...categories.values()], channels: [...channels.values()] };
 }
 
-export function replaceChannels(db: DatabaseSync, sourceId: string, listed: { categories: Category[]; channels: Channel[]; epgUrl?: string }): DataTable[] {
+export function replaceChannels(db: Db, sourceId: string, listed: { categories: Category[]; channels: Channel[]; epgUrl?: string }): DataTable[] {
   const input = { ...listed, ...uniqueListings(listed) };
   return tx(db, () => {
     db.prepare(`delete from channel_categories where stream_id in (select stream_id from channels where source_id = ?)`).run(sourceId);
@@ -82,7 +82,7 @@ export function replaceChannels(db: DatabaseSync, sourceId: string, listed: { ca
 // a guide switch (built-in to override, or back) from leaving stale links behind.
 // Programme ids carry the source id: two sources pointing at the same guide each
 // keep their own copy, so deleting or resyncing one never touches the other.
-export function replaceEpg(db: DatabaseSync, sourceId: string, epgSource: string, input: { programs: EpgProgramInput[]; links: EpgLinkInput[] }): DataTable[] {
+export function replaceEpg(db: Db, sourceId: string, epgSource: string, input: { programs: EpgProgramInput[]; links: EpgLinkInput[] }): DataTable[] {
   return tx(db, () => {
     db.prepare(`delete from epg_programs where source_id = ?`).run(sourceId);
     db.prepare(`delete from epg_links where source_id = ?`).run(sourceId);
@@ -96,7 +96,7 @@ export function replaceEpg(db: DatabaseSync, sourceId: string, epgSource: string
   });
 }
 
-export function replaceVod(db: DatabaseSync, sourceId: string, input: { movies: Movie[]; series: Series[]; categories: VodCategoryInput[] }): DataTable[] {
+export function replaceVod(db: Db, sourceId: string, input: { movies: Movie[]; series: Series[]; categories: VodCategoryInput[] }): DataTable[] {
   return tx(db, () => {
     // Category links go first, while the source's current items are still known:
     // a link left behind by a vanished movie would keep an emptied category visible.
@@ -150,7 +150,7 @@ export function replaceVod(db: DatabaseSync, sourceId: string, input: { movies: 
 
 // Also stamps the series with when its list was fetched. Only the router reads that
 // column, so vod_series is not reported changed (that would re-query every series row).
-export function replaceEpisodes(db: DatabaseSync, seriesId: string, episodes: Episode[], fetchedMs: number = Date.now()): DataTable[] {
+export function replaceEpisodes(db: Db, seriesId: string, episodes: Episode[], fetchedMs: number = Date.now()): DataTable[] {
   return tx(db, () => {
     db.prepare(`delete from vod_episodes where series_id = ?`).run(seriesId);
     const ins = db.prepare(`insert or replace into vod_episodes(id, series_id, season_num, episode_num, title, direct_url, plot, duration, info, tmdb_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -160,7 +160,7 @@ export function replaceEpisodes(db: DatabaseSync, seriesId: string, episodes: Ep
   });
 }
 
-export function applyTmdbMatches(db: DatabaseSync, kind: 'movie' | 'series', matches: { id: string; tmdb_id?: number; popularity?: number; matchAttemptedMs: number }[]): DataTable[] {
+export function applyTmdbMatches(db: Db, kind: 'movie' | 'series', matches: { id: string; tmdb_id?: number; popularity?: number; matchAttemptedMs: number }[]): DataTable[] {
   const table = kind === 'movie' ? 'vod_movies' : 'vod_series';
   const key = kind === 'movie' ? 'stream_id' : 'series_id';
   return tx(db, () => {
@@ -171,7 +171,7 @@ export function applyTmdbMatches(db: DatabaseSync, kind: 'movie' | 'series', mat
 }
 
 // Details fetched lazily from TMDB (plot, genre, cast, backdrop_path, and director for movies) fill empty columns only.
-export function updateVodDetails(db: DatabaseSync, kind: 'movie' | 'series', itemId: string, fields: VodDetailFields): DataTable[] {
+export function updateVodDetails(db: Db, kind: 'movie' | 'series', itemId: string, fields: VodDetailFields): DataTable[] {
   const table = kind === 'movie' ? 'vod_movies' : 'vod_series';
   const key = kind === 'movie' ? 'stream_id' : 'series_id';
   const director = kind === 'movie' ? `, director = coalesce(nullif(director, ''), ?)` : '';
@@ -183,13 +183,13 @@ export function updateVodDetails(db: DatabaseSync, kind: 'movie' | 'series', ite
 // A sync error is shown in Settings > Sources: where it failed (the host) stays,
 // logins never do. A bug report labels the host again when it is built.
 
-export function setSourceError(db: DatabaseSync, sourceId: string, error: string | null): DataTable[] {
-  const clean = error === null ? null : cleanErrorText(error);
+export function setSourceError(db: Db, sourceId: string, error: string | null): DataTable[] {
+  const clean = error === null ? null : redact(error);
   db.prepare(`insert into sources_meta(source_id, error) values (?, ?) on conflict(source_id) do update set error = excluded.error`).run(sourceId, clean);
   return ['sources_meta'];
 }
 
-export function deleteSource(db: DatabaseSync, sourceId: string): DataTable[] {
+export function deleteSource(db: Db, sourceId: string): DataTable[] {
   return tx(db, () => {
     db.prepare(`delete from vod_episodes where series_id in (select series_id from vod_series where source_id = ?)`).run(sourceId);
     db.prepare(`delete from vod_item_categories where item_id in (select stream_id from vod_movies where source_id = ?) or item_id in (select series_id from vod_series where source_id = ?)`).run(sourceId, sourceId);
@@ -202,7 +202,7 @@ export function deleteSource(db: DatabaseSync, sourceId: string): DataTable[] {
   });
 }
 
-export function clearAll(db: DatabaseSync): DataTable[] {
+export function clearAll(db: Db): DataTable[] {
   return tx(db, () => {
     for (const t of ['vod_episodes', 'vod_item_categories', 'vod_movies', 'vod_series', 'vod_categories', 'epg_programs', 'epg_links', 'channel_categories', 'channels', 'categories', 'sources_meta']) db.exec(`delete from ${t}`);
     reindexGuide(db);

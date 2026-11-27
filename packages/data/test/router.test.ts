@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { seedFixture } from './queries.test.js';
-import { routeRendererMessage, isSameJob, type SyncJob } from './router.js';
+import { seedFixture } from './fixtures.js';
+import { routeRendererMessage, isSameJob, type SyncJob } from '../src/router.js';
 import type { DataReply } from '@sbtltv/core';
 
 test('a read request is answered from the database', () => {

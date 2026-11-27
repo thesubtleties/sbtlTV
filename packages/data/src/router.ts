@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { Db } from './platform.js';
 import { isDataRequest, type DataReply, type DataRequest, type VodDetailFields } from '@sbtltv/core';
 import { runQuery } from './queries.js';
 
@@ -95,7 +95,7 @@ export function validateRequest(req: DataRequest): DataRequest {
   return req;
 }
 
-export function routeRendererMessage(db: DatabaseSync, msg: unknown, send: (reply: DataReply) => void, enqueue: (job: SyncJob) => void, sourceIdsForAll: () => string[] = () => [], now: () => number = Date.now): void {
+export function routeRendererMessage(db: Db, msg: unknown, send: (reply: DataReply) => void, enqueue: (job: SyncJob) => void, sourceIdsForAll: () => string[] = () => [], now: () => number = Date.now): void {
   if (!isDataRequest(msg)) return;
   let req = msg as DataRequest;
   try {

@@ -1,10 +1,16 @@
 /** What the shared data code needs from the system it runs on. Sized to what the code uses today. */
 export type SqlScalar = null | number | bigint | string | Uint8Array;
-export type SqlParam = SqlScalar | Record<string, SqlScalar>;
+/** Positional values, or one object of named values first (node:sqlite's two forms). */
+export type SqlParam = SqlScalar;
+export type SqlNamed = Record<string, SqlScalar>;
+export interface RunResult { changes: number | bigint; lastInsertRowid: number | bigint }
 export interface Statement {
-  get(...params: SqlParam[]): unknown;
-  all(...params: SqlParam[]): unknown[];
-  run(...params: SqlParam[]): { changes: number | bigint; lastInsertRowid: number | bigint };
+  get(...params: SqlScalar[]): unknown;
+  get(named: SqlNamed, ...params: SqlScalar[]): unknown;
+  all(...params: SqlScalar[]): unknown[];
+  all(named: SqlNamed, ...params: SqlScalar[]): unknown[];
+  run(...params: SqlScalar[]): RunResult;
+  run(named: SqlNamed, ...params: SqlScalar[]): RunResult;
 }
 /** The shape of node:sqlite's DatabaseSync that the code uses; transactions are exec('BEGIN') / exec('COMMIT'). */
 export interface Db { prepare(sql: string): Statement; exec(sql: string): void; close(): void }

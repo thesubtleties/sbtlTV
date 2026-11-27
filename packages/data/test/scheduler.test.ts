@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { dueSyncs } from './scheduler.js';
+import { test } from 'vitest';
+import { dueSyncs } from '../src/scheduler.js';
 import type { Source } from '@sbtltv/core';
 
 const H = 3600_000;

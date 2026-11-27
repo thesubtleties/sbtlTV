@@ -1,6 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
-import { existsSync, readdirSync, rmSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import type { Db, Platform } from './platform.js';
 import { NewerSchemaError, migrate, reindexGuide } from './schema.js';
 
 export interface OpenOptions {
@@ -17,8 +15,8 @@ export interface OpenOptions {
   busyTimeoutMs?: number;
 }
 
-function tryOpen(path: string, opts: OpenOptions): DatabaseSync {
-  const db = new DatabaseSync(path, { readOnly: opts.readOnly, timeout: opts.busyTimeoutMs ?? 5000 });
+function tryOpen(platform: Platform, path: string, opts: OpenOptions): Db {
+  const db = platform.openDb(path, { readOnly: opts.readOnly, busyTimeoutMs: opts.busyTimeoutMs ?? 5000 });
   try {
     if (!opts.readOnly) {
       db.exec('pragma journal_mode = wal');
@@ -39,7 +37,7 @@ function tryOpen(path: string, opts: OpenOptions): DatabaseSync {
 // quick_check rather than the spec's integrity_check: it runs on every launch
 // against a file that can reach hundreds of MB, and skips only the exhaustive
 // index cross-checks. Everything in the file is rebuildable anyway.
-function healthy(db: DatabaseSync): boolean {
+function healthy(db: Db): boolean {
   try {
     const row = db.prepare('pragma quick_check').get() as { quick_check: string };
     return row.quick_check === 'ok';
@@ -49,10 +47,10 @@ function healthy(db: DatabaseSync): boolean {
 }
 
 // Opens the file and returns null (closing it) when it fails the quick check.
-function openHealthy(path: string, opts: OpenOptions): DatabaseSync | null {
-  let db: DatabaseSync | null = null;
+function openHealthy(platform: Platform, path: string, opts: OpenOptions): Db | null {
+  let db: Db | null = null;
   try {
-    db = tryOpen(path, opts);
+    db = tryOpen(platform, path, opts);
     if (healthy(db)) return db;
     // Only the search index damaged: it is built from the programmes beside it
     reindexGuide(db);
@@ -68,34 +66,35 @@ function openHealthy(path: string, opts: OpenOptions): DatabaseSync | null {
 // integrity check and migrations; readers assume the writer already did.
 // The file holds provider logins in its stream links, so a copy is never kept. Earlier
 // versions kept .corrupt- copies: those go too.
-function removeFile(path: string): void {
-  for (const suffix of ['', '-wal', '-shm']) rmSync(path + suffix, { force: true });
+function removeFile(platform: Platform, path: string): void {
+  for (const suffix of ['', '-wal', '-shm']) platform.files.remove(path + suffix);
 }
 
-function removeOldCopies(path: string): void {
-  const name = basename(path);
+function removeOldCopies(platform: Platform, path: string): void {
+  const { files } = platform;
+  const name = files.basename(path);
   try {
-    for (const f of readdirSync(dirname(path))) {
-      if (f.startsWith(`${name}.corrupt-`) || f.startsWith(`${name}.aside-`)) rmSync(join(dirname(path), f), { force: true });
+    for (const f of files.list(files.dirname(path))) {
+      if (f.startsWith(`${name}.corrupt-`) || f.startsWith(`${name}.aside-`)) files.remove(files.join(files.dirname(path), f));
     }
   } catch { /* the next open tries again */ }
 }
 
-export function openDatabase(path: string, opts: OpenOptions): DatabaseSync {
+export function openDatabase(platform: Platform, path: string, opts: OpenOptions): Db {
   const log = opts.log ?? (() => {});
-  if (opts.readOnly) return tryOpen(path, opts);
+  if (opts.readOnly) return tryOpen(platform, path, opts);
   const recover = opts.recover ?? true;
-  if (recover) removeOldCopies(path);
+  if (recover) removeOldCopies(platform, path);
 
-  let db = openHealthy(path, opts);
+  let db = openHealthy(platform, path, opts);
   if (!db) {
     if (!recover) throw new Error('data file failed its integrity check');
-    if (existsSync(path)) {
-      removeFile(path);
+    if (platform.files.exists(path)) {
+      removeFile(platform, path);
       log('data file failed its integrity check; removed it and starting fresh');
       opts.onReset?.('integrity check failed');
     }
-    db = tryOpen(path, opts);
+    db = tryOpen(platform, path, opts);
   }
   try {
     migrate(db);
@@ -107,10 +106,10 @@ export function openDatabase(path: string, opts: OpenOptions): DatabaseSync {
       throw e;
     }
     db.close();
-    removeFile(path);
+    removeFile(platform, path);
     log(`data file is from a newer version (${e.message}); removed it and starting fresh`);
     opts.onReset?.(e.message);
-    db = tryOpen(path, opts);
+    db = tryOpen(platform, path, opts);
     migrate(db);
   }
   return db;

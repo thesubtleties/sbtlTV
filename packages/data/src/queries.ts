@@ -1,11 +1,11 @@
-import type { DatabaseSync, StatementSync, SQLInputValue } from 'node:sqlite';
+import type { Db, Statement, SqlParam } from './platform.js';
 import { GUIDE_SEARCH_MIN_CHARS, groupAirings, guideSearchMatch, isAdultCategoryName, matchesChannelName, sortChannels, type DataRequest, type GuideSearchResult, type GuideSearchRow } from '@sbtltv/core';
 
 // Every request compiles to a fixed statement. Lists travel as JSON text and
 // are expanded with json_each, so a 10-id and a 10,000-id request are the
 // same statement. An empty sourceIds list means "all sources".
-const cache = new WeakMap<DatabaseSync, Map<string, StatementSync>>();
-function stmt(db: DatabaseSync, sql: string): StatementSync {
+const cache = new WeakMap<Db, Map<string, Statement>>();
+function stmt(db: Db, sql: string): Statement {
   let m = cache.get(db);
   if (!m) { m = new Map(); cache.set(db, m); }
   let s = m.get(sql);
@@ -15,7 +15,7 @@ function stmt(db: DatabaseSync, sql: string): StatementSync {
 const j = (ids: readonly (string | number)[]) => JSON.stringify(ids);
 const SRC = `(json_array_length($sources) = 0 or source_id in (select value from json_each($sources)))`;
 
-function withCategoryIds<T extends { stream_id?: string; series_id?: string }>(db: DatabaseSync, rows: T[], itemType: 'channel' | 'movie' | 'series'): (T & { category_ids: string[] })[] {
+function withCategoryIds<T extends { stream_id?: string; series_id?: string }>(db: Db, rows: T[], itemType: 'channel' | 'movie' | 'series'): (T & { category_ids: string[] })[] {
   if (rows.length === 0) return [];
   const idOf = (r: T) => (itemType === 'series' ? r.series_id : r.stream_id) as string;
   const links = itemType === 'channel'
@@ -55,7 +55,7 @@ const CH_SRC = `(json_array_length($sources) = 0 or ch.source_id in (select valu
 const NOT_HIDDEN = `($hide = 0 or (ch.is_adult = 0 and not exists (
   select 1 from channel_categories cc where cc.stream_id = ch.stream_id and cc.category_id in (select value from json_each($adult)))))`;
 
-function guideSearch(db: DatabaseSync, req: Extract<DataRequest, { type: 'guideSearch' }>): GuideSearchResult {
+function guideSearch(db: Db, req: Extract<DataRequest, { type: 'guideSearch' }>): GuideSearchResult {
   const empty: GuideSearchResult = { channels: [], channelTotal: 0, onNow: [], later: [], mentions: [] };
   if (req.query.trim().length < GUIDE_SEARCH_MIN_CHARS) return empty;
   const adult = req.hideAdult
@@ -86,7 +86,7 @@ function guideSearch(db: DatabaseSync, req: Extract<DataRequest, { type: 'guideS
   return { ...channels, ...groupAirings(rows, req.query, req.nowMs) };
 }
 
-export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
+export function runQuery(db: Db, req: DataRequest): unknown {
   switch (req.type) {
     case 'categories': {
       const rows = stmt(db, `
@@ -168,7 +168,7 @@ export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
     case 'syncStatus':
       return stmt(db, `select source_id, epg_url, last_channel_sync, last_epg_sync, last_vod_sync, channel_count, category_count, movie_count, series_count, error from sources_meta`).all();
     case 'movies': {
-      const b = req.by; const p: Record<string, SQLInputValue> = { $sources: j(req.sourceIds) }; const limit = req.limit ?? 1000;
+      const b = req.by; const p: Record<string, SqlParam> = { $sources: j(req.sourceIds) }; const limit = req.limit ?? 1000;
       let rows: unknown[];
       if (b.kind === 'categories') rows = stmt(db, `select ${MOVIE_COLS} from vod_movies where stream_id in (select item_id from vod_item_categories where item_type='movie' and category_id in (select value from json_each($cats))) and ${SRC} order by name collate nocase`).all({ ...p, $cats: j(b.categoryIds) });
       else if (b.kind === 'all') rows = stmt(db, `select ${MOVIE_COLS} from vod_movies where ${SRC} order by name collate nocase`).all(p);
@@ -179,7 +179,7 @@ export function runQuery(db: DatabaseSync, req: DataRequest): unknown {
       return withCategoryIds(db, rows as { stream_id: string }[], 'movie');
     }
     case 'series': {
-      const b = req.by; const p: Record<string, SQLInputValue> = { $sources: j(req.sourceIds) }; const limit = req.limit ?? 1000;
+      const b = req.by; const p: Record<string, SqlParam> = { $sources: j(req.sourceIds) }; const limit = req.limit ?? 1000;
       let rows: unknown[];
       if (b.kind === 'categories') rows = stmt(db, `select ${SERIES_COLS} from vod_series where series_id in (select item_id from vod_item_categories where item_type='series' and category_id in (select value from json_each($cats))) and ${SRC} order by name collate nocase`).all({ ...p, $cats: j(b.categoryIds) });
       else if (b.kind === 'all') rows = stmt(db, `select ${SERIES_COLS} from vod_series where ${SRC} order by name collate nocase`).all(p);

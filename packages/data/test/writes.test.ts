@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { seedFixture } from './queries.test.js';
-import { runQuery } from './queries.js';
-import { replaceChannels, replaceEpg, replaceVod, replaceEpisodes, applyTmdbMatches, updateVodDetails, deleteSource, clearAll, setSourceError } from './writes.js';
+import { seedFixture } from './fixtures.js';
+import { runQuery } from '../src/queries.js';
+import { replaceChannels, replaceEpg, replaceVod, replaceEpisodes, applyTmdbMatches, updateVodDetails, deleteSource, clearAll, setSourceError } from '../src/writes.js';
 
 const count = (db: DatabaseSync, sql: string) => (db.prepare(sql).get() as { c: number }).c;
 
@@ -162,13 +162,14 @@ test('replaceVod keeps details the provider stopped sending', () => {
 import { mkdtempSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { openDatabase } from './db.js';
+import { openDatabase } from '../src/db.js';
+import { nodePlatform } from '../src/node/index.js';
 
 test('a reader on a second connection sees the old rows until the writer commits', () => {
   const p = path.join(mkdtempSync(path.join(tmpdir(), 'sbtltv-atomic-')), 'data.sqlite');
-  const writer = openDatabase(p, { readOnly: false });
+  const writer = openDatabase(nodePlatform(), p, { readOnly: false });
   seedFixture(writer);
-  const reader = openDatabase(p, { readOnly: true });
+  const reader = openDatabase(nodePlatform(), p, { readOnly: true });
   const names = () => (reader.prepare("select name from channels where source_id='s1' order by name").all() as { name: string }[]).map((r) => r.name);
   assert.deepEqual(names(), ['ABC', 'CBS']);
 
@@ -211,7 +212,7 @@ test('openDatabase recovers a corrupt file that has stale WAL and shm siblings',
   writeFileSync(p, 'not a database');
   writeFileSync(`${p}-wal`, 'stale wal');
   writeFileSync(`${p}-shm`, 'stale shm');
-  const db = openDatabase(p, { readOnly: false });
+  const db = openDatabase(nodePlatform(), p, { readOnly: false });
   assert.equal((db.prepare("select count(*) c from sqlite_master where name='channels'").get() as { c: number }).c, 1, 'fresh schema in place');
   db.close();
   const files = readdirSync(path.dirname(p));
