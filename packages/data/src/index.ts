@@ -14,3 +14,4 @@ export * from './coordinator.js';
 export * from './lines.js';
 export * from './tmdb-store.js';
 export * from './tmdb-match.js';
+export * from './guide-staging.js';
