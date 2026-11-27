@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { expect, test } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { decompressToFile, parseXmltvFile } from './epg-source.js';
+import { decompressToFile, parseXmltvChunks, parseXmltvFile } from '../src/epg.js';
+import { nodePlatform } from '../src/node/index.js';
+
+const P = nodePlatform();
 
 const XML = `<?xml version="1.0" encoding="UTF-8"?>
 <tv>
@@ -18,10 +21,10 @@ test('decompressToFile inflates a gzip file by magic bytes and reports the size'
   const dir = mkdtempSync(path.join(tmpdir(), 'epg-'));
   const gz = path.join(dir, 'guide.xml.gz');
   writeFileSync(gz, gzipSync(Buffer.from(XML)));
-  const { xmlPath, sizeMB } = await decompressToFile(gz, () => {});
+  const { xmlPath, sizeMB } = await decompressToFile(P, gz, () => {});
   assert.ok(sizeMB >= 0);
   assert.notEqual(xmlPath, gz);
-  const parsed = await parseXmltvFile(xmlPath, undefined, () => {});
+  const parsed = await parseXmltvFile(P, xmlPath, undefined, () => {});
   assert.equal(parsed.channels.length, 2);
   assert.equal(parsed.programs.length, 2);
 });
@@ -30,7 +33,7 @@ test('decompressToFile leaves a plain XML file where it is', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'epg-'));
   const xml = path.join(dir, 'guide.xml');
   writeFileSync(xml, XML);
-  const { xmlPath } = await decompressToFile(xml, () => {});
+  const { xmlPath } = await decompressToFile(P, xml, () => {});
   assert.equal(xmlPath, xml);
 });
 
@@ -38,7 +41,7 @@ test('parseXmltvFile keeps only programmes for channels the provider has when a 
   const dir = mkdtempSync(path.join(tmpdir(), 'epg-'));
   const xml = path.join(dir, 'guide.xml');
   writeFileSync(xml, XML);
-  const parsed = await parseXmltvFile(xml, [{ epg_channel_id: 'cbs.us', name: 'CBS', stream_id: 's1_10' }], () => {});
+  const parsed = await parseXmltvFile(P, xml, [{ epg_channel_id: 'cbs.us', name: 'CBS', stream_id: 's1_10' }], () => {});
   assert.deepEqual(parsed.channels.map((c) => c.id), ['cbs.us', 'abc.us']);
   assert.deepEqual(parsed.programs.map((p) => [p.channel_id, p.title, p.description]), [['cbs.us', 'Noon News', 'Local & national']]);
   assert.equal(parsed.programs[0].startMs, Date.UTC(2026, 8, 21, 12));
@@ -46,7 +49,7 @@ test('parseXmltvFile keeps only programmes for channels the provider has when a 
 });
 
 import { createServer } from 'node:http';
-import { downloadToTempFile } from './epg-source.js';
+import { downloadToTempFile } from '../src/epg.js';
 import { readFileSync } from 'node:fs';
 
 function serve(handler: Parameters<typeof createServer>[1]): Promise<{ url: string; close: () => void }> {
@@ -67,9 +70,9 @@ test('downloadToTempFile follows a redirect, then refuses one that leads to the 
   });
   try {
     // A loopback server is itself a LAN address, so this only works with LAN allowed.
-    const saved = await downloadToTempFile(`${url}/hop`, dir, () => {}, true);
+    const saved = await downloadToTempFile(P, `${url}/hop`, dir, () => {}, true);
     assert.equal(readFileSync(saved, 'utf8'), XML);
-    await assert.rejects(downloadToTempFile(`${url}/hop`, dir, () => {}, false), /local network/);
+    await assert.rejects(downloadToTempFile(P, `${url}/hop`, dir, () => {}, false), /local network/);
   } finally {
     close();
   }
@@ -82,9 +85,19 @@ test('downloadToTempFile rejects a non-2xx and gives up after too many redirects
     res.writeHead(404); res.end('nope');
   });
   try {
-    await assert.rejects(downloadToTempFile(`${url}/missing`, dir, () => {}, true), /HTTP 404/);
-    await assert.rejects(downloadToTempFile(`${url}/loop`, dir, () => {}, true), /redirect/);
+    await assert.rejects(downloadToTempFile(P, `${url}/missing`, dir, () => {}, true), /HTTP 404/);
+    await assert.rejects(downloadToTempFile(P, `${url}/loop`, dir, () => {}, true), /redirect/);
   } finally {
     close();
   }
+});
+
+async function* chunks(text: string, size: number) { for (let i = 0; i < text.length; i += size) yield text.slice(i, i + size); }
+
+test('the parser gives the same result whether a tag is cut across chunks or not', async () => {
+  const run = async (size: number) => { const ch: unknown[] = []; const pr: unknown[] = []; const st = await parseXmltvChunks(chunks(XML, size), null, (c) => ch.push(c), (p) => pr.push(p), () => {}); return { ch, pr, st }; };
+  const whole = await run(XML.length);
+  for (const size of [1, 7, 16, 64]) expect(await run(size)).toEqual(whole);
+  expect(whole.ch).toEqual([{ id: 'cbs.us', displayNames: ['CBS', 'CBS Chicago'] }, { id: 'abc.us', displayNames: ['ABC'] }]);
+  expect(whole.pr).toHaveLength(2);
 });
