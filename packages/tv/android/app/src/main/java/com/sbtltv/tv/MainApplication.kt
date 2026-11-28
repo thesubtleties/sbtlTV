@@ -25,6 +25,8 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // SQLite's temp files (sorts, index builds) go to the app cache, never RAM, before any database opens.
+    android.system.Os.setenv("SQLITE_TMPDIR", cacheDir.absolutePath, true)
     loadReactNative(this)
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
   }
