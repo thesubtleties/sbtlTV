@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - '!packages/tv'
 
 patchedDependencies:
   app-builder-lib@26.4.0: patches/app-builder-lib@26.4.0.patch

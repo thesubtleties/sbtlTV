@@ -1,0 +1,8 @@
+{
+  "name": "SbtlTv",
+  "displayName": "SbtlTv",
+  "plugins": [
+    "expo-sqlite",
+    "expo-asset"
+  ]
+}
