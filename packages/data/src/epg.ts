@@ -179,33 +179,32 @@ export async function parseXmltvChunks(
       }
     }
 
+    // A cursor walks each chunk (joined to the leftover once); the next closing tag of each kind is remembered and only
+    // searched again once the cursor passes it. The old loop re-searched and re-copied the leftover text for every
+    // element, which made a big guide's programme section quadratic.
+    const CH = '</channel>';
+    const PR = '</programme>';
     for await (const chunk of chunks) {
-      remainder += chunk;
-
-      // Process complete elements: find </channel> and </programme> closing tags
-      let idx: number;
-      while (true) {
-        const chClose = remainder.indexOf('</channel>');
-        const prClose = remainder.indexOf('</programme>');
-
-        if (chClose === -1 && prClose === -1) break;
-
-        let closeTag: string;
-        if (chClose === -1) { closeTag = '</programme>'; idx = prClose; }
-        else if (prClose === -1) { closeTag = '</channel>'; idx = chClose; }
-        else if (chClose < prClose) { closeTag = '</channel>'; idx = chClose; }
-        else { closeTag = '</programme>'; idx = prClose; }
-
-        const endPos = idx + closeTag.length;
-        const block = remainder.slice(0, endPos);
-        remainder = remainder.slice(endPos);
-
-        const openTag = closeTag === '</channel>' ? '<channel ' : '<programme ';
+      const text = remainder + chunk;
+      let pos = 0;
+      let chClose = text.indexOf(CH);
+      let prClose = text.indexOf(PR);
+      while (chClose !== -1 || prClose !== -1) {
+        const isChannel = prClose === -1 || (chClose !== -1 && chClose < prClose);
+        const idx = isChannel ? chClose : prClose;
+        const endPos = idx + (isChannel ? CH.length : PR.length);
+        // The block is text[pos, endPos); process from its last opening tag of the same kind, as before. Searched inside
+        // the block only: a block with no opening tag (a stray closing tag) must not send the search back through the
+        // whole chunk.
+        const openTag = isChannel ? '<channel ' : '<programme ';
+        const block = text.slice(pos, endPos);
         const openIdx = block.lastIndexOf(openTag);
-        if (openIdx !== -1) {
-          processBlock(block.slice(openIdx));
-        }
+        if (openIdx !== -1) processBlock(block.slice(openIdx));
+        pos = endPos;
+        if (chClose !== -1 && chClose < pos) chClose = text.indexOf(CH, pos);
+        if (prClose !== -1 && prClose < pos) prClose = text.indexOf(PR, pos);
       }
+      remainder = pos === 0 ? text : text.slice(pos);
 
       // Prevent remainder from growing unbounded: if it is huge and has no complete
       // element, keep only the last 64KB (enough for any single element)
@@ -250,7 +249,8 @@ export async function parseXmltvFile(platform: Platform, xmlPath: string, provid
   if (providerChannels && providerChannels.length > 0) {
     log('Phase 1: scanning for channel elements...');
     const xmltvChannels: EpgChannelInfo[] = [];
-    await parseXmltvChunks(read(), null, (ch) => xmltvChannels.push(ch), () => {}, log);
+    // An empty filter: programmes are skipped at their channel attribute (phase 1 only needs the channels).
+    await parseXmltvChunks(read(), new Set(), (ch) => xmltvChannels.push(ch), () => {}, log);
     log(`Found ${xmltvChannels.length} EPG channels`);
     filterIds = matchedXmltvIds(xmltvChannels, providerChannels);
     log(`Matched ${filterIds.size}/${providerChannels.length} provider channels - will filter programmes`);
