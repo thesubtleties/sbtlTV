@@ -1,5 +1,24 @@
 {
   "extends": "@react-native/typescript-config",
-  "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["**/node_modules", "**/Pods"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "android"
+  ],
+  "compilerOptions": {
+    "paths": {
+      "@sbtltv/data": [
+        "../data/src/index.ts"
+      ],
+      "@sbtltv/core": [
+        "../core/src/index.ts"
+      ],
+      "@sbtltv/local-adapter": [
+        "../local-adapter/src/index.ts"
+      ]
+    }
+  }
 }
