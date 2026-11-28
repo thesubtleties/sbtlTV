@@ -17,3 +17,11 @@ android {
     versionName "0.1.0"
   }
 }
+
+dependencies {
+  // React Native ships OkHttp; the module compiles against the same version and does not bundle its own.
+  compileOnly "com.squareup.okhttp3:okhttp:4.9.2"
+  testImplementation "com.squareup.okhttp3:okhttp:4.9.2"
+  testImplementation "com.squareup.okhttp3:mockwebserver:4.9.2"
+  testImplementation "junit:junit:4.13.2"
+}
