@@ -1,9 +1,10 @@
 import { File, Paths } from 'expo-file-system';
 import type { Source } from '@sbtltv/core';
 
-// The owner's test sources, kept in the app's private documents (never logged or shown). On first use they come from
-// a one-off server on the test computer through `adb reverse tcp:8765 tcp:8765` (Fire OS blocks adb from the app's
-// folders, and this needs no debuggable build).
+// DEBUG ONLY (stick test): nothing outside src/debug may import this. It trusts whatever answers on 127.0.0.1:8765,
+// which any app on the device could open, so it must never ship in a real build. The owner's test sources come from a
+// one-off server on the test computer through `adb reverse tcp:8765 tcp:8765` (Fire OS blocks adb from the app's
+// folders, and this needs no debuggable build); they are kept in the app's private documents, never logged or shown.
 const HANDOFF = 'http://127.0.0.1:8765';
 export async function readTestLogins(): Promise<Source[]> {
   const kept = new File(Paths.document, 'sbtl-test-sources.json');

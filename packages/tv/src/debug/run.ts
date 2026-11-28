@@ -3,7 +3,7 @@ import { Platform as RNPlatform } from 'react-native';
 import type { SyncJob } from '@sbtltv/data';
 import SbtlNative from '../../modules/sbtl-native';
 import { createHost } from '../host/host';
-import { sendToTestComputer } from '../host/logins';
+import { readTestLogins, sendToTestComputer } from './handoff';
 import { openRnDb } from '../platform/db';
 import { startMeasure } from './measure';
 
@@ -23,7 +23,7 @@ export async function runStickTest(status: (s: string) => void): Promise<void> {
     await sendToTestComputer(name, text);
   };
   const idle = SbtlNative.memoryInfo();
-  const host = await createHost({ onLog: log, onProgress: (p) => { log('progress', JSON.stringify(p)); status(`${p.stage} ${p.state}${p.message ? ': ' + p.message : ''}`); } });
+  const host = await createHost({ sources: await readTestLogins(), onLog: log, onProgress: (p) => { log('progress', JSON.stringify(p)); status(`${p.stage} ${p.state}${p.message ? ': ' + p.message : ''}`); } });
   const dataFile = `${docs()}/sbtltv-data.sqlite`;
   const read = openRnDb(dataFile, { readOnly: true, busyTimeoutMs: 5000 });
   const count = (sql: string) => (read.prepare(sql).get() as { c: number }).c;
