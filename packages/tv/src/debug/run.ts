@@ -3,6 +3,7 @@ import { Platform as RNPlatform } from 'react-native';
 import type { SyncJob } from '@sbtltv/data';
 import SbtlNative from '../../modules/sbtl-native';
 import { createHost } from '../host/host';
+import { sendToTestComputer } from '../host/logins';
 import { openRnDb } from '../platform/db';
 import { startMeasure } from './measure';
 
@@ -16,7 +17,11 @@ const mb = (b: number) => Math.round((b / 1048576) * 10) / 10;
 export async function runStickTest(status: (s: string) => void): Promise<void> {
   const logs: string[] = [];
   const log = (c: string, m: string) => { logs.push(`${new Date().toISOString()} [${c}] ${m}`); if (logs.length > 20000) logs.shift(); };
-  const write = (name: string, text: string) => { const f = new File(Paths.document, name); f.create({ overwrite: true }); f.write(text); };
+  // Results go to the private documents and to the external files folder (adb pulls them from there; no secrets).
+  const write = async (name: string, text: string) => {
+    const f = new File(Paths.document, name); f.create({ overwrite: true }); f.write(text);
+    await sendToTestComputer(name, text);
+  };
   const idle = SbtlNative.memoryInfo();
   const host = await createHost({ onLog: log, onProgress: (p) => { log('progress', JSON.stringify(p)); status(`${p.stage} ${p.state}${p.message ? ': ' + p.message : ''}`); } });
   const dataFile = `${docs()}/sbtltv-data.sqlite`;
@@ -67,10 +72,10 @@ export async function runStickTest(status: (s: string) => void): Promise<void> {
   const results = {
     device: { ...(RNPlatform.constants as object), idlePssMb: Math.round(idle.pssKb / 1024) },
     stages, queries,
-    gaps: ['LAN guard on provider API calls (local-adapter fetch follows redirects itself on RN)', 'provider lists (VOD/live JSON) held whole in memory'],
+    gaps: ['LAN guard on provider API calls (local-adapter fetch follows redirects itself on RN)', 'provider lists (VOD/live JSON) held whole in memory', 'TV log keeps provider hostnames in error text (desktop labels them in main): label before any log sharing'],
   };
-  write('stick-results.json', JSON.stringify(results, null, 2));
-  write('stick-log.txt', logs.join('\n'));
+  await write('stick-results.json', JSON.stringify(results, null, 2));
+  await write('stick-log.txt', logs.join('\n'));
   read.close(); host.close();
   console.log('RESULTS written ' + JSON.stringify({ stages: stages.map((s) => [s.stage, s.ms, s.peakPssMb, s.longestFreezeMs]) }));
   status('done: results written');

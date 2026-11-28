@@ -1,8 +1,24 @@
 import { File, Paths } from 'expo-file-system';
 import type { Source } from '@sbtltv/core';
-// The owner's test sources, pushed with adb into the app's private files (never logged, never in the repo).
-export function readTestLogins(): Source[] {
-  const f = new File(Paths.document, 'sbtl-test-sources.json');
-  if (!f.exists) throw new Error('sbtl-test-sources.json missing: push it with adb (see the stick-test spec)');
-  return (JSON.parse(f.textSync()) as { sources: Source[] }).sources;
+
+// The owner's test sources, kept in the app's private documents (never logged or shown). On first use they come from
+// a one-off server on the test computer through `adb reverse tcp:8765 tcp:8765` (Fire OS blocks adb from the app's
+// folders, and this needs no debuggable build).
+const HANDOFF = 'http://127.0.0.1:8765';
+export async function readTestLogins(): Promise<Source[]> {
+  const kept = new File(Paths.document, 'sbtl-test-sources.json');
+  let text = kept.exists ? kept.textSync() : '';
+  if (!text) {
+    const r = await fetch(`${HANDOFF}/logins`).catch(() => null);
+    if (!r || !r.ok) throw new Error('test logins missing: run the stick-test handoff server and adb reverse tcp:8765 tcp:8765');
+    text = await r.text();
+    // Kept for later launches; this run uses the text it fetched (a read right after expo's write can come back empty).
+    kept.create({ overwrite: true }); kept.write(text);
+  }
+  return (JSON.parse(text) as { sources: Source[] }).sources;
+}
+
+// Results and the log back to the test computer the same way (best effort; also kept in the app's documents).
+export async function sendToTestComputer(name: string, text: string): Promise<void> {
+  await fetch(`${HANDOFF}/upload/${encodeURIComponent(name)}`, { method: 'POST', body: text }).catch(() => undefined);
 }

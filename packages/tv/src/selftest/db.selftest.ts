@@ -46,4 +46,11 @@ export const dbSuite: SelfTestSuite = { name: 'db', tests: [
   { name: 'URL is WHATWG (the LAN guard needs normalised hosts)', run: () => {
     assertEq(['http://0x7f000001/', 'http://2130706433/', 'http://[::1]/', 'http://192.168.000.001/'].map((u) => new URL(u).hostname), ['127.0.0.1', '127.0.0.1', '[::1]', '192.168.0.1'], 'hosts');
   } },
+  { name: 'a reader and a writer on one file are separate connections', run: () => {
+    const p = `${Paths.cache.uri.replace(/^file:\/\//, '')}/selftest-rw-${Date.now()}.sqlite`;
+    const w = openRnDb(p, { readOnly: false, busyTimeoutMs: 5000 }); w.exec('create table t(a)');
+    const r = openRnDb(p, { readOnly: true, busyTimeoutMs: 5000 });
+    w.prepare('insert into t values (1)').run();
+    assertEq(r.prepare('select count(*) c from t').get(), { c: 1 }, 'reader sees the write'); r.close(); w.close();
+  } },
 ] };

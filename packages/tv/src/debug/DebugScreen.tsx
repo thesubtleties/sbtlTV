@@ -23,7 +23,7 @@ export function DebugScreen() {
   };
   const sync = async () => {
     setBusy(true);
-    try { await runStickTest(setStatus); } catch (e) { setStatus(`stick test failed: ${(e as Error).message}`); console.log('STICK failed ' + (e as Error).message); }
+    try { await runStickTest(setStatus); } catch (e) { setStatus(`stick test failed: ${(e as Error).message}`); console.log('STICK failed ' + (e as Error).message + ' | ' + String((e as Error).stack).split('\n').slice(0, 6).join(' | ')); }
     setBusy(false);
   };
   const button = (label: string, onPress: () => void, enabled: boolean, first = false) => (

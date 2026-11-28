@@ -29,7 +29,9 @@ class RnDb implements Db {
 
 export function openRnDb(path: string, opts: OpenDbOptions): Db {
   const slash = path.lastIndexOf('/');
-  const db = openDatabaseSync(path.slice(slash + 1), {}, path.slice(0, slash));
+  // Its own connection every time (expo-sqlite shares one per file by default): the reader's query_only and the
+  // writers' transactions must not leak into each other, as with node:sqlite's separate connections on desktop.
+  const db = openDatabaseSync(path.slice(slash + 1), { useNewConnection: true }, path.slice(0, slash));
   db.execSync(`pragma busy_timeout = ${opts.busyTimeoutMs}`);
   db.execSync('pragma temp_store = file');   // sorts, index builds and scratch files on disk, never RAM (spec)
   if (opts.readOnly) db.execSync('pragma query_only = 1');

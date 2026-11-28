@@ -19,7 +19,7 @@ export async function createHost(opts: { onLog(cat: string, msg: string): void; 
   sweepStagingFiles(platform, dataDir);
   const writer: Db = openDatabase(platform, dbPath, { readOnly: false, busyTimeoutMs: 120_000, recover: true, log: (m) => opts.onLog('data', m) });
   const reader: Db = openDatabase(platform, dbPath, { readOnly: true, busyTimeoutMs: 5000 });
-  const sources = readTestLogins();
+  const sources = await readTestLogins();
   const ctx: StageContext = {
     db: writer, platform, tempDir, tmdbPath: `${dataDir}/tmdb-titles.sqlite`, stagingDir: dataDir, allowLanSources: settings.allowLanSources,
     log: (c, m) => opts.onLog(c, cleanErrorText(m)),
