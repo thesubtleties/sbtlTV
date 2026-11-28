@@ -42,5 +42,14 @@
   "engines": {
     "node": ">= 22.11.0"
   },
-  "main": "index.js"
+  "main": "index.js",
+  "overrides": {
+    "react-native": "$react-native",
+    "@react-native-tvos/virtualized-lists": {
+      "react-native": "$react-native"
+    },
+    "@react-native/virtualized-lists": {
+      "react-native": "$react-native"
+    }
+  }
 }
