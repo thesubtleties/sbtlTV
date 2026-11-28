@@ -1,4 +1,6 @@
-// Today's XMLTV chunk parser (as of the cursor rewrite), kept only as the reference the rewrite must match exactly.
+// The XMLTV chunk parser as it was before the cursor rewrite (PR #215), kept only as the reference the rewrite must
+// match exactly. Delete it (and the comparison tests) when processBlock or entity decoding next changes: from then on
+// the frozen corpus hash in xmltv-parser.test.ts is the guard.
 import type { EpgChannelInfo } from '@sbtltv/core';
 import type { Log } from '../src/platform.js';
 import { parseXmltvDate } from '../src/epg.js';

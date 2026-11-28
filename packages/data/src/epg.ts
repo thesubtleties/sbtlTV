@@ -193,10 +193,13 @@ export async function parseXmltvChunks(
         const isChannel = prClose === -1 || (chClose !== -1 && chClose < prClose);
         const idx = isChannel ? chClose : prClose;
         const endPos = idx + (isChannel ? CH.length : PR.length);
-        // The block is text[pos, endPos); process from its last opening tag of the same kind, as before.
+        // The block is text[pos, endPos); process from its last opening tag of the same kind, as before. Searched inside
+        // the block only: a block with no opening tag (a stray closing tag) must not send the search back through the
+        // whole chunk.
         const openTag = isChannel ? '<channel ' : '<programme ';
-        const openIdx = text.lastIndexOf(openTag, endPos - openTag.length);
-        if (openIdx >= pos) processBlock(text.slice(openIdx, endPos));
+        const block = text.slice(pos, endPos);
+        const openIdx = block.lastIndexOf(openTag);
+        if (openIdx !== -1) processBlock(block.slice(openIdx));
         pos = endPos;
         if (chClose !== -1 && chClose < pos) chClose = text.indexOf(CH, pos);
         if (prClose !== -1 && prClose < pos) prClose = text.indexOf(PR, pos);
@@ -246,7 +249,8 @@ export async function parseXmltvFile(platform: Platform, xmlPath: string, provid
   if (providerChannels && providerChannels.length > 0) {
     log('Phase 1: scanning for channel elements...');
     const xmltvChannels: EpgChannelInfo[] = [];
-    await parseXmltvChunks(read(), null, (ch) => xmltvChannels.push(ch), () => {}, log);
+    // An empty filter: programmes are skipped at their channel attribute (phase 1 only needs the channels).
+    await parseXmltvChunks(read(), new Set(), (ch) => xmltvChannels.push(ch), () => {}, log);
     log(`Found ${xmltvChannels.length} EPG channels`);
     filterIds = matchedXmltvIds(xmltvChannels, providerChannels);
     log(`Matched ${filterIds.size}/${providerChannels.length} provider channels - will filter programmes`);
